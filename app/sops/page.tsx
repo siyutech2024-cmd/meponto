@@ -468,6 +468,7 @@ const localizedSopContent = {
         scope: "Export previous-day data from the 99 back office, validate it, import it into PontoSys, reconcile finance and create exception queues.",
         modules: ["D-1 package", "Validation", "PontoSys import", "Reconciliation", "Exceptions"],
         tone: "data" as SectionTone,
+        href: "#localized-data",
       },
       {
         code: "SOP 02",
@@ -476,6 +477,7 @@ const localizedSopContent = {
         scope: "Daily actions from arrival, pre-shift checks, peak-hour rules, night safety, clock-out and closeout.",
         modules: ["Shift length", "Check-in", "Peak rules", "Location pulse", "Closeout"],
         tone: "rider" as SectionTone,
+        href: "#localized-rider",
       },
       {
         code: "SOP 03",
@@ -484,6 +486,7 @@ const localizedSopContent = {
         scope: "HQ campaigns, lead booking, offline registration, authorized binding, first shift and full-time conversion.",
         modules: ["Campaign", "Lead booking", "Registration", "Binding", "First shift"],
         tone: "recruitment" as SectionTone,
+        href: "#localized-recruitment",
       },
       {
         code: "SOP 04",
@@ -492,6 +495,7 @@ const localizedSopContent = {
         scope: "Two-person site model for receiving HQ data, opening the site, dispatching, recruitment handoff and escalation.",
         modules: ["2-person team", "HQ data", "Daily site flow", "Recruitment handoff", "Escalation"],
         tone: "site" as SectionTone,
+        href: "#localized-site",
       },
       {
         code: "SOP 05",
@@ -500,6 +504,7 @@ const localizedSopContent = {
         scope: "HQ inspection checks whether actions were executed, records are complete, evidence exists and exceptions are closed.",
         modules: ["Action table", "Owner", "Frequency", "Evidence", "Closeout"],
         tone: "inspection" as SectionTone,
+        href: "#localized-inspection",
       },
     ],
     data: {
@@ -606,6 +611,7 @@ const localizedSopContent = {
         scope: "Exportar dados D-1 do back office 99, validar, importar no PontoSys, reconciliar financeiro e criar fila de excecoes.",
         modules: ["Pacote D-1", "Validacao", "Importacao PontoSys", "Reconciliacao", "Excecoes"],
         tone: "data" as SectionTone,
+        href: "#localized-data",
       },
       {
         code: "SOP 02",
@@ -614,6 +620,7 @@ const localizedSopContent = {
         scope: "Acoes diarias desde chegada, checklist pre-turno, regras de pico, seguranca noturna, saida e fechamento.",
         modules: ["Carga horaria", "Check-in", "Picos", "Localizacao", "Fechamento"],
         tone: "rider" as SectionTone,
+        href: "#localized-rider",
       },
       {
         code: "SOP 03",
@@ -622,6 +629,7 @@ const localizedSopContent = {
         scope: "Campanhas da matriz, agendamento de leads, registro presencial, vinculacao autorizada, primeiro turno e conversao.",
         modules: ["Campanha", "Lead", "Registro", "Vinculacao", "Primeiro turno"],
         tone: "recruitment" as SectionTone,
+        href: "#localized-recruitment",
       },
       {
         code: "SOP 04",
@@ -630,6 +638,7 @@ const localizedSopContent = {
         scope: "Modelo com duas pessoas para receber dados da matriz, abrir o ponto, despachar, receber recrutamento e escalar problemas.",
         modules: ["Equipe 2 pessoas", "Dados HQ", "Rotina diaria", "Recrutamento", "Escalacao"],
         tone: "site" as SectionTone,
+        href: "#localized-site",
       },
       {
         code: "SOP 05",
@@ -638,6 +647,7 @@ const localizedSopContent = {
         scope: "A matriz verifica execucao, registros completos, evidencias disponiveis e excecoes fechadas.",
         modules: ["Tabela de acao", "Responsavel", "Frequencia", "Evidencia", "Fechamento"],
         tone: "inspection" as SectionTone,
+        href: "#localized-inspection",
       },
     ],
     data: {
@@ -735,7 +745,7 @@ const localizedSopContent = {
   counters: string[];
   sourceTitle: string;
   sourceDescription: string;
-  categories: Array<{ code: string; name: string; owner: string; scope: string; modules: string[]; tone: SectionTone }>;
+  categories: Array<{ code: string; name: string; owner: string; scope: string; modules: string[]; tone: SectionTone; href: string }>;
   data: { title: string; eyebrow: string; paragraph: string; flow: string[][]; video: string };
   rider: { title: string; description: string; timeline: string[][]; blocks: Array<[string, string[]]> };
   recruitment: { title: string; pipeline: string[][]; kpis: string[][] };
@@ -860,7 +870,7 @@ function LocalizedSopsPage({ language }: { language: Exclude<Language, "zh"> }) 
             {copy.categories.map((category) => {
               const colors = sectionTones[category.tone];
               return (
-                <div key={category.code} className={`rounded-xl border ${colors.border} ${colors.bg} p-4`}>
+                <Link key={category.code} href={category.href} className={`rounded-xl border ${colors.border} ${colors.bg} p-4 transition hover:-translate-y-0.5`}>
                   <div className={`text-xs font-black uppercase ${colors.accent}`}>{category.code}</div>
                   <h3 className="mt-2 text-lg font-black text-white">{category.name}</h3>
                   <p className="mt-1 text-xs font-black uppercase text-[#8b8ba3]">{category.owner}</p>
@@ -872,7 +882,7 @@ function LocalizedSopsPage({ language }: { language: Exclude<Language, "zh"> }) 
                       </span>
                     ))}
                   </div>
-                </div>
+                </Link>
               );
             })}
           </div>
