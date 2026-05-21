@@ -11,6 +11,7 @@ export const smokeChecks = [
   { path: "/rewards", text: "Reward System" },
   { path: "/finance", text: "Financial Ledger" },
   { path: "/crm", text: "CRM" },
+  { path: "/franchise", text: "Franchise Cooperation Plan" },
   { path: "/whatsapp", text: "WhatsApp" },
   { path: "/night-shift", text: "Night Shift Safety" },
   { path: "/analytics", text: "Network Analytics" },

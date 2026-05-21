@@ -468,7 +468,7 @@ const localizedSopContent = {
         scope: "Export previous-day data from the 99 back office, validate it, import it into PontoSys, reconcile finance and create exception queues.",
         modules: ["D-1 package", "Validation", "PontoSys import", "Reconciliation", "Exceptions"],
         tone: "data" as SectionTone,
-        href: "#localized-data",
+        href: "#data-foundation",
       },
       {
         code: "SOP 02",
@@ -477,7 +477,7 @@ const localizedSopContent = {
         scope: "Daily actions from arrival, pre-shift checks, peak-hour rules, night safety, clock-out and closeout.",
         modules: ["Shift length", "Check-in", "Peak rules", "Location pulse", "Closeout"],
         tone: "rider" as SectionTone,
-        href: "#localized-rider",
+        href: "#rider-daily",
       },
       {
         code: "SOP 03",
@@ -486,7 +486,7 @@ const localizedSopContent = {
         scope: "HQ campaigns, lead booking, offline registration, authorized binding, first shift and full-time conversion.",
         modules: ["Campaign", "Lead booking", "Registration", "Binding", "First shift"],
         tone: "recruitment" as SectionTone,
-        href: "#localized-recruitment",
+        href: "#recruitment",
       },
       {
         code: "SOP 04",
@@ -495,7 +495,7 @@ const localizedSopContent = {
         scope: "Two-person site model for receiving HQ data, opening the site, dispatching, recruitment handoff and escalation.",
         modules: ["2-person team", "HQ data", "Daily site flow", "Recruitment handoff", "Escalation"],
         tone: "site" as SectionTone,
-        href: "#localized-site",
+        href: "#site-ops",
       },
       {
         code: "SOP 05",
@@ -504,7 +504,7 @@ const localizedSopContent = {
         scope: "HQ inspection checks whether actions were executed, records are complete, evidence exists and exceptions are closed.",
         modules: ["Action table", "Owner", "Frequency", "Evidence", "Closeout"],
         tone: "inspection" as SectionTone,
-        href: "#localized-inspection",
+        href: "#inspection",
       },
     ],
     data: {
@@ -560,9 +560,44 @@ const localizedSopContent = {
         ["Full-time conversion", "50%-70%", "First-shift riders who enter a formal schedule."],
         ["7-day retention", "60%+", "Full-time riders still active after 7 days."],
       ],
+      actionsTitle: "Recruitment actions",
+      actions: [
+        ["Pre-launch", "HQ confirms city/Ponto gap, target headcount, asset version, signup entry, offline location, owner and daily capacity."],
+        ["Lead received", "First contact within SLA to confirm motorcycle, city, availability, show-up intent, and send offline address and required docs."],
+        ["Reception", "On-site sign-in, document verification, OL model briefing, shift length, pay cycle, Ponto discipline and peak rules."],
+        ["Registration", "Assist rider with 99 app registration/doc submission; platform approval is not guaranteed by the OL."],
+        ["Back-office binding", "HQ/authorized users process PontoSys binding, approving or rejecting within 96 hours and logging failure reasons."],
+        ["First-shift conversion", "Once bound, add to Ponto/Leader/group, complete training, schedule first shift and review full-time conversion."],
+      ],
+      ownersTitle: "Ownership matrix",
+      owners: [
+        ["HQ Marketing", "Recruitment announcements, marketing assets, campaign channels, signup entries, script compliance."],
+        ["HQ Operations", "Recruitment targets, city/Ponto gaps, HQ back-office binding, data validation, conversion tracking."],
+        ["Site Manager", "On-site reception, document verification, training schedule, Ponto capacity, first-shift onboarding."],
+        ["Leader", "First-shift follow-up, daily SOP training, early performance feedback, guidance for riders under observation."],
+      ],
+      decisionTitle: "Decision rules",
+      decisionRules: [
+        {
+          title: "Pass",
+          tone: "border-[#214632] bg-[#0f2118] text-[#b9f6cf]",
+          items: ["Complete documents", "Successful binding", "Completed training", "First shift AR >= 95%", "First shift OPH >= 1.5", "No major complaints/incidents"],
+        },
+        {
+          title: "Under Observation",
+          tone: "border-[#4a3a18] bg-[#20190d] text-[#ffe0a3]",
+          items: ["Slight tardiness", "Slightly low AR/OPH", "Unstable communication", "Unfamiliar with rules", "Needs a second training shift"],
+        },
+        {
+          title: "Rejected",
+          tone: "border-[#4a2028] bg-[#211016] text-[#ffc0cb]",
+          items: ["Forged documents", "Unsuitable vehicle", "Rejecting schedules", "Offline during peak", "Severe complaints", "Dangerous driving", "Refusing site management"],
+        },
+      ],
     },
     site: {
       title: "Site Operations SOP",
+      staffingTitle: "Site staffing model",
       staffing: [
         ["Site Manager", "Owns on-site order, rider communication, escalation, training execution and daily results."],
         ["Operations Assistant", "Owns check-in/out records, document checks, equipment checks, group messages, issue logging and PontoSys updates."],
@@ -574,16 +609,82 @@ const localizedSopContent = {
         ["During shift", "Live dispatch", "Manager handles field issues; assistant logs offline time, refusals, complaints, incidents and group communication."],
         ["Closeout", "Review and handoff", "Check online hours, OPH, AR, open incidents, complaints, payment disputes and next-day schedule needs."],
       ],
+      dataSupportTitle: "HQ data support",
+      hqDataSupport: [
+        ["D-1 data package", "HQ provides previous-day PontoSys exported data daily: online hours, shifts, orders, AR, CAA, finance and exceptions."],
+        ["Scheduling tips", "HQ gives daily schedule suggestions based on Ponto gaps, lunch/dinner peak needs, night risks and history capacity."],
+        ["Risk alerts", "HQ flags low TSH, low AR, high cancellations, complaints, accidents, payment gaps and consecutive absence."],
+        ["Recruitment gap", "HQ outputs site target count, candidate booking, show-up lists, binding status and first-shift conversion."],
+      ],
     },
     inspection: {
       title: "HQ Inspection SOP",
+      tableHeaders: ["Stage", "Execution Action", "Owner", "Cadence", "System Record", "Evidence"],
       actions: [
-        ["Site opening", "Daily before opening", "Two-person attendance, opening photo, daily task screenshot and group notice."],
-        ["Data briefing", "Daily", "D-1 exception list, responsible owner assignment and completion status."],
-        ["Recruitment arrival", "Each recruitment session", "Sign-in sheet, document completeness, registration screenshot and no-show follow-up."],
-        ["Binding", "Within 96h", "Binding status, failure reason, handling time and overdue list."],
-        ["Peak dispatch", "Lunch/dinner peak", "Online screenshot, exception record, refusal explanation and incident/complaint ticket."],
-        ["Closeout", "Daily before closing", "Daily closeout sheet, open issue list, next-day schedule need and HQ feedback."],
+        {
+          stage: "Site opening",
+          owner: "Site Manager",
+          cadence: "Daily before opening",
+          action: "Confirm attendance of two, daily targets, HQ data package, risk riders, booking show-up list, and pending issues.",
+          record: "PontoSys daily tasks / Site group opening message",
+          evidence: "Two-person sign-in, opening photo, daily task screenshot, group notification records.",
+        },
+        {
+          stage: "Data briefing",
+          owner: "Site Manager + HQ Ops",
+          cadence: "Daily morning briefing",
+          action: "Convert D-1 data to site actions: who submits documents, who starts first shift, who has risk tracking, who requires payment checks.",
+          record: "PontoSys exception queue / HQ data briefing",
+          evidence: "Morning briefing notes, exception lists, owner assignments, completion status.",
+        },
+        {
+          stage: "Recruitment arrival",
+          owner: "Operations Assistant",
+          cadence: "Each recruitment session",
+          action: "Candidate sign-in, document check, OL model briefing, assist with 99 app registration, mark show-up/no-show/pending documents.",
+          record: "Recruitment lead sheet / PontoSys status",
+          evidence: "Sign-in sheet, document completeness rate, registration completion screenshots, no-show recall logs.",
+        },
+        {
+          stage: "Back-office binding",
+          owner: "HQ Back-office",
+          cadence: "Within 96 hours",
+          action: "Process PontoSys binding/unbinding, record success, failure, incomplete documents, platform rejected, or duplicate binding.",
+          record: "HQ Back-office / PontoSys binding status",
+          evidence: "Binding status, failure reasons, processing time, overdue lists.",
+        },
+        {
+          stage: "Pre-shift check-in",
+          owner: "Operations Assistant",
+          cadence: "30 minutes before shift",
+          action: "Check rider arrival, equipment, vehicle, documents, phone battery, area and shift; mark and notify manager immediately if absent.",
+          record: "PontoSys check-in / Site check-in sheet",
+          evidence: "Check-in timestamp, equipment checklist, late rider list, backup rider assignments.",
+        },
+        {
+          stage: "Peak dispatch",
+          owner: "Site Manager",
+          cadence: "Lunch/dinner peak",
+          action: "Monitor peak online status, area, offline behavior, refusal explanations, low AR, low OPH, accidents, complaints; coordinate backups.",
+          record: "PontoSys realtime ops / Exception events",
+          evidence: "Online status screenshots, exception handling records, refusal explanations, incident/complaint tickets.",
+        },
+        {
+          stage: "Night shift safety",
+          owner: "Site Manager + Leader",
+          cadence: "Night shift location every 10m",
+          action: "Check night shift locations, abnormal stops, dangerous-area refusal explanations and security incident escalation.",
+          record: "Location logs / Incident",
+          evidence: "Location tracking, 10m records, refusal explanations, escalation logs.",
+        },
+        {
+          stage: "Closeout review",
+          owner: "Site Manager + Assistant",
+          cadence: "Daily before closing",
+          action: "Check online hours, OPH, AR, unresolved accidents, complaints, payment disputes, next-day gaps, and HQ support items.",
+          record: "PontoSys daily closeout / Site review",
+          evidence: "Daily closeout sheets, unresolved checklists, next-day scheduling needs, HQ feedback forms.",
+        },
       ],
       metrics: [
         ["Record completeness", "100%", "Every action has a PontoSys record, sign-in sheet, group record or back-office status."],
@@ -611,7 +712,7 @@ const localizedSopContent = {
         scope: "Exportar dados D-1 do back office 99, validar, importar no PontoSys, reconciliar financeiro e criar fila de excecoes.",
         modules: ["Pacote D-1", "Validacao", "Importacao PontoSys", "Reconciliacao", "Excecoes"],
         tone: "data" as SectionTone,
-        href: "#localized-data",
+        href: "#data-foundation",
       },
       {
         code: "SOP 02",
@@ -620,7 +721,7 @@ const localizedSopContent = {
         scope: "Acoes diarias desde chegada, checklist pre-turno, regras de pico, seguranca noturna, saida e fechamento.",
         modules: ["Carga horaria", "Check-in", "Picos", "Localizacao", "Fechamento"],
         tone: "rider" as SectionTone,
-        href: "#localized-rider",
+        href: "#rider-daily",
       },
       {
         code: "SOP 03",
@@ -629,7 +730,7 @@ const localizedSopContent = {
         scope: "Campanhas da matriz, agendamento de leads, registro presencial, vinculacao autorizada, primeiro turno e conversao.",
         modules: ["Campanha", "Lead", "Registro", "Vinculacao", "Primeiro turno"],
         tone: "recruitment" as SectionTone,
-        href: "#localized-recruitment",
+        href: "#recruitment",
       },
       {
         code: "SOP 04",
@@ -638,7 +739,7 @@ const localizedSopContent = {
         scope: "Modelo com duas pessoas para receber dados da matriz, abrir o ponto, despachar, receber recrutamento e escalar problemas.",
         modules: ["Equipe 2 pessoas", "Dados HQ", "Rotina diaria", "Recrutamento", "Escalacao"],
         tone: "site" as SectionTone,
-        href: "#localized-site",
+        href: "#site-ops",
       },
       {
         code: "SOP 05",
@@ -647,7 +748,7 @@ const localizedSopContent = {
         scope: "A matriz verifica execucao, registros completos, evidencias disponiveis e excecoes fechadas.",
         modules: ["Tabela de acao", "Responsavel", "Frequencia", "Evidencia", "Fechamento"],
         tone: "inspection" as SectionTone,
-        href: "#localized-inspection",
+        href: "#inspection",
       },
     ],
     data: {
@@ -703,9 +804,44 @@ const localizedSopContent = {
         ["Conversao full-time", "50%-70%", "Candidatos que entram em escala formal."],
         ["Retencao 7 dias", "60%+", "Full-time ainda ativo depois de 7 dias."],
       ],
+      actionsTitle: "Lista de ações de recrutamento",
+      actions: [
+        ["Pré-lançamento", "HQ confirma lacuna da cidade/Ponto, meta de headcount, versão do material, entrada de inscrição, ponto físico, responsável e capacidade diária."],
+        ["Lead recebido", "Primeiro contato dentro do SLA para confirmar moto, cidade, disponibilidade, intenção de comparecer e enviar endereço presencial e documentos necessários."],
+        ["Recepção", "Check-in presencial, verificação de documentos, briefing do modelo OL, carga horária, ciclo de pagamento, disciplina de Ponto e regras de pico."],
+        ["Registro", "Auxiliar o motoboy no cadastro do app 99 e envio de documentos; aprovação da plataforma não é garantida pelo OL."],
+        ["Vinculação back-office", "HQ/usuários autorizados processam vinculação no PontoSys, aprovando ou rejeitando em até 96 horas e registrando o motivo da falha."],
+        ["Conversão", "Após vinculado, adicionar ao Ponto/Leader/grupo, completar treinamento, agendar primeiro turno e avaliar conversão para fixo."],
+      ],
+      ownersTitle: "Matriz de responsáveis",
+      owners: [
+        ["Marketing Matriz", "Anúncios de recrutamento, materiais de marketing, canais de campanha, entradas de inscrição, conformidade de roteiros."],
+        ["Ops Matriz", "Metas de recrutamento, lacunas de cidade/Ponto, vinculação de back-office, validação de dados, rastreio de conversão."],
+        ["Gerente de Ponto", "Recepção presencial, verificação de documentos, cronograma de treinamento, capacidade do Ponto, integração do primeiro turno."],
+        ["Leader", "Acompanhamento do primeiro turno, treinamento diário de SOP, feedback inicial de desempenho, mentoria para motoboys em observação."],
+      ],
+      decisionTitle: "Regras de decisão (Aprovado / Em Observação / Reprovado)",
+      decisionRules: [
+        {
+          title: "Aprovado",
+          tone: "border-[#214632] bg-[#0f2118] text-[#b9f6cf]",
+          items: ["Documentos completos", "Vinculação com sucesso", "Treinamento concluído", "Primeiro turno AR >= 95%", "Primeiro turno OPH >= 1.5", "Sem reclamações/acidentes graves"],
+        },
+        {
+          title: "Em Observação",
+          tone: "border-[#4a3a18] bg-[#20190d] text-[#ffe0a3]",
+          items: ["Pequeno atraso", "AR/OPH ligeiramente baixos", "Comunicação instável", "Falta de familiaridade com regras", "Necessita de segundo turno de treinamento"],
+        },
+        {
+          title: "Reprovado",
+          tone: "border-[#4a2028] bg-[#211016] text-[#ffc0cb]",
+          items: ["Documentos falsos", "Veículo inadequado", "Rejeição de escalas", "Offline durante o pico", "Reclamações graves", "Direção perigosa", "Recusa de gestão local"],
+        },
+      ],
     },
     site: {
       title: "SOP de Operacao do Ponto",
+      staffingTitle: "Modelo de equipe do ponto",
       staffing: [
         ["Gerente de Ponto", "Responsavel por ordem local, comunicacao com motoboys, escalacao, treinamento e resultado diario."],
         ["Assistente Operacional", "Responsavel por check-in/out, documentos, equipamentos, mensagens de grupo, registro de problemas e atualizacao PontoSys."],
@@ -717,16 +853,82 @@ const localizedSopContent = {
         ["Durante turno", "Despacho ao vivo", "Gerente resolve campo; assistente registra offline, recusas, reclamacoes, incidentes e mensagens."],
         ["Fechamento", "Revisao e passagem", "Checar horas online, OPH, AR, incidentes, reclamacoes, pagamentos e necessidades do proximo dia."],
       ],
+      dataSupportTitle: "Suporte de dados da matriz",
+      hqDataSupport: [
+        ["Pacote de dados D-1", "A matriz fornece diariamente os dados exportados do PontoSys do dia anterior: horas online, turnos, pedidos, AR, CAA, financeiro e exceções."],
+        ["Sugestões de escala", "A matriz sugere escalas diárias com base em lacunas do Ponto, necessidades de pico de almoço/jantar, riscos noturnos e capacidade histórica."],
+        ["Alertas de risco", "A matriz sinaliza TSH baixo, AR baixa, cancelamentos altos, reclamações, acidentes, divergências de pagamento e ausência consecutiva."],
+        ["Lacunas de contratação", "A matriz define headcount do ponto, agendamentos, lista de presença, status de vinculação e conversão do primeiro turno."],
+      ],
     },
     inspection: {
       title: "SOP de Inspecao HQ",
+      tableHeaders: ["Etapa", "Ação de Execução", "Responsável", "Cadência", "Registro no Sistema", "Evidência de Inspeção"],
       actions: [
-        ["Abertura", "Diario antes de abrir", "Presenca das duas pessoas, foto de abertura, tarefa do dia e aviso no grupo."],
-        ["Briefing de dados", "Diario", "Lista de excecoes D-1, responsavel definido e status de conclusao."],
-        ["Chegada recrutamento", "Cada sessao", "Lista de presenca, documentos, print de registro e retorno aos ausentes."],
-        ["Vinculacao", "Ate 96h", "Status, motivo de falha, tempo de tratamento e lista vencida."],
-        ["Despacho de pico", "Almoco/jantar", "Print online, registro de excecao, justificativa de recusa e ticket de incidente/reclamacao."],
-        ["Fechamento", "Diario antes de fechar", "Resumo diario, pendencias, necessidade de escala e retorno HQ."],
+        {
+          stage: "Abertura do Ponto",
+          owner: "Gerente de Ponto",
+          cadence: "Diário antes de abrir",
+          action: "Confirmar presença dos dois, metas diárias, pacote de dados HQ, motoboys de risco, lista de comparecimento de agendados e pendências.",
+          record: "Tarefas diárias PontoSys / Mensagem de abertura do grupo de ponto",
+          evidence: "Check-in de duas pessoas, foto de abertura, print da tarefa diária, registros de notificação do grupo.",
+        },
+        {
+          stage: "Briefing de dados",
+          owner: "Gerente de Ponto + HQ Ops",
+          cadence: "Diário no briefing matinal",
+          action: "Converter dados D-1 em ações locais: quem fornece docs, quem inicia primeiro turno, quem tem alerta de risco ou repasse.",
+          record: "Fila de exceções PontoSys / Briefing de dados HQ",
+          evidence: "Notas do briefing matinal, lista de exceções, atribuições de responsáveis, status de conclusão.",
+        },
+        {
+          stage: "Chegada recrutamento",
+          owner: "Assistente Operacional",
+          cadence: "A cada sessão de recrutamento",
+          action: "Assinatura do candidato, checagem de documentos, briefing do modelo OL, apoiar no app 99, marcar comparecimento/ausência/pendências.",
+          record: "Planilha de leads de recrutamento / Status PontoSys",
+          evidence: "Lista de presença, taxa de documentos completos, prints de cadastro concluído, registros de retorno de ausentes.",
+        },
+        {
+          stage: "Vinculação back-office",
+          owner: "Back-office HQ",
+          cadence: "Dentro de 96 horas",
+          action: "Processar vinculação/desvinculação no PontoSys, registrar sucesso, falha, documentos incompletos, rejeição de plataforma ou duplicidade.",
+          record: "Back-office HQ / Status de vinculação PontoSys",
+          evidence: "Status de vinculação, motivos de falha, tempo de processamento, listas vencidas.",
+        },
+        {
+          stage: "Check-in pré-turno",
+          owner: "Assistente Operacional",
+          cadence: "30 minutos antes do turno",
+          action: "Verificar chegada do motoboy, equipamentos, moto, documentos, bateria, área e turno; marcar e notificar gerente imediatamente se ausente.",
+          record: "Check-in PontoSys / Planilha de check-in local",
+          evidence: "Timestamp de check-in, checklist de equipamentos, lista de motoboys atrasados, motoboys de reserva.",
+        },
+        {
+          stage: "Despacho de pico",
+          owner: "Gerente de Ponto",
+          cadence: "Pico de almoço/jantar",
+          action: "Monitorar status online no pico, área, offline, justificativas de recusa, AR baixa, OPH baixo, acidentes, reclamações; coordenar reservas.",
+          record: "Operação em tempo real PontoSys / Eventos de exceção",
+          evidence: "Prints de status online, registros de tratamento de exceções, justificativas de recusa, tickets de incidentes/reclamações.",
+        },
+        {
+          stage: "Segurança noturna",
+          owner: "Gerente de Ponto + Leader",
+          cadence: "Localização noturna a cada 10m",
+          action: "Verificar localizações noturnas, paradas anormais, justificativas de recusa em áreas perigosas e escalação de incidentes de segurança.",
+          record: "Logs de localização / Incident",
+          evidence: "Rastreamento de localização, registros de 10m, justificativas de recusa, logs de escalação.",
+        },
+        {
+          stage: "Fechamento diário",
+          owner: "Gerente de Ponto + Assistente",
+          cadence: "Diário antes de fechar",
+          action: "Checar horas online, OPH, AR, acidentes não resolvidos, reclamações, divergências de repasse, lacunas do dia seguinte e suporte da matriz.",
+          record: "Fechamento diário PontoSys / Revisão local",
+          evidence: "Planilhas de fechamento diário, checklists de pendências, necessidades de escala para o dia seguinte, formulários de feedback HQ.",
+        },
       ],
       metrics: [
         ["Completude de registro", "100%", "Cada acao tem PontoSys, lista, registro de grupo ou status back-office."],
@@ -748,10 +950,352 @@ const localizedSopContent = {
   categories: Array<{ code: string; name: string; owner: string; scope: string; modules: string[]; tone: SectionTone; href: string }>;
   data: { title: string; eyebrow: string; paragraph: string; flow: string[][]; video: string };
   rider: { title: string; description: string; timeline: string[][]; blocks: Array<[string, string[]]> };
-  recruitment: { title: string; pipeline: string[][]; kpis: string[][] };
-  site: { title: string; staffing: string[][]; timeline: string[][] };
-  inspection: { title: string; actions: string[][]; metrics: string[][] };
+  recruitment: {
+    title: string;
+    pipeline: string[][];
+    kpis: string[][];
+    actionsTitle: string;
+    actions: string[][];
+    ownersTitle: string;
+    owners: string[][];
+    decisionTitle: string;
+    decisionRules: Array<{ title: string; tone: string; items: string[] }>;
+  };
+  site: {
+    title: string;
+    staffingTitle: string;
+    staffing: string[][];
+    timeline: string[][];
+    dataSupportTitle: string;
+    hqDataSupport: string[][];
+  };
+  inspection: {
+    title: string;
+    tableHeaders: string[];
+    actions: Array<{ stage: string; owner: string; cadence: string; action: string; record: string; evidence: string }>;
+    metrics: string[][];
+  };
 }>;
+
+const fullTimeRiderSopEn = [
+  {
+    title: "1. Daily Work Schedule",
+    items: [
+      "Full-time riders are scheduled and evaluated based on three shift lengths: 7 hours, 8 hours, and 11 hours.",
+      "Weekly schedules support 6 days on + 1 day off, 7-day continuous operations, or site-based shifts, published by the site as needed.",
+      "Daily minimum online hours are based on a 7-hour baseline; 8h and 11h shifts are calculated separately per the system schedule.",
+      "Daily productivity target is OPH 1.5 (1.5 completed orders per online hour) as the baseline standard.",
+    ],
+  },
+  {
+    title: "2. Shifts & Check-in",
+    items: [
+      "Morning/afternoon shifts typically run 11:00-14:00 and 14:00-18:00; evening/night shifts typically run 18:00-22:00.",
+      "Riders must check in at their designated Ponto and arrive 30 minutes early to prepare.",
+      "Morning/afternoon shifts check in on-site; evening shifts check in online, with the site still verifying their status.",
+      "Leaders confirm the assigned area, shift targets, peak hours, and specific risks before starting.",
+    ],
+  },
+  {
+    title: "3. Pre-shift Inspection",
+    items: [
+      "Check vehicle, fuel, brakes, tires, lights, phone battery, network connectivity, and support mount.",
+      "Confirm thermal bag, rain gear, documents, helmet, and mandatory safety equipment are complete.",
+      "Report any anomalies in vehicle, documents, phone, or gear to the Leader before shift start and wait for instructions.",
+    ],
+  },
+  {
+    title: "4. On-duty Execution",
+    items: [
+      "Minimum Acceptance Rate (AR) is 95%; any order rejection must have a system-traceable reason.",
+      "No offline time is allowed during lunch and dinner peaks; riders must stay in their assigned areas and remain dispatchable.",
+      "Breaks and offline status must follow the rider system rules; any deviation must be pre-approved.",
+      "For merchant delays, unreachable customers, incorrect addresses, vehicle breakdowns, or platform errors, follow the platform flow first, then sync with the Leader.",
+    ],
+  },
+  {
+    title: "5. Night Shift Safety",
+    items: [
+      "The night shift system pings location every 10 minutes; sites and Leaders must monitor abnormal stops.",
+      "Riders may refuse orders in high-risk areas, abnormal addresses, or dangerous situations but must submit a refusal explanation.",
+      "In case of night accidents or safety incidents, prioritize rider safety first, contact emergency/police and the Leader, and create an Incident ticket.",
+    ],
+  },
+  {
+    title: "6. Clock-out & Review",
+    items: [
+      "Before ending the shift, a scheduled review is organized by the site to confirm online hours, completed orders, OPH, AR, anomalies, and next-day plans.",
+      "Morning/afternoon shifts complete check-out at the site; evening shifts complete check-out online.",
+      "Unresolved accidents, complaints, payment disputes, or severe anomalies must be handed over to the Leader or Site Manager before clocking out.",
+    ],
+  },
+];
+
+const fullTimeRiderSopPt = [
+  {
+    title: "1. Jornada Diária de Trabalho",
+    items: [
+      "Motoboys fixos são escalados e avaliados com base em três durações de turno: 7 horas, 8 horas e 11 horas.",
+      "A escala semanal suporta 6 dias de trabalho + 1 folga, operação contínua de 7 dias ou escala do ponto, publicada conforme necessidade.",
+      "As horas online mínimas diárias baseiam-se em 7h; turnos de 8h e 11h são calculados separadamente conforme a escala do sistema.",
+      "A meta diária de produtividade é OPH 1.5 (1.5 pedidos concluídos por hora online) como padrão básico.",
+    ],
+  },
+  {
+    title: "2. Turnos e Check-in",
+    items: [
+      "Turnos da manhã/tarde são das 11:00-14:00 e 14:00-18:00; turnos da noite/madrugada são das 18:00-22:00.",
+      "Os motoboys devem fazer check-in no Ponto designado e chegar 30 minutos antes para preparação.",
+      "Turnos da manhã/tarde registram no ponto físico; turnos da noite fazem check-in online, com o ponto confirmando a presença.",
+      "O Leader confirma a área de responsabilidade, metas do turno, regras de pico e riscos específicos antes do início.",
+    ],
+  },
+  {
+    title: "3. Inspeção Pré-turno",
+    items: [
+      "Verificar veículo, combustível, freios, pneus, luzes, bateria do celular, rede e suporte de guidão.",
+      "Confirmar se a bag térmica, capa de chuva, documentos, capacete e equipamentos de segurança obrigatórios estão completos.",
+      "Qualquer problema no veículo, documentos, celular ou equipamentos deve ser reportado ao Leader antes do turno para orientação.",
+    ],
+  },
+  {
+    title: "4. Execução em Serviço",
+    items: [
+      "Taxa de Aceitação (AR) mínima de 95%; recusas de pedidos devem ter justificativa rastreável no sistema.",
+      "Proibido ficar offline nos picos de almoço e jantar; os motoboys devem permanecer na área designada e disponíveis para despacho.",
+      "Pausas e status offline devem seguir as regras do sistema; qualquer exceção deve ser reportada.",
+      "Em atrasos de lojas, clientes ausentes, endereços errados, quebra de moto ou erros da plataforma, siga o fluxo da plataforma primeiro e depois avise o Leader.",
+    ],
+  },
+  {
+    title: "5. Segurança Noturna",
+    items: [
+      "O sistema noturno envia localização a cada 10 minutos; pontos e Leaders monitoram paradas anormais.",
+      "Motoboys podem recusar pedidos em áreas de risco, endereços anormais ou perigo pessoal, mas devem justificar a recusa.",
+      "Em acidentes noturnos ou ocorrências de segurança, priorize a integridade física, acione emergência/polícia, avise o Leader e crie um Incident no sistema.",
+    ],
+  },
+  {
+    title: "6. Fechamento e Revisão",
+    items: [
+      "Antes de deslogar, o ponto organiza uma revisão diária para confirmar horas online, pedidos, OPH, AR, exceções e o dia seguinte.",
+      "Turnos da manhã/tarde fazem check-out no ponto físico; turnos da noite fazem check-out online.",
+      "Acidentes não resolvidos, reclamações, disputas de repasse ou anomalias graves devem ser passados ao Leader ou Gerente antes da saída.",
+    ],
+  },
+];
+
+const recruitmentSopEn = [
+  {
+    title: "1. HQ Unified Recruitment",
+    items: [
+      "Recruitment needs are confirmed by HQ based on Ponto shift gaps, peak-hour gaps, night shift gaps, and the 7h/8h/11h full-time schedule.",
+      "HQ manages recruitment announcements, marketing assets, registration entries, and conversion campaigns; sites handle reception and training.",
+      "All external materials must use HQ-approved versions; sites are prohibited from promising earnings, subsidies, policies, or official 99 decisions.",
+      "External communications only highlight delivery opportunities and offline registration; do not mention the HQ back office, show dashboard screenshots, or allow riders to access internal systems.",
+    ],
+  },
+  {
+    title: "2. Lead Collection & Booking",
+    items: [
+      "Name, phone, city, Ponto preference, vehicle type, work intent, and scheduling availability are collected via HQ signup entry.",
+      "Initial verification confirms candidates have a motorcycle; under the OL model, bikes are not accepted unless officially stated by 99.",
+      "Arrange offline registration slots based on city and Ponto capacity; remind candidates to bring documents, phone, and vehicle papers.",
+      "Lead status is tracked as: Pending, Booked, No-show, Show-up, Pending Docs, Registering, Binding, In-training, Converted, or Rejected.",
+    ],
+  },
+  {
+    title: "3. Offline Registration & Document Check",
+    items: [
+      "Upon candidate arrival, staff explain the OL model, shift lengths, Ponto rules, AR 95%, OPH 1.5, and peak-hour rules.",
+      "Verify RG, CPF, email, phone, city, vehicle, and contact info; missing fields will block the binding process.",
+      "Candidates submit their registration details in the 99 app; the OL does not guarantee or control the platform's approval results.",
+      "OL provides delivery bags; proprietary branded bags may be used, maintaining a professional delivery image.",
+    ],
+  },
+  {
+    title: "4. HQ Back-office Binding",
+    items: [
+      "PontoSys is an internal operating system for importing 99 data and scheduling; it is not for recruitment, groups, or training.",
+      "Once 99 app registration and platform review are complete, authorized HQ staff process the OL binding, scheduling, and data check in PontoSys.",
+      "Binding/unbinding requests must be approved or rejected within 96 hours; otherwise, they automatically expire and get rejected.",
+      "After binding, HQ syncs with the site; the site then adds the rider to the Ponto, Leader, WhatsApp groups, and training list.",
+    ],
+  },
+  {
+    title: "5. Training & First Shift",
+    items: [
+      "Before the first shift, complete training on Ponto discipline, daily SOP, order flow, pickup/delivery standards, night safety, payment, and incidents.",
+      "Clarify payment rules: D+1 for order earnings, D+2 for guaranteed adjustments (if applicable); OL is responsible for explaining payments.",
+      "Train riders only on execution rules; do not show them back-office scheduling, PontoSys data, or HQ credentials.",
+      "Leaders follow up on the new rider's first shift, focusing on check-in, online status, acceptance, delivery, communication, location, and exceptions.",
+      "Review first shift online hours, OPH, AR, cancellations, complaints, accidents, tardiness, and suitability for the full-time schedule.",
+    ],
+  },
+  {
+    title: "6. Onboarding & Rejection",
+    items: [
+      "Approved riders enter the 7h/8h/11h full-time schedule, with Ponto, Leader, shift, and daily goals assigned.",
+      "Under-observation riders receive a second training shift, focusing on low AR, low OPH, tardiness, offline behavior, or communication issues.",
+      "Unsuitable candidates are excluded; if unlinking is needed, authorized HQ staff process unbinding in PontoSys and complete financial settlement.",
+      "All onboarding, observation, and rejection reasons must be logged in PontoSys for recruitment quality channel analysis.",
+    ],
+  },
+];
+
+const recruitmentSopPt = [
+  {
+    title: "1. Recrutamento Unificado da Matriz",
+    items: [
+      "As demandas de contratação são confirmadas pela matriz com base nas lacunas de turnos do Ponto, picos de almoço/jantar, turnos da noite e escala fixa de 7h/8h/11h.",
+      "A matriz gerencia os anúncios de vagas, materiais de marketing, links de inscrição e campanhas de conversão; o ponto cuida da recepção e treinamento.",
+      "Todos os materiais externos devem ser versões aprovadas pela matriz; o ponto não pode prometer ganhos, subsídios, políticas ou decisões oficiais da 99.",
+      "Comunicações externas destacam apenas as oportunidades de entrega e o registro presencial; não mencione o back-office HQ, não mostre prints do sistema nem permita que motoboys vejam sistemas internos.",
+    ],
+  },
+  {
+    title: "2. Coleta e Agendamento de Leads",
+    items: [
+      "Nome, telefone, cidade, Ponto preferido, tipo de veículo, intenção de trabalho e disponibilidade são coletados pelo link oficial da matriz.",
+      "Confirmação inicial de que o candidato possui moto; no modelo OL, bikes não são aceitas por padrão, exceto sob orientação oficial da 99.",
+      "Agendar horários presenciais com base na capacidade da cidade e do Ponto; lembrar os candidatos de trazer documentos, celular e dados do veículo.",
+      "O status do lead é rastreado como: Pendente, Agendado, Ausente, Compareceu, Docs Pendentes, Cadastrando, Vinculando, Em Treinamento, Convertido ou Reprovado.",
+    ],
+  },
+  {
+    title: "3. Registro Presencial e Checagem de Docs",
+    items: [
+      "Ao chegar ao ponto físico, a equipe explica o modelo OL, carga horária, regras de Ponto, AR de 95%, OPH de 1.5 e regras de pico.",
+      "Validar presencialmente nome, RG, CPF, e-mail, telefone, cidade, veículo e contatos; dados ausentes bloqueiam a vinculação.",
+      "O candidato envia o cadastro no app da 99 por conta própria; a OL não controla o resultado da aprovação da plataforma nem garante aprovação.",
+      "O fornecimento de bags é responsabilidade da OL; bags de marca própria podem ser usadas, desde que mantenham a imagem profissional de entrega.",
+    ],
+  },
+  {
+    title: "4. Vinculação Back-office HQ",
+    items: [
+      "O PontoSys é um sistema interno operacional para receber dados e escalas da 99; não deve ser usado para recrutamento, grupos ou treinamento.",
+      "Após o cadastro e aprovação na plataforma 99, a equipe autorizada da matriz processa a vinculação OL, escala e checagem de dados no PontoSys.",
+      "Solicitações de vinculação/desvinculação devem ser tratadas em até 96 horas; caso contrário, expiram automaticamente e são rejeitadas pelo sistema.",
+      "Confirmada a vinculação, a matriz avisa o ponto; o ponto adiciona o motoboy ao Ponto, Leader, grupos de WhatsApp e lista de treinamento.",
+    ],
+  },
+  {
+    title: "5. Treinamento e Primeiro Turno",
+    items: [
+      "Antes do primeiro turno, conclua o treinamento sobre disciplina do Ponto, SOP diário, fluxo de pedidos, padrões de coleta/entrega, segurança noturna, repasses e incidentes.",
+      "Esclarecer regras de repasse: ganhos de corridas sugeridos em D+1, complementos garantidos (se aplicável) em D+2; a OL é responsável por explicar repasses.",
+      "Treinar motoboys apenas nas regras de execução; não exiba escalas de back-office, dados do PontoSys ou credenciais da matriz.",
+      "O Leader acompanha o primeiro turno do novato, focando em check-in, status online, aceitação, entrega, comunicação, localização e exceções.",
+      "Avaliar horas online do primeiro turno, OPH, AR, cancelamentos, reclamações, acidentes, atrasos e aptidão para a escala fixa.",
+    ],
+  },
+  {
+    title: "6. Admissão e Desvinculação",
+    items: [
+      "Aprovados entram na escala fixa de 7h/8h/11h, com Ponto, Leader, turno e metas diárias definidas.",
+      "Em observação recebem um segundo turno de treinamento, focando em AR baixa, OPH baixo, atrasos, offline ou falhas de comunicação.",
+      "Reprovados não entram na escala fixa; se a desvinculação for necessária, a matriz processa no PontoSys e conclui o acerto financeiro.",
+      "Todos os motivos de admissão, observação e reprovação devem ser registrados no PontoSys para análise de qualidade do canal de atração.",
+    ],
+  },
+];
+
+const siteOpsSopEn = [
+  {
+    title: "1. Site Staffing Model",
+    items: [
+      "Each site is staffed by 2 people: Site Manager and Operations Assistant.",
+      "The Site Manager owns on-site management, rider communication, escalations, training execution, and daily site results.",
+      "The Operations Assistant owns check-in/out records, document validation, equipment checks, group messaging, issue logging, and system updates.",
+      "Both staff must share the same daily task list to prevent communication gaps.",
+    ],
+  },
+  {
+    title: "2. HQ Data Support",
+    items: [
+      "HQ provides daily previous-day 99 data, schedule suggestions, recruitment gaps, risk riders, and financial gaps.",
+      "Sites do not explain PontoSys or show the dashboard to riders; sites only execute operational tasks assigned by HQ.",
+      "HQ data must be converted into site actions: who submits documents, who starts their first shift, who has risk tracking, who requires payment checks.",
+      "If site staff find discrepancies between data and field reality, they report to HQ on the same day for data verification.",
+    ],
+  },
+  {
+    title: "3. Daily On-site Operations",
+    items: [
+      "Before opening, both staff confirm daily schedules, booking show-ups, first-shift riders, risk riders, open incidents, and key communications.",
+      "30 minutes before shift, organize check-in, equipment checks, area assignments, peak no-offline rules, and night safety location reminders.",
+      "During shift, monitor missing riders, low online hours, low AR, refusal explanations, dangerous areas, accidents, complaints, and payment disputes.",
+      "Before closing, organize a scheduled review to confirm online hours, OPH, AR, anomalies, unresolved issues, and next-day schedules.",
+    ],
+  },
+  {
+    title: "4. Recruitment & Training Handoff",
+    items: [
+      "Candidates brought by HQ marketing arrive at the site; the site handles offline reception, document verification, rules briefing, and registration support.",
+      "After binding success is synced by HQ, the site assigns the Ponto, Leader, WhatsApp groups, first-shift training, and first-shift review.",
+      "Performance of new riders must be logged: check-in, online status, OPH, AR, cancellations, complaints, accidents, and full-time conversion.",
+      "The site reports daily show-up rate, document completeness, first-shift completion, full-time conversion, and rejection reasons to HQ.",
+    ],
+  },
+  {
+    title: "5. Anomalies & Escalations",
+    items: [
+      "Accidents, personal safety, severe complaints, payment disputes, back-office data anomalies, and mass offline during peak must be escalated to HQ.",
+      "Sensitive data such as CPFs, addresses, and payment details must only be collected through private/authorized channels, never in groups.",
+      "Only publish HQ-approved operational, scheduling, payment, training, and safety messages in group chats.",
+      "Daily unresolved accidents, complaints, payment disputes, and data gaps must have formal handovers, never just verbal updates.",
+    ],
+  },
+];
+
+const siteOpsSopPt = [
+  {
+    title: "1. Equipe Local de Trabalho",
+    items: [
+      "Cada ponto é operado por 2 pessoas: Gerente de Ponto e Assistente Operacional.",
+      "O Gerente de Ponto é responsável pela gestão local, comunicação com motoboys, escalações, treinamentos e resultados diários do ponto.",
+      "O Assistente Operacional cuida dos registros de check-in/out, validação de documentos, checagem de bag/motos, mensagens de grupo, registro de problemas e atualizações do sistema.",
+      "Ambos devem compartilhar a mesma lista de tarefas diárias para evitar lacunas de informação.",
+    ],
+  },
+  {
+    title: "2. Suporte de Dados da Matriz",
+    items: [
+      "A matriz fornece diariamente os dados D-1 da 99, sugestões de escala, lacunas de contratação, motoboys de risco e divergências financeiras.",
+      "O ponto não explica o PontoSys diretamente nem mostra o dashboard aos motoboys; o ponto apenas executa as tarefas operacionais dadas pela matriz.",
+      "Dados da matriz devem se tornar ações locais: quem fornece docs, quem inicia primeiro turno, quem tem alerta de risco ou repasse pendente.",
+      "Se o ponto encontrar divergências entre os dados e a realidade de campo, deve reportar à matriz no mesmo dia para verificação dos dados.",
+    ],
+  },
+  {
+    title: "3. Rotina Diária de Operação",
+    items: [
+      "Antes de abrir, ambos confirmam as escalas do dia, agendamentos presenciais, novatos de primeiro turno, motoboys de risco, incidentes abertos e avisos.",
+      "30 minutos antes do turno, organizam check-in, checagem de bag/moto, confirmação de área, aviso de proibição de offline no pico e segurança noturna.",
+      "Durante o turno, monitoram faltas, baixa online, AR baixa, justificativas de recusa, áreas de risco, acidentes, reclamações e disputas de repasses.",
+      "Antes de fechar, organizam uma revisão diária para confirmar horas online, OPH, AR, anomalias, pendências e escalas do dia seguinte.",
+    ],
+  },
+  {
+    title: "4. Integração de Recrutamento e Treinamento",
+    items: [
+      "Candidatos vindos das campanhas da matriz chegam ao ponto; o ponto faz recepção presencial, checa documentos, explica regras e apoia no app.",
+      "Confirmada a vinculação pela matriz, o ponto define Ponto, Leader, grupos de WhatsApp, treinamento pré-turno e revisão do primeiro turno.",
+      "O desempenho do novato deve ser registrado: check-in, online, OPH, AR, cancelamentos, reclamações, acidentes e conversão para fixo.",
+      "O ponto reporta diariamente à matriz a taxa de comparecimento, completude de documentos, conclusão de primeiro turno, conversão e motivos de rejeição.",
+    ],
+  },
+  {
+    title: "5. Anomalias e Escalações",
+    items: [
+      "Acidentes, segurança pessoal, reclamações graves, disputas de repasses, erros de dados e offline massivo no pico devem ser escalados imediatamente à matriz.",
+      "Dados sensíveis como CPF, endereços e comprovantes bancários devem ser coletados apenas no privado/canais autorizados, nunca em grupos.",
+      "Publique em grupos apenas informações operacionais, escalas, repasses, treinamentos e segurança validados pela matriz.",
+      "Pendências diárias de acidentes, reclamações, disputas financeiras e erros de dados devem ter passagens formais registradas, nunca apenas conversas verbais.",
+    ],
+  },
+];
 
 function SopBlock({ title, items }: { title: string; items: string[] }) {
   return (
@@ -843,6 +1387,11 @@ function SopColumn({
 
 function LocalizedSopsPage({ language }: { language: Exclude<Language, "zh"> }) {
   const copy = localizedSopContent[language];
+  const isEn = language === "en";
+
+  const riderSopData = isEn ? fullTimeRiderSopEn : fullTimeRiderSopPt;
+  const recruitmentSopData = isEn ? recruitmentSopEn : recruitmentSopPt;
+  const siteOpsSopData = isEn ? siteOpsSopEn : siteOpsSopPt;
 
   return (
     <AppShell>
@@ -888,7 +1437,7 @@ function LocalizedSopsPage({ language }: { language: Exclude<Language, "zh"> }) 
           </div>
         </section>
 
-        <SectionShell id="localized-data" title={copy.data.title} eyebrow={copy.data.eyebrow} tone="data">
+        <SectionShell id="data-foundation" title={copy.data.title} eyebrow={copy.data.eyebrow} tone="data">
           <div className="grid gap-4 lg:grid-cols-[1.15fr_0.85fr]">
             <div className="rounded-lg border border-[#1f5f78] bg-[#081d28] p-5">
               <div className="mb-4 flex flex-wrap items-center gap-2">
@@ -899,7 +1448,14 @@ function LocalizedSopsPage({ language }: { language: Exclude<Language, "zh"> }) 
               <p className="text-sm leading-6 text-[#c4c4d4]">{copy.data.paragraph}</p>
               <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
                 {copy.data.flow.map(([title, detail], index) => (
-                  <SmallCard key={title} title={title} detail={detail} meta={`Step ${index + 1}`} tone="data" />
+                  <div key={title} className="rounded-lg border border-[#1f5f78] bg-[#0b2430] p-4">
+                    <div className="mb-2 flex items-center gap-2 text-xs font-black uppercase text-[#38bdf8]">
+                      <Database size={15} />
+                      Step {index + 1}
+                    </div>
+                    <h3 className="font-black text-white">{title}</h3>
+                    <p className="mt-2 text-sm leading-6 text-[#a9a9bd]">{detail}</p>
+                  </div>
                 ))}
               </div>
             </div>
@@ -917,8 +1473,18 @@ function LocalizedSopsPage({ language }: { language: Exclude<Language, "zh"> }) 
           </div>
         </SectionShell>
 
-        <SectionShell id="localized-rider" title={copy.rider.title} eyebrow="Daily rider SOP" tone="rider">
-          <p className="mb-4 text-sm leading-6 text-[#c4c4d4]">{copy.rider.description}</p>
+        <SectionShell id="rider-daily" title={copy.rider.title} eyebrow="Daily rider SOP" tone="rider">
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <p className="text-sm leading-6 text-[#c4c4d4]">{copy.rider.description}</p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <Badge value="AR 95%" />
+              <Badge value="OPH 1.5" />
+              <Badge value="Ponto T-30" />
+              <Badge value="Location 10min" />
+            </div>
+          </div>
           <div className="grid gap-3 lg:grid-cols-6">
             {copy.rider.timeline.map(([time, title, detail]) => (
               <SmallCard key={`${time}-${title}`} title={title} detail={detail} meta={time} tone="rider" />
@@ -931,50 +1497,292 @@ function LocalizedSopsPage({ language }: { language: Exclude<Language, "zh"> }) 
           </div>
         </SectionShell>
 
-        <SectionShell id="localized-recruitment" title={copy.recruitment.title} eyebrow="Recruitment funnel" tone="recruitment">
+        <section id="recruitment" className="mt-5 rounded-xl border border-[#5542a0] bg-[#151129] p-5 shadow-[0_16px_40px_rgba(0,0,0,0.18)]">
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <div className="text-xs font-black uppercase text-[#8b5cf6]">Recruitment funnel</div>
+              <h2 className="text-2xl font-black text-white">{copy.recruitment.title}</h2>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <Badge value="HQ Campaign" />
+              <Badge value="Offline Registration" />
+              <Badge value="Backoffice Only" />
+              <Badge value="96h Binding SLA" />
+            </div>
+          </div>
           <div className="grid gap-3 lg:grid-cols-6">
             {copy.recruitment.pipeline.map(([stage, title, detail]) => (
-              <SmallCard key={`${stage}-${title}`} title={title} detail={detail} meta={stage} tone="recruitment" />
-            ))}
-          </div>
-          <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-            {copy.recruitment.kpis.map(([name, target, detail]) => (
-              <div key={name} className="rounded-lg border border-[#5542a0] bg-[#1d1738] p-4">
-                <div className="flex items-start justify-between gap-3">
-                  <h3 className="font-black text-white">{name}</h3>
-                  <span className="rounded border border-[#06d6a0]/30 bg-[#06251a] px-2 py-1 text-xs font-black text-[#8ff5c2]">{target}</span>
-                </div>
+              <div key={`${stage}-${title}`} className="rounded-lg border border-[#5542a0] bg-[#1d1738] p-4">
+                <div className="text-xs font-black uppercase text-[#a78bfa]">{stage}</div>
+                <h3 className="mt-2 font-black text-white">{title}</h3>
                 <p className="mt-2 text-sm leading-6 text-[#a9a9bd]">{detail}</p>
               </div>
             ))}
           </div>
-        </SectionShell>
+        </section>
 
-        <SectionShell id="localized-site" title={copy.site.title} eyebrow="Site execution" tone="site">
-          <div className="grid gap-3 md:grid-cols-2">
-            {copy.site.staffing.map(([title, detail]) => (
-              <SmallCard key={title} title={title} detail={detail} tone="site" />
-            ))}
+        <section className="mt-5 grid gap-4 xl:grid-cols-[1fr_0.8fr]">
+          <div className="rounded-xl border border-[#5542a0] bg-[#151129] p-5">
+            <div className="mb-4">
+              <div className="text-xs font-black uppercase text-[#8b5cf6]">Recruitment actions</div>
+              <h2 className="text-2xl font-black text-white">{copy.recruitment.actionsTitle}</h2>
+            </div>
+            <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+              {copy.recruitment.actions.map(([stage, detail]) => (
+                <div key={stage} className="rounded-lg border border-[#5542a0] bg-[#1d1738] p-4">
+                  <div className="text-xs font-black uppercase text-[#a78bfa]">{stage}</div>
+                  <p className="mt-2 text-sm leading-6 text-[#c4c4d4]">{detail}</p>
+                </div>
+              ))}
+            </div>
           </div>
-          <div className="mt-4 grid gap-3 lg:grid-cols-5">
-            {copy.site.timeline.map(([time, title, detail]) => (
-              <SmallCard key={`${time}-${title}`} title={title} detail={detail} meta={time} tone="site" />
-            ))}
-          </div>
-        </SectionShell>
 
-        <SectionShell id="localized-inspection" title={copy.inspection.title} eyebrow="HQ inspection" tone="inspection">
-          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-            {copy.inspection.actions.map(([stage, cadence, detail]) => (
-              <SmallCard key={`${stage}-${cadence}`} title={stage} detail={detail} meta={cadence} tone="inspection" />
+          <div className="rounded-xl border border-[#5542a0] bg-[#151129] p-5">
+            <div className="mb-4">
+              <div className="text-xs font-black uppercase text-[#8b5cf6]">Ownership</div>
+              <h2 className="text-2xl font-black text-white">{copy.recruitment.ownersTitle}</h2>
+            </div>
+            <div className="space-y-3">
+              {copy.recruitment.owners.map(([owner, detail]) => (
+                <div key={owner} className="rounded-lg border border-[#5542a0] bg-[#1d1738] p-4">
+                  <h3 className="font-black text-white">{owner}</h3>
+                  <p className="mt-2 text-sm leading-6 text-[#a9a9bd]">{detail}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+        </section>
+
+        <section className="mt-5 grid gap-4 xl:grid-cols-[1fr_0.9fr]">
+          <div className="rounded-xl border border-[#5542a0] bg-[#151129] p-5">
+            <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <div className="text-xs font-black uppercase text-[#8b5cf6]">Recruitment KPI</div>
+                <h2 className="text-2xl font-black text-white">
+                  {isEn ? "Recruitment KPIs" : "KPIs de Recrutamento"}
+                </h2>
+              </div>
+              <Badge value="Funnel quality" />
+            </div>
+            <div className="grid gap-3 md:grid-cols-2">
+              {copy.recruitment.kpis.map(([name, target, detail]) => (
+                <div key={name} className="rounded-lg border border-[#5542a0] bg-[#1d1738] p-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <h3 className="font-black text-white">{name}</h3>
+                    <span className="rounded border border-[#06d6a0]/30 bg-[#06251a] px-2 py-1 text-xs font-black text-[#8ff5c2]">{target}</span>
+                  </div>
+                  <p className="mt-2 text-sm leading-6 text-[#a9a9bd]">{detail}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="rounded-xl border border-[#5542a0] bg-[#151129] p-5">
+            <div className="mb-4">
+              <div className="text-xs font-black uppercase text-[#8b5cf6]">Decision rules</div>
+              <h2 className="text-2xl font-black text-white">{copy.recruitment.decisionTitle}</h2>
+            </div>
+            <div className="space-y-3">
+              {copy.recruitment.decisionRules.map((rule) => (
+                <div key={rule.title} className={`rounded-lg border p-4 ${rule.tone}`}>
+                  <h3 className="font-black">{rule.title}</h3>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    {rule.items.map((item) => (
+                      <span key={item} className="rounded border border-current/20 px-2 py-1 text-xs font-black">
+                        {item}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </section>
+
+        <section id="site-ops" className="mt-5 grid gap-4 xl:grid-cols-[0.8fr_1fr]">
+          <div className="rounded-xl border border-[#7a4d10] bg-[#211707] p-5">
+            <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <div className="text-xs font-black uppercase text-[#f59e0b]">Site staffing</div>
+                <h2 className="text-2xl font-black text-white">{copy.site.staffingTitle}</h2>
+              </div>
+              <Badge value="2 people / Ponto" />
+            </div>
+            <div className="space-y-3">
+              {copy.site.staffing.map(([role, detail]) => (
+                <div key={role} className="rounded-lg border border-[#7a4d10] bg-[#2c1f0b] p-4">
+                  <h3 className="font-black text-white">{role}</h3>
+                  <p className="mt-2 text-sm leading-6 text-[#a9a9bd]">{detail}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="rounded-xl border border-[#7a4d10] bg-[#211707] p-5">
+            <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <div className="text-xs font-black uppercase text-[#f59e0b]">HQ data support</div>
+                <h2 className="text-2xl font-black text-white">{copy.site.dataSupportTitle}</h2>
+              </div>
+              <Badge value="D-1 99 Data" />
+            </div>
+            <div className="grid gap-3 md:grid-cols-2">
+              {copy.site.hqDataSupport.map(([name, detail]) => (
+                <div key={name} className="rounded-lg border border-[#7a4d10] bg-[#2c1f0b] p-4">
+                  <h3 className="font-black text-white">{name}</h3>
+                  <p className="mt-2 text-sm leading-6 text-[#a9a9bd]">{detail}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+        </section>
+
+        <section className="mt-5 rounded-xl border border-[#7a4d10] bg-[#211707] p-5">
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <div className="text-xs font-black uppercase text-[#f59e0b]">Site daily flow</div>
+              <h2 className="text-2xl font-black text-white">{copy.site.title}</h2>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <Badge value="Open" />
+              <Badge value="Briefing" />
+              <Badge value="Dispatch" />
+              <Badge value="Closeout" />
+            </div>
+          </div>
+          <div className="grid gap-3 lg:grid-cols-5">
+            {copy.site.timeline.map(([stage, title, detail]) => (
+              <div key={`${stage}-${title}`} className="rounded-lg border border-[#7a4d10] bg-[#2c1f0b] p-4">
+                <div className="text-xs font-black uppercase text-[#f59e0b]">{stage}</div>
+                <h3 className="mt-2 font-black text-white">{title}</h3>
+                <p className="mt-2 text-sm leading-6 text-[#a9a9bd]">{detail}</p>
+              </div>
             ))}
           </div>
-          <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-            {copy.inspection.metrics.map(([name, target, detail]) => (
-              <SmallCard key={name} title={`${name}: ${target}`} detail={detail} tone="inspection" />
-            ))}
+        </section>
+
+        <section id="inspection" className="mt-5 rounded-xl border border-[#74303c] bg-[#240d14] p-5">
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <div className="text-xs font-black uppercase text-[#fb7185]">HQ inspection actions</div>
+              <h2 className="text-2xl font-black text-white">{copy.inspection.title}</h2>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <Badge value="Action" />
+              <Badge value="Owner" />
+              <Badge value="Evidence" />
+            </div>
           </div>
-        </SectionShell>
+          <div className="overflow-x-auto">
+            <table className="min-w-[1120px] w-full border-collapse text-left text-sm">
+              <thead>
+                <tr className="border-b border-[#74303c] text-xs uppercase text-[#ffc1cb]">
+                  {copy.inspection.tableHeaders.map((header) => (
+                    <th key={header} className="px-3 py-3">{header}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {copy.inspection.actions.map((item) => (
+                  <tr key={item.stage} className="border-b border-[#3b1821] align-top">
+                    <td className="px-3 py-4 font-black text-white">{item.stage}</td>
+                    <td className="px-3 py-4 leading-6 text-[#c4c4d4]">{item.action}</td>
+                    <td className="px-3 py-4 text-[#c4c4d4]">{item.owner}</td>
+                    <td className="px-3 py-4 text-[#a9a9bd]">{item.cadence}</td>
+                    <td className="px-3 py-4 text-[#a9a9bd]">{item.record}</td>
+                    <td className="px-3 py-4 leading-6 text-[#a9a9bd]">{item.evidence}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section className="mt-5 grid gap-4 md:grid-cols-4">
+          {copy.inspection.metrics.map(([name, target, detail]) => (
+            <div key={name} className="rounded-lg border border-[#74303c] bg-[#31111b] p-4">
+              <div className="text-xs font-black uppercase text-[#fb7185]">{name}</div>
+              <div className="mt-2 text-3xl font-black text-white">{target}</div>
+              <p className="mt-2 text-sm leading-6 text-[#a9a9bd]">{detail}</p>
+            </div>
+          ))}
+        </section>
+
+        <section className="mt-5 grid gap-4 xl:grid-cols-3">
+          <SopColumn title={isEn ? "Full-time Rider SOP" : "SOP do Motoboy Fixo"} eyebrow="Full-time rider" tone="rider">
+            {riderSopData.map((block) => (
+              <SopBlock key={block.title} title={block.title} items={block.items} />
+            ))}
+          </SopColumn>
+
+          <SopColumn title={isEn ? "Rider Recruitment SOP" : "SOP de Recrutamento"} eyebrow="Recruitment" tone="recruitment">
+            {recruitmentSopData.map((block) => (
+              <SopBlock key={block.title} title={block.title} items={block.items} />
+            ))}
+          </SopColumn>
+
+          <SopColumn title={isEn ? "Site Operations SOP" : "SOP de Operação do Ponto"} eyebrow="Site operations" tone="site">
+            {siteOpsSopData.map((block) => (
+              <SopBlock key={block.title} title={block.title} items={block.items} />
+            ))}
+          </SopColumn>
+        </section>
+
+        <section className="mt-5 grid gap-4 lg:grid-cols-[0.9fr_1.1fr]">
+          <div className="panel p-5">
+            <div className="mb-3 flex items-center gap-2 text-sm font-black text-white">
+              <Clock3 size={18} />
+              Daily cadence
+            </div>
+            <div className="space-y-3 text-sm leading-6 text-[#c4c4d4]">
+              {isEn ? (
+                <>
+                  <p><strong className="text-white">08:00</strong> Import D-1 99 Data, generate exceptions and payment gaps.</p>
+                  <p><strong className="text-white">10:00</strong> Ponto/Leader morning briefing to confirm recruitment gaps, scheduling, and risk riders.</p>
+                  <p><strong className="text-white">14:00</strong> Check PontoSys scheduling plan, shift registration, and rider group.</p>
+                  <p><strong className="text-white">18:00</strong> Evening peak/night shift online check, handle incidents and complaints.</p>
+                  <p><strong className="text-white">22:00</strong> Review TSH, AR, orders, delay, payment, and next-day scheduling.</p>
+                </>
+              ) : (
+                <>
+                  <p><strong className="text-white">08:00</strong> Importar dados D-1 da 99, gerar exceções e divergências de pagamento.</p>
+                  <p><strong className="text-white">10:00</strong> Briefing matinal Ponto/Leader, confirmar lacunas de contratação, escala e motoboys de risco.</p>
+                  <p><strong className="text-white">14:00</strong> Verificar plano de escala no PontoSys, cadastro de turnos e grupo de motoboys.</p>
+                  <p><strong className="text-white">18:00</strong> Verificação online no pico da noite/turno noturno, tratar incidentes e reclamações.</p>
+                  <p><strong className="text-white">22:00</strong> Revisar TSH, AR, pedidos, atrasos, pagamentos e escala do dia seguinte.</p>
+                </>
+              )}
+            </div>
+          </div>
+
+          <div className="panel p-5">
+            <div className="mb-3 flex items-center gap-2 text-sm font-black text-white">
+              <ShieldCheck size={18} />
+              Red lines
+            </div>
+            <div className="grid gap-3 md:grid-cols-2">
+              {(isEn ? [
+                "Do not claim to be 99Food or publish official policies on behalf of 99.",
+                "Do not collect sensitive info like CPF, address, or financial disputes in group chats.",
+                "Do not allow OL riders to execute OL shifts in bike mode.",
+                "Do not exceed 96 hours to process binding/unbinding applications.",
+                "Do not dump payment disputes directly to 99 support.",
+                "Do not give up the final reply to Reclame Aqui complaints."
+              ] : [
+                "Não se autodenomine 99Food ou publique políticas oficiais em nome da 99.",
+                "Não colete informações confidenciais como CPF, endereço ou disputas financeiras em grupos.",
+                "Não permita que motoboys OL executem turnos OL no modo bike.",
+                "Não exceda 96 horas para processar solicitações de vinculação/desvinculação.",
+                "Não repasse disputas de pagamento diretamente para o suporte da 99.",
+                "Não abra mão da resposta final às reclamações do Reclame Aqui."
+              ]).map((item) => (
+                <div key={item} className="rounded-lg border border-[#3c2430] bg-[#1a1018] p-3 text-sm leading-6 text-[#f0c6cf]">
+                  {item}
+                </div>
+              ))}
+            </div>
+          </div>
+        </section>
 
         <section className="mt-5 rounded-xl border border-[#46556b] bg-[#111827] p-5">
           <div className="mb-4">
