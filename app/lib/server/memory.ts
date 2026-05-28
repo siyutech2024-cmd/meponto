@@ -1,6 +1,18 @@
 import { incidents, leaders, ledgerEntries, pontos, rewards, riders, type Incident, type LedgerEntry, type Rider } from "../data";
 import { seedNotificationsFromIncidents, type NotificationItem } from "../notifications";
 import { crmPartners, type CrmPartner } from "../crm";
+import {
+  marketplaceOrders,
+  marketplaceProducts,
+  partnerServiceRecords,
+  partnerPointsLedgerEntries,
+  pointsLedgerEntries,
+  type MarketplaceOrder,
+  type MarketplaceProduct,
+  type PartnerServiceRecord,
+  type PartnerPointsLedgerEntry,
+  type PointsLedgerEntry,
+} from "../points";
 import { systemSettings, type SystemSetting } from "../settings";
 import { whatsappGroups, type WhatsappGroup } from "../whatsapp";
 
@@ -31,6 +43,11 @@ const globalState = globalThis as typeof globalThis & {
     ledgerEntries: LedgerEntry[];
     notifications: NotificationItem[];
     crmPartners: CrmPartner[];
+    pointsLedgerEntries: PointsLedgerEntry[];
+    partnerServiceRecords: PartnerServiceRecord[];
+    partnerPointsLedgerEntries: PartnerPointsLedgerEntry[];
+    marketplaceProducts: MarketplaceProduct[];
+    marketplaceOrders: MarketplaceOrder[];
     whatsappGroups: WhatsappGroup[];
     systemSettings: SystemSetting[];
     auditEntries: ServerAuditEntry[];
@@ -48,6 +65,11 @@ export const memory =
     ledgerEntries: [...ledgerEntries],
     notifications: seedNotificationsFromIncidents(incidents),
     crmPartners: [...crmPartners],
+    pointsLedgerEntries: [...pointsLedgerEntries],
+    partnerServiceRecords: [...partnerServiceRecords],
+    partnerPointsLedgerEntries: [...partnerPointsLedgerEntries],
+    marketplaceProducts: [...marketplaceProducts],
+    marketplaceOrders: [...marketplaceOrders],
     whatsappGroups: [...whatsappGroups],
     systemSettings: [...systemSettings],
     auditEntries: [],
@@ -56,6 +78,11 @@ export const memory =
 memory.ledgerEntries ??= [...ledgerEntries];
 memory.notifications ??= seedNotificationsFromIncidents(memory.incidents);
 memory.crmPartners ??= [...crmPartners];
+memory.pointsLedgerEntries ??= [...pointsLedgerEntries];
+memory.partnerServiceRecords ??= [...partnerServiceRecords];
+memory.partnerPointsLedgerEntries ??= [...partnerPointsLedgerEntries];
+memory.marketplaceProducts ??= [...marketplaceProducts];
+memory.marketplaceOrders ??= [...marketplaceOrders];
 memory.whatsappGroups ??= [...whatsappGroups];
 memory.systemSettings ??= [...systemSettings];
 memory.auditEntries ??= [];

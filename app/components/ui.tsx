@@ -41,6 +41,7 @@ import { useVentoStore } from "../lib/store";
 const navItems: Array<{ href: string; labelKey: TranslationKey; icon: React.ComponentType<{ size?: number }> }> = [
   { href: "/dashboard", labelKey: "navDashboard", icon: LayoutDashboard },
   { href: "/riders", labelKey: "navRiders", icon: Bike },
+  { href: "/rider-app", labelKey: "navRiderApp", icon: Bike },
   { href: "/pontos", labelKey: "navPontos", icon: MapPinned },
   { href: "/territory", labelKey: "navTerritory", icon: MapPinned },
   { href: "/leaders", labelKey: "navLeaders", icon: Users },
@@ -48,6 +49,9 @@ const navItems: Array<{ href: string; labelKey: TranslationKey; icon: React.Comp
   { href: "/whatsapp", labelKey: "navWhatsapp", icon: MessageCircle },
   { href: "/incidents", labelKey: "navIncidents", icon: ShieldAlert },
   { href: "/rewards", labelKey: "navRewards", icon: CircleDollarSign },
+  { href: "/points-economy", labelKey: "navPointsEconomy", icon: CircleDollarSign },
+  { href: "/marketplace", labelKey: "navMarketplace", icon: Store },
+  { href: "/partner-points", labelKey: "navPartnerPoints", icon: Handshake },
   { href: "/finance", labelKey: "navFinance", icon: CircleDollarSign },
   { href: "/crm", labelKey: "navCrm", icon: Handshake },
   { href: "/franchise", labelKey: "navFranchise", icon: Store },

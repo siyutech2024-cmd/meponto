@@ -8,6 +8,9 @@ export type Permission =
   | "create_incidents"
   | "close_incidents"
   | "manage_rewards"
+  | "manage_points"
+  | "manage_marketplace"
+  | "manage_partner_points"
   | "view_finance"
   | "view_analytics"
   | "view_audit"
@@ -23,6 +26,9 @@ export const permissionLabels: Record<Permission, string> = {
   create_incidents: "Create incidents",
   close_incidents: "Close incidents",
   manage_rewards: "Manage rewards",
+  manage_points: "Manage points",
+  manage_marketplace: "Manage marketplace",
+  manage_partner_points: "Manage partner points",
   view_finance: "View finance",
   view_analytics: "View analytics",
   view_audit: "View audit",
@@ -38,6 +44,9 @@ export const rolePermissions: Record<Role, Permission[]> = {
     "create_incidents",
     "close_incidents",
     "manage_rewards",
+    "manage_points",
+    "manage_marketplace",
+    "manage_partner_points",
     "view_finance",
     "view_analytics",
     "view_audit",
@@ -51,12 +60,15 @@ export const rolePermissions: Record<Role, Permission[]> = {
     "create_incidents",
     "close_incidents",
     "manage_rewards",
+    "manage_points",
+    "manage_marketplace",
+    "manage_partner_points",
     "view_analytics",
     "view_audit",
   ],
-  "Ponto Manager": ["view_dashboard", "manage_riders", "create_incidents", "close_incidents", "manage_rewards", "view_analytics"],
+  "Ponto Manager": ["view_dashboard", "manage_riders", "create_incidents", "close_incidents", "manage_rewards", "manage_partner_points", "view_analytics"],
   Leader: ["view_dashboard", "create_incidents", "view_analytics"],
-  Finance: ["view_dashboard", "manage_rewards", "view_finance", "view_analytics", "view_audit"],
+  Finance: ["view_dashboard", "manage_rewards", "manage_points", "manage_marketplace", "view_finance", "view_analytics", "view_audit"],
   Support: ["view_dashboard", "create_incidents", "close_incidents", "view_analytics", "view_audit"],
 };
 
