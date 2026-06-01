@@ -8,6 +8,7 @@ import {
   Bell,
   Bike,
   CheckCheck,
+  ChevronDown,
   ChevronRight,
   CircleDollarSign,
   ClipboardList,
@@ -39,24 +40,32 @@ import { getNotificationStatus } from "../lib/notifications";
 import { can, roles, type Permission, type Role } from "../lib/rbac";
 import { useVentoStore } from "../lib/store";
 
-const navItems: Array<{ href: string; labelKey: TranslationKey; icon: React.ComponentType<{ size?: number }> }> = [
+type NavItem = { href: string; labelKey: TranslationKey; icon: React.ComponentType<{ size?: number }> };
+
+const primaryNavItems: NavItem[] = [
   { href: "/dashboard", labelKey: "navDashboard", icon: LayoutDashboard },
   { href: "/riders", labelKey: "navRiders", icon: Bike },
   { href: "/pontos", labelKey: "navPontos", icon: MapPinned },
   { href: "/territory", labelKey: "navTerritory", icon: MapPinned },
   { href: "/leaders", labelKey: "navLeaders", icon: Users },
-  { href: "/mobile", labelKey: "navMobile", icon: Smartphone },
-  { href: "/whatsapp", labelKey: "navWhatsapp", icon: MessageCircle },
   { href: "/incidents", labelKey: "navIncidents", icon: ShieldAlert },
-  { href: "/rewards", labelKey: "navRewards", icon: CircleDollarSign },
   { href: "/finance", labelKey: "navFinance", icon: CircleDollarSign },
+];
+
+const operationsNavItems: NavItem[] = [
+  { href: "/whatsapp", labelKey: "navWhatsapp", icon: MessageCircle },
+  { href: "/mobile", labelKey: "navMobile", icon: Smartphone },
+  { href: "/night-shift", labelKey: "navNightShift", icon: Moon },
+  { href: "/rewards", labelKey: "navRewards", icon: CircleDollarSign },
   { href: "/crm", labelKey: "navCrm", icon: Handshake },
   { href: "/franchise", labelKey: "navFranchise", icon: Store },
-  { href: "/night-shift", labelKey: "navNightShift", icon: Moon },
+  { href: "/sops", labelKey: "navSops", icon: FileText },
+];
+
+const managementNavItems: NavItem[] = [
   { href: "/analytics", labelKey: "navAnalytics", icon: BarChart3 },
   { href: "/reports", labelKey: "navReports", icon: FileBarChart2 },
   { href: "/realtime", labelKey: "navRealtime", icon: RadioTower },
-  { href: "/sops", labelKey: "navSops", icon: FileText },
   { href: "/tools", labelKey: "navTools", icon: DatabaseBackup },
   { href: "/audit", labelKey: "navAudit", icon: ClipboardList },
   { href: "/access-control", labelKey: "navAccessControl", icon: ShieldCheck },
@@ -106,33 +115,91 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const unreadCount = useMemo(() => notifications.filter((notification) => !notification.readAt).length, [notifications]);
   const canReset = can(currentRole, "reset_demo");
   const t = (key: TranslationKey) => translate(language, key);
+  const isActive = (item: NavItem) => pathname === item.href || pathname.startsWith(`${item.href}/`);
+  const renderNavItem = (item: NavItem) => {
+    const Icon = item.icon;
+    const active = isActive(item);
+
+    return (
+      <Link
+        key={item.href}
+        href={item.href}
+        className={`flex min-h-10 shrink-0 items-center gap-3 rounded-lg border px-3 text-sm font-semibold transition-colors ${
+          active
+            ? "border-[#d7ebe4] bg-[#edf8f4] text-[#087857]"
+            : "border-transparent text-[#66736f] hover:bg-[#f4f8f6] hover:text-[#17211e]"
+        }`}
+      >
+        <Icon size={18} />
+        {t(item.labelKey)}
+      </Link>
+    );
+  };
 
   return (
     <div className="min-h-screen bg-[#f6f8f7] text-[#17211e] lg:grid lg:grid-cols-[252px_1fr]">
-      <aside className="border-b border-[#e2e8e5] bg-white lg:min-h-screen lg:border-b-0 lg:border-r">
+      <aside className="border-b border-[#e2e8e5] bg-white lg:flex lg:min-h-screen lg:flex-col lg:border-b-0 lg:border-r">
         <div className="flex h-20 items-center px-5">
           <BrandLockup />
         </div>
         <nav className="flex gap-2 overflow-x-auto px-3 pb-3 lg:block lg:space-y-1 lg:overflow-visible">
-          {navItems.map((item) => {
-            const Icon = item.icon;
-            const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
-            return (
-              <Link
-                key={item.href}
-                href={item.href}
-                className={`flex min-h-10 shrink-0 items-center gap-3 rounded-lg border px-3 text-sm font-semibold transition-colors ${
-                  active
-                    ? "border-[#d7ebe4] bg-[#edf8f4] text-[#087857]"
-                    : "border-transparent text-[#66736f] hover:bg-[#f4f8f6] hover:text-[#17211e]"
-                }`}
-              >
-                <Icon size={18} />
-                {t(item.labelKey)}
-              </Link>
-            );
-          })}
+          {primaryNavItems.map(renderNavItem)}
+          <details className="group hidden pt-3 lg:block" open={operationsNavItems.some(isActive)}>
+            <summary className="flex cursor-pointer list-none items-center justify-between px-3 py-2 text-[10px] font-extrabold uppercase tracking-wider text-[#88938f]">
+              Operations
+              <ChevronDown className="transition-transform group-open:rotate-180" size={14} />
+            </summary>
+            <div className="space-y-1">{operationsNavItems.map(renderNavItem)}</div>
+          </details>
+          <details className="group hidden pt-2 lg:block" open={managementNavItems.some(isActive)}>
+            <summary className="flex cursor-pointer list-none items-center justify-between px-3 py-2 text-[10px] font-extrabold uppercase tracking-wider text-[#88938f]">
+              Management
+              <ChevronDown className="transition-transform group-open:rotate-180" size={14} />
+            </summary>
+            <div className="space-y-1">{managementNavItems.map(renderNavItem)}</div>
+          </details>
         </nav>
+        <details className="group px-3 pb-3 lg:hidden">
+          <summary className="flex cursor-pointer list-none items-center gap-2 rounded-lg border border-[#e2e8e5] px-3 py-2 text-xs font-bold text-[#66736f]">
+            More modules
+            <ChevronDown className="ml-auto transition-transform group-open:rotate-180" size={14} />
+          </summary>
+          <div className="mt-2 grid gap-1 rounded-lg border border-[#e2e8e5] bg-white p-2 sm:grid-cols-2">
+            {[...operationsNavItems, ...managementNavItems].map(renderNavItem)}
+          </div>
+        </details>
+        <div className="mt-auto hidden border-t border-[#eef1f0] p-3 lg:block">
+          <details className="group">
+            <summary className="flex cursor-pointer list-none items-center justify-between rounded-lg px-3 py-2 text-xs font-bold text-[#66736f] hover:bg-[#f4f8f6]">
+              Admin
+              <ChevronDown className="transition-transform group-open:rotate-180" size={14} />
+            </summary>
+            <div className="space-y-2 px-1 pt-2">
+              <select
+                data-i18n-skip
+                aria-label="Current role"
+                value={currentRole}
+                onChange={(event) => setRole(event.target.value as Role)}
+                className="h-9 w-full rounded-lg border border-[#e2e8e5] bg-white px-2 text-xs font-bold text-[#17211e] outline-none"
+              >
+                {roles.map((role) => (
+                  <option key={role} value={role}>
+                    {roleLabels[language][role]}
+                  </option>
+                ))}
+              </select>
+              <button
+                type="button"
+                disabled={!canReset}
+                onClick={canReset ? resetDemoData : undefined}
+                className="flex h-9 w-full items-center gap-2 rounded-lg px-2 text-xs font-semibold text-[#66736f] hover:bg-[#fff8ed] hover:text-[#9a5a04] disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                <RotateCcw size={15} />
+                {canReset ? t("resetDemoData") : t("resetRequiresSuperAdmin")}
+              </button>
+            </div>
+          </details>
+        </div>
       </aside>
       <main className="min-w-0">
         <header className="flex min-h-20 flex-wrap items-center justify-between gap-4 border-b border-[#e2e8e5] bg-white px-6">
@@ -151,9 +218,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 </span>
               ) : null}
             </div>
-            <IconButton label={canReset ? t("resetDemoData") : t("resetRequiresSuperAdmin")} onClick={canReset ? resetDemoData : undefined} disabled={!canReset}>
-              <RotateCcw size={18} />
-            </IconButton>
             <select
               data-i18n-skip
               aria-label={t("language")}
@@ -164,19 +228,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               {languages.map((item) => (
                 <option key={item.code} value={item.code}>
                   {item.shortLabel}
-                </option>
-              ))}
-            </select>
-            <select
-              data-i18n-skip
-              aria-label="Current role"
-              value={currentRole}
-              onChange={(event) => setRole(event.target.value as Role)}
-              className="h-10 rounded-lg border border-[#e2e8e5] bg-white px-2 text-sm font-bold text-[#17211e] outline-none"
-            >
-              {roles.map((role) => (
-                <option key={role} value={role}>
-                  {roleLabels[language][role]}
                 </option>
               ))}
             </select>
