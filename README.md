@@ -68,3 +68,9 @@ Open `http://localhost:3000`.
 - `GET, POST /api/settings`
 
 The API currently uses in-memory demo data. The frontend uses persisted browser state for fast MVP interaction.
+
+## Production Configuration
+
+The GitHub + Supabase + Vercel setup guide lives in
+[`docs/deployment.md`](docs/deployment.md). Copy `.env.example` to
+`.env.local` for local development and keep real secrets out of Git.
