@@ -29,11 +29,12 @@ import {
   ShieldCheck,
   ShieldQuestion,
   Store,
+  Sun,
   Smartphone,
   Users,
   X,
 } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { BrandLockup } from "./brand";
 import { languages, translate, type Language, type TranslationKey } from "../lib/i18n";
 import { getNotificationStatus } from "../lib/notifications";
@@ -105,6 +106,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const language = useVentoStore((state) => state.language);
   const setLanguage = useVentoStore((state) => state.setLanguage);
+  const theme = useVentoStore((state) => state.theme);
+  const toggleTheme = useVentoStore((state) => state.toggleTheme);
   const currentRole = useVentoStore((state) => state.currentRole);
   const setRole = useVentoStore((state) => state.setRole);
   const resetDemoData = useVentoStore((state) => state.resetDemoData);
@@ -115,6 +118,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const unreadCount = useMemo(() => notifications.filter((notification) => !notification.readAt).length, [notifications]);
   const canReset = can(currentRole, "reset_demo");
   const t = (key: TranslationKey) => translate(language, key);
+
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme;
+  }, [theme]);
   const isActive = (item: NavItem) => pathname === item.href || pathname.startsWith(`${item.href}/`);
   const renderNavItem = (item: NavItem) => {
     const Icon = item.icon;
@@ -218,6 +225,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 </span>
               ) : null}
             </div>
+            <IconButton label={theme === "dark" ? "Use light theme" : "Use dark theme"} onClick={toggleTheme}>
+              {theme === "dark" ? <Sun size={18} /> : <Moon size={18} />}
+            </IconButton>
             <select
               data-i18n-skip
               aria-label={t("language")}
