@@ -30,10 +30,10 @@ export default function DashboardPage() {
         <div className="panel p-5">
           <div className="flex items-center justify-between gap-4">
             <div>
-              <div className="text-[10px] font-extrabold uppercase tracking-wider text-[#087857]">Priority queue</div>
-              <h2 className="mt-1 text-xl font-extrabold text-[#17211e]">Needs attention</h2>
+              <div className="text-[10px] font-extrabold uppercase tracking-wider text-[#2563eb]">Priority queue</div>
+              <h2 className="mt-1 text-xl font-extrabold text-[#0f172a]">Needs attention</h2>
             </div>
-            <Link href="/incidents" className="flex items-center gap-1 text-xs font-bold text-[#087857]">
+            <Link href="/incidents" className="flex items-center gap-1 text-xs font-bold text-[#2563eb]">
               View all <ArrowRight size={14} />
             </Link>
           </div>
@@ -42,13 +42,13 @@ export default function DashboardPage() {
               .filter((incident) => incident.status !== "Closed")
               .slice(0, 3)
               .map((incident) => (
-                <Link key={incident.id} href={`/incidents/${incident.id}`} className="flex items-center gap-3 rounded-lg border border-[#eef1f0] p-3 transition-colors hover:bg-[#fbfcfc]">
+                <Link key={incident.id} href={`/incidents/${incident.id}`} className="flex items-center gap-3 rounded-lg border border-[#edf1f7] p-3 transition-colors hover:bg-[#fbfcfc]">
                   <div className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-[#fff4f5] text-[#b42333]">
                     <AlertTriangle size={17} />
                   </div>
                   <div className="min-w-0 flex-1">
                     <div className="truncate text-sm font-bold text-[#26332f]">{incident.rider}</div>
-                    <div className="truncate text-xs text-[#66736f]">{incident.ponto}</div>
+                    <div className="truncate text-xs text-[#536176]">{incident.ponto}</div>
                   </div>
                   <Badge value={incident.severity} />
                 </Link>
@@ -56,8 +56,8 @@ export default function DashboardPage() {
           </div>
         </div>
         <div className="panel p-5">
-          <div className="text-[10px] font-extrabold uppercase tracking-wider text-[#087857]">Shortcuts</div>
-          <h2 className="mt-1 text-xl font-extrabold text-[#17211e]">Quick access</h2>
+          <div className="text-[10px] font-extrabold uppercase tracking-wider text-[#2563eb]">Shortcuts</div>
+          <h2 className="mt-1 text-xl font-extrabold text-[#0f172a]">Quick access</h2>
           <div className="mt-4 grid gap-2 sm:grid-cols-2 xl:grid-cols-1">
             {[
               { href: "/riders", label: "Rider management", icon: Bike },
@@ -67,7 +67,7 @@ export default function DashboardPage() {
             ].map((item) => {
               const Icon = item.icon;
               return (
-                <Link key={item.href} href={item.href} className="flex items-center gap-3 rounded-lg border border-[#eef1f0] px-3 py-2.5 text-sm font-bold text-[#52615c] transition-colors hover:border-[#d7ebe4] hover:bg-[#edf8f4] hover:text-[#087857]">
+                <Link key={item.href} href={item.href} className="flex items-center gap-3 rounded-lg border border-[#edf1f7] px-3 py-2.5 text-sm font-bold text-[#475569] transition-colors hover:border-[#dbeafe] hover:bg-[#eff6ff] hover:text-[#2563eb]">
                   <Icon size={17} />
                   {item.label}
                 </Link>

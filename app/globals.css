@@ -3,19 +3,19 @@
 
 :root {
   color-scheme: light;
-  --background: #f6f8f7;
+  --background: #f5f7fb;
   --panel: #ffffff;
-  --panel-strong: #f8faf9;
-  --panel-hover: #f1f7f4;
-  --line: #e2e8e5;
-  --line-alpha: rgba(15, 118, 86, 0.14);
-  --text: #17211e;
-  --muted: #66736f;
-  --accent: #087857;
-  --accent-light: #0d9069;
-  --accent-glow: rgba(8, 120, 87, 0.14);
-  --cyan: #087857;
-  --cyan-glow: rgba(8, 120, 87, 0.12);
+  --panel-strong: #f8fafc;
+  --panel-hover: #eff6ff;
+  --line: #dbe3ee;
+  --line-alpha: rgba(37, 99, 235, 0.14);
+  --text: #0f172a;
+  --muted: #536176;
+  --accent: #2563eb;
+  --accent-light: #1d4ed8;
+  --accent-glow: rgba(37, 99, 235, 0.16);
+  --cyan: #2563eb;
+  --cyan-glow: rgba(37, 99, 235, 0.12);
   --danger: #dc3545;
   --warning: #d97706;
   --ok: #16805d;
@@ -54,7 +54,7 @@ textarea {
 }
 
 .panel:hover {
-  border-color: rgba(8, 120, 87, 0.3);
+  border-color: rgba(37, 99, 235, 0.28);
 }
 
 /* 标签 */
@@ -75,11 +75,11 @@ textarea {
 }
 
 .industrial-shadow {
-  box-shadow: 0 8px 24px rgba(32, 54, 47, 0.06);
+  box-shadow: 0 8px 24px rgba(30, 41, 59, 0.07);
 }
 
 .gradient-text {
-  background: linear-gradient(135deg, #087857, #0d9069);
+  background: linear-gradient(135deg, #2563eb, #1d4ed8);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
@@ -90,7 +90,7 @@ textarea {
 }
 
 .glow-hover:hover {
-  box-shadow: 0 10px 24px rgba(8, 120, 87, 0.12);
+  box-shadow: 0 10px 24px rgba(37, 99, 235, 0.12);
 }
 
 /* 滚动条美化 */
@@ -104,12 +104,12 @@ textarea {
 }
 
 ::-webkit-scrollbar-thumb {
-  background: rgba(8, 120, 87, 0.24);
+  background: rgba(37, 99, 235, 0.24);
   border-radius: 999px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(8, 120, 87, 0.42);
+  background: rgba(37, 99, 235, 0.42);
 }
 
 /* 微动画 */
@@ -156,7 +156,7 @@ textarea:focus {
 
 /* 选择高亮 */
 ::selection {
-  background: rgba(8, 120, 87, 0.22);
+  background: rgba(37, 99, 235, 0.22);
   color: white;
 }
 

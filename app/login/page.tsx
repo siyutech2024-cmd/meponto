@@ -16,8 +16,8 @@ export default function LoginPage() {
   const t = (key: TranslationKey) => translate(language, key);
 
   return (
-    <main className="grid min-h-screen place-items-center bg-[#f6f8f7] px-4 py-8">
-      <div className="industrial-shadow w-full max-w-md rounded-2xl border border-[#e2e8e5] bg-white p-6">
+    <main className="grid min-h-screen place-items-center bg-[#f5f7fb] px-4 py-8">
+      <div className="industrial-shadow w-full max-w-md rounded-2xl border border-[#dbe3ee] bg-white p-6">
         <div className="mb-8 flex items-center gap-4">
           <BrandLockup markSize="lg" heading />
           <select
@@ -25,7 +25,7 @@ export default function LoginPage() {
             aria-label={t("language")}
             value={language}
             onChange={(event) => setLanguage(event.target.value as Language)}
-            className="ml-auto h-10 rounded-lg border border-[#e2e8e5] bg-white px-2 text-sm font-black text-[#17211e] outline-none"
+            className="ml-auto h-10 rounded-lg border border-[#dbe3ee] bg-white px-2 text-sm font-black text-[#0f172a] outline-none"
           >
             {languages.map((item) => (
               <option key={item.code} value={item.code}>
@@ -35,9 +35,9 @@ export default function LoginPage() {
           </select>
         </div>
 
-        <div className="mb-4 rounded-lg border border-[#d7ebe4] bg-[#edf8f4] p-3 text-sm text-[#52615c]">
-          {t("loginDemo")} <span className="font-black text-[#087857]">+55 11 90000-0000</span> {t("withPassword")}{" "}
-          <span className="font-black text-[#087857]">pontosys-demo</span>.
+        <div className="mb-4 rounded-lg border border-[#dbeafe] bg-[#eff6ff] p-3 text-sm text-[#475569]">
+          {t("loginDemo")} <span className="font-black text-[#2563eb]">+55 11 90000-0000</span> {t("withPassword")}{" "}
+          <span className="font-black text-[#2563eb]">pontosys-demo</span>.
         </div>
 
         <form
@@ -79,7 +79,7 @@ export default function LoginPage() {
         >
           <label className="block">
             <span className="mb-2 block text-xs font-black uppercase text-[#8b8ba3]">{t("phoneNumber")}</span>
-            <span className="flex h-12 items-center gap-3 rounded-lg border border-[#e2e8e5] bg-white px-3">
+            <span className="flex h-12 items-center gap-3 rounded-lg border border-[#dbe3ee] bg-white px-3">
               <Phone size={18} className="text-[#8b8ba3]" />
               <input
                 name="phone"
@@ -92,7 +92,7 @@ export default function LoginPage() {
 
           <label className="block">
             <span className="mb-2 block text-xs font-black uppercase text-[#8b8ba3]">{t("password")}</span>
-            <span className="flex h-12 items-center gap-3 rounded-lg border border-[#e2e8e5] bg-white px-3">
+            <span className="flex h-12 items-center gap-3 rounded-lg border border-[#dbe3ee] bg-white px-3">
               <Lock size={18} className="text-[#8b8ba3]" />
               <input
                 name="password"
@@ -116,7 +116,7 @@ export default function LoginPage() {
 
           <button
             disabled={isSubmitting}
-            className="h-12 w-full rounded-lg border border-[#087857] bg-[#087857] font-black text-white transition-colors hover:bg-[#066a4d] disabled:cursor-not-allowed disabled:border-[#d7dfdc] disabled:bg-[#eef1f0] disabled:text-[#9aa6a2]"
+            className="h-12 w-full rounded-lg border border-[#2563eb] bg-[#2563eb] font-black text-white transition-colors hover:bg-[#1d4ed8] disabled:cursor-not-allowed disabled:border-[#d7dfdc] disabled:bg-[#edf1f7] disabled:text-[#9aa6a2]"
           >
             {isSubmitting ? t("loggingIn") : t("login")}
           </button>

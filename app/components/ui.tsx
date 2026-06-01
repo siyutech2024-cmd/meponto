@@ -126,8 +126,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         href={item.href}
         className={`flex min-h-10 shrink-0 items-center gap-3 rounded-lg border px-3 text-sm font-semibold transition-colors ${
           active
-            ? "border-[#d7ebe4] bg-[#edf8f4] text-[#087857]"
-            : "border-transparent text-[#66736f] hover:bg-[#f4f8f6] hover:text-[#17211e]"
+            ? "border-[#dbeafe] bg-[#eff6ff] text-[#2563eb]"
+            : "border-transparent text-[#536176] hover:bg-[#f8fafc] hover:text-[#0f172a]"
         }`}
       >
         <Icon size={18} />
@@ -137,12 +137,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   };
 
   return (
-    <div className="min-h-screen bg-[#f6f8f7] text-[#17211e] lg:grid lg:grid-cols-[252px_1fr]">
-      <aside className="border-b border-[#e2e8e5] bg-white lg:flex lg:min-h-screen lg:flex-col lg:border-b-0 lg:border-r">
+    <div className="min-h-screen bg-[#f5f7fb] text-[#0f172a] lg:grid lg:grid-cols-[252px_1fr]">
+      <aside className="border-b border-[#dbe3ee] bg-white lg:flex lg:min-h-screen lg:flex-col lg:border-b-0 lg:border-r">
         <div className="flex h-20 items-center px-5">
           <BrandLockup />
         </div>
-        <nav className="flex gap-2 overflow-x-auto px-3 pb-3 lg:block lg:space-y-1 lg:overflow-visible">
+        <nav className="hidden px-3 pb-3 lg:block lg:space-y-1">
           {primaryNavItems.map(renderNavItem)}
           <details className="group hidden pt-3 lg:block" open={operationsNavItems.some(isActive)}>
             <summary className="flex cursor-pointer list-none items-center justify-between px-3 py-2 text-[10px] font-extrabold uppercase tracking-wider text-[#88938f]">
@@ -160,17 +160,17 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           </details>
         </nav>
         <details className="group px-3 pb-3 lg:hidden">
-          <summary className="flex cursor-pointer list-none items-center gap-2 rounded-lg border border-[#e2e8e5] px-3 py-2 text-xs font-bold text-[#66736f]">
-            More modules
+          <summary className="flex cursor-pointer list-none items-center gap-2 rounded-lg border border-[#dbe3ee] px-3 py-2 text-xs font-bold text-[#536176]">
+            Menu
             <ChevronDown className="ml-auto transition-transform group-open:rotate-180" size={14} />
           </summary>
-          <div className="mt-2 grid gap-1 rounded-lg border border-[#e2e8e5] bg-white p-2 sm:grid-cols-2">
-            {[...operationsNavItems, ...managementNavItems].map(renderNavItem)}
+          <div className="mt-2 grid gap-1 rounded-lg border border-[#dbe3ee] bg-white p-2 sm:grid-cols-2">
+            {[...primaryNavItems, ...operationsNavItems, ...managementNavItems].map(renderNavItem)}
           </div>
         </details>
-        <div className="mt-auto hidden border-t border-[#eef1f0] p-3 lg:block">
+        <div className="mt-auto hidden border-t border-[#edf1f7] p-3 lg:block">
           <details className="group">
-            <summary className="flex cursor-pointer list-none items-center justify-between rounded-lg px-3 py-2 text-xs font-bold text-[#66736f] hover:bg-[#f4f8f6]">
+            <summary className="flex cursor-pointer list-none items-center justify-between rounded-lg px-3 py-2 text-xs font-bold text-[#536176] hover:bg-[#f8fafc]">
               Admin
               <ChevronDown className="transition-transform group-open:rotate-180" size={14} />
             </summary>
@@ -180,7 +180,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 aria-label="Current role"
                 value={currentRole}
                 onChange={(event) => setRole(event.target.value as Role)}
-                className="h-9 w-full rounded-lg border border-[#e2e8e5] bg-white px-2 text-xs font-bold text-[#17211e] outline-none"
+                className="h-9 w-full rounded-lg border border-[#dbe3ee] bg-white px-2 text-xs font-bold text-[#0f172a] outline-none"
               >
                 {roles.map((role) => (
                   <option key={role} value={role}>
@@ -192,7 +192,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 type="button"
                 disabled={!canReset}
                 onClick={canReset ? resetDemoData : undefined}
-                className="flex h-9 w-full items-center gap-2 rounded-lg px-2 text-xs font-semibold text-[#66736f] hover:bg-[#fff8ed] hover:text-[#9a5a04] disabled:cursor-not-allowed disabled:opacity-40"
+                className="flex h-9 w-full items-center gap-2 rounded-lg px-2 text-xs font-semibold text-[#536176] hover:bg-[#fff8ed] hover:text-[#9a5a04] disabled:cursor-not-allowed disabled:opacity-40"
               >
                 <RotateCcw size={15} />
                 {canReset ? t("resetDemoData") : t("resetRequiresSuperAdmin")}
@@ -202,10 +202,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         </div>
       </aside>
       <main className="min-w-0">
-        <header className="flex min-h-20 flex-wrap items-center justify-between gap-4 border-b border-[#e2e8e5] bg-white px-6">
+        <header className="flex min-h-20 flex-wrap items-center justify-between gap-4 border-b border-[#dbe3ee] bg-white px-6">
           <div>
             <div className="text-[10px] font-bold uppercase tracking-wider text-[#8b8ba3]">{t("currentRegion")}</div>
-            <div className="text-lg font-black text-[#17211e] font-[family-name:var(--font-outfit)]">{t("regionName")}</div>
+            <div className="text-lg font-black text-[#0f172a] font-[family-name:var(--font-outfit)]">{t("regionName")}</div>
           </div>
           <div className="flex items-center gap-2">
             <div className="relative">
@@ -223,7 +223,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               aria-label={t("language")}
               value={language}
               onChange={(event) => setLanguage(event.target.value as typeof language)}
-              className="h-10 rounded-lg border border-[#e2e8e5] bg-white px-2 text-sm font-bold text-[#17211e] outline-none"
+              className="h-10 rounded-lg border border-[#dbe3ee] bg-white px-2 text-sm font-bold text-[#0f172a] outline-none"
             >
               {languages.map((item) => (
                 <option key={item.code} value={item.code}>
@@ -231,7 +231,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 </option>
               ))}
             </select>
-            <div className="grid h-10 w-10 place-items-center rounded-lg border border-[#d7ebe4] bg-[#edf8f4] text-sm font-bold text-[#087857]">
+            <div className="grid h-10 w-10 place-items-center rounded-lg border border-[#dbeafe] bg-[#eff6ff] text-sm font-bold text-[#2563eb]">
               {currentRole
                 .split(" ")
                 .map((word) => word[0])
@@ -239,7 +239,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             </div>
             <Link
               href="/login"
-              className="flex h-10 items-center gap-2 rounded-lg border border-[#e2e8e5] px-3 text-sm font-semibold text-[#66736f] transition-colors hover:border-[#f4c7cc] hover:bg-[#fff4f5] hover:text-[#b42333]"
+              className="flex h-10 items-center gap-2 rounded-lg border border-[#dbe3ee] px-3 text-sm font-semibold text-[#536176] transition-colors hover:border-[#f4c7cc] hover:bg-[#fff4f5] hover:text-[#b42333]"
             >
               <LogOut size={17} />
               {t("logout")}
@@ -346,7 +346,7 @@ export function PageTitle({
     <div className="mb-6 flex flex-wrap items-end justify-between gap-3 animate-fade-in">
       <div>
         {eyebrow ? <div className="mb-1 text-[11px] font-extrabold uppercase tracking-wider text-[#8b5cf6] font-[family-name:var(--font-outfit)]">{eyebrow}</div> : null}
-        <h1 className="text-3xl font-extrabold tracking-tight text-[#17211e] font-[family-name:var(--font-outfit)]">{title}</h1>
+        <h1 className="text-3xl font-extrabold tracking-tight text-[#0f172a] font-[family-name:var(--font-outfit)]">{title}</h1>
       </div>
       {action}
     </div>
@@ -369,7 +369,7 @@ export function Button({
       type={type}
       onClick={onClick}
       disabled={disabled}
-      className="inline-flex h-11 items-center gap-2 rounded-lg border border-[#087857] bg-[#087857] px-4 text-sm font-extrabold text-white shadow-sm transition-colors hover:border-[#066a4d] hover:bg-[#066a4d] disabled:cursor-not-allowed disabled:border-[#d7dfdc] disabled:bg-[#eef1f0] disabled:text-[#9aa6a2] disabled:shadow-none"
+      className="inline-flex h-11 items-center gap-2 rounded-lg border border-[#2563eb] bg-[#2563eb] px-4 text-sm font-extrabold text-white shadow-sm transition-colors hover:border-[#1d4ed8] hover:bg-[#1d4ed8] disabled:cursor-not-allowed disabled:border-[#d7dfdc] disabled:bg-[#edf1f7] disabled:text-[#9aa6a2] disabled:shadow-none"
     >
       {children}
     </button>
@@ -403,7 +403,7 @@ export function IconButton({
       type="button"
       onClick={onClick}
       disabled={disabled}
-      className="grid h-10 w-10 place-items-center rounded-lg border border-[#e2e8e5] bg-white text-[#66736f] transition-colors hover:border-[#b8d8cd] hover:bg-[#edf8f4] hover:text-[#087857] disabled:cursor-not-allowed disabled:opacity-40"
+      className="grid h-10 w-10 place-items-center rounded-lg border border-[#dbe3ee] bg-white text-[#536176] transition-colors hover:border-[#b8d8cd] hover:bg-[#eff6ff] hover:text-[#2563eb] disabled:cursor-not-allowed disabled:opacity-40"
     >
       {children}
     </button>
@@ -452,12 +452,12 @@ export function StatCard({
       <div className="mt-3 flex items-end justify-between gap-3">
         <div className="text-4xl font-extrabold tracking-tight font-[family-name:var(--font-outfit)]">{value}</div>
         {delta ? (
-          <div className="rounded-full border border-[#d7ebe4] bg-[#edf8f4] px-2.5 py-1 text-[11px] font-extrabold text-[#087857]">
+          <div className="rounded-full border border-[#dbeafe] bg-[#eff6ff] px-2.5 py-1 text-[11px] font-extrabold text-[#2563eb]">
             {delta}
           </div>
         ) : null}
       </div>
-      <Link href={href} className="mt-5 flex h-10 items-center justify-between rounded-lg border-t border-[#e2e8e5] pt-3 text-xs font-bold text-[#087857] transition-colors hover:text-[#055f45]">
+      <Link href={href} className="mt-5 flex h-10 items-center justify-between rounded-lg border-t border-[#dbe3ee] pt-3 text-xs font-bold text-[#2563eb] transition-colors hover:text-[#055f45]">
         View
         <ChevronRight size={15} />
       </Link>
@@ -472,8 +472,8 @@ export function Badge({ value }: { value: string }) {
       : value === "High" || value === "Medium" || value === "Processing" || value === "Night Shift"
         ? "border-[#f5d7a7] text-[#9a5a04] bg-[#fff8ed]"
         : value === "Active" || value === "Closed" || value === "Elite"
-          ? "border-[#c7e7dc] text-[#087857] bg-[#edf8f4]"
-          : "border-[#e2e8e5] text-[#66736f] bg-[#f8faf9]";
+          ? "border-[#c7e7dc] text-[#2563eb] bg-[#eff6ff]"
+          : "border-[#dbe3ee] text-[#536176] bg-[#f8faf9]";
 
   return <span className={`inline-flex rounded-lg border px-2 py-0.5 text-[11px] font-bold tracking-wide ${tone}`}>{value}</span>;
 }
@@ -489,7 +489,7 @@ export function DataTable({
     <div className="panel overflow-hidden">
       <div className="overflow-x-auto">
         <table className="w-full min-w-[1100px] border-collapse text-left text-sm">
-          <thead className="bg-[#f8faf9] text-[10px] font-bold uppercase tracking-wider text-[#66736f]">
+          <thead className="bg-[#f8faf9] text-[10px] font-bold uppercase tracking-wider text-[#536176]">
             <tr>
               {headers.map((header) => (
                 <th key={header} className="whitespace-nowrap border-b border-[#2a2a4a] px-4 py-3.5 font-bold">
@@ -500,7 +500,7 @@ export function DataTable({
           </thead>
           <tbody>
             {rows.map((row, index) => (
-              <tr key={index} className="border-b border-[#eef1f0] last:border-0 hover:bg-[#fbfcfc] transition-colors duration-150">
+              <tr key={index} className="border-b border-[#edf1f7] last:border-0 hover:bg-[#fbfcfc] transition-colors duration-150">
                 {row.map((cell, cellIndex) => (
                   <td key={cellIndex} className="whitespace-nowrap px-4 py-3.5 align-middle text-[#26332f]">
                     {cell}
@@ -521,16 +521,16 @@ export function MiniMap() {
 
   return (
     <div className="panel relative min-h-[360px] overflow-hidden p-5">
-      <div className="absolute inset-0 opacity-70 [background-image:linear-gradient(rgba(8,120,87,0.07)_1px,transparent_1px),linear-gradient(90deg,rgba(8,120,87,0.07)_1px,transparent_1px)] [background-size:44px_44px]" />
+      <div className="absolute inset-0 opacity-70 [background-image:linear-gradient(rgba(37,99,235,0.07)_1px,transparent_1px),linear-gradient(90deg,rgba(37,99,235,0.07)_1px,transparent_1px)] [background-size:44px_44px]" />
       <div className="relative z-10 flex h-full min-h-[320px] flex-col justify-between">
         <div>
           <div className="text-[10px] font-extrabold uppercase tracking-wider text-[#8b5cf6] font-[family-name:var(--font-outfit)]">{t("liveDensityMap")}</div>
-          <div className="mt-1 text-2xl font-black text-[#17211e] font-[family-name:var(--font-outfit)]">{t("mapSummary")}</div>
+          <div className="mt-1 text-2xl font-black text-[#0f172a] font-[family-name:var(--font-outfit)]">{t("mapSummary")}</div>
         </div>
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 mt-6">
           {["Paulista", "Liberdade", "Tatuape", "Pinheiros"].map((name, index) => (
-            <div key={name} className="rounded-xl border border-[#e2e8e5] bg-white p-3.5 shadow-sm">
-              <div className="text-sm font-bold text-[#17211e]">{name}</div>
+            <div key={name} className="rounded-xl border border-[#dbe3ee] bg-white p-3.5 shadow-sm">
+              <div className="text-sm font-bold text-[#0f172a]">{name}</div>
               <div className="mt-1 text-xs text-[#8b8ba3]">{index === 2 ? t("criticalNightArea") : t("stablePontoCluster")}</div>
             </div>
           ))}
