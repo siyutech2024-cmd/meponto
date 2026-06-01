@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import {
   AlertTriangle,
   BarChart3,
@@ -91,6 +92,7 @@ const roleLabels: Record<Language, Record<Role, string>> = {
 };
 
 export function AppShell({ children }: { children: React.ReactNode }) {
+  const pathname = usePathname();
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const language = useVentoStore((state) => state.language);
   const setLanguage = useVentoStore((state) => state.setLanguage);
@@ -106,19 +108,24 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const t = (key: TranslationKey) => translate(language, key);
 
   return (
-    <div className="min-h-screen lg:grid lg:grid-cols-[260px_1fr] bg-[#0a0a12]">
-      <aside className="border-b border-[#2a2a4a] bg-[#0d0d1a] lg:min-h-screen lg:border-b-0 lg:border-r">
+    <div className="min-h-screen bg-[#f6f8f7] text-[#17211e] lg:grid lg:grid-cols-[252px_1fr]">
+      <aside className="border-b border-[#e2e8e5] bg-white lg:min-h-screen lg:border-b-0 lg:border-r">
         <div className="flex h-20 items-center px-5">
           <BrandLockup />
         </div>
         <nav className="flex gap-2 overflow-x-auto px-3 pb-3 lg:block lg:space-y-1 lg:overflow-visible">
           {navItems.map((item) => {
             const Icon = item.icon;
+            const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
             return (
               <Link
                 key={item.href}
                 href={item.href}
-                className="flex min-h-11 shrink-0 items-center gap-3 rounded-lg border border-transparent px-3 text-sm font-semibold text-[#c4c4d4] hover:border-[#8b5cf6]/20 hover:bg-[#1a1a2e]/60 hover:text-[#8b5cf6] transition-all duration-200"
+                className={`flex min-h-10 shrink-0 items-center gap-3 rounded-lg border px-3 text-sm font-semibold transition-colors ${
+                  active
+                    ? "border-[#d7ebe4] bg-[#edf8f4] text-[#087857]"
+                    : "border-transparent text-[#66736f] hover:bg-[#f4f8f6] hover:text-[#17211e]"
+                }`}
               >
                 <Icon size={18} />
                 {t(item.labelKey)}
@@ -128,10 +135,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         </nav>
       </aside>
       <main className="min-w-0">
-        <header className="flex min-h-20 flex-wrap items-center justify-between gap-4 border-b border-[#2a2a4a] bg-[#0d0d1a]/80 backdrop-blur-md px-5">
+        <header className="flex min-h-20 flex-wrap items-center justify-between gap-4 border-b border-[#e2e8e5] bg-white px-6">
           <div>
             <div className="text-[10px] font-bold uppercase tracking-wider text-[#8b8ba3]">{t("currentRegion")}</div>
-            <div className="text-lg font-black font-[family-name:var(--font-outfit)] bg-gradient-to-r from-white to-[#c4c4d4] bg-clip-text text-transparent">{t("regionName")}</div>
+            <div className="text-lg font-black text-[#17211e] font-[family-name:var(--font-outfit)]">{t("regionName")}</div>
           </div>
           <div className="flex items-center gap-2">
             <div className="relative">
@@ -152,7 +159,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               aria-label={t("language")}
               value={language}
               onChange={(event) => setLanguage(event.target.value as typeof language)}
-              className="h-10 rounded-lg border border-[#2a2a4a] bg-[#1a1a2e] px-2 text-sm font-bold text-[#f0f0ff] outline-none transition-all duration-200 focus:border-[#8b5cf6] focus:ring-1 focus:ring-[#8b5cf6]"
+              className="h-10 rounded-lg border border-[#e2e8e5] bg-white px-2 text-sm font-bold text-[#17211e] outline-none"
             >
               {languages.map((item) => (
                 <option key={item.code} value={item.code}>
@@ -165,7 +172,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               aria-label="Current role"
               value={currentRole}
               onChange={(event) => setRole(event.target.value as Role)}
-              className="h-10 rounded-lg border border-[#2a2a4a] bg-[#1a1a2e] px-2 text-sm font-bold text-[#f0f0ff] outline-none transition-all duration-200 focus:border-[#8b5cf6] focus:ring-1 focus:ring-[#8b5cf6]"
+              className="h-10 rounded-lg border border-[#e2e8e5] bg-white px-2 text-sm font-bold text-[#17211e] outline-none"
             >
               {roles.map((role) => (
                 <option key={role} value={role}>
@@ -173,7 +180,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 </option>
               ))}
             </select>
-            <div className="grid h-10 w-10 place-items-center rounded-lg border border-[#2a2a4a] bg-[#1a1a2e] text-sm font-bold text-[#8b5cf6]">
+            <div className="grid h-10 w-10 place-items-center rounded-lg border border-[#d7ebe4] bg-[#edf8f4] text-sm font-bold text-[#087857]">
               {currentRole
                 .split(" ")
                 .map((word) => word[0])
@@ -181,14 +188,14 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             </div>
             <Link
               href="/login"
-              className="flex h-10 items-center gap-2 rounded-lg border border-[#2a2a4a] px-3 text-sm font-semibold text-[#8b8ba3] hover:text-white hover:border-[#f43f5e]/50 hover:bg-[#f43f5e]/10 transition-all duration-200"
+              className="flex h-10 items-center gap-2 rounded-lg border border-[#e2e8e5] px-3 text-sm font-semibold text-[#66736f] transition-colors hover:border-[#f4c7cc] hover:bg-[#fff4f5] hover:text-[#b42333]"
             >
               <LogOut size={17} />
               {t("logout")}
             </Link>
           </div>
         </header>
-        <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8 animate-fade-in">{children}</div>
+        <div className="mx-auto max-w-7xl px-4 py-7 sm:px-6 lg:px-8 animate-fade-in">{children}</div>
       </main>
       {notificationsOpen ? (
         <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex justify-end">
@@ -288,7 +295,7 @@ export function PageTitle({
     <div className="mb-6 flex flex-wrap items-end justify-between gap-3 animate-fade-in">
       <div>
         {eyebrow ? <div className="mb-1 text-[11px] font-extrabold uppercase tracking-wider text-[#8b5cf6] font-[family-name:var(--font-outfit)]">{eyebrow}</div> : null}
-        <h1 className="text-3xl font-extrabold tracking-tight font-[family-name:var(--font-outfit)] bg-gradient-to-r from-white to-[#c4c4d4] bg-clip-text text-transparent">{title}</h1>
+        <h1 className="text-3xl font-extrabold tracking-tight text-[#17211e] font-[family-name:var(--font-outfit)]">{title}</h1>
       </div>
       {action}
     </div>
@@ -311,7 +318,7 @@ export function Button({
       type={type}
       onClick={onClick}
       disabled={disabled}
-      className="inline-flex h-11 items-center gap-2 rounded-xl border border-transparent bg-gradient-to-r from-[#8b5cf6] to-[#06d6a0] px-4 text-sm font-extrabold text-white shadow-md shadow-[rgba(139,92,246,0.2)] hover:shadow-lg hover:shadow-[rgba(139,92,246,0.35)] hover:brightness-110 active:scale-98 transition-all duration-200 disabled:cursor-not-allowed disabled:border-[#2a2a4a] disabled:bg-[#1a1a2e] disabled:text-[#4a4a60] disabled:shadow-none disabled:brightness-100 disabled:scale-100"
+      className="inline-flex h-11 items-center gap-2 rounded-lg border border-[#087857] bg-[#087857] px-4 text-sm font-extrabold text-white shadow-sm transition-colors hover:border-[#066a4d] hover:bg-[#066a4d] disabled:cursor-not-allowed disabled:border-[#d7dfdc] disabled:bg-[#eef1f0] disabled:text-[#9aa6a2] disabled:shadow-none"
     >
       {children}
     </button>
@@ -345,7 +352,7 @@ export function IconButton({
       type="button"
       onClick={onClick}
       disabled={disabled}
-      className="grid h-10 w-10 place-items-center rounded-lg border border-[#2a2a4a] bg-[#1a1a2e] text-[#c4c4d4] hover:border-[#8b5cf6] hover:bg-[#8b5cf6]/10 hover:text-white transition-all duration-200 disabled:cursor-not-allowed disabled:opacity-40"
+      className="grid h-10 w-10 place-items-center rounded-lg border border-[#e2e8e5] bg-white text-[#66736f] transition-colors hover:border-[#b8d8cd] hover:bg-[#edf8f4] hover:text-[#087857] disabled:cursor-not-allowed disabled:opacity-40"
     >
       {children}
     </button>
@@ -389,18 +396,17 @@ export function StatCard({
   href: string;
 }) {
   return (
-    <div className="panel industrial-shadow p-5 relative overflow-hidden group">
-      <div className="absolute top-0 left-0 w-full h-[2px] bg-gradient-to-r from-[#8b5cf6] to-[#06d6a0] opacity-0 group-hover:opacity-100 transition-all duration-300" />
+    <div className="panel p-5 relative overflow-hidden group">
       <div className="text-[10px] font-bold uppercase tracking-wider text-[#8b8ba3]">{title}</div>
       <div className="mt-3 flex items-end justify-between gap-3">
         <div className="text-4xl font-extrabold tracking-tight font-[family-name:var(--font-outfit)]">{value}</div>
         {delta ? (
-          <div className="rounded-lg bg-[#8b5cf6]/15 px-2.5 py-1 text-[11px] font-extrabold text-[#a78bfa] border border-[#8b5cf6]/30">
+          <div className="rounded-full border border-[#d7ebe4] bg-[#edf8f4] px-2.5 py-1 text-[11px] font-extrabold text-[#087857]">
             {delta}
           </div>
         ) : null}
       </div>
-      <Link href={href} className="mt-5 flex h-10 items-center justify-between rounded-lg border border-[#2a2a4a] px-3 text-xs font-bold text-[#c4c4d4] hover:border-[#8b5cf6] hover:bg-[#8b5cf6]/10 hover:text-white transition-all duration-200">
+      <Link href={href} className="mt-5 flex h-10 items-center justify-between rounded-lg border-t border-[#e2e8e5] pt-3 text-xs font-bold text-[#087857] transition-colors hover:text-[#055f45]">
         View
         <ChevronRight size={15} />
       </Link>
@@ -411,12 +417,12 @@ export function StatCard({
 export function Badge({ value }: { value: string }) {
   const tone =
     value === "Critical" || value === "Risk" || value === "Open"
-      ? "border-[#f43f5e] text-[#fb7185] bg-[#f43f5e]/15"
+      ? "border-[#f2c2c7] text-[#b42333] bg-[#fff4f5]"
       : value === "High" || value === "Medium" || value === "Processing" || value === "Night Shift"
-        ? "border-[#fb923c] text-[#fdba74] bg-[#fb923c]/15"
+        ? "border-[#f5d7a7] text-[#9a5a04] bg-[#fff8ed]"
         : value === "Active" || value === "Closed" || value === "Elite"
-          ? "border-[#06d6a0] text-[#34d399] bg-[#06d6a0]/15"
-          : "border-[#2a2a4a] text-[#a5a5bd] bg-[#1a1a2e]";
+          ? "border-[#c7e7dc] text-[#087857] bg-[#edf8f4]"
+          : "border-[#e2e8e5] text-[#66736f] bg-[#f8faf9]";
 
   return <span className={`inline-flex rounded-lg border px-2 py-0.5 text-[11px] font-bold tracking-wide ${tone}`}>{value}</span>;
 }
@@ -432,7 +438,7 @@ export function DataTable({
     <div className="panel overflow-hidden">
       <div className="overflow-x-auto">
         <table className="w-full min-w-[1100px] border-collapse text-left text-sm">
-          <thead className="bg-[#1a1a2e] text-[10px] font-bold uppercase tracking-wider text-[#8b8ba3]">
+          <thead className="bg-[#f8faf9] text-[10px] font-bold uppercase tracking-wider text-[#66736f]">
             <tr>
               {headers.map((header) => (
                 <th key={header} className="whitespace-nowrap border-b border-[#2a2a4a] px-4 py-3.5 font-bold">
@@ -443,9 +449,9 @@ export function DataTable({
           </thead>
           <tbody>
             {rows.map((row, index) => (
-              <tr key={index} className="border-b border-[#1e1e3a] last:border-0 hover:bg-[#1a1a2e]/30 transition-colors duration-150">
+              <tr key={index} className="border-b border-[#eef1f0] last:border-0 hover:bg-[#fbfcfc] transition-colors duration-150">
                 {row.map((cell, cellIndex) => (
-                  <td key={cellIndex} className="whitespace-nowrap px-4 py-3.5 align-middle text-[#f0f0ff]">
+                  <td key={cellIndex} className="whitespace-nowrap px-4 py-3.5 align-middle text-[#26332f]">
                     {cell}
                   </td>
                 ))}
@@ -464,19 +470,16 @@ export function MiniMap() {
 
   return (
     <div className="panel relative min-h-[360px] overflow-hidden p-5">
-      <div className="absolute inset-0 opacity-20 [background-image:linear-gradient(rgba(139,92,246,0.15)_1px,transparent_1px),linear-gradient(90deg,rgba(139,92,246,0.15)_1px,transparent_1px)] [background-size:44px_44px]" />
-      <div className="absolute left-[18%] top-[30%] h-28 w-28 rounded-full bg-[#8b5cf6]/20 blur-2xl animate-pulse" style={{ animationDuration: '4s' }} />
-      <div className="absolute left-[62%] top-[43%] h-32 w-32 rounded-full bg-[#f43f5e]/15 blur-2xl animate-pulse" style={{ animationDuration: '5s' }} />
-      <div className="absolute left-[45%] top-[18%] h-24 w-24 rounded-full bg-[#fb923c]/15 blur-2xl animate-pulse" style={{ animationDuration: '6s' }} />
+      <div className="absolute inset-0 opacity-70 [background-image:linear-gradient(rgba(8,120,87,0.07)_1px,transparent_1px),linear-gradient(90deg,rgba(8,120,87,0.07)_1px,transparent_1px)] [background-size:44px_44px]" />
       <div className="relative z-10 flex h-full min-h-[320px] flex-col justify-between">
         <div>
           <div className="text-[10px] font-extrabold uppercase tracking-wider text-[#8b5cf6] font-[family-name:var(--font-outfit)]">{t("liveDensityMap")}</div>
-          <div className="mt-1 text-2xl font-black font-[family-name:var(--font-outfit)] bg-gradient-to-r from-white to-[#c4c4d4] bg-clip-text text-transparent">{t("mapSummary")}</div>
+          <div className="mt-1 text-2xl font-black text-[#17211e] font-[family-name:var(--font-outfit)]">{t("mapSummary")}</div>
         </div>
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 mt-6">
           {["Paulista", "Liberdade", "Tatuape", "Pinheiros"].map((name, index) => (
-            <div key={name} className="rounded-xl border border-[#2a2a4a] bg-[#0d0d1a]/85 p-3.5 backdrop-blur-md">
-              <div className="text-sm font-bold text-[#f0f0ff]">{name}</div>
+            <div key={name} className="rounded-xl border border-[#e2e8e5] bg-white p-3.5 shadow-sm">
+              <div className="text-sm font-bold text-[#17211e]">{name}</div>
               <div className="mt-1 text-xs text-[#8b8ba3]">{index === 2 ? t("criticalNightArea") : t("stablePontoCluster")}</div>
             </div>
           ))}

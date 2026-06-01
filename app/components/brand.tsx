@@ -11,9 +11,9 @@ export function BrandMark({ size = "sm" }: BrandMarkProps) {
   return (
     <div
       aria-hidden="true"
-      className={`${markSizes[size]} relative shrink-0 overflow-hidden rounded-xl border border-[#2a2a4a] bg-[#0b1020] shadow-[0_0_22px_rgba(6,214,160,0.16)]`}
+      className={`${markSizes[size]} relative shrink-0 overflow-hidden rounded-xl border border-[#d9e5e0] bg-[#087857] shadow-[0_6px_16px_rgba(8,120,87,0.18)]`}
     >
-      <div className="absolute inset-0 bg-[radial-gradient(circle_at_76%_24%,rgba(6,214,160,0.38),transparent_30%),linear-gradient(135deg,rgba(139,92,246,0.96),rgba(6,214,160,0.86))]" />
+      <div className="absolute inset-0 bg-[linear-gradient(135deg,#087857,#0d9069)]" />
       <svg className="absolute inset-0 h-full w-full" viewBox="0 0 64 64" role="img">
         <path
           d="M16 44V24c0-5 3-8 8-8s8 3 8 8v20m0-20c0-5 3-8 8-8s8 3 8 8v8c0 5-3 8-8 8h-8"
@@ -35,11 +35,11 @@ export function BrandLockup({ markSize = "sm", heading = false }: { markSize?: B
       <BrandMark size={markSize} />
       <div>
         {heading ? (
-          <h1 className="text-xl font-extrabold tracking-tight font-[family-name:var(--font-outfit)] bg-gradient-to-r from-[#f8fafc] to-[#c4c4d4] bg-clip-text text-transparent">
+          <h1 className="text-xl font-extrabold tracking-tight text-[#17211e] font-[family-name:var(--font-outfit)]">
             meponto
           </h1>
         ) : (
-          <div className="text-xl font-extrabold tracking-tight font-[family-name:var(--font-outfit)] bg-gradient-to-r from-[#f8fafc] to-[#c4c4d4] bg-clip-text text-transparent">
+          <div className="text-xl font-extrabold tracking-tight text-[#17211e] font-[family-name:var(--font-outfit)]">
             meponto
           </div>
         )}
