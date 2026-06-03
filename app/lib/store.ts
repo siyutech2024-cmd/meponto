@@ -23,6 +23,7 @@ import { notificationFromIncident, seedNotificationsFromIncidents, type Notifica
 import type { Language } from "./i18n";
 import type { Role } from "./rbac";
 
+export type ThemeMode = "dark" | "light";
 type RiderInput = Pick<Rider, "name" | "cpf" | "phone" | "pix" | "bairro" | "ponto" | "leader" | "status">;
 export type RiderUpdate = Partial<
   Pick<
@@ -67,6 +68,7 @@ export type AuditEntry = {
 
 type VentoState = {
   language: Language;
+  theme: ThemeMode;
   currentRole: Role;
   riders: Rider[];
   pontos: Ponto[];
@@ -77,6 +79,7 @@ type VentoState = {
   notifications: NotificationItem[];
   auditLog: AuditEntry[];
   setLanguage: (language: Language) => void;
+  setTheme: (theme: ThemeMode) => void;
   setRole: (role: Role) => void;
   addRider: (input: RiderInput) => void;
   addPonto: (input: PontoInput) => void;
@@ -129,6 +132,7 @@ export const useVentoStore = create<VentoState>()(
   persist(
     (set, get) => ({
       language: "en",
+      theme: "dark",
       currentRole: "Super Admin",
       riders: seedRiders,
       pontos: seedPontos,
@@ -139,6 +143,7 @@ export const useVentoStore = create<VentoState>()(
       notifications: seedNotificationsFromIncidents(seedIncidents),
       auditLog: seedAuditLog,
       setLanguage: (language) => set({ language }),
+      setTheme: (theme) => set({ theme }),
       setRole: (role) =>
         set((state) => ({
           currentRole: role,
