@@ -137,22 +137,22 @@ export default function NinetyNineImportPage() {
         <div className="panel overflow-hidden p-5">
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
-              <div className="text-xs font-black uppercase text-[#8b5cf6]">{payload?.featureFlag ?? "ninety_nine_daily_import_beta"}</div>
+              <div className="text-xs font-black uppercase text-[var(--accent)]">{payload?.featureFlag ?? "ninety_nine_daily_import_beta"}</div>
               <h2 className="mt-1 text-xl font-black">{t.sourceTitle}</h2>
-              <p className="mt-1 max-w-3xl text-sm leading-6 text-[#8b8ba3]">{t.subtitle}</p>
+              <p className="mt-1 max-w-3xl text-sm leading-6 text-[var(--muted)]">{t.subtitle}</p>
             </div>
-            <FileSpreadsheet className="text-[#8b5cf6]" size={24} />
+            <FileSpreadsheet className="text-[var(--accent)]" size={24} />
           </div>
 
           <div className="mt-4 grid gap-3 lg:grid-cols-3">
             {(payload?.sources ?? []).map((source) => (
-              <div key={source.key} className="rounded border border-[#2a2a4a] bg-[#0d0d1a] p-4">
+              <div key={source.key} className="rounded border border-[var(--line)] bg-[var(--surface)] p-4">
                 <div className="flex items-start justify-between gap-3">
-                  <div className="font-black text-white">{source.label}</div>
+                  <div className="font-black text-[var(--text)]">{source.label}</div>
                   <Badge value={source.required ? "Required" : "Optional"} />
                 </div>
-                <div className="mt-2 text-xs leading-5 text-[#8b8ba3]">{source.businessPurpose}</div>
-                <div className="mt-3 rounded bg-[#1a1a2e] p-2 font-mono text-[11px] text-[#c4c4d4]">{source.filePattern}</div>
+                <div className="mt-2 text-xs leading-5 text-[var(--muted)]">{source.businessPurpose}</div>
+                <div className="mt-3 rounded bg-[var(--surface-raised)] p-2 font-mono text-[11px] text-[var(--text-soft)]">{source.filePattern}</div>
                 <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
                   <Field label="Rows" value={source.sampleRows} />
                   <Field label="Riders" value={source.sampleRiders} />
@@ -168,14 +168,14 @@ export default function NinetyNineImportPage() {
               <LockKeyhole className="text-[#fb923c]" size={18} />
               <h2 className="text-lg font-black">{t.gateTitle}</h2>
             </div>
-            <p className="mt-2 text-sm leading-6 text-[#8b8ba3]">{t.gateBody}</p>
+            <p className="mt-2 text-sm leading-6 text-[var(--muted)]">{t.gateBody}</p>
           </div>
           <div className="panel p-4">
             <div className="flex items-center gap-2">
               <Database className="text-[#06d6a0]" size={18} />
               <h2 className="text-lg font-black">{t.postingTitle}</h2>
             </div>
-            <p className="mt-2 text-sm leading-6 text-[#8b8ba3]">{t.postingBody}</p>
+            <p className="mt-2 text-sm leading-6 text-[var(--muted)]">{t.postingBody}</p>
             <div className="mt-3"><Badge value={message} /></div>
           </div>
         </div>
@@ -214,7 +214,7 @@ export default function NinetyNineImportPage() {
 
         <div>
           <div className="mb-3 flex items-center gap-2">
-            <FileSpreadsheet className="text-[#8b5cf6]" size={18} />
+            <FileSpreadsheet className="text-[var(--accent)]" size={18} />
             <h2 className="text-lg font-black">{t.previewTitle}</h2>
           </div>
           <DataTable

@@ -17,8 +17,8 @@ const riderStatuses: RiderStatus[] = ["Active", "Night Shift", "Risk", "Inactive
 function TextInput({ name, label, defaultValue }: { name: string; label: string; defaultValue: string }) {
   return (
     <label className="block">
-      <span className="mb-2 block text-xs font-black uppercase text-[#8b8ba3]">{label}</span>
-      <input name={name} required defaultValue={defaultValue} className="h-11 w-full rounded border border-[#2a2a4a] bg-[#1a1a2e] px-3 outline-none" />
+      <span className="mb-2 block text-xs font-black uppercase text-[var(--muted)]">{label}</span>
+      <input name={name} required defaultValue={defaultValue} className="h-11 w-full rounded border border-[var(--line)] bg-[var(--surface-raised)] px-3 outline-none" />
     </label>
   );
 }
@@ -28,8 +28,8 @@ function SelectInput({ name, label, defaultValue, options }: { name: string; lab
 
   return (
     <label className="block">
-      <span className="mb-2 block text-xs font-black uppercase text-[#8b8ba3]">{label}</span>
-      <select name={name} defaultValue={defaultValue} className="h-11 w-full rounded border border-[#2a2a4a] bg-[#1a1a2e] px-3 outline-none">
+      <span className="mb-2 block text-xs font-black uppercase text-[var(--muted)]">{label}</span>
+      <select name={name} defaultValue={defaultValue} className="h-11 w-full rounded border border-[var(--line)] bg-[var(--surface-raised)] px-3 outline-none">
         {values.map((value) => (
           <option key={value} value={value}>{value}</option>
         ))}
@@ -96,7 +96,7 @@ export default function RiderDetailPage() {
     return (
       <AppShell>
         <PageTitle title="Rider not found" eyebrow="Rider detail" action={<Link className="tag" href="/riders">Back to Riders</Link>} />
-        <div className="panel p-4 text-sm text-[#8b8ba3]">This rider is not available in the current workspace data.</div>
+        <div className="panel p-4 text-sm text-[var(--muted)]">This rider is not available in the current workspace data.</div>
       </AppShell>
     );
   }
@@ -134,8 +134,8 @@ export default function RiderDetailPage() {
                 <TextInput name="brand" label="Brand" defaultValue={rider.brand} />
                 <TextInput name="model" label="Model" defaultValue={rider.model} />
                 <SelectInput name="rentalStatus" label="Rental Status" defaultValue={rider.rentalStatus} options={["Owned", "Rental", "Unknown"]} />
-                <label className="flex min-h-11 items-center gap-3 rounded border border-[#2a2a4a] bg-[#1a1a2e] px-3 sm:col-span-2 lg:col-span-4">
-                  <input name="isMottu" type="checkbox" defaultChecked={rider.isMottu} className="h-4 w-4 accent-[#8b5cf6]" />
+                <label className="flex min-h-11 items-center gap-3 rounded border border-[var(--line)] bg-[var(--surface-raised)] px-3 sm:col-span-2 lg:col-span-4">
+                  <input name="isMottu" type="checkbox" defaultChecked={rider.isMottu} className="h-4 w-4 accent-[var(--accent)]" />
                   <span className="text-sm font-black">Mottu vehicle</span>
                 </label>
               </div>

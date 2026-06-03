@@ -41,18 +41,18 @@ export default function SettingsPage() {
         <Field label="Paused" value={paused} />
       </section>
       <div className="panel my-4 grid gap-3 p-3 md:grid-cols-[220px_180px_1fr]">
-        <select value={category} onChange={(event) => setCategory(event.target.value as typeof category)} className="h-11 rounded border border-[#2a2a4a] bg-[#0d0d1a] px-3 outline-none">
+        <select value={category} onChange={(event) => setCategory(event.target.value as typeof category)} className="h-11 rounded border border-[var(--line)] bg-[var(--surface)] px-3 outline-none">
           {categories.map((item) => (
             <option key={item}>{item}</option>
           ))}
         </select>
-        <select value={status} onChange={(event) => setStatus(event.target.value)} className="h-11 rounded border border-[#2a2a4a] bg-[#0d0d1a] px-3 outline-none">
+        <select value={status} onChange={(event) => setStatus(event.target.value)} className="h-11 rounded border border-[var(--line)] bg-[var(--surface)] px-3 outline-none">
           <option>All Status</option>
           <option>Active</option>
           <option>Draft</option>
           <option>Paused</option>
         </select>
-        <div className="flex items-center text-sm font-bold text-[#8b8ba3]">{visibleSettings.length} configurable rules</div>
+        <div className="flex items-center text-sm font-bold text-[var(--muted)]">{visibleSettings.length} configurable rules</div>
       </div>
       <DataTable
         headers={["Category", "Name", "Value", "Status", "Owner", "Updated At", "Description"]}

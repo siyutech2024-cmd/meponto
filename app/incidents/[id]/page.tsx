@@ -37,7 +37,7 @@ export default function IncidentDetailPage() {
     return (
       <AppShell>
         <PageTitle title="Incident not found" eyebrow="Incident detail" action={<Link className="tag" href="/incidents">Back to Incidents</Link>} />
-        <div className="panel p-4 text-sm text-[#8b8ba3]">No incident record exists for {incidentId}.</div>
+        <div className="panel p-4 text-sm text-[var(--muted)]">No incident record exists for {incidentId}.</div>
       </AppShell>
     );
   }
@@ -109,11 +109,11 @@ export default function IncidentDetailPage() {
             <Field label="Time" value={incident.createdAt} />
             <Field label="Severity" value={<Badge value={incident.severity} />} />
           </div>
-          <div className="mt-3 rounded border border-[#2a2a4a] bg-[#0d0d1a] p-3 text-sm text-[#c4c4d4]">{incident.description}</div>
+          <div className="mt-3 rounded border border-[var(--line)] bg-[var(--surface)] p-3 text-sm text-[var(--text-soft)]">{incident.description}</div>
         </div>
         <div className="panel p-4">
           <h2 className="mb-3 text-lg font-black">Image Upload</h2>
-          <button className="h-32 w-full rounded border border-dashed border-[#2a2a4a] bg-[#0d0d1a] font-black text-[#8b8ba3]">
+          <button className="h-32 w-full rounded border border-dashed border-[var(--line)] bg-[var(--surface)] font-black text-[var(--muted)]">
             Upload Image
           </button>
         </div>
@@ -126,23 +126,23 @@ export default function IncidentDetailPage() {
             <Field label="Current Status" value={<Badge value={incident.status} />} />
           </div>
           {feedback ? (
-            <div aria-live="polite" className="mb-3 rounded border border-[#8b5cf6] bg-[#8b5cf6]/15 p-3 text-sm font-black text-[#8b5cf6]">
+            <div aria-live="polite" className="mb-3 rounded border border-[var(--accent)] bg-[var(--accent)]/15 p-3 text-sm font-black text-[var(--accent)]">
               {feedback}
             </div>
           ) : null}
           <div className="space-y-3">
             {responseLog.length ? (
               responseLog.map((entry) => (
-                <div key={entry.id} className="rounded border border-[#2a2a4a] bg-[#0d0d1a] p-3">
+                <div key={entry.id} className="rounded border border-[var(--line)] bg-[var(--surface)] p-3">
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <span className="font-black">{entry.action}</span>
-                    <span className="text-xs font-bold text-[#8b8ba3]">{entry.createdAt}</span>
+                    <span className="text-xs font-bold text-[var(--muted)]">{entry.createdAt}</span>
                   </div>
-                  <div className="mt-1 text-sm text-[#c4c4d4]">{entry.detail}</div>
+                  <div className="mt-1 text-sm text-[var(--text-soft)]">{entry.detail}</div>
                 </div>
               ))
             ) : (
-              <div className="rounded border border-[#2a2a4a] bg-[#0d0d1a] p-3 text-sm text-[#c4c4d4]">
+              <div className="rounded border border-[var(--line)] bg-[var(--surface)] p-3 text-sm text-[var(--text-soft)]">
                 Leader notified, rider contacted, support route created.
               </div>
             )}
@@ -159,7 +159,7 @@ export default function IncidentDetailPage() {
                 disabled={disabled}
                 title={!canRespond ? `${currentRole} cannot perform this action` : undefined}
                 onClick={disabled ? undefined : action.onClick}
-                className="inline-flex h-11 items-center justify-center gap-2 rounded border border-[#8b5cf6] bg-[#8b5cf6] px-3 font-black text-white hover:brightness-110 disabled:cursor-not-allowed disabled:border-[#2a2a4a] disabled:bg-[#1a1a2e] disabled:text-[#4a4a60]"
+                className="inline-flex h-11 items-center justify-center gap-2 rounded border border-[var(--accent)] bg-[var(--accent)] px-3 font-black text-[var(--accent-ink)] hover:brightness-110 disabled:cursor-not-allowed disabled:border-[var(--line)] disabled:bg-[var(--surface-raised)] disabled:text-[var(--muted)]"
               >
                 <Icon size={18} />
                 {action.label}

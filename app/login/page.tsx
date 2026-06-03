@@ -17,7 +17,7 @@ export default function LoginPage() {
 
   return (
     <main className="grid min-h-screen place-items-center px-4 py-8">
-      <div className="industrial-shadow w-full max-w-md rounded border border-[#2a2a4a] bg-[#0d0d1a] p-5">
+      <div className="industrial-shadow w-full max-w-md rounded border border-[var(--line)] bg-[var(--surface)] p-5">
         <div className="mb-8 flex items-center gap-4">
           <BrandLockup markSize="lg" heading />
           <select
@@ -25,7 +25,7 @@ export default function LoginPage() {
             aria-label={t("language")}
             value={language}
             onChange={(event) => setLanguage(event.target.value as Language)}
-            className="ml-auto h-10 rounded border border-[#2a2a4a] bg-[#1a1a2e] px-2 text-sm font-black outline-none"
+            className="ml-auto h-10 rounded border border-[var(--line)] bg-[var(--surface-raised)] px-2 text-sm font-black outline-none"
           >
             {languages.map((item) => (
               <option key={item.code} value={item.code}>
@@ -35,9 +35,9 @@ export default function LoginPage() {
           </select>
         </div>
 
-        <div className="mb-4 rounded border border-[#2a2a4a] bg-[#1a1a2e] p-3 text-sm text-[#8b8ba3]">
-          {t("loginDemo")} <span className="font-black text-[#f0f0ff]">+55 11 90000-0000</span> {t("withPassword")}{" "}
-          <span className="font-black text-[#f0f0ff]">pontosys-demo</span>.
+        <div className="mb-4 rounded border border-[var(--line)] bg-[var(--surface-raised)] p-3 text-sm text-[var(--muted)]">
+          {t("loginDemo")} <span className="font-black text-[var(--text)]">+55 11 90000-0000</span> {t("withPassword")}{" "}
+          <span className="font-black text-[var(--text)]">pontosys-demo</span>.
         </div>
 
         <form
@@ -78,9 +78,9 @@ export default function LoginPage() {
           }}
         >
           <label className="block">
-            <span className="mb-2 block text-xs font-black uppercase text-[#8b8ba3]">{t("phoneNumber")}</span>
-            <span className="flex h-12 items-center gap-3 rounded border border-[#2a2a4a] bg-[#1a1a2e] px-3">
-              <Phone size={18} className="text-[#8b8ba3]" />
+            <span className="mb-2 block text-xs font-black uppercase text-[var(--muted)]">{t("phoneNumber")}</span>
+            <span className="flex h-12 items-center gap-3 rounded border border-[var(--line)] bg-[var(--surface-raised)] px-3">
+              <Phone size={18} className="text-[var(--muted)]" />
               <input
                 name="phone"
                 className="min-w-0 flex-1 bg-transparent outline-none"
@@ -91,9 +91,9 @@ export default function LoginPage() {
           </label>
 
           <label className="block">
-            <span className="mb-2 block text-xs font-black uppercase text-[#8b8ba3]">{t("password")}</span>
-            <span className="flex h-12 items-center gap-3 rounded border border-[#2a2a4a] bg-[#1a1a2e] px-3">
-              <Lock size={18} className="text-[#8b8ba3]" />
+            <span className="mb-2 block text-xs font-black uppercase text-[var(--muted)]">{t("password")}</span>
+            <span className="flex h-12 items-center gap-3 rounded border border-[var(--line)] bg-[var(--surface-raised)] px-3">
+              <Lock size={18} className="text-[var(--muted)]" />
               <input
                 name="password"
                 className="min-w-0 flex-1 bg-transparent outline-none"
@@ -105,7 +105,7 @@ export default function LoginPage() {
                 title={t("showPassword")}
                 type="button"
                 onClick={() => setShowPassword((value) => !value)}
-                className="grid h-9 w-9 place-items-center rounded border border-[#2a2a4a]"
+                className="grid h-9 w-9 place-items-center rounded border border-[var(--line)]"
               >
                 {showPassword ? <EyeOff size={17} /> : <Eye size={17} />}
               </button>
@@ -116,11 +116,11 @@ export default function LoginPage() {
 
           <button
             disabled={isSubmitting}
-            className="h-12 w-full rounded border border-[#8b5cf6] bg-[#8b5cf6] font-black text-white disabled:cursor-not-allowed disabled:border-[#2a2a4a] disabled:bg-[#1a1a2e] disabled:text-[#4a4a60]"
+            className="h-12 w-full rounded border border-[var(--accent)] bg-[var(--accent)] font-black text-[var(--accent-ink)] disabled:cursor-not-allowed disabled:border-[var(--line)] disabled:bg-[var(--surface-raised)] disabled:text-[var(--muted)]"
           >
             {isSubmitting ? t("loggingIn") : t("login")}
           </button>
-          <Link href="/reset-password" className="block text-center text-sm font-bold text-[#8b8ba3]">
+          <Link href="/reset-password" className="block text-center text-sm font-bold text-[var(--muted)]">
             {t("forgotPassword")}
           </Link>
         </form>

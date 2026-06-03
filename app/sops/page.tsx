@@ -74,7 +74,7 @@ const sectionTones = {
     label: "资料库",
     accent: "text-[#cbd5e1]",
     border: "border-[#46556b]",
-    bg: "bg-[#111827]",
+    bg: "bg-[var(--surface-raised)]",
     soft: "bg-[#162033]",
     chip: "border-[#94a3b8]/35 bg-[#1e293b] text-[#dbeafe]",
   },
@@ -1449,9 +1449,9 @@ const siteOpsSopPt = [
 
 function SopBlock({ title, items }: { title: string; items: string[] }) {
   return (
-    <section className="rounded-lg border border-[#2a2a4a] bg-[#10101d] p-4">
-      <h3 className="mb-3 text-base font-black text-white">{title}</h3>
-      <ul className="space-y-2 text-sm leading-6 text-[#c4c4d4]">
+    <section className="rounded-lg border border-[var(--line)] bg-[var(--surface)] p-4">
+      <h3 className="mb-3 text-base font-black text-[var(--text)]">{title}</h3>
+      <ul className="space-y-2 text-sm leading-6 text-[var(--text-soft)]">
         {items.map((item) => (
           <li key={item} className="flex gap-2">
             <CheckCircle2 className="mt-1 shrink-0 text-[#06d6a0]" size={15} />
@@ -1484,7 +1484,7 @@ function SectionShell({
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <div>
           <div className={`text-xs font-black uppercase ${colors.accent}`}>{eyebrow}</div>
-          <h2 className="text-2xl font-black text-white">{title}</h2>
+          <h2 className="text-2xl font-black text-[var(--text)]">{title}</h2>
         </div>
         <span className={`rounded border px-3 py-1 text-xs font-black uppercase ${colors.chip}`}>{labelOverride ?? colors.label}</span>
       </div>
@@ -1508,8 +1508,8 @@ function SmallCard({
   return (
     <div className={`rounded-lg border ${colors.border} ${colors.soft} p-4`}>
       {meta ? <div className={`mb-2 text-xs font-black uppercase ${colors.accent}`}>{meta}</div> : null}
-      <h3 className="font-black text-white">{title}</h3>
-      <p className="mt-2 text-sm leading-6 text-[#c4c4d4]">{detail}</p>
+      <h3 className="font-black text-[var(--text)]">{title}</h3>
+      <p className="mt-2 text-sm leading-6 text-[var(--text-soft)]">{detail}</p>
     </div>
   );
 }
@@ -1530,7 +1530,7 @@ function SopColumn({
     <div className={`space-y-3 rounded-xl border ${colors.border} ${colors.bg} p-4`}>
       <div>
         <div className={`text-xs font-black uppercase ${colors.accent}`}>{eyebrow}</div>
-        <h2 className="text-xl font-black text-white">{title}</h2>
+        <h2 className="text-xl font-black text-[var(--text)]">{title}</h2>
       </div>
       {children}
     </div>
@@ -1555,18 +1555,18 @@ function LocalizedSopsPage({ language }: { language: Exclude<Language, "zh"> }) 
       <div data-i18n-skip>
         <PageTitle title={copy.title} eyebrow={copy.eyebrow} />
 
-        <section className="rounded-xl border border-[#2a2a4a] bg-[#0d0d1a] p-5">
+        <section className="rounded-xl border border-[var(--line)] bg-[var(--surface)] p-5">
           <div className="flex flex-wrap items-end justify-between gap-4">
             <div>
-              <div className="text-xs font-black uppercase text-[#8b5cf6]">{copy.mapEyebrow}</div>
-              <h2 className="text-2xl font-black text-white">{copy.mapTitle}</h2>
-              <p className="mt-2 max-w-3xl text-sm leading-6 text-[#c4c4d4]">{copy.mapDescription}</p>
+              <div className="text-xs font-black uppercase text-[var(--accent)]">{copy.mapEyebrow}</div>
+              <h2 className="text-2xl font-black text-[var(--text)]">{copy.mapTitle}</h2>
+              <p className="mt-2 max-w-3xl text-sm leading-6 text-[var(--text-soft)]">{copy.mapDescription}</p>
             </div>
             <div className="grid grid-cols-2 gap-2 text-center md:grid-cols-3">
               {[5, 1, 3].map((value, index) => (
-                <div key={copy.counters[index]} className="rounded-lg border border-[#2a2a4a] bg-[#111827] px-4 py-3">
-                  <div className="text-2xl font-black text-white">{value}</div>
-                  <div className="text-xs font-black uppercase text-[#8b8ba3]">{copy.counters[index]}</div>
+                <div key={copy.counters[index]} className="rounded-lg border border-[var(--line)] bg-[var(--surface-raised)] px-4 py-3">
+                  <div className="text-2xl font-black text-[var(--text)]">{value}</div>
+                  <div className="text-xs font-black uppercase text-[var(--muted)]">{copy.counters[index]}</div>
                 </div>
               ))}
             </div>
@@ -1578,9 +1578,9 @@ function LocalizedSopsPage({ language }: { language: Exclude<Language, "zh"> }) 
               return (
                 <Link key={category.code} href={category.href} className={`rounded-xl border ${colors.border} ${colors.bg} p-4 transition hover:-translate-y-0.5`}>
                   <div className={`text-xs font-black uppercase ${colors.accent}`}>{category.code}</div>
-                  <h3 className="mt-2 text-lg font-black text-white">{category.name}</h3>
-                  <p className="mt-1 text-xs font-black uppercase text-[#8b8ba3]">{category.owner}</p>
-                  <p className="mt-3 text-sm leading-6 text-[#c4c4d4]">{category.scope}</p>
+                  <h3 className="mt-2 text-lg font-black text-[var(--text)]">{category.name}</h3>
+                  <p className="mt-1 text-xs font-black uppercase text-[var(--muted)]">{category.owner}</p>
+                  <p className="mt-3 text-sm leading-6 text-[var(--text-soft)]">{category.scope}</p>
                   <div className="mt-3 flex flex-wrap gap-2">
                     {category.modules.slice(0, 3).map((module) => (
                       <span key={module} className={`rounded border px-2 py-1 text-[11px] font-black ${colors.chip}`}>
@@ -1602,7 +1602,7 @@ function LocalizedSopsPage({ language }: { language: Exclude<Language, "zh"> }) 
                   <Badge key={badge} value={badge} />
                 ))}
               </div>
-              <p className="text-sm leading-6 text-[#c4c4d4]">{copy.data.paragraph}</p>
+              <p className="text-sm leading-6 text-[var(--text-soft)]">{copy.data.paragraph}</p>
               <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
                 {copy.data.flow.map(([title, detail], index) => (
                   <div key={title} className="rounded-lg border border-[#1f5f78] bg-[#0b2430] p-4">
@@ -1610,7 +1610,7 @@ function LocalizedSopsPage({ language }: { language: Exclude<Language, "zh"> }) 
                       <Database size={15} />
                       {copy.ui.stepLabelPrefix} {index + 1}
                     </div>
-                    <h3 className="font-black text-white">{title}</h3>
+                    <h3 className="font-black text-[var(--text)]">{title}</h3>
                     <p className="mt-2 text-sm leading-6 text-[#a9a9bd]">{detail}</p>
                   </div>
                 ))}
@@ -1618,11 +1618,11 @@ function LocalizedSopsPage({ language }: { language: Exclude<Language, "zh"> }) 
             </div>
 
             <div className="rounded-lg border border-[#1f5f78] bg-[#081d28] p-5">
-              <div className="mb-3 flex items-center gap-2 text-sm font-black text-white">
+              <div className="mb-3 flex items-center gap-2 text-sm font-black text-[var(--text)]">
                 <BookOpen size={18} />
                 {copy.ui.trainingVideo}
               </div>
-              <video className="aspect-video w-full rounded-lg border border-[#2a2a4a] bg-black" controls preload="metadata">
+              <video className="aspect-video w-full rounded-lg border border-[var(--line)] bg-black" controls preload="metadata">
                 <source src="/sop-assets/pontosys-training-video.mp4" type="video/mp4" />
               </video>
               <p className="mt-3 text-sm leading-6 text-[#a9a9bd]">{copy.data.video}</p>
@@ -1633,7 +1633,7 @@ function LocalizedSopsPage({ language }: { language: Exclude<Language, "zh"> }) 
         <SectionShell id="rider-daily" title={copy.rider.title} eyebrow={copy.ui.dailyRiderEyebrow} tone="rider" labelOverride={copy.sectionLabels.rider}>
           <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
             <div>
-              <p className="text-sm leading-6 text-[#c4c4d4]">{copy.rider.description}</p>
+              <p className="text-sm leading-6 text-[var(--text-soft)]">{copy.rider.description}</p>
             </div>
             <div className="flex flex-wrap gap-2">
               {riderBadges.map((badge) => (
@@ -1656,8 +1656,8 @@ function LocalizedSopsPage({ language }: { language: Exclude<Language, "zh"> }) 
         <section id="recruitment" className="mt-5 rounded-xl border border-[#5542a0] bg-[#151129] p-5 shadow-[0_16px_40px_rgba(0,0,0,0.18)]">
           <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
             <div>
-              <div className="text-xs font-black uppercase text-[#8b5cf6]">{copy.ui.recruitmentFunnelEyebrow}</div>
-              <h2 className="text-2xl font-black text-white">{copy.recruitment.title}</h2>
+              <div className="text-xs font-black uppercase text-[var(--accent)]">{copy.ui.recruitmentFunnelEyebrow}</div>
+              <h2 className="text-2xl font-black text-[var(--text)]">{copy.recruitment.title}</h2>
             </div>
             <div className="flex flex-wrap gap-2">
               {recruitmentBadges.map((badge) => (
@@ -1669,7 +1669,7 @@ function LocalizedSopsPage({ language }: { language: Exclude<Language, "zh"> }) 
             {copy.recruitment.pipeline.map(([stage, title, detail]) => (
               <div key={`${stage}-${title}`} className="rounded-lg border border-[#5542a0] bg-[#1d1738] p-4">
                 <div className="text-xs font-black uppercase text-[#a78bfa]">{stage}</div>
-                <h3 className="mt-2 font-black text-white">{title}</h3>
+                <h3 className="mt-2 font-black text-[var(--text)]">{title}</h3>
                 <p className="mt-2 text-sm leading-6 text-[#a9a9bd]">{detail}</p>
               </div>
             ))}
@@ -1679,14 +1679,14 @@ function LocalizedSopsPage({ language }: { language: Exclude<Language, "zh"> }) 
         <section className="mt-5 grid gap-4 xl:grid-cols-[1fr_0.8fr]">
           <div className="rounded-xl border border-[#5542a0] bg-[#151129] p-5">
             <div className="mb-4">
-              <div className="text-xs font-black uppercase text-[#8b5cf6]">{copy.ui.recruitmentActionsEyebrow}</div>
-              <h2 className="text-2xl font-black text-white">{copy.recruitment.actionsTitle}</h2>
+              <div className="text-xs font-black uppercase text-[var(--accent)]">{copy.ui.recruitmentActionsEyebrow}</div>
+              <h2 className="text-2xl font-black text-[var(--text)]">{copy.recruitment.actionsTitle}</h2>
             </div>
             <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
               {copy.recruitment.actions.map(([stage, detail]) => (
                 <div key={stage} className="rounded-lg border border-[#5542a0] bg-[#1d1738] p-4">
                   <div className="text-xs font-black uppercase text-[#a78bfa]">{stage}</div>
-                  <p className="mt-2 text-sm leading-6 text-[#c4c4d4]">{detail}</p>
+                  <p className="mt-2 text-sm leading-6 text-[var(--text-soft)]">{detail}</p>
                 </div>
               ))}
             </div>
@@ -1694,13 +1694,13 @@ function LocalizedSopsPage({ language }: { language: Exclude<Language, "zh"> }) 
 
           <div className="rounded-xl border border-[#5542a0] bg-[#151129] p-5">
             <div className="mb-4">
-              <div className="text-xs font-black uppercase text-[#8b5cf6]">{copy.ui.ownershipEyebrow}</div>
-              <h2 className="text-2xl font-black text-white">{copy.recruitment.ownersTitle}</h2>
+              <div className="text-xs font-black uppercase text-[var(--accent)]">{copy.ui.ownershipEyebrow}</div>
+              <h2 className="text-2xl font-black text-[var(--text)]">{copy.recruitment.ownersTitle}</h2>
             </div>
             <div className="space-y-3">
               {copy.recruitment.owners.map(([owner, detail]) => (
                 <div key={owner} className="rounded-lg border border-[#5542a0] bg-[#1d1738] p-4">
-                  <h3 className="font-black text-white">{owner}</h3>
+                  <h3 className="font-black text-[var(--text)]">{owner}</h3>
                   <p className="mt-2 text-sm leading-6 text-[#a9a9bd]">{detail}</p>
                 </div>
               ))}
@@ -1712,8 +1712,8 @@ function LocalizedSopsPage({ language }: { language: Exclude<Language, "zh"> }) 
           <div className="rounded-xl border border-[#5542a0] bg-[#151129] p-5">
             <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
               <div>
-                <div className="text-xs font-black uppercase text-[#8b5cf6]">{copy.ui.recruitmentKpiEyebrow}</div>
-                <h2 className="text-2xl font-black text-white">{copy.ui.recruitmentKpiTitle}</h2>
+                <div className="text-xs font-black uppercase text-[var(--accent)]">{copy.ui.recruitmentKpiEyebrow}</div>
+                <h2 className="text-2xl font-black text-[var(--text)]">{copy.ui.recruitmentKpiTitle}</h2>
               </div>
               <Badge value={copy.ui.funnelQualityBadge} />
             </div>
@@ -1721,7 +1721,7 @@ function LocalizedSopsPage({ language }: { language: Exclude<Language, "zh"> }) 
               {copy.recruitment.kpis.map(([name, target, detail]) => (
                 <div key={name} className="rounded-lg border border-[#5542a0] bg-[#1d1738] p-4">
                   <div className="flex items-start justify-between gap-3">
-                    <h3 className="font-black text-white">{name}</h3>
+                    <h3 className="font-black text-[var(--text)]">{name}</h3>
                     <span className="rounded border border-[#06d6a0]/30 bg-[#06251a] px-2 py-1 text-xs font-black text-[#8ff5c2]">{target}</span>
                   </div>
                   <p className="mt-2 text-sm leading-6 text-[#a9a9bd]">{detail}</p>
@@ -1732,8 +1732,8 @@ function LocalizedSopsPage({ language }: { language: Exclude<Language, "zh"> }) 
 
           <div className="rounded-xl border border-[#5542a0] bg-[#151129] p-5">
             <div className="mb-4">
-              <div className="text-xs font-black uppercase text-[#8b5cf6]">{copy.ui.decisionRulesEyebrow}</div>
-              <h2 className="text-2xl font-black text-white">{copy.recruitment.decisionTitle}</h2>
+              <div className="text-xs font-black uppercase text-[var(--accent)]">{copy.ui.decisionRulesEyebrow}</div>
+              <h2 className="text-2xl font-black text-[var(--text)]">{copy.recruitment.decisionTitle}</h2>
             </div>
             <div className="space-y-3">
               {copy.recruitment.decisionRules.map((rule) => (
@@ -1757,14 +1757,14 @@ function LocalizedSopsPage({ language }: { language: Exclude<Language, "zh"> }) 
             <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
               <div>
                 <div className="text-xs font-black uppercase text-[#f59e0b]">{copy.ui.siteStaffingEyebrow}</div>
-                <h2 className="text-2xl font-black text-white">{copy.site.staffingTitle}</h2>
+                <h2 className="text-2xl font-black text-[var(--text)]">{copy.site.staffingTitle}</h2>
               </div>
               <Badge value={copy.ui.twoPeopleBadge} />
             </div>
             <div className="space-y-3">
               {copy.site.staffing.map(([role, detail]) => (
                 <div key={role} className="rounded-lg border border-[#7a4d10] bg-[#2c1f0b] p-4">
-                  <h3 className="font-black text-white">{role}</h3>
+                  <h3 className="font-black text-[var(--text)]">{role}</h3>
                   <p className="mt-2 text-sm leading-6 text-[#a9a9bd]">{detail}</p>
                 </div>
               ))}
@@ -1775,14 +1775,14 @@ function LocalizedSopsPage({ language }: { language: Exclude<Language, "zh"> }) 
             <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
               <div>
                 <div className="text-xs font-black uppercase text-[#f59e0b]">{copy.ui.hqDataSupportEyebrow}</div>
-                <h2 className="text-2xl font-black text-white">{copy.site.dataSupportTitle}</h2>
+                <h2 className="text-2xl font-black text-[var(--text)]">{copy.site.dataSupportTitle}</h2>
               </div>
               <Badge value={copy.ui.d1DataBadge} />
             </div>
             <div className="grid gap-3 md:grid-cols-2">
               {copy.site.hqDataSupport.map(([name, detail]) => (
                 <div key={name} className="rounded-lg border border-[#7a4d10] bg-[#2c1f0b] p-4">
-                  <h3 className="font-black text-white">{name}</h3>
+                  <h3 className="font-black text-[var(--text)]">{name}</h3>
                   <p className="mt-2 text-sm leading-6 text-[#a9a9bd]">{detail}</p>
                 </div>
               ))}
@@ -1794,7 +1794,7 @@ function LocalizedSopsPage({ language }: { language: Exclude<Language, "zh"> }) 
           <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
             <div>
               <div className="text-xs font-black uppercase text-[#f59e0b]">{copy.ui.siteDailyFlowEyebrow}</div>
-              <h2 className="text-2xl font-black text-white">{copy.site.title}</h2>
+              <h2 className="text-2xl font-black text-[var(--text)]">{copy.site.title}</h2>
             </div>
             <div className="flex flex-wrap gap-2">
               <Badge value={copy.ui.openBadge} />
@@ -1807,7 +1807,7 @@ function LocalizedSopsPage({ language }: { language: Exclude<Language, "zh"> }) 
             {copy.site.timeline.map(([stage, title, detail]) => (
               <div key={`${stage}-${title}`} className="rounded-lg border border-[#7a4d10] bg-[#2c1f0b] p-4">
                 <div className="text-xs font-black uppercase text-[#f59e0b]">{stage}</div>
-                <h3 className="mt-2 font-black text-white">{title}</h3>
+                <h3 className="mt-2 font-black text-[var(--text)]">{title}</h3>
                 <p className="mt-2 text-sm leading-6 text-[#a9a9bd]">{detail}</p>
               </div>
             ))}
@@ -1818,7 +1818,7 @@ function LocalizedSopsPage({ language }: { language: Exclude<Language, "zh"> }) 
           <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
             <div>
               <div className="text-xs font-black uppercase text-[#fb7185]">{copy.ui.hqInspectionActionsEyebrow}</div>
-              <h2 className="text-2xl font-black text-white">{copy.inspection.title}</h2>
+              <h2 className="text-2xl font-black text-[var(--text)]">{copy.inspection.title}</h2>
             </div>
             <div className="flex flex-wrap gap-2">
               <Badge value={copy.ui.actionBadge} />
@@ -1838,9 +1838,9 @@ function LocalizedSopsPage({ language }: { language: Exclude<Language, "zh"> }) 
               <tbody>
                 {copy.inspection.actions.map((item) => (
                   <tr key={item.stage} className="border-b border-[#3b1821] align-top">
-                    <td className="px-3 py-4 font-black text-white">{item.stage}</td>
-                    <td className="px-3 py-4 leading-6 text-[#c4c4d4]">{item.action}</td>
-                    <td className="px-3 py-4 text-[#c4c4d4]">{item.owner}</td>
+                    <td className="px-3 py-4 font-black text-[var(--text)]">{item.stage}</td>
+                    <td className="px-3 py-4 leading-6 text-[var(--text-soft)]">{item.action}</td>
+                    <td className="px-3 py-4 text-[var(--text-soft)]">{item.owner}</td>
                     <td className="px-3 py-4 text-[#a9a9bd]">{item.cadence}</td>
                     <td className="px-3 py-4 text-[#a9a9bd]">{item.record}</td>
                     <td className="px-3 py-4 leading-6 text-[#a9a9bd]">{item.evidence}</td>
@@ -1855,7 +1855,7 @@ function LocalizedSopsPage({ language }: { language: Exclude<Language, "zh"> }) 
           {copy.inspection.metrics.map(([name, target, detail]) => (
             <div key={name} className="rounded-lg border border-[#74303c] bg-[#31111b] p-4">
               <div className="text-xs font-black uppercase text-[#fb7185]">{name}</div>
-              <div className="mt-2 text-3xl font-black text-white">{target}</div>
+              <div className="mt-2 text-3xl font-black text-[var(--text)]">{target}</div>
               <p className="mt-2 text-sm leading-6 text-[#a9a9bd]">{detail}</p>
             </div>
           ))}
@@ -1883,33 +1883,33 @@ function LocalizedSopsPage({ language }: { language: Exclude<Language, "zh"> }) 
 
         <section className="mt-5 grid gap-4 lg:grid-cols-[0.9fr_1.1fr]">
           <div className="panel p-5">
-            <div className="mb-3 flex items-center gap-2 text-sm font-black text-white">
+            <div className="mb-3 flex items-center gap-2 text-sm font-black text-[var(--text)]">
               <Clock3 size={18} />
               {copy.ui.dailyCadenceTitle}
             </div>
-            <div className="space-y-3 text-sm leading-6 text-[#c4c4d4]">
+            <div className="space-y-3 text-sm leading-6 text-[var(--text-soft)]">
               {isEn ? (
                 <>
-                  <p><strong className="text-white">08:00</strong> Import D-1 99 Data, generate exceptions and payment gaps.</p>
-                  <p><strong className="text-white">10:00</strong> Ponto/Leader morning briefing to confirm recruitment gaps, scheduling, and risk riders.</p>
-                  <p><strong className="text-white">14:00</strong> Check PontoSys scheduling plan, shift registration, and rider group.</p>
-                  <p><strong className="text-white">18:00</strong> Evening peak/night shift online check, handle incidents and complaints.</p>
-                  <p><strong className="text-white">22:00</strong> Review TSH, AR, orders, delay, payment, and next-day scheduling.</p>
+                  <p><strong className="text-[var(--text)]">08:00</strong> Import D-1 99 Data, generate exceptions and payment gaps.</p>
+                  <p><strong className="text-[var(--text)]">10:00</strong> Ponto/Leader morning briefing to confirm recruitment gaps, scheduling, and risk riders.</p>
+                  <p><strong className="text-[var(--text)]">14:00</strong> Check PontoSys scheduling plan, shift registration, and rider group.</p>
+                  <p><strong className="text-[var(--text)]">18:00</strong> Evening peak/night shift online check, handle incidents and complaints.</p>
+                  <p><strong className="text-[var(--text)]">22:00</strong> Review TSH, AR, orders, delay, payment, and next-day scheduling.</p>
                 </>
               ) : (
                 <>
-                  <p><strong className="text-white">08:00</strong> Importar dados D-1 da 99, gerar exceções e divergências de pagamento.</p>
-                  <p><strong className="text-white">10:00</strong> Briefing matinal Ponto/Leader, confirmar lacunas de contratação, escala e motoboys de risco.</p>
-                  <p><strong className="text-white">14:00</strong> Verificar plano de escala no PontoSys, cadastro de turnos e grupo de motoboys.</p>
-                  <p><strong className="text-white">18:00</strong> Verificação online no pico da noite/turno noturno, tratar incidentes e reclamações.</p>
-                  <p><strong className="text-white">22:00</strong> Revisar TSH, AR, pedidos, atrasos, pagamentos e escala do dia seguinte.</p>
+                  <p><strong className="text-[var(--text)]">08:00</strong> Importar dados D-1 da 99, gerar exceções e divergências de pagamento.</p>
+                  <p><strong className="text-[var(--text)]">10:00</strong> Briefing matinal Ponto/Leader, confirmar lacunas de contratação, escala e motoboys de risco.</p>
+                  <p><strong className="text-[var(--text)]">14:00</strong> Verificar plano de escala no PontoSys, cadastro de turnos e grupo de motoboys.</p>
+                  <p><strong className="text-[var(--text)]">18:00</strong> Verificação online no pico da noite/turno noturno, tratar incidentes e reclamações.</p>
+                  <p><strong className="text-[var(--text)]">22:00</strong> Revisar TSH, AR, pedidos, atrasos, pagamentos e escala do dia seguinte.</p>
                 </>
               )}
             </div>
           </div>
 
           <div className="panel p-5">
-            <div className="mb-3 flex items-center gap-2 text-sm font-black text-white">
+            <div className="mb-3 flex items-center gap-2 text-sm font-black text-[var(--text)]">
               <ShieldCheck size={18} />
               {copy.ui.redLinesTitle}
             </div>
@@ -1937,10 +1937,10 @@ function LocalizedSopsPage({ language }: { language: Exclude<Language, "zh"> }) 
           </div>
         </section>
 
-        <section className="mt-5 rounded-xl border border-[#46556b] bg-[#111827] p-5">
+        <section className="mt-5 rounded-xl border border-[#46556b] bg-[var(--surface-raised)] p-5">
           <div className="mb-4">
             <div className="text-xs font-black uppercase text-[#cbd5e1]">{copy.sourceTitle}</div>
-            <h2 className="text-2xl font-black text-white">{copy.sourceDescription}</h2>
+            <h2 className="text-2xl font-black text-[var(--text)]">{copy.sourceDescription}</h2>
           </div>
           <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
             {copy.sourceDocs.map((doc) => (
@@ -1949,7 +1949,7 @@ function LocalizedSopsPage({ language }: { language: Exclude<Language, "zh"> }) 
                   <FileText size={15} />
                   {copy.ui.documentLabel}
                 </div>
-                <h3 className="font-black text-white">{doc.title}</h3>
+                <h3 className="font-black text-[var(--text)]">{doc.title}</h3>
                 <p className="mt-2 text-sm leading-6 text-[#a9a9bd]">{doc.description}</p>
               </a>
             ))}
@@ -1971,27 +1971,27 @@ export default function SopsPage() {
     <AppShell>
       <PageTitle title="MePonto PontoSys SOP Center" eyebrow="全职骑手 / 招聘 / 站点运营" />
 
-      <section className="rounded-xl border border-[#2a2a4a] bg-[#0d0d1a] p-5">
+      <section className="rounded-xl border border-[var(--line)] bg-[var(--surface)] p-5">
         <div className="flex flex-wrap items-end justify-between gap-4">
           <div>
-            <div className="text-xs font-black uppercase text-[#8b5cf6]">SOP category map</div>
-            <h2 className="text-2xl font-black text-white">当前共有 5 个正式 SOP</h2>
-            <p className="mt-2 max-w-3xl text-sm leading-6 text-[#c4c4d4]">
+            <div className="text-xs font-black uppercase text-[var(--accent)]">SOP category map</div>
+            <h2 className="text-2xl font-black text-[var(--text)]">当前共有 5 个正式 SOP</h2>
+            <p className="mt-2 max-w-3xl text-sm leading-6 text-[var(--text-soft)]">
               资料库只作为 PDF、视频和品牌/沟通来源，不计入正式 SOP。正式 SOP 按“总部数据、骑手执行、招聘转化、站点运营、总部巡查”五类管理。
             </p>
           </div>
           <div className="grid grid-cols-2 gap-2 text-center md:grid-cols-3">
-            <div className="rounded-lg border border-[#2a2a4a] bg-[#111827] px-4 py-3">
-              <div className="text-2xl font-black text-white">5</div>
-              <div className="text-xs font-black uppercase text-[#8b8ba3]">正式 SOP</div>
+            <div className="rounded-lg border border-[var(--line)] bg-[var(--surface-raised)] px-4 py-3">
+              <div className="text-2xl font-black text-[var(--text)]">5</div>
+              <div className="text-xs font-black uppercase text-[var(--muted)]">正式 SOP</div>
             </div>
-            <div className="rounded-lg border border-[#2a2a4a] bg-[#111827] px-4 py-3">
-              <div className="text-2xl font-black text-white">1</div>
-              <div className="text-xs font-black uppercase text-[#8b8ba3]">资料库</div>
+            <div className="rounded-lg border border-[var(--line)] bg-[var(--surface-raised)] px-4 py-3">
+              <div className="text-2xl font-black text-[var(--text)]">1</div>
+              <div className="text-xs font-black uppercase text-[var(--muted)]">资料库</div>
             </div>
-            <div className="rounded-lg border border-[#2a2a4a] bg-[#111827] px-4 py-3">
-              <div className="text-2xl font-black text-white">3</div>
-              <div className="text-xs font-black uppercase text-[#8b8ba3]">执行角色</div>
+            <div className="rounded-lg border border-[var(--line)] bg-[var(--surface-raised)] px-4 py-3">
+              <div className="text-2xl font-black text-[var(--text)]">3</div>
+              <div className="text-xs font-black uppercase text-[var(--muted)]">执行角色</div>
             </div>
           </div>
         </div>
@@ -2002,9 +2002,9 @@ export default function SopsPage() {
             return (
               <Link key={category.code} href={category.href} className={`rounded-xl border ${colors.border} ${colors.bg} p-4 transition hover:-translate-y-0.5`}>
                 <div className={`text-xs font-black uppercase ${colors.accent}`}>{category.code}</div>
-                <h3 className="mt-2 text-lg font-black text-white">{category.name}</h3>
-                <p className="mt-1 text-xs font-black uppercase text-[#8b8ba3]">{category.owner}</p>
-                <p className="mt-3 text-sm leading-6 text-[#c4c4d4]">{category.scope}</p>
+                <h3 className="mt-2 text-lg font-black text-[var(--text)]">{category.name}</h3>
+                <p className="mt-1 text-xs font-black uppercase text-[var(--muted)]">{category.owner}</p>
+                <p className="mt-3 text-sm leading-6 text-[var(--text-soft)]">{category.scope}</p>
                 <div className="mt-3 flex flex-wrap gap-2">
                   {category.modules.slice(0, 3).map((module) => (
                     <span key={module} className={`rounded border px-2 py-1 text-[11px] font-black ${colors.chip}`}>
@@ -2026,7 +2026,7 @@ export default function SopsPage() {
             <Badge value="99 Data Source" />
             <Badge value="OL Operations" />
           </div>
-          <p className="mt-3 max-w-4xl text-sm leading-6 text-[#c4c4d4]">
+          <p className="mt-3 max-w-4xl text-sm leading-6 text-[var(--text-soft)]">
             PontoSys 不直接替代 99 后台数据源作为原始系统。总部每天从 99 后台导出前一天数据，再导入 PontoSys 做站点运营、骑手管理、财务对账、风险提醒和 SOP 执行追踪。
           </p>
           <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
@@ -2036,7 +2036,7 @@ export default function SopsPage() {
                   <Database size={15} />
                   Step {index + 1}
                 </div>
-                <h3 className="font-black text-white">{title}</h3>
+                <h3 className="font-black text-[var(--text)]">{title}</h3>
                 <p className="mt-2 text-sm leading-6 text-[#a9a9bd]">{detail}</p>
               </div>
             ))}
@@ -2044,11 +2044,11 @@ export default function SopsPage() {
           </div>
 
           <div className="overflow-hidden rounded-lg border border-[#1f5f78] bg-[#081d28] p-5">
-          <div className="mb-3 flex items-center gap-2 text-sm font-black text-white">
+          <div className="mb-3 flex items-center gap-2 text-sm font-black text-[var(--text)]">
             <BookOpen size={18} />
             Training video
           </div>
-          <video className="aspect-video w-full rounded-lg border border-[#2a2a4a] bg-black" controls preload="metadata">
+          <video className="aspect-video w-full rounded-lg border border-[var(--line)] bg-black" controls preload="metadata">
             <source src="/sop-assets/pontosys-training-video.mp4" type="video/mp4" />
           </video>
           <p className="mt-3 text-sm leading-6 text-[#a9a9bd]">视频作为 PontoSys 操作培训资料，配合 PDF 手册用于站点经理和 Leader 培训。</p>
@@ -2059,7 +2059,7 @@ export default function SopsPage() {
       <SectionShell id="rider-daily" title="全职骑手每日执行流" eyebrow="Daily rider SOP" tone="rider">
         <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
           <div>
-            <p className="text-sm leading-6 text-[#c4c4d4]">用绿色标记骑手每日必须完成的动作和现场要求。</p>
+            <p className="text-sm leading-6 text-[var(--text-soft)]">用绿色标记骑手每日必须完成的动作和现场要求。</p>
           </div>
           <div className="flex flex-wrap gap-2">
             <Badge value="AR 95%" />
@@ -2078,8 +2078,8 @@ export default function SopsPage() {
       <section id="recruitment" className="mt-5 rounded-xl border border-[#5542a0] bg-[#151129] p-5 shadow-[0_16px_40px_rgba(0,0,0,0.18)]">
         <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
           <div>
-            <div className="text-xs font-black uppercase text-[#8b5cf6]">Recruitment funnel</div>
-            <h2 className="text-2xl font-black text-white">招聘骑手转化流程</h2>
+            <div className="text-xs font-black uppercase text-[var(--accent)]">Recruitment funnel</div>
+            <h2 className="text-2xl font-black text-[var(--text)]">招聘骑手转化流程</h2>
           </div>
           <div className="flex flex-wrap gap-2">
             <Badge value="HQ Campaign" />
@@ -2092,7 +2092,7 @@ export default function SopsPage() {
           {recruitmentPipeline.map(([stage, title, detail]) => (
             <div key={`${stage}-${title}`} className="rounded-lg border border-[#5542a0] bg-[#1d1738] p-4">
               <div className="text-xs font-black uppercase text-[#a78bfa]">{stage}</div>
-              <h3 className="mt-2 font-black text-white">{title}</h3>
+              <h3 className="mt-2 font-black text-[var(--text)]">{title}</h3>
               <p className="mt-2 text-sm leading-6 text-[#a9a9bd]">{detail}</p>
             </div>
           ))}
@@ -2102,14 +2102,14 @@ export default function SopsPage() {
       <section className="mt-5 grid gap-4 xl:grid-cols-[1fr_0.8fr]">
         <div className="rounded-xl border border-[#5542a0] bg-[#151129] p-5">
           <div className="mb-4">
-            <div className="text-xs font-black uppercase text-[#8b5cf6]">Recruitment actions</div>
-            <h2 className="text-2xl font-black text-white">招聘动作清单</h2>
+            <div className="text-xs font-black uppercase text-[var(--accent)]">Recruitment actions</div>
+            <h2 className="text-2xl font-black text-[var(--text)]">招聘动作清单</h2>
           </div>
           <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
             {recruitmentActions.map(([stage, detail]) => (
               <div key={stage} className="rounded-lg border border-[#5542a0] bg-[#1d1738] p-4">
                 <div className="text-xs font-black uppercase text-[#a78bfa]">{stage}</div>
-                <p className="mt-2 text-sm leading-6 text-[#c4c4d4]">{detail}</p>
+                <p className="mt-2 text-sm leading-6 text-[var(--text-soft)]">{detail}</p>
               </div>
             ))}
           </div>
@@ -2117,13 +2117,13 @@ export default function SopsPage() {
 
         <div className="rounded-xl border border-[#5542a0] bg-[#151129] p-5">
           <div className="mb-4">
-            <div className="text-xs font-black uppercase text-[#8b5cf6]">Ownership</div>
-            <h2 className="text-2xl font-black text-white">负责人矩阵</h2>
+            <div className="text-xs font-black uppercase text-[var(--accent)]">Ownership</div>
+            <h2 className="text-2xl font-black text-[var(--text)]">负责人矩阵</h2>
           </div>
           <div className="space-y-3">
             {recruitmentOwners.map(([owner, detail]) => (
               <div key={owner} className="rounded-lg border border-[#5542a0] bg-[#1d1738] p-4">
-                <h3 className="font-black text-white">{owner}</h3>
+                <h3 className="font-black text-[var(--text)]">{owner}</h3>
                 <p className="mt-2 text-sm leading-6 text-[#a9a9bd]">{detail}</p>
               </div>
             ))}
@@ -2135,8 +2135,8 @@ export default function SopsPage() {
         <div className="rounded-xl border border-[#5542a0] bg-[#151129] p-5">
           <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
             <div>
-              <div className="text-xs font-black uppercase text-[#8b5cf6]">Recruitment KPI</div>
-              <h2 className="text-2xl font-black text-white">招聘考核规则</h2>
+              <div className="text-xs font-black uppercase text-[var(--accent)]">Recruitment KPI</div>
+              <h2 className="text-2xl font-black text-[var(--text)]">招聘考核规则</h2>
             </div>
             <Badge value="Funnel quality" />
           </div>
@@ -2144,7 +2144,7 @@ export default function SopsPage() {
             {recruitmentKpis.map(([name, target, detail]) => (
               <div key={name} className="rounded-lg border border-[#5542a0] bg-[#1d1738] p-4">
                 <div className="flex items-start justify-between gap-3">
-                  <h3 className="font-black text-white">{name}</h3>
+                  <h3 className="font-black text-[var(--text)]">{name}</h3>
                   <span className="rounded border border-[#06d6a0]/30 bg-[#06251a] px-2 py-1 text-xs font-black text-[#8ff5c2]">{target}</span>
                 </div>
                 <p className="mt-2 text-sm leading-6 text-[#a9a9bd]">{detail}</p>
@@ -2155,8 +2155,8 @@ export default function SopsPage() {
 
         <div className="rounded-xl border border-[#5542a0] bg-[#151129] p-5">
           <div className="mb-4">
-            <div className="text-xs font-black uppercase text-[#8b5cf6]">Decision rules</div>
-            <h2 className="text-2xl font-black text-white">通过 / 待观察 / 淘汰</h2>
+            <div className="text-xs font-black uppercase text-[var(--accent)]">Decision rules</div>
+            <h2 className="text-2xl font-black text-[var(--text)]">通过 / 待观察 / 淘汰</h2>
           </div>
           <div className="space-y-3">
             {recruitmentDecisionRules.map((rule) => (
@@ -2179,15 +2179,15 @@ export default function SopsPage() {
         <div className="rounded-xl border border-[#7a4d10] bg-[#211707] p-5">
           <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
             <div>
-              <div className="text-xs font-black uppercase text-[#8b5cf6]">Site staffing</div>
-              <h2 className="text-2xl font-black text-white">每站 2 人配置</h2>
+              <div className="text-xs font-black uppercase text-[var(--accent)]">Site staffing</div>
+              <h2 className="text-2xl font-black text-[var(--text)]">每站 2 人配置</h2>
             </div>
             <Badge value="2 people / Ponto" />
           </div>
           <div className="space-y-3">
             {siteStaffingModel.map(([role, detail]) => (
               <div key={role} className="rounded-lg border border-[#7a4d10] bg-[#2c1f0b] p-4">
-                <h3 className="font-black text-white">{role}</h3>
+                <h3 className="font-black text-[var(--text)]">{role}</h3>
                 <p className="mt-2 text-sm leading-6 text-[#a9a9bd]">{detail}</p>
               </div>
             ))}
@@ -2197,15 +2197,15 @@ export default function SopsPage() {
         <div className="rounded-xl border border-[#7a4d10] bg-[#211707] p-5">
           <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
             <div>
-              <div className="text-xs font-black uppercase text-[#8b5cf6]">HQ data support</div>
-              <h2 className="text-2xl font-black text-white">总部数据支持</h2>
+              <div className="text-xs font-black uppercase text-[var(--accent)]">HQ data support</div>
+              <h2 className="text-2xl font-black text-[var(--text)]">总部数据支持</h2>
             </div>
             <Badge value="D-1 99 Data" />
           </div>
           <div className="grid gap-3 md:grid-cols-2">
             {hqDataSupport.map(([name, detail]) => (
               <div key={name} className="rounded-lg border border-[#7a4d10] bg-[#2c1f0b] p-4">
-                <h3 className="font-black text-white">{name}</h3>
+                <h3 className="font-black text-[var(--text)]">{name}</h3>
                 <p className="mt-2 text-sm leading-6 text-[#a9a9bd]">{detail}</p>
               </div>
             ))}
@@ -2216,8 +2216,8 @@ export default function SopsPage() {
       <section className="mt-5 rounded-xl border border-[#7a4d10] bg-[#211707] p-5">
         <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
           <div>
-            <div className="text-xs font-black uppercase text-[#8b5cf6]">Site daily flow</div>
-            <h2 className="text-2xl font-black text-white">站点每日运营流</h2>
+            <div className="text-xs font-black uppercase text-[var(--accent)]">Site daily flow</div>
+            <h2 className="text-2xl font-black text-[var(--text)]">站点每日运营流</h2>
           </div>
           <div className="flex flex-wrap gap-2">
             <Badge value="Open" />
@@ -2230,7 +2230,7 @@ export default function SopsPage() {
           {siteOpsTimeline.map(([stage, title, detail]) => (
             <div key={`${stage}-${title}`} className="rounded-lg border border-[#7a4d10] bg-[#2c1f0b] p-4">
               <div className="text-xs font-black uppercase text-[#f59e0b]">{stage}</div>
-              <h3 className="mt-2 font-black text-white">{title}</h3>
+              <h3 className="mt-2 font-black text-[var(--text)]">{title}</h3>
               <p className="mt-2 text-sm leading-6 text-[#a9a9bd]">{detail}</p>
             </div>
           ))}
@@ -2240,8 +2240,8 @@ export default function SopsPage() {
       <section id="inspection" className="mt-5 rounded-xl border border-[#74303c] bg-[#240d14] p-5">
         <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
           <div>
-            <div className="text-xs font-black uppercase text-[#8b5cf6]">HQ inspection actions</div>
-            <h2 className="text-2xl font-black text-white">SOP 落地执行动作表</h2>
+            <div className="text-xs font-black uppercase text-[var(--accent)]">HQ inspection actions</div>
+            <h2 className="text-2xl font-black text-[var(--text)]">SOP 落地执行动作表</h2>
           </div>
           <div className="flex flex-wrap gap-2">
             <Badge value="Action" />
@@ -2264,9 +2264,9 @@ export default function SopsPage() {
             <tbody>
               {executionActions.map((item) => (
                 <tr key={item.stage} className="border-b border-[#3b1821] align-top">
-                  <td className="px-3 py-4 font-black text-white">{item.stage}</td>
-                  <td className="px-3 py-4 leading-6 text-[#c4c4d4]">{item.action}</td>
-                  <td className="px-3 py-4 text-[#c4c4d4]">{item.owner}</td>
+                  <td className="px-3 py-4 font-black text-[var(--text)]">{item.stage}</td>
+                  <td className="px-3 py-4 leading-6 text-[var(--text-soft)]">{item.action}</td>
+                  <td className="px-3 py-4 text-[var(--text-soft)]">{item.owner}</td>
                   <td className="px-3 py-4 text-[#a9a9bd]">{item.cadence}</td>
                   <td className="px-3 py-4 text-[#a9a9bd]">{item.record}</td>
                   <td className="px-3 py-4 leading-6 text-[#a9a9bd]">{item.evidence}</td>
@@ -2286,7 +2286,7 @@ export default function SopsPage() {
         ].map(([name, target, detail]) => (
           <div key={name} className="rounded-lg border border-[#74303c] bg-[#31111b] p-4">
             <div className="text-xs font-black uppercase text-[#fb7185]">{name}</div>
-            <div className="mt-2 text-3xl font-black text-white">{target}</div>
+            <div className="mt-2 text-3xl font-black text-[var(--text)]">{target}</div>
             <p className="mt-2 text-sm leading-6 text-[#a9a9bd]">{detail}</p>
           </div>
         ))}
@@ -2314,21 +2314,21 @@ export default function SopsPage() {
 
       <section className="mt-5 grid gap-4 lg:grid-cols-[0.9fr_1.1fr]">
         <div className="panel p-5">
-          <div className="mb-3 flex items-center gap-2 text-sm font-black text-white">
+          <div className="mb-3 flex items-center gap-2 text-sm font-black text-[var(--text)]">
             <Clock3 size={18} />
             Daily cadence
           </div>
-          <div className="space-y-3 text-sm leading-6 text-[#c4c4d4]">
-            <p><strong className="text-white">08:00</strong> 导入 D-1 99 Data 数据，生成异常和付款差异。</p>
-            <p><strong className="text-white">10:00</strong> Ponto/Leader 晨会，确认招聘缺口、排班和风险骑手。</p>
-            <p><strong className="text-white">14:00</strong> 检查 PontoSys 排班计划、班次注册和 rider group。</p>
-            <p><strong className="text-white">18:00</strong> 晚高峰/夜班上线检查，处理事故和投诉。</p>
-            <p><strong className="text-white">22:00</strong> 复盘 TSH、AR、订单、延迟、付款和次日排班。</p>
+          <div className="space-y-3 text-sm leading-6 text-[var(--text-soft)]">
+            <p><strong className="text-[var(--text)]">08:00</strong> 导入 D-1 99 Data 数据，生成异常和付款差异。</p>
+            <p><strong className="text-[var(--text)]">10:00</strong> Ponto/Leader 晨会，确认招聘缺口、排班和风险骑手。</p>
+            <p><strong className="text-[var(--text)]">14:00</strong> 检查 PontoSys 排班计划、班次注册和 rider group。</p>
+            <p><strong className="text-[var(--text)]">18:00</strong> 晚高峰/夜班上线检查，处理事故和投诉。</p>
+            <p><strong className="text-[var(--text)]">22:00</strong> 复盘 TSH、AR、订单、延迟、付款和次日排班。</p>
           </div>
         </div>
 
         <div className="panel p-5">
-          <div className="mb-3 flex items-center gap-2 text-sm font-black text-white">
+          <div className="mb-3 flex items-center gap-2 text-sm font-black text-[var(--text)]">
             <ShieldCheck size={18} />
             Red lines
           </div>
@@ -2349,18 +2349,18 @@ export default function SopsPage() {
         </div>
       </section>
 
-      <section id="library" className="mt-5 rounded-xl border border-[#46556b] bg-[#111827] p-5">
-        <div className="mb-4 flex items-center gap-2 text-sm font-black text-white">
+      <section id="library" className="mt-5 rounded-xl border border-[#46556b] bg-[var(--surface-raised)] p-5">
+        <div className="mb-4 flex items-center gap-2 text-sm font-black text-[var(--text)]">
           <FileText size={18} />
           Source library
         </div>
         <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
           {sourceDocs.map((doc) => (
             <Link key={doc.href} href={doc.href} className="rounded-lg border border-[#46556b] bg-[#162033] p-4 transition hover:border-[#94a3b8]">
-              <div className="mb-3 flex h-10 w-10 items-center justify-center rounded-lg bg-[#18182b] text-[#8b5cf6]">
+              <div className="mb-3 flex h-10 w-10 items-center justify-center rounded-lg bg-[#18182b] text-[var(--accent)]">
                 <Users size={18} />
               </div>
-              <h3 className="font-black text-white">{doc.title}</h3>
+              <h3 className="font-black text-[var(--text)]">{doc.title}</h3>
               <p className="mt-2 text-sm leading-6 text-[#a9a9bd]">{doc.description}</p>
             </Link>
           ))}

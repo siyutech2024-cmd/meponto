@@ -33,31 +33,31 @@ export default function FinancePage() {
         <Field label="Approved" value={`R$ ${approvedTotal}`} />
         <Field label="Paid" value={`R$ ${paidTotal}`} />
         <Field label="Rejected" value={`R$ ${rejectedTotal}`} />
-        <div className="panel industrial-shadow p-3.5 relative overflow-hidden group border-[#8b5cf6]/30 bg-[#8b5cf6]/5">
-          <div className="absolute top-0 left-0 w-full h-[2px] bg-gradient-to-r from-[#8b5cf6] to-[#06d6a0] opacity-100 transition-all duration-300" />
-          <div className="text-[10px] font-bold uppercase tracking-wider text-[#8b5cf6]">测算模型</div>
-          <div className="mt-1 font-bold text-sm text-[#f0f0ff]">站点周财务核算</div>
-          <a href="/finance/model" className="mt-3 inline-flex h-8 w-full items-center justify-center gap-2 rounded-lg bg-[#8b5cf6] text-xs font-bold text-white shadow-lg shadow-[#8b5cf6]/20 transition-all hover:brightness-110">
+        <div className="panel industrial-shadow p-3.5 relative overflow-hidden group border-[var(--accent)]/30 bg-[var(--accent)]/5">
+          <div className="absolute top-0 left-0 w-full h-[2px] bg-gradient-to-r from-[var(--accent)] to-[var(--cyan)] opacity-100 transition-all duration-300" />
+          <div className="text-[10px] font-bold uppercase tracking-wider text-[var(--accent)]">测算模型</div>
+          <div className="mt-1 font-bold text-sm text-[var(--text)]">站点周财务核算</div>
+          <a href="/finance/model" className="mt-3 inline-flex h-8 w-full items-center justify-center gap-2 rounded-lg bg-[var(--accent)] text-xs font-bold text-[var(--accent-ink)] shadow-lg shadow-[var(--accent-glow)] transition-all hover:brightness-110">
             打开模型
           </a>
         </div>
       </section>
       <div className="panel my-4 grid gap-3 p-3 md:grid-cols-[180px_220px_1fr]">
-        <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)} className="h-11 rounded border border-[#2a2a4a] bg-[#0d0d1a] px-3 outline-none">
+        <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)} className="h-11 rounded border border-[var(--line)] bg-[var(--surface)] px-3 outline-none">
           <option>All Status</option>
           <option>Pending</option>
           <option>Approved</option>
           <option>Paid</option>
           <option>Rejected</option>
         </select>
-        <select value={typeFilter} onChange={(event) => setTypeFilter(event.target.value)} className="h-11 rounded border border-[#2a2a4a] bg-[#0d0d1a] px-3 outline-none">
+        <select value={typeFilter} onChange={(event) => setTypeFilter(event.target.value)} className="h-11 rounded border border-[var(--line)] bg-[var(--surface)] px-3 outline-none">
           <option>All Types</option>
           <option>Reward</option>
           <option>Leader Commission</option>
           <option>PIX</option>
           <option>Subsidy</option>
         </select>
-        <div className="flex items-center text-sm font-bold text-[#8b8ba3]">{visibleLedger.length} ledger records</div>
+        <div className="flex items-center text-sm font-bold text-[var(--muted)]">{visibleLedger.length} ledger records</div>
       </div>
       <DataTable
         headers={["Created At", "Recipient", "Recipient Type", "Ledger Type", "Amount", "Status", "Notes", "Actions"]}

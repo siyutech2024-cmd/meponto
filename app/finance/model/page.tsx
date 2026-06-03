@@ -395,7 +395,7 @@ function PremiumSlider({
   step,
   unit,
   onChange,
-  color = "#8b5cf6",
+  color = "var(--accent)",
 }: {
   label: string;
   sublabel: string;
@@ -418,7 +418,7 @@ function PremiumSlider({
   };
 
   return (
-    <div className="group rounded-xl border border-[#2a2a4a] bg-[#0d0d1a]/60 p-4 transition-all hover:border-[#8b5cf6]/30 hover:bg-[#0d0d1a]/80">
+    <div className="group rounded-xl border border-[var(--line)] bg-[var(--surface)]/60 p-4 transition-all hover:border-[var(--accent)]/30 hover:bg-[var(--surface)]/80">
       <div className="flex items-center justify-between mb-3">
         <div className="flex items-center gap-2.5">
           <div
@@ -441,7 +441,7 @@ function PremiumSlider({
             value={value}
             onChange={(e) => handleNumberInput(e.target.value)}
             onInput={(e) => handleNumberInput(e.currentTarget.value)}
-            className="w-20 rounded-lg border border-[#2a2a4a] bg-[#1a1a2e] text-center font-mono text-sm font-bold text-white py-1.5 pr-1 pl-1 outline-none transition-all focus:border-[#8b5cf6] focus:shadow-[0_0_12px_rgba(139,92,246,0.15)]"
+            className="w-20 rounded-lg border border-[var(--line)] bg-[var(--surface-raised)] text-center font-mono text-sm font-bold text-[var(--text)] py-1.5 pr-1 pl-1 outline-none transition-all focus:border-[var(--accent)] focus:shadow-[0_0_12px_rgba(139,92,246,0.15)]"
           />
           <span className="ml-1.5 text-[10px] font-bold text-[#666] min-w-[28px]">
             {unit}
@@ -450,7 +450,7 @@ function PremiumSlider({
       </div>
       {/* Custom styled range */}
       <div className="relative h-6 flex items-center">
-        <div className="absolute inset-x-0 h-1.5 rounded-full bg-[#1a1a2e] overflow-hidden">
+        <div className="absolute inset-x-0 h-1.5 rounded-full bg-[var(--surface-raised)] overflow-hidden">
           <div
             className="absolute inset-y-0 left-0 rounded-full transition-all duration-150"
             style={{
@@ -508,9 +508,9 @@ function CostInput({
   };
 
   return (
-    <div className="flex items-center justify-between gap-4 rounded-xl border border-[#2a2a4a] bg-[#0d0d1a]/40 px-4 py-3 transition-all hover:border-[#2a2a5a]">
+    <div className="flex items-center justify-between gap-4 rounded-xl border border-[var(--line)] bg-[var(--surface)]/40 px-4 py-3 transition-all hover:border-[var(--muted)]">
       <div className="min-w-0">
-        <div className="text-sm font-semibold text-[#c4c4d4]">{label}</div>
+        <div className="text-sm font-semibold text-[var(--text-soft)]">{label}</div>
         <p className="text-[10px] text-[#555] mt-0.5">{sublabel}</p>
       </div>
       <div className="relative shrink-0">
@@ -522,7 +522,7 @@ function CostInput({
           value={value}
           onChange={(e) => handleValueInput(e.target.value)}
           onInput={(e) => handleValueInput(e.currentTarget.value)}
-          className="w-28 rounded-lg border border-[#2a2a4a] bg-[#1a1a2e] pl-9 pr-3 py-2 font-mono text-sm font-bold text-white outline-none transition-all"
+          className="w-28 rounded-lg border border-[var(--line)] bg-[var(--surface-raised)] pl-9 pr-3 py-2 font-mono text-sm font-bold text-[var(--text)] outline-none transition-all"
           style={{
             borderColor: undefined,
           }}
@@ -530,7 +530,7 @@ function CostInput({
             (e.target.style.borderColor = accentColor)
           }
           onBlur={(e) =>
-            (e.target.style.borderColor = "#2a2a4a")
+            (e.target.style.borderColor = "var(--line)")
           }
         />
       </div>
@@ -555,12 +555,12 @@ function MetricCard({
   formatter: (v: number) => string;
 }) {
   return (
-    <div className="rounded-xl bg-[#0d0d1a]/70 p-4 border border-[#2a2a4a] transition-all hover:border-[#8b5cf6]/20 hover:shadow-[0_4px_20px_rgba(139,92,246,0.06)] group">
+    <div className="rounded-xl bg-[var(--surface)]/70 p-4 border border-[var(--line)] transition-all hover:border-[var(--accent)]/20 hover:shadow-[0_4px_20px_rgba(139,92,246,0.06)] group">
       <div className="flex items-center gap-2 mb-2">
-        <div className="flex h-6 w-6 items-center justify-center rounded-md bg-[#1a1a2e] text-[#8b8ba3] group-hover:text-[#8b5cf6] transition-colors">
+        <div className="flex h-6 w-6 items-center justify-center rounded-md bg-[var(--surface-raised)] text-[var(--muted)] group-hover:text-[var(--accent)] transition-colors">
           <Icon size={13} />
         </div>
-        <div className="text-[11px] text-[#8b8ba3] font-semibold leading-tight">
+        <div className="text-[11px] text-[var(--muted)] font-semibold leading-tight">
           {title}
         </div>
       </div>
@@ -835,7 +835,7 @@ export default function ProfitModelPage() {
     return (
       <AppShell>
         <div className="flex h-96 items-center justify-center">
-          <div className="h-8 w-8 animate-spin rounded-full border-4 border-[#8b5cf6] border-t-transparent" />
+          <div className="h-8 w-8 animate-spin rounded-full border-4 border-[var(--accent)] border-t-transparent" />
         </div>
       </AppShell>
     );
@@ -861,8 +861,8 @@ export default function ProfitModelPage() {
           height: 16px;
           border-radius: 50%;
           background: white;
-          border: 3px solid var(--slider-color, #8b5cf6);
-          box-shadow: 0 0 10px var(--slider-color, #8b5cf6),
+          border: 3px solid var(--slider-color, var(--accent));
+          box-shadow: 0 0 10px var(--slider-color, var(--accent)),
             0 2px 6px rgba(0, 0, 0, 0.4);
           cursor: grab;
           transition: transform 0.15s ease, box-shadow 0.15s ease;
@@ -871,7 +871,7 @@ export default function ProfitModelPage() {
         }
         .finance-slider::-webkit-slider-thumb:hover {
           transform: scale(1.2);
-          box-shadow: 0 0 16px var(--slider-color, #8b5cf6),
+          box-shadow: 0 0 16px var(--slider-color, var(--accent)),
             0 2px 8px rgba(0, 0, 0, 0.5);
         }
         .finance-slider::-webkit-slider-thumb:active {
@@ -883,8 +883,8 @@ export default function ProfitModelPage() {
           height: 16px;
           border-radius: 50%;
           background: white;
-          border: 3px solid var(--slider-color, #8b5cf6);
-          box-shadow: 0 0 10px var(--slider-color, #8b5cf6),
+          border: 3px solid var(--slider-color, var(--accent));
+          box-shadow: 0 0 10px var(--slider-color, var(--accent)),
             0 2px 6px rgba(0, 0, 0, 0.4);
           cursor: grab;
         }
@@ -913,7 +913,7 @@ export default function ProfitModelPage() {
         {/* ─── Page Header ─── */}
         <div className="mb-6 flex flex-wrap items-end justify-between gap-3 animate-fade-in">
         <div>
-          <div className="text-[10px] font-extrabold uppercase tracking-[0.2em] text-[#8b5cf6] font-[family-name:var(--font-outfit)]">
+          <div className="text-[10px] font-extrabold uppercase tracking-[0.2em] text-[var(--accent)] font-[family-name:var(--font-outfit)]">
             {copy.eyebrow}
           </div>
           <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight font-[family-name:var(--font-outfit)] bg-gradient-to-r from-white via-[#e0e0f0] to-[#8b8ba3] bg-clip-text text-transparent">
@@ -926,13 +926,13 @@ export default function ProfitModelPage() {
         <div className="flex gap-2">
           <button
             onClick={handleExport}
-            className="flex items-center gap-1.5 rounded-lg border border-[#2a2a4a] bg-[#1a1a2e] px-3 py-1.5 text-[11px] font-bold text-[#8b8ba3] transition-all hover:border-[#8b5cf6]/30 hover:text-white"
+            className="flex items-center gap-1.5 rounded-lg border border-[var(--line)] bg-[var(--surface-raised)] px-3 py-1.5 text-[11px] font-bold text-[var(--muted)] transition-all hover:border-[var(--accent)]/30 hover:text-[var(--text)]"
           >
             <Download size={12} /> {copy.exportLabel}
           </button>
           <button
             onClick={handleReset}
-            className="flex items-center gap-1.5 rounded-lg border border-[#2a2a4a] bg-[#1a1a2e] px-3 py-1.5 text-[11px] font-bold text-[#8b8ba3] transition-all hover:border-[#8b5cf6]/30 hover:text-white"
+            className="flex items-center gap-1.5 rounded-lg border border-[var(--line)] bg-[var(--surface-raised)] px-3 py-1.5 text-[11px] font-bold text-[var(--muted)] transition-all hover:border-[var(--accent)]/30 hover:text-[var(--text)]"
           >
             <RefreshCw size={12} /> {copy.resetLabel}
           </button>
@@ -940,9 +940,9 @@ export default function ProfitModelPage() {
         </div>
 
       {/* ─── Scenarios ─── */}
-        <div className="mb-5 rounded-xl border border-[#2a2a4a] bg-[#0d0d1a]/60 p-4 backdrop-blur-md">
+        <div className="mb-5 rounded-xl border border-[var(--line)] bg-[var(--surface)]/60 p-4 backdrop-blur-md">
         <div className="flex flex-wrap gap-2 items-center">
-          <Layers size={13} className="text-[#8b5cf6]" />
+          <Layers size={13} className="text-[var(--accent)]" />
           <span className="text-[10px] font-bold uppercase tracking-wider text-[#666] mr-2">
             {copy.presets}
           </span>
@@ -950,7 +950,7 @@ export default function ProfitModelPage() {
             <button
               key={s.id}
               onClick={() => handleLoadScenario(s)}
-              className="group flex items-center gap-1.5 rounded-lg border border-[#2a2a4a] bg-[#1a1a2e]/50 px-3 py-1.5 text-[11px] font-semibold text-[#8b8ba3] transition-all hover:border-[#8b5cf6] hover:text-white hover:bg-[#8b5cf6]/10"
+              className="group flex items-center gap-1.5 rounded-lg border border-[var(--line)] bg-[var(--surface-raised)]/50 px-3 py-1.5 text-[11px] font-semibold text-[var(--muted)] transition-all hover:border-[var(--accent)] hover:text-[var(--text)] hover:bg-[var(--accent)]/10"
             >
               {scenarioDisplayName(s)}
               {s.id.startsWith("custom-") && (
@@ -972,11 +972,11 @@ export default function ProfitModelPage() {
               placeholder={copy.scenarioPlaceholder}
               value={newScenarioName}
               onChange={(e) => setNewScenarioName(e.target.value)}
-              className="rounded-lg border border-[#2a2a4a] bg-[#1a1a2e]/50 px-2.5 py-1 text-[11px] text-white placeholder-[#444] outline-none focus:border-[#8b5cf6] w-28"
+              className="rounded-lg border border-[var(--line)] bg-[var(--surface-raised)]/50 px-2.5 py-1 text-[11px] text-[var(--text)] placeholder-[var(--muted)] outline-none focus:border-[var(--accent)] w-28"
             />
             <button
               type="submit"
-              className="flex items-center gap-1 rounded-lg bg-[#8b5cf6] px-2.5 py-1 text-[11px] font-bold text-white hover:brightness-110 transition-all"
+              className="flex items-center gap-1 rounded-lg bg-[var(--accent)] px-2.5 py-1 text-[11px] font-bold text-[var(--accent-ink)] hover:brightness-110 transition-all"
             >
               <Save size={10} /> {copy.save}
             </button>
@@ -991,7 +991,7 @@ export default function ProfitModelPage() {
           value={revenue}
           subtitle={`${fNum(Math.round(totalOrders))} ${copy.metrics.ordersUnit} × R$ ${srpo.toFixed(2)}`}
           icon={DollarSign}
-          valueColor="text-[#8b5cf6]"
+          valueColor="text-[var(--accent)]"
           formatter={fBRL}
         />
         <MetricCard
@@ -999,7 +999,7 @@ export default function ProfitModelPage() {
           value={totalCost}
           subtitle={`${copy.metrics.fixed} ${fBRL(sfc)} + ${copy.metrics.variable} ${fBRL(totalVarCost)}`}
           icon={BarChart3}
-          valueColor="text-white"
+          valueColor="text-[var(--text)]"
           formatter={fBRL}
         />
         <MetricCard
@@ -1034,30 +1034,30 @@ export default function ProfitModelPage() {
             <div className="space-y-2.5">
               <div>
                 <div className="flex justify-between text-[11px] mb-1">
-                  <span className="text-[#8b8ba3]">{copy.sections.revenue}</span>
-                  <span className="font-mono font-bold text-[#8b5cf6]">
+                  <span className="text-[var(--muted)]">{copy.sections.revenue}</span>
+                  <span className="font-mono font-bold text-[var(--accent)]">
                     {fBRL(revenue)}
                   </span>
                 </div>
-                <div className="h-5 rounded-md bg-[#1a1a2e] overflow-hidden relative">
+                <div className="h-5 rounded-md bg-[var(--surface-raised)] overflow-hidden relative">
                   <div
                     className="absolute inset-y-0 left-0 rounded-md transition-all duration-300"
                     style={{
                       width: `${revBarPct}%`,
                       background:
-                        "linear-gradient(90deg, #8b5cf6, #a78bfa)",
+                        "linear-gradient(90deg, var(--accent), var(--accent))",
                     }}
                   />
                 </div>
               </div>
               <div>
                 <div className="flex justify-between text-[11px] mb-1">
-                  <span className="text-[#8b8ba3]">{copy.sections.totalCost}</span>
-                  <span className="font-mono font-bold text-white">
+                  <span className="text-[var(--muted)]">{copy.sections.totalCost}</span>
+                  <span className="font-mono font-bold text-[var(--text)]">
                     {fBRL(totalCost)}
                   </span>
                 </div>
-                <div className="h-5 rounded-md bg-[#1a1a2e] overflow-hidden relative">
+                <div className="h-5 rounded-md bg-[var(--surface-raised)] overflow-hidden relative">
                   <div
                     className="absolute inset-y-0 left-0 rounded-md transition-all duration-300"
                     style={{
@@ -1078,7 +1078,7 @@ export default function ProfitModelPage() {
             <h3 className="text-[11px] font-bold uppercase tracking-wider text-[#666] mb-3">
               {copy.sections.costStructure}
             </h3>
-            <div className="h-4 rounded-full bg-[#1a1a2e] overflow-hidden flex">
+            <div className="h-4 rounded-full bg-[var(--surface-raised)] overflow-hidden flex">
               <div
                 className="transition-all duration-300 flex items-center justify-center"
                 style={{
@@ -1087,7 +1087,7 @@ export default function ProfitModelPage() {
                 }}
               >
                 {varPct > 15 && (
-                  <span className="text-[8px] font-bold text-white/80">
+                  <span className="text-[8px] font-bold text-[var(--text)]/80">
                     {copy.sections.variable} {varPct.toFixed(0)}%
                   </span>
                 )}
@@ -1096,11 +1096,11 @@ export default function ProfitModelPage() {
                 className="transition-all duration-300 flex items-center justify-center"
                 style={{
                   width: `${fixPct}%`,
-                  background: "linear-gradient(90deg, #8b5cf6, #7c3aed)",
+                  background: "linear-gradient(90deg, var(--accent), var(--accent-strong))",
                 }}
               >
                 {fixPct > 15 && (
-                  <span className="text-[8px] font-bold text-white/80">
+                  <span className="text-[8px] font-bold text-[var(--text)]/80">
                     {copy.sections.fixed} {fixPct.toFixed(0)}%
                   </span>
                 )}
@@ -1109,13 +1109,13 @@ export default function ProfitModelPage() {
             <div className="flex justify-between mt-2 text-[10px]">
               <div className="flex items-center gap-1.5">
                 <div className="w-2 h-2 rounded-full bg-[#fb923c]" />
-                <span className="text-[#8b8ba3]">
+                <span className="text-[var(--muted)]">
                   {copy.sections.variableCost} {fBRL(totalVarCost)}
                 </span>
               </div>
               <div className="flex items-center gap-1.5">
-                <div className="w-2 h-2 rounded-full bg-[#8b5cf6]" />
-                <span className="text-[#8b8ba3]">
+                <div className="w-2 h-2 rounded-full bg-[var(--accent)]" />
+                <span className="text-[var(--muted)]">
                   {copy.sections.fixedCost} {fBRL(sfc)}
                 </span>
               </div>
@@ -1193,7 +1193,7 @@ export default function ProfitModelPage() {
                   transform: "rotate(-90deg)",
                 }}
               />
-              <div className="absolute inset-3 rounded-full bg-[#0d0d1a] flex flex-col items-center justify-center">
+              <div className="absolute inset-3 rounded-full bg-[var(--surface)] flex flex-col items-center justify-center">
                 <AnimatedValue
                   value={profitMargin}
                   formatter={fPct}
@@ -1203,7 +1203,7 @@ export default function ProfitModelPage() {
                   {netProfit >= 0 ? copy.labels.profit : copy.labels.loss}
                 </div>
               </div>
-              <div className="absolute bottom-0 left-0 right-0 h-1/2 bg-gradient-to-t from-[#0d0d1a] via-[#0d0d1a]/80 to-transparent pointer-events-none" />
+              <div className="absolute bottom-0 left-0 right-0 h-1/2 bg-gradient-to-t from-[var(--surface)] via-[var(--surface)]/80 to-transparent pointer-events-none" />
             </div>
 
             <div className="text-center mt-1 z-10">
@@ -1218,9 +1218,9 @@ export default function ProfitModelPage() {
           {/* Sensitivity Analysis */}
           <div className="panel p-4 space-y-3">
             <div className="text-[10px] font-bold uppercase tracking-wider text-[#666] flex items-center gap-1.5">
-              <Target size={11} className="text-[#8b5cf6]" /> {copy.sections.sensitivity}
+              <Target size={11} className="text-[var(--accent)]" /> {copy.sections.sensitivity}
             </div>
-            <div className="rounded-lg bg-[#0d0d1a]/60 border border-[#2a2a4a] p-3">
+            <div className="rounded-lg bg-[var(--surface)]/60 border border-[var(--line)] p-3">
               <div className="text-[10px] text-[#666]">
                 {copy.labels.ridersUp} → {sensRiders} {copy.labels.riders}
               </div>
@@ -1234,7 +1234,7 @@ export default function ProfitModelPage() {
                 </span>
               </div>
             </div>
-            <div className="rounded-lg bg-[#0d0d1a]/60 border border-[#2a2a4a] p-3">
+            <div className="rounded-lg bg-[var(--surface)]/60 border border-[var(--line)] p-3">
               <div className="text-[10px] text-[#666]">
                 OPH +0.5 → {sensOph.toFixed(1)}
               </div>
@@ -1259,12 +1259,12 @@ export default function ProfitModelPage() {
             {copy.sections.ophScale}
           </h3>
           <div className="relative w-full h-8 flex items-center">
-            <div className="absolute left-0 right-0 h-2 rounded-full bg-[#1a1a2e]">
+            <div className="absolute left-0 right-0 h-2 rounded-full bg-[var(--surface-raised)]">
               <div
                 className="absolute left-0 top-0 bottom-0 rounded-full transition-all duration-300"
                 style={{
                   width: `${Math.min(100, (so / 5) * 100)}%`,
-                  background: "linear-gradient(90deg, #8b5cf6, #06d6a0)",
+                  background: "linear-gradient(90deg, var(--accent), #06d6a0)",
                   boxShadow: "0 0 12px rgba(139,92,246,0.2)",
                 }}
               />
@@ -1302,10 +1302,10 @@ export default function ProfitModelPage() {
                 transform: "translateX(-50%)",
               }}
             >
-              <div className="text-[9px] font-bold text-white bg-[#8b5cf6]/20 px-1.5 py-0.5 rounded border border-[#8b5cf6]/20">
+              <div className="text-[9px] font-bold text-[var(--text)] bg-[var(--accent)]/20 px-1.5 py-0.5 rounded border border-[var(--accent)]/20">
                 {copy.labels.current}
               </div>
-              <div className="font-mono text-[10px] font-bold text-white mt-0.5">
+              <div className="font-mono text-[10px] font-bold text-[var(--text)] mt-0.5">
                 {so.toFixed(2)}
               </div>
             </div>
@@ -1318,7 +1318,7 @@ export default function ProfitModelPage() {
         {/* Sliders */}
         <div className="space-y-3">
           <h3 className="text-[11px] font-bold uppercase tracking-wider text-[#666] flex items-center gap-1.5 mb-1">
-            <Zap size={12} className="text-[#8b5cf6]" /> {copy.sections.scaleParams}
+            <Zap size={12} className="text-[var(--accent)]" /> {copy.sections.scaleParams}
           </h3>
           <PremiumSlider
             label={copy.controls.ridersLabel}
@@ -1330,7 +1330,7 @@ export default function ProfitModelPage() {
             step={1}
             unit={copy.controls.ridersUnit}
             onChange={setRiders}
-            color="#8b5cf6"
+            color="var(--accent)"
           />
           <PremiumSlider
             label={copy.controls.hoursLabel}
@@ -1368,7 +1368,7 @@ export default function ProfitModelPage() {
             sublabel={copy.controls.revenuePerOrderSublabel}
             value={revenuePerOrder}
             onChange={setRevenuePerOrder}
-            accentColor="#8b5cf6"
+            accentColor="var(--accent)"
           />
           <CostInput
             label={copy.controls.variableCostLabel}

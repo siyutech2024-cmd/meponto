@@ -6,9 +6,9 @@ import { useVentoStore } from "../lib/store";
 
 function RiskBar({ score }: { score: number }) {
   return (
-    <div className="h-3 w-40 overflow-hidden rounded border border-[#2a2a4a] bg-[#0d0d1a]">
+    <div className="h-3 w-40 overflow-hidden rounded border border-[var(--line)] bg-[var(--surface)]">
       <div
-        className="h-full bg-[#8b5cf6]"
+        className="h-full bg-[var(--accent)]"
         style={{
           width: `${score}%`,
           background: score >= 75 ? "var(--danger)" : score >= 50 ? "var(--warning)" : score >= 25 ? "var(--accent)" : "var(--ok)",

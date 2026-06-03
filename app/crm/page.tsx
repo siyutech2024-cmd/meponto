@@ -107,39 +107,39 @@ export default function CrmPage() {
 
       {formOpen ? (
         <form onSubmit={handleSubmit} className="panel mt-4 grid gap-3 p-4 lg:grid-cols-4">
-          <input required value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} className="h-11 rounded border border-[#2a2a4a] bg-[#0d0d1a] px-3 outline-none" placeholder="Partner name" />
-          <select value={form.category} onChange={(event) => setForm({ ...form, category: event.target.value as CrmPartnerCategory })} className="h-11 rounded border border-[#2a2a4a] bg-[#0d0d1a] px-3 outline-none">
+          <input required value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} className="h-11 rounded border border-[var(--line)] bg-[var(--surface)] px-3 outline-none" placeholder="Partner name" />
+          <select value={form.category} onChange={(event) => setForm({ ...form, category: event.target.value as CrmPartnerCategory })} className="h-11 rounded border border-[var(--line)] bg-[var(--surface)] px-3 outline-none">
             {categories.map((category) => (
               <option key={category}>{category}</option>
             ))}
           </select>
-          <input required value={form.contactName} onChange={(event) => setForm({ ...form, contactName: event.target.value })} className="h-11 rounded border border-[#2a2a4a] bg-[#0d0d1a] px-3 outline-none" placeholder="Contact" />
-          <input required value={form.phone} onChange={(event) => setForm({ ...form, phone: event.target.value })} className="h-11 rounded border border-[#2a2a4a] bg-[#0d0d1a] px-3 outline-none" placeholder="Phone" />
-          <input value={form.bairro} onChange={(event) => setForm({ ...form, bairro: event.target.value })} className="h-11 rounded border border-[#2a2a4a] bg-[#0d0d1a] px-3 outline-none" placeholder="Bairro" />
-          <input value={form.owner} onChange={(event) => setForm({ ...form, owner: event.target.value })} className="h-11 rounded border border-[#2a2a4a] bg-[#0d0d1a] px-3 outline-none" placeholder="Owner" />
-          <select value={form.status} onChange={(event) => setForm({ ...form, status: event.target.value as CrmPartnerStatus })} className="h-11 rounded border border-[#2a2a4a] bg-[#0d0d1a] px-3 outline-none">
+          <input required value={form.contactName} onChange={(event) => setForm({ ...form, contactName: event.target.value })} className="h-11 rounded border border-[var(--line)] bg-[var(--surface)] px-3 outline-none" placeholder="Contact" />
+          <input required value={form.phone} onChange={(event) => setForm({ ...form, phone: event.target.value })} className="h-11 rounded border border-[var(--line)] bg-[var(--surface)] px-3 outline-none" placeholder="Phone" />
+          <input value={form.bairro} onChange={(event) => setForm({ ...form, bairro: event.target.value })} className="h-11 rounded border border-[var(--line)] bg-[var(--surface)] px-3 outline-none" placeholder="Bairro" />
+          <input value={form.owner} onChange={(event) => setForm({ ...form, owner: event.target.value })} className="h-11 rounded border border-[var(--line)] bg-[var(--surface)] px-3 outline-none" placeholder="Owner" />
+          <select value={form.status} onChange={(event) => setForm({ ...form, status: event.target.value as CrmPartnerStatus })} className="h-11 rounded border border-[var(--line)] bg-[var(--surface)] px-3 outline-none">
             {statuses.map((status) => (
               <option key={status}>{status}</option>
             ))}
           </select>
-          <select value={form.tier} onChange={(event) => setForm({ ...form, tier: event.target.value as CrmPartnerTier })} className="h-11 rounded border border-[#2a2a4a] bg-[#0d0d1a] px-3 outline-none">
+          <select value={form.tier} onChange={(event) => setForm({ ...form, tier: event.target.value as CrmPartnerTier })} className="h-11 rounded border border-[var(--line)] bg-[var(--surface)] px-3 outline-none">
             {tiers.map((tier) => (
               <option key={tier}>{tier}</option>
             ))}
           </select>
-          <select value={form.risk} onChange={(event) => setForm({ ...form, risk: event.target.value as CrmPartnerRisk })} className="h-11 rounded border border-[#2a2a4a] bg-[#0d0d1a] px-3 outline-none">
+          <select value={form.risk} onChange={(event) => setForm({ ...form, risk: event.target.value as CrmPartnerRisk })} className="h-11 rounded border border-[var(--line)] bg-[var(--surface)] px-3 outline-none">
             {risks.map((risk) => (
               <option key={risk}>{risk}</option>
             ))}
           </select>
-          <input type="number" min="0" value={form.monthlyVolume} onChange={(event) => setForm({ ...form, monthlyVolume: Number(event.target.value) })} className="h-11 rounded border border-[#2a2a4a] bg-[#0d0d1a] px-3 outline-none" placeholder="Monthly cases" />
-          <input type="number" min="0" value={form.vehiclesAvailable} onChange={(event) => setForm({ ...form, vehiclesAvailable: Number(event.target.value) })} className="h-11 rounded border border-[#2a2a4a] bg-[#0d0d1a] px-3 outline-none" placeholder="Vehicles" />
-          <input value={form.services} onChange={(event) => setForm({ ...form, services: event.target.value })} className="h-11 rounded border border-[#2a2a4a] bg-[#0d0d1a] px-3 outline-none" placeholder="Services, comma separated" />
+          <input type="number" min="0" value={form.monthlyVolume} onChange={(event) => setForm({ ...form, monthlyVolume: Number(event.target.value) })} className="h-11 rounded border border-[var(--line)] bg-[var(--surface)] px-3 outline-none" placeholder="Monthly cases" />
+          <input type="number" min="0" value={form.vehiclesAvailable} onChange={(event) => setForm({ ...form, vehiclesAvailable: Number(event.target.value) })} className="h-11 rounded border border-[var(--line)] bg-[var(--surface)] px-3 outline-none" placeholder="Vehicles" />
+          <input value={form.services} onChange={(event) => setForm({ ...form, services: event.target.value })} className="h-11 rounded border border-[var(--line)] bg-[var(--surface)] px-3 outline-none" placeholder="Services, comma separated" />
           <div className="flex gap-2 lg:col-span-4">
-            <button disabled={isSaving} className="h-11 rounded border border-[#8b5cf6] bg-[#8b5cf6] px-4 text-sm font-black text-white disabled:opacity-50">
+            <button disabled={isSaving} className="h-11 rounded border border-[var(--accent)] bg-[var(--accent)] px-4 text-sm font-black text-[var(--accent-ink)] disabled:opacity-50">
               {isSaving ? "Saving" : "Create Partner"}
             </button>
-            <button type="button" onClick={() => setFormOpen(false)} className="h-11 rounded border border-[#2a2a4a] bg-[#1a1a2e] px-4 text-sm font-black text-[#c4c4d4]">
+            <button type="button" onClick={() => setFormOpen(false)} className="h-11 rounded border border-[var(--line)] bg-[var(--surface-raised)] px-4 text-sm font-black text-[var(--text-soft)]">
               Cancel
             </button>
           </div>
@@ -150,22 +150,22 @@ export default function CrmPage() {
         <input
           value={query}
           onChange={(event) => setQuery(event.target.value)}
-          className="h-11 rounded border border-[#2a2a4a] bg-[#0d0d1a] px-3 outline-none"
+          className="h-11 rounded border border-[var(--line)] bg-[var(--surface)] px-3 outline-none"
           placeholder="Search partners, contacts, phone, bairro"
         />
-        <select value={categoryFilter} onChange={(event) => setCategoryFilter(event.target.value)} className="h-11 rounded border border-[#2a2a4a] bg-[#0d0d1a] px-3 outline-none">
+        <select value={categoryFilter} onChange={(event) => setCategoryFilter(event.target.value)} className="h-11 rounded border border-[var(--line)] bg-[var(--surface)] px-3 outline-none">
           <option>All Categories</option>
           {categories.map((category) => (
             <option key={category}>{category}</option>
           ))}
         </select>
-        <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)} className="h-11 rounded border border-[#2a2a4a] bg-[#0d0d1a] px-3 outline-none">
+        <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)} className="h-11 rounded border border-[var(--line)] bg-[var(--surface)] px-3 outline-none">
           <option>All Status</option>
           {statuses.map((status) => (
             <option key={status}>{status}</option>
           ))}
         </select>
-        <select value={riskFilter} onChange={(event) => setRiskFilter(event.target.value)} className="h-11 rounded border border-[#2a2a4a] bg-[#0d0d1a] px-3 outline-none">
+        <select value={riskFilter} onChange={(event) => setRiskFilter(event.target.value)} className="h-11 rounded border border-[var(--line)] bg-[var(--surface)] px-3 outline-none">
           <option>All Risk</option>
           {risks.map((risk) => (
             <option key={risk}>{risk}</option>
@@ -178,12 +178,12 @@ export default function CrmPage() {
         rows={filteredPartners.map((partner) => [
           <div key="partner">
             <div className="font-black">{partner.name}</div>
-            <div className="text-xs text-[#8b8ba3]">{partner.tier}</div>
+            <div className="text-xs text-[var(--muted)]">{partner.tier}</div>
           </div>,
           partner.category,
           <div key="contact">
             <div>{partner.contactName}</div>
-            <div className="text-xs text-[#8b8ba3]">{partner.phone}</div>
+            <div className="text-xs text-[var(--muted)]">{partner.phone}</div>
           </div>,
           partner.bairro,
           partner.owner,

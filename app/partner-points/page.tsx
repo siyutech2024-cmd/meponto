@@ -65,25 +65,25 @@ export default function PartnerPointsPage() {
       </section>
 
       <form onSubmit={submitService} className="panel my-4 grid gap-3 p-4 lg:grid-cols-6">
-        <select value={riderId} onChange={(event) => setRiderId(event.target.value)} className="h-11 rounded border border-[#2a2a4a] bg-[#0d0d1a] px-3 outline-none">
+        <select value={riderId} onChange={(event) => setRiderId(event.target.value)} className="h-11 rounded border border-[var(--line)] bg-[var(--surface)] px-3 outline-none">
           {riders.map((rider) => (
             <option key={rider.id} value={rider.id}>{rider.name}</option>
           ))}
         </select>
-        <select value={partnerId} onChange={(event) => setPartnerId(event.target.value)} className="h-11 rounded border border-[#2a2a4a] bg-[#0d0d1a] px-3 outline-none">
+        <select value={partnerId} onChange={(event) => setPartnerId(event.target.value)} className="h-11 rounded border border-[var(--line)] bg-[var(--surface)] px-3 outline-none">
           {partners.map((partner) => (
             <option key={partner.id} value={partner.id}>{partner.name}</option>
           ))}
         </select>
-        <select value={category} onChange={(event) => setCategory(event.target.value as PartnerServiceCategory)} className="h-11 rounded border border-[#2a2a4a] bg-[#0d0d1a] px-3 outline-none">
+        <select value={category} onChange={(event) => setCategory(event.target.value as PartnerServiceCategory)} className="h-11 rounded border border-[var(--line)] bg-[var(--surface)] px-3 outline-none">
           {categories.map((item) => (
             <option key={item}>{item}</option>
           ))}
         </select>
-        <input type="number" min="1" value={amount} onChange={(event) => setAmount(Number(event.target.value))} className="h-11 rounded border border-[#2a2a4a] bg-[#0d0d1a] px-3 outline-none" />
-        <input value={receiptRef} onChange={(event) => setReceiptRef(event.target.value)} className="h-11 rounded border border-[#2a2a4a] bg-[#0d0d1a] px-3 outline-none" />
-        <button className="h-11 rounded border border-[#8b5cf6] bg-[#8b5cf6] px-4 text-sm font-black text-white">Submit</button>
-        {message ? <div className="text-sm font-bold text-[#c4c4d4] lg:col-span-6">{message}</div> : null}
+        <input type="number" min="1" value={amount} onChange={(event) => setAmount(Number(event.target.value))} className="h-11 rounded border border-[var(--line)] bg-[var(--surface)] px-3 outline-none" />
+        <input value={receiptRef} onChange={(event) => setReceiptRef(event.target.value)} className="h-11 rounded border border-[var(--line)] bg-[var(--surface)] px-3 outline-none" />
+        <button className="h-11 rounded border border-[var(--accent)] bg-[var(--accent)] px-4 text-sm font-black text-[var(--accent-ink)]">Submit</button>
+        {message ? <div className="text-sm font-bold text-[var(--text-soft)] lg:col-span-6">{message}</div> : null}
       </form>
 
       <DataTable
