@@ -6,6 +6,7 @@ import {
   BarChart3,
   Bell,
   Bike,
+  CalendarDays,
   CheckCheck,
   ChevronRight,
   CircleDollarSign,
@@ -13,6 +14,7 @@ import {
   DatabaseBackup,
   FileText,
   FileBarChart2,
+  FileSpreadsheet,
   Handshake,
   LayoutDashboard,
   LogOut,
@@ -46,10 +48,12 @@ const navItems: Array<{ href: string; labelKey: TranslationKey; icon: React.Comp
   { href: "/territory", labelKey: "navTerritory", icon: MapPinned },
   { href: "/leaders", labelKey: "navLeaders", icon: Users },
   { href: "/mobile", labelKey: "navMobile", icon: Smartphone },
-  { href: "/whatsapp", labelKey: "navWhatsapp", icon: MessageCircle },
+  { href: "/chat", labelKey: "navChat", icon: MessageCircle },
   { href: "/incidents", labelKey: "navIncidents", icon: ShieldAlert },
   { href: "/rewards", labelKey: "navRewards", icon: CircleDollarSign },
   { href: "/points-economy", labelKey: "navPointsEconomy", icon: CircleDollarSign },
+  { href: "/ninety-nine-import", labelKey: "navNinetyNineImport", icon: FileSpreadsheet },
+  { href: "/slot-enrollment", labelKey: "navSlotEnrollment", icon: CalendarDays },
   { href: "/marketplace", labelKey: "navMarketplace", icon: Store },
   { href: "/partner-points", labelKey: "navPartnerPoints", icon: Handshake },
   { href: "/finance", labelKey: "navFinance", icon: CircleDollarSign },
@@ -65,6 +69,68 @@ const navItems: Array<{ href: string; labelKey: TranslationKey; icon: React.Comp
   { href: "/access-control", labelKey: "navAccessControl", icon: ShieldCheck },
   { href: "/security", labelKey: "navSecurity", icon: ShieldQuestion },
   { href: "/settings", labelKey: "navSettings", icon: Settings },
+];
+
+const navGroups: Array<{
+  title: string;
+  items: typeof navItems;
+}> = [
+  {
+    title: "PontoSys",
+    items: navItems.filter((item) =>
+      [
+        "/dashboard",
+        "/riders",
+        "/rider-app",
+        "/pontos",
+        "/territory",
+        "/leaders",
+        "/slot-enrollment",
+        "/franchise",
+      ].includes(item.href),
+    ),
+  },
+  {
+    title: "Operations",
+    items: navItems.filter((item) =>
+      [
+        "/chat",
+        "/incidents",
+        "/night-shift",
+        "/ninety-nine-import",
+        "/mobile",
+        "/sops",
+      ].includes(item.href),
+    ),
+  },
+  {
+    title: "PontoMall",
+    items: navItems.filter((item) =>
+      [
+        "/marketplace",
+        "/points-economy",
+        "/partner-points",
+        "/rewards",
+        "/crm",
+      ].includes(item.href),
+    ),
+  },
+  {
+    title: "Control",
+    items: navItems.filter((item) =>
+      [
+        "/finance",
+        "/analytics",
+        "/reports",
+        "/realtime",
+        "/tools",
+        "/audit",
+        "/access-control",
+        "/security",
+        "/settings",
+      ].includes(item.href),
+    ),
+  },
 ];
 
 const roleLabels: Record<Language, Record<Role, string>> = {
@@ -110,32 +176,39 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const t = (key: TranslationKey) => translate(language, key);
 
   return (
-    <div className="min-h-screen lg:grid lg:grid-cols-[260px_1fr] bg-[#0a0a12]">
-      <aside className="border-b border-[#2a2a4a] bg-[#0d0d1a] lg:min-h-screen lg:border-b-0 lg:border-r">
-        <div className="flex h-20 items-center px-5">
+    <div className="min-h-screen bg-[var(--background)] lg:grid lg:grid-cols-[272px_1fr]">
+      <aside className="border-b border-[var(--line)] bg-[var(--surface)] lg:sticky lg:top-0 lg:h-screen lg:border-b-0 lg:border-r">
+        <div className="flex h-[72px] items-center px-5 py-4">
           <BrandLockup />
         </div>
-        <nav className="flex gap-2 overflow-x-auto px-3 pb-3 lg:block lg:space-y-1 lg:overflow-visible">
-          {navItems.map((item) => {
-            const Icon = item.icon;
-            return (
-              <Link
-                key={item.href}
-                href={item.href}
-                className="flex min-h-11 shrink-0 items-center gap-3 rounded-lg border border-transparent px-3 text-sm font-semibold text-[#c4c4d4] hover:border-[#8b5cf6]/20 hover:bg-[#1a1a2e]/60 hover:text-[#8b5cf6] transition-all duration-200"
-              >
-                <Icon size={18} />
-                {t(item.labelKey)}
-              </Link>
-            );
-          })}
+        <nav className="flex gap-2 overflow-x-auto px-3 pb-3 lg:block lg:h-[calc(100vh-72px)] lg:space-y-5 lg:overflow-y-auto lg:px-4 lg:pb-6">
+          {navGroups.map((group) => (
+            <section key={group.title} className="min-w-max lg:min-w-0">
+              <div className="mb-2 px-2 text-[10px] font-black uppercase tracking-[0.16em] text-[var(--muted)]">{group.title}</div>
+              <div className="flex gap-2 lg:block lg:space-y-1">
+                {group.items.map((item) => {
+                  const Icon = item.icon;
+                  return (
+                    <Link
+                      key={item.href}
+                      href={item.href}
+                      className="flex min-h-10 shrink-0 items-center gap-3 rounded-[8px] border border-transparent px-3 text-sm font-semibold text-[var(--text-soft)] transition-colors hover:border-[var(--line)] hover:bg-[var(--surface-hover)] hover:text-[var(--accent)]"
+                    >
+                      <Icon size={17} />
+                      <span className="whitespace-nowrap">{t(item.labelKey)}</span>
+                    </Link>
+                  );
+                })}
+              </div>
+            </section>
+          ))}
         </nav>
       </aside>
       <main className="min-w-0">
-        <header className="flex min-h-20 flex-wrap items-center justify-between gap-4 border-b border-[#2a2a4a] bg-[#0d0d1a]/80 backdrop-blur-md px-5">
+        <header className="flex min-h-16 flex-wrap items-center justify-between gap-4 border-b border-[var(--line)] bg-[var(--surface)] px-5">
           <div>
-            <div className="text-[10px] font-bold uppercase tracking-wider text-[#8b8ba3]">{t("currentRegion")}</div>
-            <div className="text-lg font-black font-[family-name:var(--font-outfit)] bg-gradient-to-r from-white to-[#c4c4d4] bg-clip-text text-transparent">{t("regionName")}</div>
+            <div className="text-[10px] font-bold uppercase tracking-wider text-[var(--muted)]">{t("currentRegion")}</div>
+            <div className="text-lg font-black text-[var(--text)]">{t("regionName")}</div>
           </div>
           <div className="flex items-center gap-2">
             <div className="relative">
@@ -156,7 +229,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               aria-label={t("language")}
               value={language}
               onChange={(event) => setLanguage(event.target.value as typeof language)}
-              className="h-10 rounded-lg border border-[#2a2a4a] bg-[#1a1a2e] px-2 text-sm font-bold text-[#f0f0ff] outline-none transition-all duration-200 focus:border-[#8b5cf6] focus:ring-1 focus:ring-[#8b5cf6]"
+              className="h-10 rounded-[8px] border border-[var(--line)] bg-[var(--surface-raised)] px-2 text-sm font-bold text-[var(--text)] outline-none"
             >
               {languages.map((item) => (
                 <option key={item.code} value={item.code}>
@@ -169,7 +242,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               aria-label="Current role"
               value={currentRole}
               onChange={(event) => setRole(event.target.value as Role)}
-              className="h-10 rounded-lg border border-[#2a2a4a] bg-[#1a1a2e] px-2 text-sm font-bold text-[#f0f0ff] outline-none transition-all duration-200 focus:border-[#8b5cf6] focus:ring-1 focus:ring-[#8b5cf6]"
+              className="h-10 rounded-[8px] border border-[var(--line)] bg-[var(--surface-raised)] px-2 text-sm font-bold text-[var(--text)] outline-none"
             >
               {roles.map((role) => (
                 <option key={role} value={role}>
@@ -177,7 +250,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 </option>
               ))}
             </select>
-            <div className="grid h-10 w-10 place-items-center rounded-lg border border-[#2a2a4a] bg-[#1a1a2e] text-sm font-bold text-[#8b5cf6]">
+            <div className="grid h-10 w-10 place-items-center rounded-[8px] border border-[var(--line)] bg-[var(--surface-raised)] text-sm font-black text-[var(--accent)]">
               {currentRole
                 .split(" ")
                 .map((word) => word[0])
@@ -185,21 +258,21 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             </div>
             <Link
               href="/login"
-              className="flex h-10 items-center gap-2 rounded-lg border border-[#2a2a4a] px-3 text-sm font-semibold text-[#8b8ba3] hover:text-white hover:border-[#f43f5e]/50 hover:bg-[#f43f5e]/10 transition-all duration-200"
+              className="flex h-10 items-center gap-2 rounded-[8px] border border-[var(--line)] px-3 text-sm font-semibold text-[var(--muted-strong)] transition-colors hover:border-[var(--danger)] hover:bg-[rgba(255,92,112,0.1)] hover:text-white"
             >
               <LogOut size={17} />
               {t("logout")}
             </Link>
           </div>
         </header>
-        <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8 animate-fade-in">{children}</div>
+        <div className="mx-auto max-w-[1440px] px-4 py-5 sm:px-6 lg:px-8 animate-fade-in">{children}</div>
       </main>
       {notificationsOpen ? (
         <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex justify-end">
-          <aside className="h-full w-full max-w-md flex flex-col border-l border-[#2a2a4a] bg-[#0d0d1a]/95 backdrop-blur-lg shadow-2xl animate-slide-up">
-            <div className="flex min-h-16 items-center justify-between border-b border-[#2a2a4a] px-4">
+          <aside className="h-full w-full max-w-md flex flex-col border-l border-[var(--line)] bg-[var(--surface)] shadow-2xl animate-slide-up">
+            <div className="flex min-h-16 items-center justify-between border-b border-[var(--line)] px-4">
               <div>
-                <div className="text-[10px] font-extrabold uppercase tracking-wider text-[#8b5cf6]">{t("operations")}</div>
+                <div className="text-[10px] font-extrabold uppercase tracking-wider text-[var(--accent)]">{t("operations")}</div>
                 <h2 className="text-xl font-bold font-[family-name:var(--font-outfit)]">{t("notifications")}</h2>
               </div>
               <IconButton label={t("closeNotifications")} onClick={() => setNotificationsOpen(false)}>
@@ -208,7 +281,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             </div>
             <div className="space-y-4 overflow-y-auto p-4 flex-1">
               <div>
-                <div className="mb-2 text-[10px] font-bold uppercase tracking-wider text-[#8b8ba3]">{t("operationsQueue")}</div>
+                <div className="mb-2 text-[10px] font-bold uppercase tracking-wider text-[var(--muted)]">{t("operationsQueue")}</div>
                 <div className="space-y-2">
                   {notifications.length ? (
                     notifications.map((notification) => {
@@ -216,8 +289,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                       return (
                         <div
                           key={notification.id}
-                          className={`rounded-xl border p-3 transition-all duration-200 ${
-                            notification.acknowledgedAt ? "border-[#2a2a4a] bg-[#1a1a2e]/40" : "border-[#2a2a4a] bg-[#1a1a2e]"
+                          className={`rounded-[8px] border p-3 transition-colors ${
+                            notification.acknowledgedAt ? "border-[var(--line)] bg-[var(--surface-raised)]/50" : "border-[var(--line)] bg-[var(--surface-raised)]"
                           }`}
                         >
                           <div className="flex items-start justify-between gap-3">
@@ -229,8 +302,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                               }}
                               className="min-w-0 flex-1"
                             >
-                              <span className="block font-bold text-sm text-[#f0f0ff]">{notification.title}</span>
-                              <span className="mt-1 block text-xs text-[#8b8ba3]">{notification.body}</span>
+                              <span className="block font-bold text-sm text-[var(--text)]">{notification.title}</span>
+                              <span className="mt-1 block text-xs text-[var(--muted-strong)]">{notification.body}</span>
                             </Link>
                             <div className="flex shrink-0 flex-col items-end gap-1.5">
                               <Badge value={notification.severity} />
@@ -238,12 +311,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                             </div>
                           </div>
                           <div className="mt-3 flex items-center justify-between gap-3">
-                            <span className="text-[10px] text-[#8b8ba3]">{notification.createdAt}</span>
+                            <span className="text-[10px] text-[var(--muted)]">{notification.createdAt}</span>
                             <button
                               type="button"
                               disabled={Boolean(notification.acknowledgedAt)}
                               onClick={() => acknowledgeNotification(notification.id)}
-                              className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-[#2a2a4a] px-2.5 text-[11px] font-bold text-[#c4c4d4] hover:border-[#8b5cf6] hover:bg-[#8b5cf6]/10 transition-all duration-200 disabled:cursor-not-allowed disabled:opacity-40"
+                              className="inline-flex h-8 items-center gap-1.5 rounded-[6px] border border-[var(--line)] px-2.5 text-[11px] font-bold text-[var(--text-soft)] transition-colors hover:border-[var(--accent)] hover:bg-[rgba(255,209,0,0.08)] disabled:cursor-not-allowed disabled:opacity-40"
                             >
                               <CheckCheck size={14} />
                               {t("ack")}
@@ -253,20 +326,20 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                       );
                     })
                   ) : (
-                    <div className="rounded-xl border border-[#2a2a4a] bg-[#1a1a2e] p-3 text-xs text-[#8b8ba3]">{t("noActiveNotifications")}</div>
+                    <div className="rounded-[8px] border border-[var(--line)] bg-[var(--surface-raised)] p-3 text-xs text-[var(--muted-strong)]">{t("noActiveNotifications")}</div>
                   )}
                 </div>
               </div>
               <div>
-                <div className="mb-2 text-[10px] font-bold uppercase tracking-wider text-[#8b8ba3]">{t("latestAuditEvents")}</div>
+                <div className="mb-2 text-[10px] font-bold uppercase tracking-wider text-[var(--muted)]">{t("latestAuditEvents")}</div>
                 <div className="space-y-2">
                   {auditLog.slice(0, 5).map((entry) => (
-                    <div key={entry.id} className="rounded-xl border border-[#2a2a4a] bg-[#1a1a2e] p-3">
+                    <div key={entry.id} className="rounded-[8px] border border-[var(--line)] bg-[var(--surface-raised)] p-3">
                       <div className="flex items-center justify-between gap-3">
                         <span className="font-bold text-xs">{entry.action}</span>
                         <Badge value={entry.risk} />
                       </div>
-                      <div className="mt-1 text-xs text-[#8b8ba3]">{entry.detail}</div>
+                      <div className="mt-1 text-xs text-[var(--muted-strong)]">{entry.detail}</div>
                     </div>
                   ))}
                 </div>
@@ -289,10 +362,10 @@ export function PageTitle({
   action?: React.ReactNode;
 }) {
   return (
-    <div className="mb-6 flex flex-wrap items-end justify-between gap-3 animate-fade-in">
+    <div className="mb-5 flex flex-wrap items-end justify-between gap-3 animate-fade-in">
       <div>
-        {eyebrow ? <div className="mb-1 text-[11px] font-extrabold uppercase tracking-wider text-[#8b5cf6] font-[family-name:var(--font-outfit)]">{eyebrow}</div> : null}
-        <h1 className="text-3xl font-extrabold tracking-tight font-[family-name:var(--font-outfit)] bg-gradient-to-r from-white to-[#c4c4d4] bg-clip-text text-transparent">{title}</h1>
+        {eyebrow ? <div className="mb-1 text-[11px] font-extrabold uppercase tracking-wider text-[var(--accent)] font-[family-name:var(--font-outfit)]">{eyebrow}</div> : null}
+        <h1 className="text-2xl font-extrabold tracking-tight text-[var(--text)] font-[family-name:var(--font-outfit)] md:text-3xl">{title}</h1>
       </div>
       {action}
     </div>
@@ -315,7 +388,7 @@ export function Button({
       type={type}
       onClick={onClick}
       disabled={disabled}
-      className="inline-flex h-11 items-center gap-2 rounded-xl border border-transparent bg-gradient-to-r from-[#8b5cf6] to-[#06d6a0] px-4 text-sm font-extrabold text-white shadow-md shadow-[rgba(139,92,246,0.2)] hover:shadow-lg hover:shadow-[rgba(139,92,246,0.35)] hover:brightness-110 active:scale-98 transition-all duration-200 disabled:cursor-not-allowed disabled:border-[#2a2a4a] disabled:bg-[#1a1a2e] disabled:text-[#4a4a60] disabled:shadow-none disabled:brightness-100 disabled:scale-100"
+      className="inline-flex h-10 items-center gap-2 rounded-[8px] border border-transparent bg-[var(--accent)] px-4 text-sm font-extrabold text-[var(--accent-ink)] transition-colors hover:bg-[var(--accent-strong)] disabled:cursor-not-allowed disabled:border-[var(--line)] disabled:bg-[var(--surface-raised)] disabled:text-[#657185]"
     >
       {children}
     </button>
@@ -349,7 +422,7 @@ export function IconButton({
       type="button"
       onClick={onClick}
       disabled={disabled}
-      className="grid h-10 w-10 place-items-center rounded-lg border border-[#2a2a4a] bg-[#1a1a2e] text-[#c4c4d4] hover:border-[#8b5cf6] hover:bg-[#8b5cf6]/10 hover:text-white transition-all duration-200 disabled:cursor-not-allowed disabled:opacity-40"
+      className="grid h-10 w-10 place-items-center rounded-[8px] border border-[var(--line)] bg-[var(--surface-raised)] text-[var(--text-soft)] transition-colors hover:border-[var(--accent)] hover:bg-[rgba(255,209,0,0.08)] hover:text-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-40"
     >
       {children}
     </button>
@@ -393,18 +466,18 @@ export function StatCard({
   href: string;
 }) {
   return (
-    <div className="panel industrial-shadow p-5 relative overflow-hidden group">
-      <div className="absolute top-0 left-0 w-full h-[2px] bg-gradient-to-r from-[#8b5cf6] to-[#06d6a0] opacity-0 group-hover:opacity-100 transition-all duration-300" />
-      <div className="text-[10px] font-bold uppercase tracking-wider text-[#8b8ba3]">{title}</div>
-      <div className="mt-3 flex items-end justify-between gap-3">
-        <div className="text-4xl font-extrabold tracking-tight font-[family-name:var(--font-outfit)]">{value}</div>
+    <div className="panel p-4 relative overflow-hidden group">
+      <div className="absolute left-0 top-0 h-full w-[3px] bg-[var(--accent)] opacity-80" />
+      <div className="text-[10px] font-bold uppercase tracking-wider text-[var(--muted)]">{title}</div>
+      <div className="mt-2 flex items-end justify-between gap-3">
+        <div className="text-3xl font-extrabold tracking-tight text-[var(--text)] font-[family-name:var(--font-outfit)]">{value}</div>
         {delta ? (
-          <div className="rounded-lg bg-[#8b5cf6]/15 px-2.5 py-1 text-[11px] font-extrabold text-[#a78bfa] border border-[#8b5cf6]/30">
+          <div className="rounded-[6px] border border-[rgba(255,209,0,0.35)] bg-[rgba(255,209,0,0.12)] px-2.5 py-1 text-[11px] font-extrabold text-[var(--accent)]">
             {delta}
           </div>
         ) : null}
       </div>
-      <Link href={href} className="mt-5 flex h-10 items-center justify-between rounded-lg border border-[#2a2a4a] px-3 text-xs font-bold text-[#c4c4d4] hover:border-[#8b5cf6] hover:bg-[#8b5cf6]/10 hover:text-white transition-all duration-200">
+      <Link href={href} className="mt-4 flex h-9 items-center justify-between rounded-[6px] border border-[var(--line)] px-3 text-xs font-bold text-[var(--muted-strong)] transition-colors hover:border-[var(--accent)] hover:bg-[rgba(255,209,0,0.08)] hover:text-[var(--accent)]">
         View
         <ChevronRight size={15} />
       </Link>
@@ -415,14 +488,14 @@ export function StatCard({
 export function Badge({ value }: { value: string }) {
   const tone =
     value === "Critical" || value === "Risk" || value === "Open"
-      ? "border-[#f43f5e] text-[#fb7185] bg-[#f43f5e]/15"
+      ? "border-[rgba(255,92,112,0.55)] text-[#ff9aa7] bg-[rgba(255,92,112,0.14)]"
       : value === "High" || value === "Medium" || value === "Processing" || value === "Night Shift"
-        ? "border-[#fb923c] text-[#fdba74] bg-[#fb923c]/15"
+        ? "border-[rgba(255,180,84,0.55)] text-[#ffd39a] bg-[rgba(255,180,84,0.14)]"
         : value === "Active" || value === "Closed" || value === "Elite"
-          ? "border-[#06d6a0] text-[#34d399] bg-[#06d6a0]/15"
-          : "border-[#2a2a4a] text-[#a5a5bd] bg-[#1a1a2e]";
+          ? "border-[rgba(45,212,191,0.5)] text-[#7de9db] bg-[rgba(45,212,191,0.12)]"
+          : "border-[var(--line)] text-[var(--muted-strong)] bg-[var(--surface-raised)]";
 
-  return <span className={`inline-flex rounded-lg border px-2 py-0.5 text-[11px] font-bold tracking-wide ${tone}`}>{value}</span>;
+  return <span className={`inline-flex rounded-[6px] border px-2 py-0.5 text-[11px] font-bold tracking-wide ${tone}`}>{value}</span>;
 }
 
 export function DataTable({
@@ -436,10 +509,10 @@ export function DataTable({
     <div className="panel overflow-hidden">
       <div className="overflow-x-auto">
         <table className="w-full min-w-[1100px] border-collapse text-left text-sm">
-          <thead className="bg-[#1a1a2e] text-[10px] font-bold uppercase tracking-wider text-[#8b8ba3]">
+          <thead className="bg-[var(--surface-raised)] text-[10px] font-bold uppercase tracking-wider text-[var(--muted)]">
             <tr>
               {headers.map((header) => (
-                <th key={header} className="whitespace-nowrap border-b border-[#2a2a4a] px-4 py-3.5 font-bold">
+                <th key={header} className="whitespace-nowrap border-b border-[var(--line)] px-4 py-3 font-bold">
                   {header}
                 </th>
               ))}
@@ -447,9 +520,9 @@ export function DataTable({
           </thead>
           <tbody>
             {rows.map((row, index) => (
-              <tr key={index} className="border-b border-[#1e1e3a] last:border-0 hover:bg-[#1a1a2e]/30 transition-colors duration-150">
+              <tr key={index} className="border-b border-[rgba(38,50,68,0.65)] last:border-0 transition-colors hover:bg-[var(--surface-hover)]">
                 {row.map((cell, cellIndex) => (
-                  <td key={cellIndex} className="whitespace-nowrap px-4 py-3.5 align-middle text-[#f0f0ff]">
+                  <td key={cellIndex} className="whitespace-nowrap px-4 py-3 align-middle text-[var(--text-soft)]">
                     {cell}
                   </td>
                 ))}
@@ -467,21 +540,18 @@ export function MiniMap() {
   const t = (key: TranslationKey) => translate(language, key);
 
   return (
-    <div className="panel relative min-h-[360px] overflow-hidden p-5">
-      <div className="absolute inset-0 opacity-20 [background-image:linear-gradient(rgba(139,92,246,0.15)_1px,transparent_1px),linear-gradient(90deg,rgba(139,92,246,0.15)_1px,transparent_1px)] [background-size:44px_44px]" />
-      <div className="absolute left-[18%] top-[30%] h-28 w-28 rounded-full bg-[#8b5cf6]/20 blur-2xl animate-pulse" style={{ animationDuration: '4s' }} />
-      <div className="absolute left-[62%] top-[43%] h-32 w-32 rounded-full bg-[#f43f5e]/15 blur-2xl animate-pulse" style={{ animationDuration: '5s' }} />
-      <div className="absolute left-[45%] top-[18%] h-24 w-24 rounded-full bg-[#fb923c]/15 blur-2xl animate-pulse" style={{ animationDuration: '6s' }} />
-      <div className="relative z-10 flex h-full min-h-[320px] flex-col justify-between">
+    <div className="panel relative min-h-[320px] overflow-hidden p-5">
+      <div className="absolute inset-0 opacity-25 [background-image:linear-gradient(rgba(154,166,184,0.12)_1px,transparent_1px),linear-gradient(90deg,rgba(154,166,184,0.12)_1px,transparent_1px)] [background-size:44px_44px]" />
+      <div className="relative z-10 flex h-full min-h-[280px] flex-col justify-between">
         <div>
-          <div className="text-[10px] font-extrabold uppercase tracking-wider text-[#8b5cf6] font-[family-name:var(--font-outfit)]">{t("liveDensityMap")}</div>
-          <div className="mt-1 text-2xl font-black font-[family-name:var(--font-outfit)] bg-gradient-to-r from-white to-[#c4c4d4] bg-clip-text text-transparent">{t("mapSummary")}</div>
+          <div className="text-[10px] font-extrabold uppercase tracking-wider text-[var(--accent)] font-[family-name:var(--font-outfit)]">{t("liveDensityMap")}</div>
+          <div className="mt-1 text-2xl font-black text-[var(--text)] font-[family-name:var(--font-outfit)]">{t("mapSummary")}</div>
         </div>
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 mt-6">
           {["Paulista", "Liberdade", "Tatuape", "Pinheiros"].map((name, index) => (
-            <div key={name} className="rounded-xl border border-[#2a2a4a] bg-[#0d0d1a]/85 p-3.5 backdrop-blur-md">
-              <div className="text-sm font-bold text-[#f0f0ff]">{name}</div>
-              <div className="mt-1 text-xs text-[#8b8ba3]">{index === 2 ? t("criticalNightArea") : t("stablePontoCluster")}</div>
+            <div key={name} className="rounded-[8px] border border-[var(--line)] bg-[var(--surface-raised)] p-3">
+              <div className="text-sm font-bold text-[var(--text)]">{name}</div>
+              <div className="mt-1 text-xs text-[var(--muted-strong)]">{index === 2 ? t("criticalNightArea") : t("stablePontoCluster")}</div>
             </div>
           ))}
         </div>
@@ -492,20 +562,20 @@ export function MiniMap() {
 
 export function Field({ label, value }: { label: string; value: React.ReactNode }) {
   return (
-    <div className="rounded-xl border border-[#2a2a4a] bg-[#0d0d1a] p-3.5">
-      <div className="text-[10px] font-bold uppercase tracking-wider text-[#8b8ba3]">{label}</div>
-      <div className="mt-1.5 font-bold text-sm text-[#f0f0ff]">{value}</div>
+    <div className="rounded-[8px] border border-[var(--line)] bg-[var(--surface-raised)] p-3">
+      <div className="text-[10px] font-bold uppercase tracking-wider text-[var(--muted)]">{label}</div>
+      <div className="mt-1.5 font-bold text-sm text-[var(--text)]">{value}</div>
     </div>
   );
 }
 
 export function AlertRow({ title, detail }: { title: string; detail: string }) {
   return (
-    <div className="flex items-start gap-3 rounded-xl border border-[#2a2a4a] bg-[#1a1a2e] p-3.5">
-      <AlertTriangle className="mt-0.5 text-[#fb923c]" size={18} />
+    <div className="flex items-start gap-3 rounded-[8px] border border-[var(--line)] bg-[var(--surface-raised)] p-3.5">
+      <AlertTriangle className="mt-0.5 text-[var(--warning)]" size={18} />
       <div>
-        <div className="font-bold text-sm text-[#f0f0ff]">{title}</div>
-        <div className="text-xs text-[#8b8ba3] mt-0.5">{detail}</div>
+        <div className="font-bold text-sm text-[var(--text)]">{title}</div>
+        <div className="text-xs text-[var(--muted-strong)] mt-0.5">{detail}</div>
       </div>
     </div>
   );

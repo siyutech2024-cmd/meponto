@@ -11,7 +11,7 @@ export type Rider = {
   ponto: string;
   leader: string;
   invitedBy: string;
-  whatsappGroup: string;
+  chatRoom: string;
   ar: number;
   status: RiderStatus;
   vehicleType: string;
@@ -167,7 +167,7 @@ export const riders: Rider[] = [
     ponto: "Ponto Paulista Garage",
     leader: "Rafael Costa",
     invitedBy: "Rafael Costa",
-    whatsappGroup: "meponto Paulista 01",
+    chatRoom: "MePonto Paulista 01",
     ar: 96,
     status: "Active" as RiderStatus,
     vehicleType: "Motorcycle",
@@ -190,7 +190,7 @@ export const riders: Rider[] = [
     ponto: "Ponto Liberdade Sul",
     leader: "Joao Pereira",
     invitedBy: "Carlos Mendes",
-    whatsappGroup: "meponto Liberdade Noite",
+    chatRoom: "MePonto Liberdade Noite",
     ar: 88,
     status: "Night Shift" as RiderStatus,
     vehicleType: "Motorcycle",
@@ -213,7 +213,7 @@ export const riders: Rider[] = [
     ponto: "Ponto Tatuape Norte",
     leader: "Marcos Lima",
     invitedBy: "Marcos Lima",
-    whatsappGroup: "meponto Tatuape Risk",
+    chatRoom: "MePonto Tatuape Risk",
     ar: 71,
     status: "Risk" as RiderStatus,
     vehicleType: "Motorcycle",
@@ -236,7 +236,7 @@ export const riders: Rider[] = [
     ponto: "Ponto Pinheiros Base",
     leader: "Diego Alves",
     invitedBy: "Rafael Costa",
-    whatsappGroup: "meponto Pinheiros 01",
+    chatRoom: "MePonto Pinheiros 01",
     ar: 92,
     status: "Inactive" as RiderStatus,
     vehicleType: "Motorcycle",

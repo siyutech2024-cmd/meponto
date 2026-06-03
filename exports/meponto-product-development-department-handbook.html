@@ -1,0 +1,1109 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>MePonto 产品策划书与开发部门执行手册</title>
+  <style>
+    :root {
+      --yellow: #ffd400;
+      --ink: #121212;
+      --muted: #5f6368;
+      --line: #dfe3ea;
+      --soft: #fff8cf;
+      --panel: #f7f9fc;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      color: var(--ink);
+      background: #ffffff;
+      font-family: Arial, "PingFang SC", "Microsoft YaHei", sans-serif;
+      line-height: 1.62;
+    }
+    .cover {
+      padding: 42px 56px 30px;
+      color: #101018;
+      background: linear-gradient(135deg, var(--yellow), #ffe96a);
+      border-bottom: 5px solid #111827;
+    }
+    .brand {
+      font-size: 14px;
+      font-weight: 900;
+      letter-spacing: .08em;
+      text-transform: uppercase;
+    }
+    .cover h1 {
+      max-width: 920px;
+      margin: 24px 0 12px;
+      font-size: 36px;
+      line-height: 1.15;
+    }
+    .cover p {
+      max-width: 840px;
+      margin: 0;
+      font-size: 15px;
+      font-weight: 700;
+    }
+    main {
+      max-width: 980px;
+      margin: 0 auto;
+      padding: 34px 42px 72px;
+    }
+    h1, h2, h3 {
+      line-height: 1.25;
+      letter-spacing: 0;
+    }
+    main > h1 { display: none; }
+    h2 {
+      margin: 34px 0 14px;
+      padding-bottom: 8px;
+      border-bottom: 2px solid var(--ink);
+      font-size: 24px;
+    }
+    h3 {
+      margin: 24px 0 10px;
+      font-size: 18px;
+    }
+    p { margin: 10px 0; }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 14px 0 22px;
+      font-size: 13px;
+      page-break-inside: avoid;
+    }
+    th {
+      background: #111827;
+      color: #ffffff;
+      text-align: left;
+      font-weight: 800;
+    }
+    th, td {
+      border: 1px solid var(--line);
+      padding: 9px 10px;
+      vertical-align: top;
+    }
+    tr:nth-child(even) td { background: #fafbfe; }
+    ul, ol { padding-left: 24px; }
+    li { margin: 5px 0; }
+    code {
+      padding: 2px 5px;
+      border-radius: 4px;
+      background: #f0f2f5;
+      font-family: Menlo, Consolas, monospace;
+      font-size: .92em;
+    }
+    pre {
+      margin: 14px 0 22px;
+      padding: 14px 16px;
+      overflow: auto;
+      border: 1px solid #d8dee9;
+      border-radius: 8px;
+      background: #101827;
+      color: #f8fafc;
+      font-size: 12px;
+      line-height: 1.45;
+      page-break-inside: avoid;
+    }
+    pre code { background: transparent; color: inherit; padding: 0; }
+    pre.mermaid {
+      background: var(--panel);
+      color: #1f2937;
+      white-space: pre-wrap;
+    }
+    blockquote {
+      margin: 14px 0;
+      padding: 12px 16px;
+      border-left: 5px solid var(--yellow);
+      background: var(--soft);
+    }
+    a { color: #0f62fe; }
+    @page { margin: 16mm 14mm; }
+    @media print {
+      .cover { page-break-after: avoid; }
+      h2, h3 { page-break-after: avoid; }
+      table, pre { break-inside: avoid; }
+    }
+  </style>
+</head>
+<body>
+  <section class="cover">
+    <div class="brand">MePonto · PontoSys</div>
+    <h1>产品策划书与开发部门执行手册 v1.0</h1>
+    <p>用于开发部门执行产品规划、模块开发、沙盒测试、分支提交、Preview 验收、代码合并和生产发布。</p>
+  </section>
+  <main><h1>MePonto 产品策划书与开发部门执行手册 v1.0</h1>
+<p>本文档是 MePonto / PontoSys 当前阶段给开发部门使用的完整产品策划与执行手册。它汇总已经确认的产品方向、系统架构、模块范围、团队分工、开发规则、测试环境、上线流程和验收标准。</p>
+<p>本手册不是单一功能说明，而是开发部门的工作入口。所有开发人员、Codex 代理和外部协作人员在开发新模块、修改现有模块、提交 PR、部署测试环境或准备上线前，都必须先阅读并遵守本文档。</p>
+<h2>1. 最终方案确认</h2>
+<h3>1.1 品牌与系统名称</h3>
+<table>
+<thead>
+<tr>
+<th>项目</th>
+<th>标准名称</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>品牌名</td>
+<td>MePonto</td>
+</tr>
+<tr>
+<td>主系统名</td>
+<td>PontoSys</td>
+</tr>
+<tr>
+<td>巴西本地运营品牌</td>
+<td>MePonto</td>
+</tr>
+<tr>
+<td>骑手端体验名称</td>
+<td>MePonto</td>
+</tr>
+</tbody></table>
+<p>要求：</p>
+<ul>
+<li>用户可见位置必须使用 MePonto 和 PontoSys。</li>
+<li>不允许继续使用旧品牌、临时名称或不一致大小写。</li>
+<li>除非有明确产品决策，不允许重命名 MePonto 或 PontoSys。</li>
+</ul>
+<h3>1.2 产品定位</h3>
+<p>MePonto 不是一个简单后台，也不是多个页面拼接的工具。</p>
+<p>MePonto 的产品定位是：</p>
+<pre><code>面向巴西骑手服务网络的 Ecosystem OS。</code></pre><p>PontoSys 是 MePonto 的运营系统底座，用于支撑：</p>
+<ul>
+<li>主后台</li>
+<li>加盟商后台</li>
+<li>Leader 工作台</li>
+<li>骑手端 App</li>
+<li>SOP 与培训中心</li>
+<li>Partner 系统</li>
+<li>供应链系统</li>
+<li>积分商城系统</li>
+<li>积分商城后台</li>
+<li>养成宠物系统</li>
+<li>调度系统</li>
+<li>风控系统</li>
+<li>规则引擎</li>
+<li>数据分析与报表系统</li>
+</ul>
+<p>系统设计必须从第一天按平台级生态系统建设，而不是按一次性页面开发。</p>
+<h3>1.3 当前已确认的重要产品决策</h3>
+<table>
+<thead>
+<tr>
+<th>决策</th>
+<th>结论</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>通信能力</td>
+<td>移除外部聊天接入，统一替换为 PontoSys 原生应用内聊天</td>
+</tr>
+<tr>
+<td>登录体系</td>
+<td>禁止子系统单独登录，统一身份体系</td>
+</tr>
+<tr>
+<td>模块接入</td>
+<td>新模块必须通过 Module Registry 设计注册</td>
+</tr>
+<tr>
+<td>灰度发布</td>
+<td>新能力必须默认 disabled 或 beta</td>
+</tr>
+<tr>
+<td>语言支持</td>
+<td>必须支持中文、英文、葡语</td>
+</tr>
+<tr>
+<td>巴西面向用户语言</td>
+<td>葡语优先</td>
+</tr>
+<tr>
+<td>内部业务评审语言</td>
+<td>中文优先</td>
+</tr>
+<tr>
+<td>钱、积分、库存、奖励、结算</td>
+<td>必须使用 ledger-style 记录</td>
+</tr>
+<tr>
+<td>团队协作</td>
+<td>你控制主后台、代码并入、功能定义和部署；开发人员做模块开发、测试和分支提交</td>
+</tr>
+<tr>
+<td>测试环境</td>
+<td>所有人必须有独立沙盒，测试通过后再合并</td>
+</tr>
+</tbody></table>
+<h2>2. 当前系统更新汇总</h2>
+<h3>2.1 已完成的系统基础</h3>
+<p>当前项目已经具备以下基础：</p>
+<ul>
+<li>Next.js 主应用。</li>
+<li>主后台基础页面。</li>
+<li>骑手、Ponto、Leader、事故、奖励、财务、CRM、加盟、移动端、实时、SOP、工具、审计、权限、安全、设置等模块。</li>
+<li>API route handlers under <code>app/api/*</code>。</li>
+<li>共享 demo data under <code>app/lib/*</code>。</li>
+<li>服务器侧 process-local memory store。</li>
+<li>浏览器侧 Zustand demo store。</li>
+<li>RBAC demo permission matrix。</li>
+<li>敏感字段 CPF / PIX mask 与 reveal API。</li>
+<li>server audit in-memory entries。</li>
+<li>smoke、workflow smoke、a11y smoke、module guard、Codex preflight。</li>
+<li>GitHub CI、PR template、CODEOWNERS。</li>
+</ul>
+<h3>2.2 应用内聊天替换</h3>
+<p>已确认并完成：</p>
+<ul>
+<li>移除旧外部聊天入口。</li>
+<li>删除旧 <code>/whatsapp</code> 页面和 API。</li>
+<li>新增 <code>/chat</code> 页面。</li>
+<li>新增 <code>/api/chat</code> 房间 API。</li>
+<li>新增 <code>/api/chat/messages</code> 消息 API。</li>
+<li>新增 <code>app/lib/chat.ts</code> 原生聊天数据模型。</li>
+<li><code>app/lib/integrations.ts</code> 不再包含聊天 provider。</li>
+<li>文档中明确应用内聊天是 PontoSys 原生模块，不是外部集成 provider。</li>
+<li>语言支持已覆盖中文、英文、葡语。</li>
+</ul>
+<p>应用内聊天后续必须具备：</p>
+<ul>
+<li>chat rooms</li>
+<li>chat messages</li>
+<li>chat memberships</li>
+<li>chat moderation</li>
+<li>read receipts</li>
+<li>audit trail</li>
+<li>retention policy</li>
+<li>room message 和 personal message 区分</li>
+<li>与 Rider / Ponto / Incident / Leader 关联</li>
+</ul>
+<p>禁止将应用内聊天重新实现为任何第三方聊天平台的必要依赖。</p>
+<h3>2.3 加盟商与首店方案</h3>
+<p>已确认的首店合作方向：</p>
+<ul>
+<li>首店用于试运营。</li>
+<li>加盟商负责本地站点执行、骑手招募承接、现场管理和日常反馈。</li>
+<li>MePonto 负责运营模型、PontoSys 系统、数据支持、定价政策、SOP 标准、总部培训和关键问题决策。</li>
+<li>出现意见分歧时，以 MePonto 的运营思路和标准 SOP 为最终执行口径。</li>
+</ul>
+<p>首店关键条件：</p>
+<table>
+<thead>
+<tr>
+<th>项目</th>
+<th>要求</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>固定门店</td>
+<td>必须有</td>
+</tr>
+<tr>
+<td>面积</td>
+<td>至少 30 平米</td>
+</tr>
+<tr>
+<td>人员</td>
+<td>至少 2 名站点人员</td>
+</tr>
+<tr>
+<td>骑手</td>
+<td>至少 20 名骑手启动</td>
+</tr>
+<tr>
+<td>基础服务</td>
+<td>休息、充电、培训、工具、饮水、基础咨询</td>
+</tr>
+<tr>
+<td>定价</td>
+<td>Quality 基准 12</td>
+</tr>
+<tr>
+<td>KPI 浮动</td>
+<td>80%-120%</td>
+</tr>
+<tr>
+<td>房租支持</td>
+<td>前三个月 MePonto 承担 50%</td>
+</tr>
+<tr>
+<td>保护期</td>
+<td>三个月</td>
+</tr>
+<tr>
+<td>结算</td>
+<td>周结，以合同为准</td>
+</tr>
+</tbody></table>
+<h3>2.4 SOP 体系</h3>
+<p>当前 SOP 体系包括：</p>
+<ul>
+<li>全职骑手 SOP</li>
+<li>招聘骑手 SOP</li>
+<li>站点运营 SOP</li>
+<li>PontoSys 操作手册</li>
+<li>加盟商合作方案</li>
+</ul>
+<p>SOP 必须落地为执行动作，不能停留在原则描述。</p>
+<p>总部巡查时应围绕以下动作检查：</p>
+<ul>
+<li>是否按时签到。</li>
+<li>是否完成班前检查。</li>
+<li>是否按 slot 执行。</li>
+<li>是否按 hotzone 和高峰规则执行。</li>
+<li>是否记录异常。</li>
+<li>是否完成收工复盘。</li>
+<li>是否处理未闭环事故、投诉和支付争议。</li>
+<li>是否完成招聘转化记录。</li>
+<li>是否完成培训和 7 日留存跟进。</li>
+</ul>
+<h2>3. 产品总体架构</h2>
+<h3>3.1 总体架构图</h3>
+<pre class="mermaid">flowchart TB
+  User[&quot;统一用户 / Unified Identity&quot;] --&gt; RBAC[&quot;统一 RBAC / Scope&quot;]
+  RBAC --&gt; Shell[&quot;PontoSys Platform Shell&quot;]
+
+  Shell --&gt; Admin[&quot;主后台&quot;]
+  Shell --&gt; Franchise[&quot;加盟商后台&quot;]
+  Shell --&gt; Leader[&quot;Leader 工作台&quot;]
+  Shell --&gt; Rider[&quot;骑手端 App&quot;]
+  Shell --&gt; Partner[&quot;Partner 后台&quot;]
+  Shell --&gt; Supply[&quot;供应链后台&quot;]
+  Shell --&gt; Mall[&quot;积分商城&quot;]
+  Shell --&gt; Pet[&quot;养成宠物系统&quot;]
+
+  Shell --&gt; Registry[&quot;Module Registry&quot;]
+  Shell --&gt; Flags[&quot;Feature Flags&quot;]
+  Shell --&gt; Gateway[&quot;Integration Gateway&quot;]
+  Shell --&gt; Events[&quot;Event Bus&quot;]
+  Shell --&gt; Ledger[&quot;Ledger System&quot;]
+  Shell --&gt; Rules[&quot;Rule Engine&quot;]
+  Shell --&gt; Risk[&quot;Risk Engine&quot;]
+  Shell --&gt; Analytics[&quot;Read Models / Analytics&quot;]
+
+  Chat[&quot;PontoSys 应用内聊天&quot;] --&gt; Events
+  Chat --&gt; Audit[&quot;Audit Log&quot;]
+  Ledger --&gt; Audit
+  RBAC --&gt; Audit</pre><h3>3.2 核心系统原则</h3>
+<ol>
+<li>统一身份体系。</li>
+<li>统一权限模型。</li>
+<li>模块边界清晰。</li>
+<li>数据边界清晰。</li>
+<li>跨模块通信必须通过 API、事件、read model 或 Integration Gateway。</li>
+<li>新能力默认不可直接全量开启。</li>
+<li>经济系统必须 ledger 化。</li>
+<li>事件必须版本化。</li>
+<li>语言支持属于验收标准。</li>
+<li>主后台必须始终保持可部署。</li>
+</ol>
+<h2>4. 核心模块规划</h2>
+<h3>4.1 主后台</h3>
+<p>负责人：你。</p>
+<p>主后台负责：</p>
+<ul>
+<li>产品定义。</li>
+<li>模块启用。</li>
+<li>功能验收。</li>
+<li>代码并入。</li>
+<li>权限治理。</li>
+<li>数据口径。</li>
+<li>部署发布。</li>
+<li>回滚决策。</li>
+<li>加盟商政策。</li>
+<li>SOP 总控。</li>
+</ul>
+<p>主后台不是普通 admin 页面，而是整个 PontoSys 的控制中心。</p>
+<h3>4.2 加盟商后台</h3>
+<p>核心目标：</p>
+<ul>
+<li>让加盟商可执行站点运营。</li>
+<li>让总部可巡查加盟商。</li>
+<li>让数据支持价格、KPI、招聘和运力决策。</li>
+</ul>
+<p>一期能力：</p>
+<ul>
+<li>加盟商 dashboard。</li>
+<li>站点骑手规模。</li>
+<li>KPI 进度。</li>
+<li>招聘漏斗。</li>
+<li>hotzone 同步。</li>
+<li>云骑手单均参考。</li>
+<li>异常队列。</li>
+<li>周结对账。</li>
+<li>SOP 执行记录。</li>
+</ul>
+<p>不得允许加盟商自行解释未经总部确认的数据口径。</p>
+<h3>4.3 Leader 工作台</h3>
+<p>核心目标：</p>
+<ul>
+<li>管理骑手日常状态。</li>
+<li>跟进异常。</li>
+<li>执行高峰、夜班、安全和 slot 纪律。</li>
+</ul>
+<p>一期能力：</p>
+<ul>
+<li>骑手 roster。</li>
+<li>在线状态。</li>
+<li>slot 跟进。</li>
+<li>应用内聊天房间。</li>
+<li>事故上报。</li>
+<li>夜班安全 pulse。</li>
+<li>低 AR / 低 OPH 跟进。</li>
+</ul>
+<h3>4.4 骑手端 App</h3>
+<p>核心目标：</p>
+<ul>
+<li>给骑手提供 MePonto 会员体验。</li>
+<li>支持 check-in、积分、任务、安全、通知和应用内聊天。</li>
+<li>不创建单独登录体系。</li>
+</ul>
+<p>一期能力：</p>
+<ul>
+<li>钱包或收入感知入口。</li>
+<li>积分入口。</li>
+<li>Ponto 信息。</li>
+<li>Leader 支持。</li>
+<li>安全状态。</li>
+<li>事故入口。</li>
+<li>推送和应用内消息。</li>
+<li>Partner 地图入口。</li>
+</ul>
+<h3>4.5 Partner 系统</h3>
+<p>核心目标：</p>
+<ul>
+<li>管理骑手后市场服务。</li>
+<li>支持维修、租车、工具、宿舍、电话卡、加油卡等服务。</li>
+<li>支持积分奖励和服务核验。</li>
+</ul>
+<p>原则：</p>
+<ul>
+<li>骑手不使用积分直接支付 Partner。</li>
+<li>骑手向 Partner 现金 / PIX / card 支付。</li>
+<li>Partner 因完成核验服务获得 MePonto points。</li>
+<li>Partner points 后续可在积分商城兑换。</li>
+</ul>
+<h3>4.6 供应链系统</h3>
+<p>核心目标：</p>
+<ul>
+<li>管理工具、装备、库存、供应商和站点补给。</li>
+<li>与积分商城、Partner 服务和站点库存联动。</li>
+</ul>
+<p>必须使用库存 ledger 或库存流水，不允许直接覆盖库存余额。</p>
+<h3>4.7 积分商城系统</h3>
+<p>核心目标：</p>
+<ul>
+<li>让骑手和 Partner 使用 MePonto points 兑换已批准商品、服务或权益。</li>
+<li>积分必须 append-only ledger。</li>
+</ul>
+<p>必须支持：</p>
+<ul>
+<li>points account</li>
+<li>points ledger</li>
+<li>earn rules</li>
+<li>redeem rules</li>
+<li>refund / compensation</li>
+<li>expiry</li>
+<li>fraud review</li>
+<li>read model</li>
+</ul>
+<h3>4.8 养成宠物系统</h3>
+<p>核心目标：</p>
+<ul>
+<li>作为骑手成长、留存和任务体系的一部分。</li>
+<li>与积分、任务、出勤、安全和服务质量挂钩。</li>
+</ul>
+<p>原则：</p>
+<ul>
+<li>宠物经验、等级、道具、奖励必须可追溯。</li>
+<li>涉及经济价值时必须 ledger 化。</li>
+<li>不允许直接修改经验余额而没有记录。</li>
+</ul>
+<h3>4.9 调度系统</h3>
+<p>后续必须形成独立 Dispatch Domain。</p>
+<p>范围：</p>
+<ul>
+<li>slot</li>
+<li>availability</li>
+<li>capacity</li>
+<li>heatmap</li>
+<li>hotzone</li>
+<li>assignment</li>
+<li>shift planning</li>
+<li>rebalancing</li>
+</ul>
+<p>调度不能散落在 rider、slot、task 页面里。</p>
+<h3>4.10 风控系统</h3>
+<p>必须逐步建设 Risk Domain。</p>
+<p>重点风险：</p>
+<ul>
+<li>假骑手。</li>
+<li>假 GPS。</li>
+<li>多账号。</li>
+<li>套补贴。</li>
+<li>假库存。</li>
+<li>假兑换。</li>
+<li>Leader 与骑手串通。</li>
+<li>Partner 套现。</li>
+<li>PIX fraud。</li>
+</ul>
+<p>需要：</p>
+<ul>
+<li>risk events</li>
+<li>risk rules</li>
+<li>risk actions</li>
+<li>trust score</li>
+<li>device / behavior signals</li>
+<li>audit</li>
+</ul>
+<h2>5. 数据与技术架构</h2>
+<h3>5.1 当前架构状态</h3>
+<p>当前系统是 MVP 架构：</p>
+<ul>
+<li>Next.js app。</li>
+<li>API routes under <code>app/api/*</code>。</li>
+<li>process-local memory。</li>
+<li>demo seed data。</li>
+<li>Zustand browser persistence。</li>
+<li>typed repository facade。</li>
+</ul>
+<p>这适合 MVP 和演示，但不适合长期生产。</p>
+<h3>5.2 目标生产架构</h3>
+<p>目标演进方向：</p>
+<pre class="mermaid">flowchart LR
+  Web[&quot;Next.js Web / Admin&quot;] --&gt; API[&quot;Backend API&quot;]
+  API --&gt; Auth[&quot;Auth / RBAC&quot;]
+  API --&gt; DB[&quot;PostgreSQL&quot;]
+  API --&gt; Redis[&quot;Redis&quot;]
+  API --&gt; Queue[&quot;Queue / Workers&quot;]
+  Queue --&gt; EventBus[&quot;Event Bus&quot;]
+  EventBus --&gt; Projections[&quot;Read Models&quot;]
+  API --&gt; Audit[&quot;Audit Log&quot;]
+  API --&gt; Ledger[&quot;Ledger&quot;]
+  API --&gt; ObjectStore[&quot;Object Storage&quot;]</pre><p>建议生产演进：</p>
+<ol>
+<li>保持 Next.js 作为 Web 和管理后台。</li>
+<li>后端逐步迁移到 NestJS 或等价模块化 API 服务。</li>
+<li>PostgreSQL 作为 source of truth。</li>
+<li>Redis 用于缓存、队列、rate limit、临时状态。</li>
+<li>Workers 处理聊天 fanout、通知、导入、结算、报表投影。</li>
+<li>Audit 和 Ledger 必须持久化。</li>
+</ol>
+<h3>5.3 数据边界</h3>
+<p>每个模块必须定义：</p>
+<ul>
+<li>自己拥有的数据。</li>
+<li>可以读取的外部数据。</li>
+<li>可以暴露给其他模块的数据。</li>
+<li>保留策略。</li>
+<li>LGPD 敏感等级。</li>
+</ul>
+<p>禁止：</p>
+<ul>
+<li>直接写别的模块私有数据。</li>
+<li>绕过 API 修改共享状态。</li>
+<li>用 dashboard 字段作为 source of truth。</li>
+<li>删除 ledger / audit 历史。</li>
+</ul>
+<h2>6. 语言与本地化要求</h2>
+<h3>6.1 必须支持的语言</h3>
+<table>
+<thead>
+<tr>
+<th>语言</th>
+<th>代码</th>
+<th>使用场景</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>中文</td>
+<td>zh</td>
+<td>内部业务评审、总部政策、开发沟通</td>
+</tr>
+<tr>
+<td>英文</td>
+<td>en</td>
+<td>技术标签、跨团队交付、默认系统结构</td>
+</tr>
+<tr>
+<td>葡语</td>
+<td>pt</td>
+<td>巴西骑手、站点、Leader、加盟商、培训、SOP</td>
+</tr>
+</tbody></table>
+<h3>6.2 必须覆盖的内容</h3>
+<p>新增或修改以下内容时必须检查三语：</p>
+<ul>
+<li>导航。</li>
+<li>页面标题。</li>
+<li>表单 label。</li>
+<li>placeholder。</li>
+<li>button。</li>
+<li>filter。</li>
+<li>tab。</li>
+<li>table header。</li>
+<li>status label。</li>
+<li>empty state。</li>
+<li>loading state。</li>
+<li>error state。</li>
+<li>success message。</li>
+<li>user-facing API error。</li>
+<li>SOP。</li>
+<li>培训内容。</li>
+<li>PDF / HTML 导出。</li>
+<li>通知模板。</li>
+<li>应用内聊天模板。</li>
+</ul>
+<h3>6.3 禁止事项</h3>
+<ul>
+<li>不允许同一用户可见标签里随意混用中文、英文、葡语。</li>
+<li>不允许遗留旧品牌名称。</li>
+<li>不允许只改英文页面，不补葡语。</li>
+<li>不允许 Brazil-facing 内容没有葡语。</li>
+</ul>
+<p>如某次任务临时只做单语言，PR 必须说明原因和补齐计划。</p>
+<h2>7. 团队分工与权限</h2>
+<h3>7.1 推荐分工</h3>
+<table>
+<thead>
+<tr>
+<th>人员</th>
+<th>责任</th>
+<th>权限</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>你</td>
+<td>主后台、产品定义、代码并入、功能更新、部署、回滚、最终业务判断</td>
+<td>最终合并权和生产发布权</td>
+</tr>
+<tr>
+<td>开发者 A</td>
+<td>加盟商、财务、合作方案、站点运营模块</td>
+<td>提交模块分支和 PR</td>
+</tr>
+<tr>
+<td>开发者 B</td>
+<td>骑手、Leader、移动端、骑手生命周期</td>
+<td>提交模块分支和 PR</td>
+</tr>
+<tr>
+<td>开发者 C</td>
+<td>商城、积分、供应链、宠物养成、Partner 模块</td>
+<td>提交模块分支和 PR</td>
+</tr>
+<tr>
+<td>Codex</td>
+<td>代码实现、文档生成、测试、检查、PR 说明</td>
+<td>只能按开发者指令提交，不自动合并</td>
+</tr>
+</tbody></table>
+<h3>7.2 你必须控制的事项</h3>
+<p>以下事项必须由你确认：</p>
+<ul>
+<li>产品方向。</li>
+<li>模块是否进入开发。</li>
+<li>模块是否进入 beta。</li>
+<li>模块是否 active。</li>
+<li>共享数据模型。</li>
+<li>Module Registry。</li>
+<li>Feature Flag 策略。</li>
+<li>权限模型。</li>
+<li>结算、积分、价格、KPI。</li>
+<li>加盟商政策。</li>
+<li>生产部署。</li>
+<li>回滚。</li>
+</ul>
+<h2>8. 开发流程</h2>
+<h3>8.1 标准流程图</h3>
+<pre class="mermaid">flowchart LR
+  A[&quot;需求确认&quot;] --&gt; B[&quot;模块合同&quot;]
+  B --&gt; C[&quot;创建沙盒&quot;]
+  C --&gt; D[&quot;codex/&lt;module&gt;-&lt;task&gt; 分支&quot;]
+  D --&gt; E[&quot;开发实现&quot;]
+  E --&gt; F[&quot;本地 preflight&quot;]
+  F --&gt; G[&quot;提交 PR 到 dev&quot;]
+  G --&gt; H[&quot;GitHub CI&quot;]
+  H --&gt; I[&quot;Vercel Preview&quot;]
+  I --&gt; J[&quot;业务验收&quot;]
+  J --&gt; K[&quot;合并 dev&quot;]
+  K --&gt; L[&quot;集成回归&quot;]
+  L --&gt; M[&quot;dev -&gt; main&quot;]
+  M --&gt; N[&quot;生产发布&quot;]</pre><h3>8.2 分支策略</h3>
+<table>
+<thead>
+<tr>
+<th>分支</th>
+<th>作用</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>main</code></td>
+<td>生产可部署分支</td>
+</tr>
+<tr>
+<td><code>dev</code></td>
+<td>日常集成与测试分支</td>
+</tr>
+<tr>
+<td><code>codex/&lt;module&gt;-&lt;task&gt;</code></td>
+<td>单任务开发分支</td>
+</tr>
+<tr>
+<td><code>hotfix/&lt;issue&gt;</code></td>
+<td>紧急修复分支</td>
+</tr>
+</tbody></table>
+<p>合并顺序：</p>
+<pre><code>codex/* -&gt; dev -&gt; main</code></pre><p>禁止：</p>
+<ul>
+<li>直接推送 <code>main</code>。</li>
+<li>绕过 PR 合并。</li>
+<li>在一个模块分支里混入多个不相关模块。</li>
+<li>用 force push 覆盖别人工作。</li>
+</ul>
+<h3>8.3 沙盒环境</h3>
+<p>每个开发人员必须有独立沙盒。</p>
+<p>推荐方式：</p>
+<pre><code>git worktree add -b codex/franchise-settlement ../sandbox-franchise dev
+git worktree add -b codex/rider-onboarding ../sandbox-rider dev
+git worktree add -b codex/marketplace-catalog ../sandbox-marketplace dev</code></pre><p>每个沙盒使用不同端口：</p>
+<pre><code>npm run dev -- -p 3001
+npm run dev -- -p 3002
+npm run dev -- -p 3003</code></pre><p>沙盒要求：</p>
+<ul>
+<li>不使用生产数据库。</li>
+<li>不使用生产支付配置。</li>
+<li>不使用真实个人敏感数据。</li>
+<li>每个开发者独立 <code>.env.local</code>。</li>
+<li>Preview 环境变量和 Production 环境变量分开。</li>
+</ul>
+<h2>9. 模块开发标准</h2>
+<h3>9.1 模块开工前必须完成</h3>
+<p>新增模块前必须填写模块合同：</p>
+<pre><code>Module name:
+Owner:
+Status:
+Route:
+Feature flag:
+Business purpose:
+Allowed roles:
+Required scopes:
+Private data:
+APIs:
+Events:
+Ledger impact:
+Rule engine impact:
+Read models:
+Localization:
+Rollout plan:
+Rollback plan:</code></pre><p>模板来源：</p>
+<pre><code>docs/module-contract-template.md</code></pre><h3>9.2 新模块必须满足</h3>
+<ul>
+<li>有明确 owner。</li>
+<li>有明确 route。</li>
+<li>有 feature flag。</li>
+<li>默认 disabled 或 beta。</li>
+<li>有权限说明。</li>
+<li>有数据边界。</li>
+<li>有 API contract。</li>
+<li>有事件版本。</li>
+<li>有三语文案。</li>
+<li>有测试方式。</li>
+<li>有回滚方式。</li>
+</ul>
+<h3>9.3 模块状态</h3>
+<table>
+<thead>
+<tr>
+<th>状态</th>
+<th>含义</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>disabled</td>
+<td>代码存在，但不可见或不可用</td>
+</tr>
+<tr>
+<td>beta</td>
+<td>内部或指定范围可用</td>
+</tr>
+<tr>
+<td>active</td>
+<td>正式启用</td>
+</tr>
+<tr>
+<td>deprecated</td>
+<td>保留兼容，不再新增能力</td>
+</tr>
+</tbody></table>
+<h2>10. 测试与验收</h2>
+<h3>10.1 本地检查</h3>
+<p>普通模块：</p>
+<pre><code>npm run codex:preflight</code></pre><p>高风险或发布前：</p>
+<pre><code>npm run codex:preflight:full</code></pre><p>当前完整检查包括：</p>
+<ul>
+<li>module guard</li>
+<li>production build</li>
+<li>smoke</li>
+<li>accessibility smoke</li>
+<li>workflow smoke</li>
+</ul>
+<h3>10.2 GitHub CI</h3>
+<p>当前 <code>.github/workflows/codex-ci.yml</code> 会执行：</p>
+<pre><code>npm ci
+npm run module:guard
+npm run build
+npm run check</code></pre><p>CI 必须通过后才能合并。</p>
+<h3>10.3 人工验收</h3>
+<p>Codex 和 CI 不能替代以下人工确认：</p>
+<ul>
+<li>业务规则是否正确。</li>
+<li>加盟商政策是否符合合同。</li>
+<li>财务公式是否符合商业口径。</li>
+<li>葡语表达是否适合巴西本地。</li>
+<li>页面是否符合品牌感。</li>
+<li>生产发布时间是否合适。</li>
+</ul>
+<h2>11. PR 与代码并入</h2>
+<h3>11.1 PR 必填内容</h3>
+<p>PR 必须包含：</p>
+<ul>
+<li>Summary。</li>
+<li>Module。</li>
+<li>What Changed。</li>
+<li>Shared Code Touched。</li>
+<li>Verification。</li>
+<li>三语检查。</li>
+<li>Feature Flag。</li>
+<li>权限检查。</li>
+<li>Ledger 检查。</li>
+<li>Brand 检查。</li>
+</ul>
+<h3>11.2 合并条件</h3>
+<p>进入 <code>dev</code> 前：</p>
+<ul>
+<li>本地 preflight 通过。</li>
+<li>GitHub CI 通过。</li>
+<li>Preview 可访问。</li>
+<li>模块 owner 自查通过。</li>
+<li>无明显跨模块越界。</li>
+</ul>
+<p>进入 <code>main</code> 前：</p>
+<ul>
+<li><code>dev</code> 集成回归通过。</li>
+<li><code>npm run codex:preflight:full</code> 通过。</li>
+<li>关键页面人工验收通过。</li>
+<li>回滚方案明确。</li>
+<li>由你批准。</li>
+</ul>
+<h2>12. 上线与回滚</h2>
+<h3>12.1 发布节奏</h3>
+<p>建议：</p>
+<ul>
+<li>每周 1-2 次常规发布。</li>
+<li>高风险模块集中在固定发布窗口。</li>
+<li>hotfix 单独走紧急流程。</li>
+</ul>
+<h3>12.2 发布流程</h3>
+<pre class="mermaid">sequenceDiagram
+  participant Dev as Developer
+  participant CI as GitHub CI
+  participant Preview as Vercel Preview
+  participant Owner as Product Owner
+  participant Main as main
+  participant Prod as Production
+
+  Dev-&gt;&gt;CI: PR to dev
+  CI-&gt;&gt;Preview: Build preview
+  Preview-&gt;&gt;Owner: Business validation
+  Owner-&gt;&gt;Main: Approve dev -&gt; main
+  Main-&gt;&gt;Prod: Production deploy
+  Prod-&gt;&gt;Owner: Post-release checks</pre><h3>12.3 回滚原则</h3>
+<p>优先级：</p>
+<ol>
+<li>关闭 Feature Flag。</li>
+<li>回滚 Vercel 部署。</li>
+<li>revert PR。</li>
+<li>数据补偿或 ledger compensation。</li>
+</ol>
+<p>禁止：</p>
+<ul>
+<li>直接删除生产数据。</li>
+<li>手工改钱、积分、库存余额。</li>
+<li>不记录 audit 的紧急修改。</li>
+</ul>
+<h2>13. Codex 使用规范</h2>
+<h3>13.1 每次任务启动指令</h3>
+<p>建议统一使用：</p>
+<pre><code>请先读取 AGENTS.md，并严格遵守 docs/module-development-playbook.md、docs/module-contract-template.md、docs/pr-checklist.md。
+本次只开发 &lt;模块名&gt; 模块。
+不要修改 auth、RBAC、ledger、Module Registry、Integration Gateway 或共享 API，除非你先说明原因并获得确认。
+完成后运行 npm run codex:preflight。</code></pre><h3>13.2 Codex 可以直接做</h3>
+<ul>
+<li>创建模块页面。</li>
+<li>新增 API route。</li>
+<li>补 i18n。</li>
+<li>生成模块合同。</li>
+<li>生成 SOP。</li>
+<li>写 smoke test。</li>
+<li>跑 build / preflight。</li>
+<li>检查残留品牌名。</li>
+<li>检查跨模块违规。</li>
+<li>生成 PR 描述。</li>
+</ul>
+<h3>13.3 Codex 必须先确认</h3>
+<ul>
+<li>权限模型。</li>
+<li>钱、积分、库存、结算。</li>
+<li>数据库 schema。</li>
+<li>生产部署。</li>
+<li>破坏性迁移。</li>
+<li>业务政策。</li>
+<li>合同条款。</li>
+<li>加盟商价格。</li>
+<li>应用内聊天权限、审核、留存和审计规则。</li>
+</ul>
+<h3>13.4 Codex 提交规则</h3>
+<p>Codex 只有在开发者明确要求时才能：</p>
+<ul>
+<li>stage</li>
+<li>commit</li>
+<li>push</li>
+<li>create PR</li>
+</ul>
+<p>提交前必须：</p>
+<pre><code>npm run codex:preflight</code></pre><p>高风险或发布前必须：</p>
+<pre><code>npm run codex:preflight:full</code></pre><h2>14. 开发部门执行清单</h2>
+<h3>14.1 每日开发清单</h3>
+<ul>
+<li><input disabled="" type="checkbox"> 从 <code>dev</code> 拉最新代码。</li>
+<li><input disabled="" type="checkbox"> 确认当前任务属于哪个模块。</li>
+<li><input disabled="" type="checkbox"> 确认模块合同是否存在。</li>
+<li><input disabled="" type="checkbox"> 创建 <code>codex/&lt;module&gt;-&lt;task&gt;</code> 分支。</li>
+<li><input disabled="" type="checkbox"> 启动独立端口沙盒。</li>
+<li><input disabled="" type="checkbox"> 开发前给 Codex 明确边界。</li>
+<li><input disabled="" type="checkbox"> 开发后检查三语。</li>
+<li><input disabled="" type="checkbox"> 运行 <code>npm run codex:preflight</code>。</li>
+<li><input disabled="" type="checkbox"> 提交 PR 到 <code>dev</code>。</li>
+</ul>
+<h3>14.2 模块验收清单</h3>
+<ul>
+<li><input disabled="" type="checkbox"> 模块边界清楚。</li>
+<li><input disabled="" type="checkbox"> 没有直接写其他模块私有数据。</li>
+<li><input disabled="" type="checkbox"> 权限已检查。</li>
+<li><input disabled="" type="checkbox"> Feature Flag 已配置。</li>
+<li><input disabled="" type="checkbox"> 事件已版本化。</li>
+<li><input disabled="" type="checkbox"> Ledger 影响已判断。</li>
+<li><input disabled="" type="checkbox"> 中文完整。</li>
+<li><input disabled="" type="checkbox"> 英文完整。</li>
+<li><input disabled="" type="checkbox"> 葡语完整。</li>
+<li><input disabled="" type="checkbox"> 空状态、错误状态、按钮、表头已本地化。</li>
+<li><input disabled="" type="checkbox"> API smoke 已覆盖。</li>
+<li><input disabled="" type="checkbox"> Preview 已验证。</li>
+<li><input disabled="" type="checkbox"> 回滚方式明确。</li>
+</ul>
+<h3>14.3 发布验收清单</h3>
+<ul>
+<li><input disabled="" type="checkbox"> <code>dev</code> 当前版本已冻结。</li>
+<li><input disabled="" type="checkbox"> 所有 PR CI 通过。</li>
+<li><input disabled="" type="checkbox"> <code>npm run codex:preflight:full</code> 通过。</li>
+<li><input disabled="" type="checkbox"> 关键页面浏览器验证通过。</li>
+<li><input disabled="" type="checkbox"> 数据库迁移已确认。</li>
+<li><input disabled="" type="checkbox"> Feature Flag 可关闭。</li>
+<li><input disabled="" type="checkbox"> 回滚方案已确认。</li>
+<li><input disabled="" type="checkbox"> 你批准发布。</li>
+</ul>
+<h2>15. 接下来 30 天执行计划</h2>
+<h3>第 1 周：协作制度落地</h3>
+<p>目标：</p>
+<ul>
+<li><code>dev</code> 分支作为集成分支。</li>
+<li>每个开发者建立独立沙盒。</li>
+<li>Vercel Preview 环境可用。</li>
+<li>GitHub CI 作为合并门禁。</li>
+</ul>
+<p>任务：</p>
+<ul>
+<li>确认 GitHub Ruleset。</li>
+<li>确认 CODEOWNERS 团队成员真实可用。</li>
+<li>配置 Vercel Preview 环境变量。</li>
+<li>为三位开发者建立 worktree 或独立 clone。</li>
+<li>演练一个小模块从分支到 PR 到 Preview。</li>
+</ul>
+<h3>第 2 周：核心运营模块稳定</h3>
+<p>目标：</p>
+<ul>
+<li>主后台基础数据口径稳定。</li>
+<li>加盟商、骑手、Leader、SOP 形成可演示闭环。</li>
+</ul>
+<p>任务：</p>
+<ul>
+<li>完善加盟商 dashboard。</li>
+<li>完善全职骑手 SOP。</li>
+<li>完善招聘 SOP。</li>
+<li>完善站点运营 SOP。</li>
+<li>完善应用内聊天 room / message 使用场景。</li>
+</ul>
+<h3>第 3 周：积分与 Partner 能力</h3>
+<p>目标：</p>
+<ul>
+<li>积分经济标准落地到模块合同。</li>
+<li>Partner 服务核验流程明确。</li>
+</ul>
+<p>任务：</p>
+<ul>
+<li>完成 points account / ledger 模型细化。</li>
+<li>完成 Partner 服务合同。</li>
+<li>完成商城兑换 MVP 规则。</li>
+<li>明确供应链库存 ledger。</li>
+</ul>
+<h3>第 4 周：生产化准备</h3>
+<p>目标：</p>
+<ul>
+<li>从 demo memory 架构向生产后端迁移做准备。</li>
+</ul>
+<p>任务：</p>
+<ul>
+<li>确认 PostgreSQL schema。</li>
+<li>确认 Redis / queue 需求。</li>
+<li>确认 audit / ledger 持久化方案。</li>
+<li>确认 LGPD 合规要求。</li>
+<li>明确 NestJS 或后端服务拆分节奏。</li>
+</ul>
+<h2>16. 开发部门必须阅读的文档</h2>
+<p>开发前必须阅读：</p>
+<pre><code>AGENTS.md
+docs/meponto-ecosystem-development-standard-v2.md
+docs/meponto-ecosystem-os-v2-diagram.md
+docs/module-development-playbook.md
+docs/module-contract-template.md
+docs/pr-checklist.md
+docs/codex-team-collaboration-manual.md</code></pre><p>按模块阅读：</p>
+<pre><code>docs/api.md
+docs/architecture.md
+docs/schema.sql
+docs/franchise-cooperation-plan.md
+docs/pontosys-manual.md
+docs/meponto-points-economy-standard.md
+docs/modules/*.md</code></pre><h2>17. 最终执行口径</h2>
+<p>MePonto / PontoSys 的开发不能以“先做出来”为唯一目标。</p>
+<p>正确目标是：</p>
+<pre><code>每一个模块都能被独立开发、独立测试、独立灰度、独立回滚，
+同时又能通过统一身份、统一权限、统一数据、统一事件和统一运营规则接入 Ecosystem OS。</code></pre><p>开发部门必须记住：</p>
+<ul>
+<li>你控制主后台和最终合并。</li>
+<li>开发者负责模块开发、模块测试和分支提交。</li>
+<li>所有人使用独立沙盒。</li>
+<li>测试通过后进入 PR。</li>
+<li>PR 通过 CI 和 Preview 后进入 <code>dev</code>。</li>
+<li><code>dev</code> 回归通过后才进入 <code>main</code>。</li>
+<li>生产发布必须由你批准。</li>
+</ul>
+<p>这套机制的目标不是增加流程，而是防止系统在多人并行开发中失控。</p>
+</main>
+</body>
+</html>

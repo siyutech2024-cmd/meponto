@@ -35,7 +35,10 @@ Use this checklist before asking another developer to review a change.
 - [ ] Chinese text is complete.
 - [ ] English text is complete.
 - [ ] Portuguese text is complete.
-- [ ] Brand names are correct: MePonto and PontoSys.
+- [ ] Brand names are correct: MePonto, PontoSys for operations/franchise/rider systems, and PontoMall for the mall system.
+- [ ] Buttons, forms, table headers, status labels, empty states, loading states, and errors are localized.
+- [ ] SOP, training, export, PDF, HTML, In-App Chat, and notification content are localized when touched.
+- [ ] Any temporary single-language exception is explained in the PR.
 
 ## Verification
 

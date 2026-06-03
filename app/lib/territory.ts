@@ -49,7 +49,7 @@ const zoneBlueprints = [
     assignment: {
       owner: "Rafael Costa",
       shift: "Mixed" as const,
-      channel: "meponto Paulista 01",
+      channel: "MePonto Paulista 01",
       status: "Covered" as const,
     },
   },
@@ -62,7 +62,7 @@ const zoneBlueprints = [
     assignment: {
       owner: "Joao Pereira",
       shift: "Night" as const,
-      channel: "meponto Liberdade Noite",
+      channel: "MePonto Liberdade Noite",
       status: "Watch" as const,
     },
   },
@@ -75,7 +75,7 @@ const zoneBlueprints = [
     assignment: {
       owner: "Marcos Lima",
       shift: "Night" as const,
-      channel: "meponto Tatuape Risk",
+      channel: "MePonto Tatuape Risk",
       status: "Rebalance" as const,
     },
   },
@@ -88,7 +88,7 @@ const zoneBlueprints = [
     assignment: {
       owner: "Diego Alves",
       shift: "Day" as const,
-      channel: "meponto Pinheiros 01",
+      channel: "MePonto Pinheiros 01",
       status: "Covered" as const,
     },
   },

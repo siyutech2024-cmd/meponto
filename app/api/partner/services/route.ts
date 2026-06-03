@@ -1,4 +1,4 @@
-import { getAvailablePartnerPoints, getAvailablePoints, shouldHoldPartnerService, type PartnerServiceCategory, type PartnerServiceStatus } from "../../../lib/points";
+import { getAvailablePartnerPoints, partnerServiceBenefitRules, shouldHoldPartnerService, type PartnerServiceCategory, type PartnerServiceStatus } from "../../../lib/points";
 import { appendServerAudit, jsonResponse, makeServerId, memory } from "../../../lib/server/memory";
 import { requirePermission } from "../../../lib/server/authz";
 
@@ -42,73 +42,64 @@ export async function POST(request: Request) {
     return jsonResponse({ error: "Suppliers do not participate in points accounts" }, { status: 400 });
   }
 
-  const status: PartnerServiceStatus = holdReason ? "pending" : "paid";
-  const chargedPoints = Math.min(Math.floor(amount), 300);
-
-  if (status === "paid" && getAvailablePoints(memory.pointsLedgerEntries, riderId) < chargedPoints) {
-    return jsonResponse({ error: "Insufficient rider points" }, { status: 409 });
+  const riderTier = getRiderTier(rider);
+  if (riderTier.stars < 2) {
+    return jsonResponse({ error: "Rider must be tier 2 or higher to use Partner discounts", riderTier: riderTier.label }, { status: 409 });
   }
 
+  const rule = partnerServiceBenefitRules[category];
+  const status: PartnerServiceStatus = holdReason ? "pending" : "confirmed";
   const service = {
     id: makeServerId("psv", memory.partnerServiceRecords.length + 1),
     riderId,
     partnerId,
     category,
     amount,
-    pointsCharged: chargedPoints,
-    pointsPaid: status === "paid" ? chargedPoints : 0,
+    riderTier: riderTier.label,
+    riderDiscountBrl: rule.riderDiscountBrl,
+    partnerPoints: rule.partnerPoints,
     status,
     receiptRef,
     createdAt: new Date().toISOString().slice(0, 16).replace("T", " "),
     reviewReason: holdReason ?? undefined,
   };
 
-  const riderLedger = {
-    id: makeServerId("pts", memory.pointsLedgerEntries.length + 1),
-    riderId,
-    accountId: `pts-${riderId}`,
-    type: "spend" as const,
-    points: chargedPoints,
-    status: status === "paid" ? "approved" as const : "pending" as const,
-    sourceType: "partner_service" as const,
-    sourceId: service.id,
-    partnerId,
-    balanceAfter: status === "paid" ? getAvailablePoints(memory.pointsLedgerEntries, riderId) - chargedPoints : getAvailablePoints(memory.pointsLedgerEntries, riderId),
-    reasonCode: holdReason ?? "RIDER_SERVICE_POINTS_PAYMENT",
-    note: `${rider.name} paid ${partner.name} for ${category} service`,
-    createdBy: "Rider",
-    createdAt: service.createdAt,
-    approvedBy: status === "paid" ? "System" : undefined,
-    approvedAt: status === "paid" ? service.createdAt : undefined,
-  };
   const partnerLedger = {
     id: makeServerId("ppts", memory.partnerPointsLedgerEntries.length + 1),
     partnerId,
     accountId: `ppts-${partnerId}`,
     type: "earn" as const,
-    points: chargedPoints,
-    status: status === "paid" ? "approved" as const : "pending" as const,
-    sourceType: "rider_service_payment" as const,
+    points: rule.partnerPoints,
+    status: "pending" as const,
+    sourceType: "partner_service_benefit" as const,
     sourceId: service.id,
     riderId,
-    balanceAfter: status === "paid" ? getAvailablePartnerPoints(memory.partnerPointsLedgerEntries, partnerId) + chargedPoints : getAvailablePartnerPoints(memory.partnerPointsLedgerEntries, partnerId),
-    reasonCode: holdReason ?? "RIDER_SERVICE_PAYMENT",
-    note: `${partner.name} received points from rider service payment.`,
-    createdBy: "Rider",
+    balanceAfter: getAvailablePartnerPoints(memory.partnerPointsLedgerEntries, partnerId),
+    reasonCode: holdReason ?? "PARTNER_SERVICE_BENEFIT",
+    note: `${partner.name} earned fixed points for ${rule.label}. Rider paid Partner directly with member discount.`,
+    createdBy: "Partner",
     createdAt: service.createdAt,
   };
 
   memory.partnerServiceRecords.unshift(service);
-  memory.pointsLedgerEntries.unshift(riderLedger);
   memory.partnerPointsLedgerEntries.unshift(partnerLedger);
   appendServerAudit({
-    actor: "Rider",
-    action: status === "paid" ? "RIDER_PAID_PARTNER_POINTS" : "RIDER_PARTNER_PAYMENT_PENDING",
+    actor: "Partner",
+    action: status === "confirmed" ? "PARTNER_CONFIRMED_MEMBER_BENEFIT" : "PARTNER_BENEFIT_PENDING_REVIEW",
     entity: "PartnerService",
     entityId: service.id,
-    detail: `${rider.name} paid ${service.pointsPaid} points to ${partner.name}.`,
+    detail: `${partner.name} scanned ${rider.name} member QR for ${rule.label}; rider discount R$ ${rule.riderDiscountBrl}, partner points ${rule.partnerPoints}.`,
     risk: status === "pending" ? "Medium" : "Low",
   });
 
-  return jsonResponse({ data: { service, riderLedger, partnerLedger } }, { status: 201 });
+  return jsonResponse({ data: { service, partnerLedger } }, { status: 201 });
+}
+
+function getRiderTier(rider: { ar: number; nightShiftCount: number; incidentCount: number }) {
+  const score = rider.ar + Math.min(rider.nightShiftCount, 24) - rider.incidentCount * 8;
+  if (score >= 108) return { label: "Diamond", stars: 5 };
+  if (score >= 100) return { label: "Gold", stars: 4 };
+  if (score >= 86) return { label: "3 estrelas", stars: 3 };
+  if (score >= 72) return { label: "2 estrelas", stars: 2 };
+  return { label: "1 estrela", stars: 1 };
 }

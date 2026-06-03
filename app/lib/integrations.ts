@@ -1,4 +1,4 @@
-export type IntegrationCategory = "whatsapp" | "maps" | "object_storage" | "pix_payout" | "sms_email";
+export type IntegrationCategory = "maps" | "object_storage" | "pix_payout" | "sms_email";
 
 export type IntegrationStatus = "ready" | "missing_env" | "demo_only";
 
@@ -19,13 +19,6 @@ export type IntegrationReadiness = IntegrationProvider & {
 export type IntegrationReadinessSummary = Record<IntegrationStatus, number>;
 
 const integrationProviders = [
-  {
-    id: "whatsapp",
-    label: "WhatsApp",
-    demoProvider: "Meta WhatsApp Cloud API Demo",
-    requiredEnv: ["WHATSAPP_ACCESS_TOKEN", "WHATSAPP_PHONE_NUMBER_ID", "WHATSAPP_VERIFY_TOKEN"],
-    optionalEnv: ["WHATSAPP_APP_SECRET", "WHATSAPP_BUSINESS_ACCOUNT_ID"],
-  },
   {
     id: "maps",
     label: "Maps",

@@ -49,7 +49,7 @@ npm run codex:preflight
 | --- | --- | --- |
 | Developer A | Franchise and finance | `app/franchise`, `app/finance`, franchise docs |
 | Developer B | Rider, leader, mobile | `app/riders`, `app/leaders`, `app/mobile` |
-| Developer C | Marketplace, points, supply chain | future module routes, APIs, docs |
+| Developer C | PontoMall, points, supply chain | future module routes, APIs, docs |
 
 Shared areas need review:
 
@@ -84,13 +84,47 @@ Humans must approve before Codex changes these areas:
 - Ledger behavior.
 - Module Registry, Integration Gateway, event bus, and schema registry.
 - Production deploy configuration.
-- Third-party payment, PIX, WhatsApp, or partner platform integration.
+- Third-party payment, PIX, or partner platform integration.
+- In-app chat permissions, moderation, retention, and audit behavior.
 - Major data migration.
 - Brand rules, legal terms, and franchise commercial policy.
 
+## 4A. Language Requirements
+
+Every module must treat language support as part of the feature, not as a cleanup task.
+
+Required languages:
+
+```txt
+zh: Chinese
+en: English
+pt: Portuguese
+```
+
+Default rules:
+
+- Chinese is the default language for business review and internal policy drafting.
+- Portuguese is required for Brazil-facing rider, franchise, leader, training, SOP, and operational workflows.
+- English is required for technical consistency, admin labels, and cross-team handoff.
+- User-facing labels must not mix languages inside one label unless the term is a brand name or fixed product term.
+- Use MePonto for the brand, PontoSys for the operations/franchise/rider system, and PontoMall for the mall system.
+
+Language coverage must include:
+
+- Navigation labels.
+- Page titles and section headings.
+- Buttons, tabs, filters, forms, placeholders, and helper text.
+- Empty states, loading states, error states, and success messages.
+- Table headers and status labels.
+- API error messages when displayed to users.
+- SOP, training, franchise, export, PDF, and HTML content.
+- Notification and In-App Chat message templates.
+
+Codex should verify language support before finishing a UI or content task. If a task intentionally ships in one language only, the PR must explain why and list the missing language follow-up.
+
 ## 5. New Module Execution Flow
 
-For a new module such as marketplace:
+For a new module such as PontoMall:
 
 1. Fill `docs/module-contract-template.md`.
 2. Add route and UI behind a feature flag.

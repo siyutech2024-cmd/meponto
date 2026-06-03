@@ -21,6 +21,8 @@ export type CrmPartner = {
   risk: CrmPartnerRisk;
   notes: string;
   services: string[];
+  lat: number;
+  lng: number;
 };
 
 export const crmPartners: CrmPartner[] = [
@@ -42,6 +44,8 @@ export const crmPartners: CrmPartner[] = [
     risk: "Low",
     notes: "Night breakdown priority lane for Paulista and Liberdade pontos.",
     services: ["Tires", "Emergency repair", "Tow handoff"],
+    lat: -23.5589,
+    lng: -46.6446,
   },
   {
     id: "crm-002",
@@ -61,6 +65,8 @@ export const crmPartners: CrmPartner[] = [
     risk: "Low",
     notes: "Used CG and Factor sourcing partner for fast rider onboarding.",
     services: ["Vehicle sourcing", "Trade-in", "Inspection"],
+    lat: -23.5572,
+    lng: -46.6351,
   },
   {
     id: "crm-003",
@@ -80,6 +86,8 @@ export const crmPartners: CrmPartner[] = [
     risk: "High",
     notes: "Helmet stockouts reported twice this month; pricing under review.",
     services: ["Helmets", "Rain gear", "Brake pads"],
+    lat: -23.5403,
+    lng: -46.5768,
   },
   {
     id: "crm-004",
@@ -99,6 +107,8 @@ export const crmPartners: CrmPartner[] = [
     risk: "Medium",
     notes: "Rental queue synced weekly with high-AR riders and night-shift demand.",
     services: ["Rental fleet", "Swap routing", "Damage review"],
+    lat: -23.5421,
+    lng: -46.5794,
   },
   {
     id: "crm-005",
@@ -118,5 +128,7 @@ export const crmPartners: CrmPartner[] = [
     risk: "Medium",
     notes: "Pilot partner for west-side preventive maintenance blocks.",
     services: ["Preventive maintenance", "Oil", "Electrical"],
+    lat: -23.5668,
+    lng: -46.7008,
   },
 ];

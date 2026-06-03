@@ -26,7 +26,7 @@ Approval flow: Production auth, Android push, location, and SOS flows require pr
 
 ```txt
 Private data owned by this module: MePonto member session state, mobile status confirmation draft state, device readiness signal.
-Read-only data consumed from other modules: Member profile read model, Ponto read model, Leader contact, support case summary, wallet/settlement read model, points read model, benefit ledger read model, marketplace entry/read model.
+Read-only data consumed from other modules: Member profile read model, Ponto read model, Leader contact, support case summary, wallet/settlement read model, points read model, benefit ledger read model, partner location/benefit read model, marketplace entry/read model.
 Data this module exposes to others: Future member status confirmation events, incident create requests, safety pulse events, push notification delivery/read events.
 Retention policy: Device/session telemetry should be short-lived unless promoted to audit or incident evidence.
 LGPD sensitivity: High for location, CPF/PIX, phone, and emergency context. Current beta screen does not reveal CPF/PIX.
@@ -47,9 +47,10 @@ This module cannot directly modify another module's private data.
 | POST | Future `/api/rider-app/status-confirmations` | Member availability/status confirmation | `member.status.confirm` | Must emit a versioned event and audit sensitive context. |
 | POST | Future `/api/rider-app/incidents` | Member incident/SOS intake | `member.incident.create` | Must route through Incident API or Integration Gateway. |
 | POST | Future `/api/rider-app/push-token` | Register Android push token | `member.device.register` | Must store device tokens through the notification module with LGPD controls. |
-| GET | Future `/api/rider-app/notifications` | Read member notifications | `member.notification.read` | Should merge push, WhatsApp, and in-app notices through a read model. |
+| GET | Future `/api/rider-app/notifications` | Read member notifications | `member.notification.read` | Should merge push notifications and in-app chat notices through a read model. |
 | GET | Future `/api/rider-app/wallet` | Read rider-visible wallet, pending settlement, and points | `member.wallet.read` | Read-only projection from finance/points ledgers; no direct ledger mutation. |
 | GET | Future `/api/rider-app/points` | Read available points, pending points, expiring points, missions, and marketplace entry | `member.points.read` | Must follow `docs/meponto-points-economy-standard.md`. |
+| GET | Future `/api/rider-app/partners-map` | Read nearby active Partner points, service type, member discount, and navigation destination | `member.benefits.read` | Read-only projection from CRM and Partner Points; no direct Partner private notes or fraud data. |
 
 ## 5. Events
 
@@ -59,7 +60,7 @@ Outbound events:
 | --- | --- | --- | --- | --- |
 | `meponto_member.status_confirmed.v1` | v1 | MePonto | Dispatch, Leader, Analytics | MePonto |
 | `meponto_member.safety_pulse.created.v1` | v1 | MePonto | Leader, Risk, Incident | MePonto |
-| `meponto_member.incident.requested.v1` | v1 | MePonto | Incident, Support, WhatsApp | MePonto |
+| `meponto_member.incident.requested.v1` | v1 | MePonto | Incident, Support, In-App Chat | MePonto |
 | `meponto_member.notification.read.v1` | v1 | MePonto | Notifications, Analytics | MePonto |
 
 Inbound events:
@@ -92,9 +93,9 @@ City/site/franchise differences: Ponto and city rules can vary by rollout scope.
 
 ```txt
 Dashboards: Mobile Operations, Leader roster, Finance read model health, Points read model health, MePonto beta health, notification delivery health.
-Read models: Member profile, Ponto assignment, wallet balance, pending settlement, points balance, pending points, expiring points, mission progress, marketplace entry, incident summary, benefit ledger summary, member notification inbox.
-Projection refresh: Demo uses static data; production should use near-real-time projections for wallet, points, mission progress, notifications, and safety status.
-KPIs: Wallet view rate, points view rate, withdrawal intent, mission completion, SOS response time, incident submit success, push delivery/open rate, WhatsApp fallback usage.
+Read models: Member profile, Ponto assignment, wallet balance, pending settlement, points balance, pending points, expiring points, mission progress, Partner map pins, Partner benefit summary, marketplace entry, incident summary, benefit ledger summary, member notification inbox.
+Projection refresh: Demo uses static data; production should use near-real-time projections for wallet, points, Partner availability, mission progress, notifications, and safety status.
+KPIs: Wallet view rate, points view rate, Partner map open rate, navigation click rate, withdrawal intent, mission completion, SOS response time, incident submit success, push delivery/open rate, and in-app chat usage.
 ```
 
 ## 9. Localization
@@ -112,5 +113,5 @@ Initial status: beta
 Beta users: Internal operators and selected rider/leader test group.
 Rollback plan: Remove navigation exposure or set meponto_member.beta_enabled to disabled when feature flag service is introduced.
 Monitoring: Smoke route check, manual mobile viewport check, future incident/SOS metrics.
-Success criteria: Members can understand club status, support contact, safety flow, and incident entry without exposing sensitive CPF/PIX or implying employment/contract language.
+Success criteria: Members can understand club status, nearby Partner benefits, support contact, safety flow, and incident entry without exposing sensitive CPF/PIX, partner private risk notes, or implying employment/contract language.
 ```

@@ -22,19 +22,19 @@ Example response:
 {
   "data": [
     {
-      "id": "whatsapp",
-      "label": "WhatsApp",
-      "demoProvider": "Meta WhatsApp Cloud API Demo",
-      "requiredEnv": ["WHATSAPP_ACCESS_TOKEN", "WHATSAPP_PHONE_NUMBER_ID", "WHATSAPP_VERIFY_TOKEN"],
-      "optionalEnv": ["WHATSAPP_APP_SECRET", "WHATSAPP_BUSINESS_ACCOUNT_ID"],
+      "id": "maps",
+      "label": "Maps",
+      "demoProvider": "Google Maps Platform Demo",
+      "requiredEnv": ["MAPS_API_KEY"],
+      "optionalEnv": ["MAPS_MAP_ID"],
       "status": "missing_env",
-      "missingEnv": ["WHATSAPP_ACCESS_TOKEN", "WHATSAPP_PHONE_NUMBER_ID", "WHATSAPP_VERIFY_TOKEN"],
+      "missingEnv": ["MAPS_API_KEY"],
       "configuredEnv": []
     }
   ],
   "summary": {
     "ready": 0,
-    "missing_env": 5,
+    "missing_env": 4,
     "demo_only": 0
   }
 }
@@ -44,7 +44,6 @@ Example response:
 
 | Capability | Demo provider | Required environment variables | Optional environment variables |
 | --- | --- | --- | --- |
-| WhatsApp | Meta WhatsApp Cloud API Demo | `WHATSAPP_ACCESS_TOKEN`, `WHATSAPP_PHONE_NUMBER_ID`, `WHATSAPP_VERIFY_TOKEN` | `WHATSAPP_APP_SECRET`, `WHATSAPP_BUSINESS_ACCOUNT_ID` |
 | Maps | Google Maps Platform Demo | `MAPS_API_KEY` | `MAPS_MAP_ID` |
 | Object Storage | S3-Compatible Storage Demo | `OBJECT_STORAGE_BUCKET`, `OBJECT_STORAGE_REGION`, `OBJECT_STORAGE_ACCESS_KEY_ID`, `OBJECT_STORAGE_SECRET_ACCESS_KEY` | `OBJECT_STORAGE_ENDPOINT` |
 | PIX / Payout | Brazil PSP PIX Payout Demo | `PIX_PAYOUT_API_KEY`, `PIX_PAYOUT_ACCOUNT_ID`, `PIX_PAYOUT_WEBHOOK_SECRET` | `PIX_PAYOUT_BASE_URL` |
@@ -54,5 +53,6 @@ Example response:
 
 - Provider definitions live in `app/lib/integrations.ts`.
 - The route handler lives at `app/api/integrations/route.ts`.
+- In-app chat is a native PontoSys module under `/chat` and `/api/chat`; it is not an external integration provider.
 - The readiness check only inspects `process.env`; secrets are never returned, only environment variable names.
 - Production adapters should be added behind these typed provider IDs with real credential validation, audit logging, retries, and idempotency controls.

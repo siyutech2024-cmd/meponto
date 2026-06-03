@@ -93,6 +93,12 @@ KPIs:
 Chinese copy complete:
 English copy complete:
 Portuguese copy complete:
+User-facing API errors localized:
+Empty/loading/error states localized:
+Exports/PDF/HTML localized if applicable:
+In-App Chat/notification templates localized if applicable:
+Brand terms checked: MePonto / PontoSys
+Single-language exception approved:
 ```
 
 ## 10. Rollout Plan

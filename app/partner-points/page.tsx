@@ -51,15 +51,15 @@ export default function PartnerPointsPage() {
       return;
     }
     setServices((current) => [payload.data.service, ...current]);
-    setMessage(payload.data.service.status === "approved" ? "Service approved and points written." : "Service held for review.");
+    setMessage(payload.data.service.status === "confirmed" ? "Benefit confirmed; partner points are pending release." : "Service held for review.");
   }
 
   return (
     <AppShell>
-      <PageTitle title="Partner Points" eyebrow="Rider QR payment to offline service points" />
+      <PageTitle title="Partner Points" eyebrow="Partner scans rider member QR to grant discounts and earn fixed points" />
       <section className="grid gap-3 md:grid-cols-4">
         <Field label="Services" value={String(services.length)} />
-        <Field label="Paid" value={String(services.filter((item) => item.status === "paid").length)} />
+        <Field label="Confirmed" value={String(services.filter((item) => item.status === "confirmed").length)} />
         <Field label="Pending Review" value={String(services.filter((item) => item.status === "pending").length)} />
         <Field label="Receipt Rule" value="No duplicate" />
       </section>
@@ -87,15 +87,15 @@ export default function PartnerPointsPage() {
       </form>
 
       <DataTable
-        headers={["Created", "Rider", "Partner", "Category", "Amount", "Charged", "Paid", "Status", "Reason"]}
+        headers={["Created", "Rider", "Partner", "Category", "Cash Amount", "Rider Discount", "Partner Points", "Status", "Reason"]}
         rows={services.map((service) => [
           service.createdAt,
           service.riderId,
           service.partnerId,
           service.category,
           `R$ ${service.amount}`,
-          service.pointsCharged,
-          service.pointsPaid,
+          `R$ ${service.riderDiscountBrl}`,
+          service.partnerPoints,
           <Badge key="status" value={service.status} />,
           service.reviewReason ?? "OK",
         ])}

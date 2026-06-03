@@ -1,4 +1,13 @@
-import { getPartnerPointsAccount, getPointsAccount, pointsRules } from "../../lib/points";
+import {
+  acquisitionPointRules,
+  getPartnerPointsAccount,
+  getPointsAccount,
+  pendingReleaseRules,
+  pointsRules,
+  pointsRuleSetVersions,
+  redemptionLimitRules,
+  riderPerformancePointRules,
+} from "../../lib/points";
 import { jsonResponse, memory } from "../../lib/server/memory";
 
 export function GET(request: Request) {
@@ -18,6 +27,11 @@ export function GET(request: Request) {
       ledger: memory.pointsLedgerEntries,
       partnerLedger: memory.partnerPointsLedgerEntries,
       rules: pointsRules,
+      ruleSetVersions: pointsRuleSetVersions,
+      riderPerformanceRules: riderPerformancePointRules,
+      acquisitionRules: acquisitionPointRules,
+      pendingReleaseRules,
+      redemptionLimitRules,
       readModel: "rider_points_read_model",
       standard: "docs/meponto-points-economy-standard.md",
     },

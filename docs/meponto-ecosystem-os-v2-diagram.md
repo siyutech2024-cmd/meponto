@@ -11,7 +11,7 @@ flowchart TB
     Rider["骑手端 App"]
     Partner["Partner 后台"]
     Supply["供应链后台"]
-    Market["积分商城"]
+    Market["PontoMall"]
     Pet["宠物养成"]
   end
 
@@ -36,13 +36,13 @@ flowchart TB
   end
 
   subgraph Business["可插拔业务模块"]
-    Marketplace["Marketplace\n积分商城"]
+    Marketplace["PontoMall\nMall / Redemption"]
     Rewards["Rewards\n积分账户"]
     PetDomain["Pet Domain\n成长 / 等级 / 道具"]
     SupplyChain["Supply Chain\n库存 / 物料 / 调拨"]
     PartnerDomain["Partner Domain\n维修 / 租车 / 服务商"]
     Training["Training / SOP\n培训 / 考试 / 巡查"]
-    Comms["Communication\nWhatsApp / Push / 站内信"]
+    Comms["Communication\nIn-App Chat / Push / 站内信"]
   end
 
   subgraph Data["数据与基础设施"]

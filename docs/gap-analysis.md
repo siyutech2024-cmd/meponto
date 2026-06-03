@@ -21,7 +21,8 @@ Total remaining tasks: 4
 - Dedicated sensitive reveal endpoint: `/api/riders/:id/sensitive` requires an explicit authorized role, returns only CPF/PIX identity fields, and records server audit entries for both allowed and denied access.
 - Deeper smoke coverage: mutation checks now cover expected status codes, custom role headers, RBAC denial, and reward-rule updates.
 - Reward rule API update: `/api/rewards/[id]` supports permission-checked PUT and DELETE.
-- Integration readiness skeleton: provider contracts and `/api/integrations` expose WhatsApp, maps, object storage, PIX/payout, and SMS/email readiness without external calls.
+- Integration readiness skeleton: provider contracts and `/api/integrations` expose maps, object storage, PIX/payout, and SMS/email readiness without external calls.
+- Native communication: the former external messaging surface has been replaced with PontoSys in-app chat rooms, broadcasts, message previews, and a native chat API.
 - Accessibility smoke checks: `npm run check` now includes a dependency-free server-rendered page structure pass.
 - Server audit trail: forbidden permission attempts and rider sensitive reveal attempts append in-memory server audit entries exposed by `/api/audit`.
 - Repository migration prep: `app/lib/server/repositories.ts` provides a typed facade over current process-local collections for incremental PostgreSQL migration.
@@ -33,7 +34,7 @@ Total remaining tasks: 4
 1. Durable backend migration: replace process-local memory and browser-only state with NestJS/PostgreSQL/Redis.
 2. Sensitive data protection hardening: encryption-at-rest design and durable audit persistence.
 3. Deeper tests: browser workflow tests, unit tests for shared logic, and visual/performance budgets.
-4. Real integrations: production WhatsApp provider, map provider, S3 uploads, payout/PIX provider, SMS/email providers, and webhook processing.
+4. Real integrations: map provider, S3 uploads, payout/PIX provider, SMS/email providers, and webhook processing.
 
 ## Notes
 

@@ -1,10 +1,11 @@
-# Marketplace Module Contract
+# PontoMall Module Contract
 
 ## 1. Module Identity
 
 ```txt
 Module name: marketplace
-Owner: Marketplace / Supply Chain / Product
+Product name: PontoMall
+Owner: PontoMall / Supply Chain / Product
 Status: disabled
 Route: /marketplace
 Feature flag: marketplace.enabled
@@ -26,13 +27,13 @@ Approval flow: High-value redemptions, fraud-held riders, and manual refunds req
 ```txt
 Private data owned by this module: Catalog, marketplace orders, redemption requests, fulfillment status, coupon/voucher issuance state.
 Read-only data consumed from other modules: Rider profile, rider points read model, Partner points read model, inventory availability, partner availability, supplier catalog/stock.
-Data this module exposes to others: Marketplace order events, redemption status read models, fulfillment status.
+Data this module exposes to others: PontoMall order events, redemption status read models, fulfillment status.
 ```
 
 Rule:
 
 ```txt
-Marketplace cannot directly modify rider or Partner points balance. It must request points spend/refund through the points economy boundary and follow docs/meponto-points-economy-standard.md. Supplier accounts are excluded from points redemption.
+PontoMall cannot directly modify rider or Partner points balance. It must request points spend/refund through the points economy boundary and follow docs/meponto-points-economy-standard.md. Supplier accounts are excluded from points redemption.
 ```
 
 ## 4. APIs
@@ -48,10 +49,10 @@ Marketplace cannot directly modify rider or Partner points balance. It must requ
 
 | Event | Version | Producer | Consumers |
 | --- | --- | --- | --- |
-| `marketplace.order.created.v1` | v1 | Marketplace | Points, inventory, notification, analytics |
-| `marketplace.order.fulfilled.v1` | v1 | Marketplace | Rider app, points, analytics, partner |
-| `marketplace.order.cancelled.v1` | v1 | Marketplace | Points, inventory, notification |
-| `marketplace.redemption.failed.v1` | v1 | Marketplace | Rider app, support, analytics |
+| `marketplace.order.created.v1` | v1 | PontoMall | Points, inventory, notification, analytics |
+| `marketplace.order.fulfilled.v1` | v1 | PontoMall | Rider app, points, analytics, partner |
+| `marketplace.order.cancelled.v1` | v1 | PontoMall | Points, inventory, notification |
+| `marketplace.redemption.failed.v1` | v1 | PontoMall | Rider app, support, analytics |
 
 ## 6. Ledger Impact
 

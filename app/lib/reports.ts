@@ -113,7 +113,7 @@ export const reportCatalog: ReportCatalogItem[] = [
     frequency: "Weekly",
     status: "Needs Mapping",
     owner: "Growth Desk",
-    sourceTables: ["crm_accounts", "whatsapp_threads"],
+    sourceTables: ["crm_accounts", "chat_threads"],
     lastRefreshedAt: "2026-05-13 17:20 BRT",
     migrationTarget: "Dual",
   },

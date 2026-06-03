@@ -1,6 +1,8 @@
-# meponto PontoSys MVP
+# MePonto PontoSys / PontoMall MVP
 
-meponto PontoSys is a Sao Paulo rider and Ponto operations dashboard. This MVP focuses on rider network control, Pontos, Leaders, incident response, night shift safety, rewards, notifications, SOP execution, and audit visibility.
+MePonto PontoSys is the Sao Paulo operations system for the control console, franchise workflows, rider system, Pontos, Leaders, incident response, night shift safety, rewards, notifications, SOP execution, and audit visibility.
+
+PontoMall is the mall system for points redemption, catalog, stock reserve, and order fulfillment.
 
 The UI supports English, Chinese, and Portuguese through the language selector in the app header and login screen.
 

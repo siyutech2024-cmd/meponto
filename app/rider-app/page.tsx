@@ -3,6 +3,7 @@ import {
   BadgeCheck,
   Bell,
   Bike,
+  CalendarDays,
   ChevronRight,
   CircleDollarSign,
   Clock3,
@@ -14,9 +15,9 @@ import {
   LockKeyhole,
   MapPin,
   MessageCircle,
+  Navigation,
   QrCode,
   ReceiptText,
-  ScanLine,
   ShieldCheck,
   Sparkles,
   Star,
@@ -25,8 +26,9 @@ import {
   Trophy,
   WalletCards,
 } from "lucide-react";
+import { crmPartners } from "../lib/crm";
 import { incidents, ledgerEntries, riders } from "../lib/data";
-import { getPointsAccount, marketplaceProducts, pointsLedgerEntries } from "../lib/points";
+import { getPointsAccount, marketplaceProducts, partnerServiceBenefitRules, pointsLedgerEntries, type PartnerServiceCategory } from "../lib/points";
 
 const wallet = {
   available: 438.7,
@@ -40,10 +42,24 @@ const todayStats = [
   { label: "Pontos hoje", value: "+240", icon: Trophy, tone: "green" },
 ];
 
+const performanceToday = {
+  orders: 18,
+  tshHours: 7.4,
+  ar: 96,
+  caaOrders: 5,
+};
+
 const missions = [
   { title: "Completar 24 entregas", reward: "+320 pts", progress: 75 },
   { title: "Noite segura no Ponto", reward: "R$ 45", progress: 58 },
 ];
+
+const slotSummary = {
+  week: "01-07 Jun",
+  openSlots: 14,
+  pendingReview: 1,
+  confirmed: 1,
+};
 
 const inbox = [
   { title: "Saldo atualizado", detail: "R$ 120,00 liberados no seu extrato.", time: "Agora" },
@@ -56,14 +72,52 @@ const cashLedger = [
   { title: "Bonus noturno", detail: "Missao de cobertura aprovada", value: "+R$ 45,00", status: "Pago" },
 ];
 
-const partnerPayments = [
-  { partner: "Oficina Liberdade", service: "Manutencao", points: 300, status: "Pago" },
-  { partner: "Posto Avenida", service: "Combustivel", points: 180, status: "Em analise" },
+const partnerBenefits = [
+  { partner: "Oficina Liberdade", service: "Manutencao", discount: "R$ 20", status: "Partner +100 pts" },
+  { partner: "Posto Avenida", service: "Combustivel", discount: "R$ 5", status: "Em analise" },
 ];
+
+const partnerMapCategories: Record<string, PartnerServiceCategory> = {
+  "Repair Shop": "maintenance",
+  "Partner Vehicle Shop": "vehicle_service",
+  "Vehicle Partner": "vehicle_service",
+};
+
+const partnerMapPositions: Record<string, { x: number; y: number; distance: string }> = {
+  "crm-001": { x: 43, y: 42, distance: "1.8 km" },
+  "crm-002": { x: 54, y: 49, distance: "0.9 km" },
+  "crm-004": { x: 78, y: 43, distance: "6.4 km" },
+  "crm-005": { x: 18, y: 64, distance: "8.1 km" },
+};
+
+const riderPartnerMap = crmPartners
+  .filter((partner) => partner.category !== "Supplier")
+  .map((partner) => {
+    const category = partnerMapCategories[partner.category] ?? "maintenance";
+    const rule = partnerServiceBenefitRules[category];
+    const position = partnerMapPositions[partner.id] ?? { x: 50, y: 50, distance: "Perto" };
+    return {
+      id: partner.id,
+      name: partner.name,
+      bairro: partner.bairro,
+      category,
+      services: partner.services.slice(0, 2).join(" / "),
+      discount: `R$ ${rule.riderDiscountBrl}`,
+      partnerPoints: rule.partnerPoints,
+      status: partner.status,
+      risk: partner.risk,
+      lat: partner.lat,
+      lng: partner.lng,
+      x: position.x,
+      y: position.y,
+      distance: position.distance,
+      navigationUrl: `https://www.google.com/maps/dir/?api=1&destination=${partner.lat},${partner.lng}`,
+    };
+  });
 
 const helpActions = [
   { title: "Seguranca agora", detail: "Abrir chamado urgente no Ponto", icon: ShieldCheck },
-  { title: "Falar com suporte", detail: "Atendimento por chat e WhatsApp", icon: MessageCircle },
+  { title: "Falar com suporte", detail: "Atendimento pelo chat do app", icon: MessageCircle },
   { title: "Conta e acesso", detail: "PIN, aparelho e dados sensiveis", icon: LockKeyhole },
 ];
 
@@ -152,6 +206,13 @@ export default function RiderAppPage() {
               </div>
             </div>
 
+            <div className="relative z-10 mx-4 mb-3 grid grid-cols-4 gap-1.5">
+              <ScoreChip label="Orders" value={String(performanceToday.orders)} />
+              <ScoreChip label="TSH" value={performanceToday.tshHours.toFixed(1)} />
+              <ScoreChip label="AR" value={`${performanceToday.ar}%`} />
+              <ScoreChip label="CAA" value={String(performanceToday.caaOrders)} />
+            </div>
+
             <div className="relative z-10 grid grid-cols-[1fr_1fr] border-y border-white/10">
               <WalletCell label="A liberar" value={`R$ ${wallet.pending.toFixed(2).replace(".", ",")}`} />
               <WalletCell label="Pontos pendentes" value={pointsAccount.pending.toLocaleString("pt-BR")} />
@@ -190,15 +251,45 @@ export default function RiderAppPage() {
               </div>
             </section>
 
+            <PartnerMapSection partners={riderPartnerMap} />
+
+            <section className="px-4 pt-4">
+              <div className="grid gap-3 rounded-[8px] bg-[#050505] p-4 text-white shadow-[0_12px_26px_rgba(0,0,0,0.16)]">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <div className="flex items-center gap-2 text-sm font-black text-[#ffb238]">
+                      <CalendarDays size={17} />
+                      Inscricao de slots
+                    </div>
+                    <h2 className="mt-2 text-2xl font-black leading-7">Escolha seus horarios da semana</h2>
+                    <p className="mt-2 text-sm font-bold leading-5 text-white/62">Ponto revisa sua inscricao e a franquia confirma antes de entrar no plano oficial.</p>
+                  </div>
+                  <div className="rounded-[8px] bg-white/10 px-3 py-2 text-right">
+                    <div className="text-[10px] font-black uppercase text-white/45">Semana</div>
+                    <div className="text-sm font-black">{slotSummary.week}</div>
+                  </div>
+                </div>
+                <div className="grid grid-cols-3 gap-2">
+                  <RulePill label="Abertos" value={String(slotSummary.openSlots)} dark />
+                  <RulePill label="Em analise" value={String(slotSummary.pendingReview)} dark />
+                  <RulePill label="Confirmados" value={String(slotSummary.confirmed)} dark />
+                </div>
+                <a href="/slot-enrollment" className="flex h-12 items-center justify-center gap-2 rounded-[8px] bg-[#ff7a00] text-sm font-black text-[#050505]">
+                  Ver slots e se inscrever
+                  <ChevronRight size={18} />
+                </a>
+              </div>
+            </section>
+
             <section className="px-4 pt-4">
               <div className="mb-2 flex items-center justify-between">
-                <h2 className="text-lg font-black">Shopping de pontos</h2>
+                <h2 className="text-lg font-black">PontoMall</h2>
                 <a href="#points" className="text-sm font-black text-[#ff7a00]">Trocar</a>
               </div>
               <div className="grid grid-cols-[1fr_auto] items-center gap-3 rounded-[8px] bg-white p-3 shadow-[0_12px_26px_rgba(0,0,0,0.06)]">
                 <div>
                   <div className="text-sm font-black">{featuredProduct.name}</div>
-                  <div className="mt-1 text-xs font-bold text-[#77746f]">Disponivel no marketplace MePonto</div>
+                  <div className="mt-1 text-xs font-bold text-[#77746f]">Disponivel no PontoMall</div>
                 </div>
                 <div className="rounded-[8px] bg-[#050505] px-3 py-2 text-sm font-black text-white">{featuredProduct.pointsPrice} pts</div>
               </div>
@@ -337,7 +428,7 @@ function PointsScreen({
   return (
     <>
       <section className="grid grid-cols-2 gap-2 px-4 pt-4">
-        <QuickAction icon={<ScanLine size={20} />} title="Pagar parceiro" detail="Escanear QR no ponto" strong />
+        <QuickAction icon={<QrCode size={20} />} title="Meu QR MePonto" detail="Partner escaneia para liberar desconto" strong />
         <QuickAction icon={<Store size={20} />} title="Shopping" detail="Trocar pontos por produtos" />
       </section>
 
@@ -352,36 +443,38 @@ function PointsScreen({
         <div className="rounded-[8px] bg-white p-4 shadow-[0_12px_26px_rgba(0,0,0,0.06)]">
           <div className="flex items-center justify-between gap-3">
             <div>
-              <div className="text-[11px] font-black uppercase tracking-[0.12em] text-[#ff7a00]">QR seguro</div>
-              <h2 className="mt-1 text-lg font-black">Pagamento ao partner</h2>
+              <div className="text-[11px] font-black uppercase tracking-[0.12em] text-[#ff7a00]">Beneficio partner</div>
+              <h2 className="mt-1 text-lg font-black">Partner escaneia seu QR</h2>
             </div>
             <div className="grid h-11 w-11 place-items-center rounded-[8px] bg-[#050505] text-white">
               <QrCode size={22} />
             </div>
           </div>
           <div className="mt-3 grid grid-cols-3 gap-2">
-            <RulePill label="Max/transacao" value="300 pts" />
-            <RulePill label="Mesmo partner" value="500/dia" />
-            <RulePill label="Todos partners" value="800/dia" />
+            <RulePill label="Elegivel" value="2 estrelas+" />
+            <RulePill label="Servico" value="1/dia" />
+            <RulePill label="Valor ref." value="R$1=10pts" />
           </div>
           <button type="button" className="mt-3 flex h-12 w-full items-center justify-center gap-2 rounded-[8px] bg-[#ff7a00] text-sm font-black text-[#050505]">
-            Escanear QR
-            <ScanLine size={18} />
+            Mostrar QR do membro
+            <QrCode size={18} />
           </button>
         </div>
       </section>
 
       <section className="px-4 pt-4">
         <div className="mb-2 flex items-center justify-between">
-          <h2 className="text-lg font-black">Pagamentos a partners</h2>
-          <span className="text-xs font-black text-[#77746f]">QR</span>
+          <h2 className="text-lg font-black">Descontos em partners</h2>
+          <span className="text-xs font-black text-[#77746f]">Cash direto</span>
         </div>
         <div className="grid gap-2">
-          {partnerPayments.map((payment) => (
-            <LedgerRow key={`${payment.partner}-${payment.service}`} title={payment.partner} detail={payment.service} value={`-${payment.points} pts`} status={payment.status} />
+          {partnerBenefits.map((benefit) => (
+            <LedgerRow key={`${benefit.partner}-${benefit.service}`} title={benefit.partner} detail={benefit.service} value={benefit.discount} status={benefit.status} />
           ))}
         </div>
       </section>
+
+      <PartnerMapSection partners={riderPartnerMap} compact />
 
       <TierSection activeTierKey={activeTierKey} />
 
@@ -449,8 +542,90 @@ function HelpScreen({ openCase, memberPonto }: { openCase: (typeof incidents)[nu
   );
 }
 
+function PartnerMapSection({ partners, compact = false }: { partners: typeof riderPartnerMap; compact?: boolean }) {
+  const visiblePartners = compact ? partners.filter((partner) => partner.status === "Active").slice(0, 3) : partners.slice(0, 4);
+
+  return (
+    <section className="px-4 pt-4">
+      <div className="mb-2 flex items-center justify-between">
+        <h2 className="text-lg font-black">Mapa de partners</h2>
+        <span className="text-xs font-black text-[#ff7a00]">Descontos</span>
+      </div>
+      <div className="overflow-hidden rounded-[8px] bg-white shadow-[0_12px_26px_rgba(0,0,0,0.06)]">
+        <div className="relative h-[210px] bg-[#101010]">
+          <div className="absolute inset-0 bg-[linear-gradient(90deg,rgba(255,255,255,0.06)_1px,transparent_1px),linear-gradient(0deg,rgba(255,255,255,0.06)_1px,transparent_1px)] bg-[length:34px_34px]" />
+          <div className="absolute left-[42%] top-0 h-full w-[18px] rotate-[18deg] bg-[#2f2f2a]" />
+          <div className="absolute left-0 top-[48%] h-[16px] w-full -rotate-[8deg] bg-[#2f2f2a]" />
+          <div className="absolute left-[18%] top-[18%] h-[88px] w-[132px] rounded-[8px] border border-white/10 bg-white/5" />
+          <div className="absolute right-[10%] top-[22%] h-[96px] w-[104px] rounded-[8px] border border-white/10 bg-white/5" />
+          <div className="absolute bottom-3 left-3 rounded-[8px] bg-white/92 px-3 py-2 text-xs font-black text-[#050505]">
+            Sao Paulo Centro
+          </div>
+          {visiblePartners.map((partner) => {
+            const active = partner.status === "Active";
+            return (
+              <a
+                key={partner.id}
+                href={partner.navigationUrl}
+                target="_blank"
+                rel="noreferrer"
+                aria-label={`Navegar para ${partner.name}`}
+                className={`absolute grid h-10 w-10 -translate-x-1/2 -translate-y-1/2 place-items-center rounded-full shadow-[0_10px_22px_rgba(0,0,0,0.25)] ring-4 ring-white/24 ${active ? "bg-[#ff7a00] text-[#050505]" : "bg-white text-[#77746f]"}`}
+                style={{ left: `${partner.x}%`, top: `${partner.y}%` }}
+              >
+                <MapPin size={20} fill="currentColor" />
+              </a>
+            );
+          })}
+        </div>
+        <div className="grid gap-2 p-3">
+          {visiblePartners.map((partner) => (
+            <PartnerMapRow key={partner.id} partner={partner} />
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function PartnerMapRow({ partner }: { partner: (typeof riderPartnerMap)[number] }) {
+  const active = partner.status === "Active";
+
+  return (
+    <div className="grid grid-cols-[1fr_auto] items-center gap-3 rounded-[8px] bg-[#f3f2ee] p-3">
+      <div className="min-w-0">
+        <div className="flex items-center gap-2">
+          <div className="truncate text-sm font-black">{partner.name}</div>
+          <span className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-black ${active ? "bg-[#e8f6ee] text-[#20a65a]" : "bg-white text-[#77746f]"}`}>{active ? "Ativo" : "Em breve"}</span>
+        </div>
+        <div className="mt-1 truncate text-xs font-bold text-[#77746f]">{partner.bairro} · {partner.services}</div>
+        <div className="mt-2 flex flex-wrap gap-1.5">
+          <span className="rounded-full bg-white px-2 py-1 text-[10px] font-black text-[#050505]">Desconto {partner.discount}</span>
+          <span className="rounded-full bg-white px-2 py-1 text-[10px] font-black text-[#77746f]">Partner +{partner.partnerPoints} pts</span>
+          <span className="rounded-full bg-white px-2 py-1 text-[10px] font-black text-[#77746f]">{partner.distance}</span>
+        </div>
+      </div>
+      <a
+        href={partner.navigationUrl}
+        target="_blank"
+        rel="noreferrer"
+        aria-label={`Navegar para ${partner.name}`}
+        className="grid h-11 w-11 place-items-center rounded-[8px] bg-[#050505] text-white"
+      >
+        <Navigation size={18} />
+      </a>
+    </div>
+  );
+}
+
 function getRiderTierScore(rider: { ar: number; nightShiftCount: number; incidentCount: number }) {
-  return rider.ar + Math.min(rider.nightShiftCount, 24) - rider.incidentCount * 8;
+  const orderScore = Math.min(performanceToday.orders, 24) * 1.2;
+  const tshScore = Math.min(performanceToday.tshHours, 10) * 2.2;
+  const arScore = Math.max(0, performanceToday.ar - 70) * 1.4;
+  const caaScore = Math.min(performanceToday.caaOrders, 8) * 3;
+  const consistencyScore = Math.min(rider.nightShiftCount, 18) * 0.8;
+  const incidentPenalty = rider.incidentCount * 8;
+  return Math.round(orderScore + tshScore + arScore + caaScore + consistencyScore - incidentPenalty + 12);
 }
 
 function getRiderTierByScore(score: number) {
@@ -609,10 +784,10 @@ function LedgerRow({ title, detail, value, status }: { title: string; detail: st
   );
 }
 
-function RulePill({ label, value }: { label: string; value: string }) {
+function RulePill({ label, value, dark = false }: { label: string; value: string; dark?: boolean }) {
   return (
-    <div className="rounded-[8px] bg-[#f3f2ee] p-2">
-      <div className="text-[9px] font-black uppercase tracking-[0.08em] text-[#77746f]">{label}</div>
+    <div className={`rounded-[8px] p-2 ${dark ? "bg-white/10 text-white" : "bg-[#f3f2ee]"}`}>
+      <div className={`text-[9px] font-black uppercase tracking-[0.08em] ${dark ? "text-white/48" : "text-[#77746f]"}`}>{label}</div>
       <div className="mt-1 text-xs font-black">{value}</div>
     </div>
   );
@@ -650,6 +825,15 @@ function WalletCell({ label, value }: { label: string; value: string }) {
     <div className="px-4 py-3">
       <div className="text-[11px] font-black uppercase tracking-[0.12em] text-white/45">{label}</div>
       <div className="mt-1 text-base font-black">{value}</div>
+    </div>
+  );
+}
+
+function ScoreChip({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-[8px] bg-white/10 px-2 py-1.5 text-center ring-1 ring-white/10">
+      <div className="text-[9px] font-black uppercase tracking-[0.08em] text-white/42">{label}</div>
+      <div className="mt-0.5 text-xs font-black text-white">{value}</div>
     </div>
   );
 }

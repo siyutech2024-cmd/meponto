@@ -14,7 +14,8 @@ import {
   type PointsLedgerEntry,
 } from "../points";
 import { systemSettings, type SystemSetting } from "../settings";
-import { whatsappGroups, type WhatsappGroup } from "../whatsapp";
+import { chatMessages, chatRooms, type ChatMessage, type ChatRoom } from "../chat";
+import { riderSlots, slotEnrollments, type RiderSlot, type SlotEnrollment } from "../slots";
 
 type Reward = (typeof rewards)[number];
 type Ponto = (typeof pontos)[number];
@@ -48,8 +49,11 @@ const globalState = globalThis as typeof globalThis & {
     partnerPointsLedgerEntries: PartnerPointsLedgerEntry[];
     marketplaceProducts: MarketplaceProduct[];
     marketplaceOrders: MarketplaceOrder[];
-    whatsappGroups: WhatsappGroup[];
+    chatRooms: ChatRoom[];
+    chatMessages: ChatMessage[];
     systemSettings: SystemSetting[];
+    riderSlots: RiderSlot[];
+    slotEnrollments: SlotEnrollment[];
     auditEntries: ServerAuditEntry[];
   };
 };
@@ -70,8 +74,11 @@ export const memory =
     partnerPointsLedgerEntries: [...partnerPointsLedgerEntries],
     marketplaceProducts: [...marketplaceProducts],
     marketplaceOrders: [...marketplaceOrders],
-    whatsappGroups: [...whatsappGroups],
+    chatRooms: [...chatRooms],
+    chatMessages: [...chatMessages],
     systemSettings: [...systemSettings],
+    riderSlots: [...riderSlots],
+    slotEnrollments: [...slotEnrollments],
     auditEntries: [],
   });
 
@@ -83,8 +90,11 @@ memory.partnerServiceRecords ??= [...partnerServiceRecords];
 memory.partnerPointsLedgerEntries ??= [...partnerPointsLedgerEntries];
 memory.marketplaceProducts ??= [...marketplaceProducts];
 memory.marketplaceOrders ??= [...marketplaceOrders];
-memory.whatsappGroups ??= [...whatsappGroups];
+memory.chatRooms ??= [...chatRooms];
+memory.chatMessages ??= [...chatMessages];
 memory.systemSettings ??= [...systemSettings];
+memory.riderSlots ??= [...riderSlots];
+memory.slotEnrollments ??= [...slotEnrollments];
 memory.auditEntries ??= [];
 
 export function jsonResponse<T>(data: T, init?: ResponseInit) {

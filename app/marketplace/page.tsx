@@ -59,7 +59,7 @@ export default function MarketplacePage() {
 
   return (
     <AppShell>
-      <PageTitle title="Points Marketplace" eyebrow="Catalog, redemption, stock reserve" />
+      <PageTitle title="PontoMall" eyebrow="Points catalog, redemption, stock reserve" />
       <section className="grid gap-3 md:grid-cols-4">
         <Field label="Active Products" value={String(products.length)} />
         <Field label="Stock Units" value={String(stock)} />
@@ -68,32 +68,32 @@ export default function MarketplacePage() {
       </section>
 
       <form onSubmit={redeem} className="panel my-4 grid gap-3 p-4 lg:grid-cols-[180px_1fr_1fr_auto]">
-        <select value={accountType} onChange={(event) => setAccountType(event.target.value as "rider" | "partner")} className="h-11 rounded border border-[#2a2a4a] bg-[#0d0d1a] px-3 outline-none">
+        <select value={accountType} onChange={(event) => setAccountType(event.target.value as "rider" | "partner")} className="h-10 rounded-[8px] border border-[var(--line)] bg-[var(--surface-raised)] px-3 text-[var(--text)] outline-none">
           <option value="rider">Rider account</option>
           <option value="partner">Partner account</option>
         </select>
         {accountType === "partner" ? (
-          <select value={partnerId} onChange={(event) => setPartnerId(event.target.value)} className="h-11 rounded border border-[#2a2a4a] bg-[#0d0d1a] px-3 outline-none">
+          <select value={partnerId} onChange={(event) => setPartnerId(event.target.value)} className="h-10 rounded-[8px] border border-[var(--line)] bg-[var(--surface-raised)] px-3 text-[var(--text)] outline-none">
             {partners.map((partner) => (
               <option key={partner.id} value={partner.id}>{partner.name}</option>
             ))}
           </select>
         ) : (
-          <select value={riderId} onChange={(event) => setRiderId(event.target.value)} className="h-11 rounded border border-[#2a2a4a] bg-[#0d0d1a] px-3 outline-none">
+          <select value={riderId} onChange={(event) => setRiderId(event.target.value)} className="h-10 rounded-[8px] border border-[var(--line)] bg-[var(--surface-raised)] px-3 text-[var(--text)] outline-none">
             {riders.map((rider) => (
               <option key={rider.id} value={rider.id}>{rider.name}</option>
             ))}
           </select>
         )}
-        <select value={productId} onChange={(event) => setProductId(event.target.value)} className="h-11 rounded border border-[#2a2a4a] bg-[#0d0d1a] px-3 outline-none">
+        <select value={productId} onChange={(event) => setProductId(event.target.value)} className="h-10 rounded-[8px] border border-[var(--line)] bg-[var(--surface-raised)] px-3 text-[var(--text)] outline-none">
           {products
             .filter((product) => product.audience === "both" || product.audience === accountType)
             .map((product) => (
               <option key={product.id} value={product.id}>{product.name} - {product.pointsPrice} pts</option>
             ))}
         </select>
-        <button className="h-11 rounded border border-[#8b5cf6] bg-[#8b5cf6] px-4 text-sm font-black text-white">Redeem</button>
-        {message ? <div className="text-sm font-bold text-[#c4c4d4] lg:col-span-3">{message}</div> : null}
+        <button className="h-10 rounded-[8px] border border-transparent bg-[var(--accent)] px-4 text-sm font-black text-[var(--accent-ink)] transition-colors hover:bg-[var(--accent-strong)]">Redeem</button>
+        {message ? <div className="text-sm font-bold text-[var(--text-soft)] lg:col-span-3">{message}</div> : null}
       </form>
 
       <section className="grid gap-4 xl:grid-cols-2">

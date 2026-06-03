@@ -16,8 +16,8 @@ MePonto 当前系统包括：
 
 - Partner 后台
 - 供应链后台
-- 积分商城系统
-- 积分商城后台
+- PontoMall 商城系统
+- PontoMall 后台
 - 养成宠物系统
 - 调度系统
 - 风控系统
@@ -43,6 +43,8 @@ MePonto 当前系统包括：
 8. Codex 可以执行开发和验证，但提交必须由开发人员明确触发。
 9. `main` 必须保持可部署。
 10. `dev` 作为日常集成分支。
+
+语言要求不是文案收尾工作，而是功能验收的一部分。任何新增页面、SOP、导出、报错、通知和培训内容，都必须同时考虑中文、英文、葡语。
 
 ## 3. 项目内规则文件
 
@@ -85,7 +87,7 @@ scripts/codex-preflight.mjs
 | --- | --- | --- |
 | 开发人员 A | 加盟商、财务、合作方案 | `app/franchise`, `app/finance`, franchise docs |
 | 开发人员 B | 骑手、Leader、移动端 | `app/riders`, `app/leaders`, `app/mobile` |
-| 开发人员 C | 商城、积分、供应链、宠物系统 | future marketplace, rewards, supply-chain, gamification modules |
+| 开发人员 C | PontoMall、积分、供应链、宠物系统 | future PontoMall, rewards, supply-chain, gamification modules |
 
 共享代码需要 review：
 
@@ -265,7 +267,7 @@ Integration Gateway
 调度核心
 风控核心
 PIX
-WhatsApp 正式集成
+应用内聊天权限、审核、留存和审计规则
 第三方平台 API
 生产部署配置
 合同
@@ -274,6 +276,67 @@ WhatsApp 正式集成
 定价规则
 KPI 考核规则
 ```
+
+## 11A. 语言支持要求
+
+MePonto / PontoSys 的系统语言要求：
+
+```txt
+中文 zh
+英文 en
+葡语 pt
+```
+
+使用原则：
+
+1. 中文用于内部业务确认、政策讨论、总部管理和文档初稿。
+2. 葡语用于巴西本地骑手、站点、加盟商、培训、SOP 和运营场景。
+3. 英文用于技术交付、后台标签、跨团队协作和通用管理界面。
+4. 品牌名统一使用 MePonto。
+5. 系统名统一使用 PontoSys。
+6. 不允许在同一个用户可见标签里随意混用三种语言。
+7. 技术标识、API 字段、事件名可以使用英文。
+8. 如果某次任务只做单语言，PR 里必须说明原因，并列出缺少的语言版本。
+
+必须检查语言覆盖的范围：
+
+```txt
+导航菜单
+页面标题
+模块标题
+按钮
+表单标签
+输入提示
+筛选项
+表格标题
+状态标签
+空状态
+加载状态
+错误状态
+成功提示
+API 返回给用户看的错误信息
+SOP 内容
+培训内容
+PDF / HTML 导出内容
+In-App Chat 消息模板
+通知模板
+加盟商方案
+骑手端 App 文案
+Leader 工作台文案
+```
+
+Codex 开发页面或内容时，必须在完成前自查：
+
+```txt
+是否有中文
+是否有英文
+是否有葡语
+是否有遗漏按钮/表格/报错/空状态
+是否仍有旧品牌或旧平台名称
+是否正确使用 MePonto 和 PontoSys
+```
+
+语言问题属于 PR 阻断项。除非负责人明确批准单语言临时发布，否则不能合并。
 
 ## 12. 提交前验证流程
 
@@ -372,6 +435,7 @@ PR 必须说明：
 - 是否新增事件
 - 是否新增 API
 - 是否支持中英葡
+- 是否有单语言例外说明
 - 已经运行哪些检查
 
 PR 合并前必须完成：
@@ -474,9 +538,9 @@ npm run codex:preflight
 npm run codex:preflight:full
 ```
 
-## 19. 新增商城模块示例
+## 19. 新增 PontoMall 模块示例
 
-如果新增积分商城模块，执行步骤：
+如果新增 PontoMall 模块，执行步骤：
 
 1. 新建模块契约：
 
@@ -585,6 +649,7 @@ npm run codex:preflight
 数据边界清楚
 事件版本清楚
 语言支持清楚
+语言例外已说明或不存在
 feature flag 已配置
 preflight 通过
 PR checklist 完成

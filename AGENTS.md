@@ -5,9 +5,11 @@ This repository is the source of truth for MePonto development rules. Every Code
 ## Product Context
 
 - Brand: MePonto.
-- Main platform name: PontoSys.
+- Main operations system name: PontoSys.
+- Mall system name: PontoMall.
 - Supported languages: Chinese, English, and Portuguese.
-- The system includes master admin, franchise, leader, rider app, and future partner, supply chain, points mall, and gamification systems.
+- PontoSys includes the operations console, franchise system, leader workspace, rider system, and related partner, supply chain, finance, risk, SOP, and analytics surfaces.
+- PontoMall is the mall and redemption system for points-based products, services, vouchers, and fulfillment.
 - The platform must be designed as an ecosystem OS, not as isolated pages.
 
 ## Required Reading
@@ -15,6 +17,7 @@ This repository is the source of truth for MePonto development rules. Every Code
 Before adding or changing a module, read:
 
 - `docs/meponto-ecosystem-development-standard-v2.md`
+- `docs/design-system.md`
 - `docs/meponto-ecosystem-os-v2-diagram.md`
 - `docs/module-development-playbook.md`
 - `docs/module-contract-template.md`
@@ -30,9 +33,21 @@ Before adding or changing a module, read:
 5. Money, incentives, points, inventory, settlement, and gamification economy changes must use ledger-style records.
 6. Permission-sensitive features must use the unified RBAC/scope model.
 7. Events must be versioned, for example `marketplace.order.created.v1`.
-8. UI text must support Chinese, English, and Portuguese unless the task explicitly says otherwise.
+8. UI text, SOP content, user-facing errors, exports, and training content must support Chinese, English, and Portuguese unless the task explicitly says otherwise.
 9. Do not introduce a separate login system for a sub-system.
 10. Do not rename MePonto or PontoSys without an explicit product decision.
+
+## Language Requirements
+
+- Required languages: Chinese (`zh`), English (`en`), and Portuguese (`pt`).
+- Default business review language: Chinese.
+- Brazil-facing user language: Portuguese.
+- Internal technical labels may use English when they are identifiers, API names, or developer-only labels.
+- New UI pages must include all visible text in the existing i18n structure or an equivalent local language object.
+- User-facing API errors, empty states, form labels, table headers, buttons, filters, status labels, notifications, SOP pages, training materials, exports, and PDF/HTML deliverables must be checked for language completeness.
+- Do not mix Chinese, English, and Portuguese randomly inside the same user-facing label.
+- Do not leave legacy brand/platform names in user-facing copy. Use MePonto, PontoSys, and PontoMall according to module scope.
+- If a task is temporarily single-language, the PR must say why and identify the missing languages as follow-up work.
 
 ## Team Collaboration
 
@@ -56,7 +71,7 @@ A module change is not done until:
 
 - The module boundary is clear.
 - Permissions are checked.
-- Language support is checked.
+- Chinese, English, and Portuguese language support is checked.
 - Events and API contracts are documented when applicable.
 - `npm run codex:preflight` passes.
 - `npm run codex:preflight:full` passes for release or high-risk changes.

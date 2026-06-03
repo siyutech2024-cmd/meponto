@@ -24,7 +24,7 @@ export async function POST(request: Request) {
     location: body.location ?? "",
     description: body.description ?? "",
     createdAt: new Date().toISOString().slice(0, 16).replace("T", " "),
-    responder: body.responder ?? "meponto Ops Desk",
+    responder: body.responder ?? "MePonto Ops Desk",
   };
 
   memory.incidents.unshift(incident);

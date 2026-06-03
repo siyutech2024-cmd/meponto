@@ -40,7 +40,7 @@ Response:
       "ponto": "Ponto Paulista Garage",
       "leader": "Rafael Costa",
       "invitedBy": "Rafael Costa",
-      "whatsappGroup": "meponto Paulista 01",
+      "chatRoom": "meponto Paulista 01",
       "ar": 96,
       "status": "Active",
       "vehicleType": "Motorcycle",
@@ -331,19 +331,19 @@ Required: `name`, `category`, `contactName`, `phone`.
 }
 ```
 
-## WhatsApp Groups
+## In-App Chat Rooms
 
-### `GET /api/whatsapp`
+### `GET /api/chat`
 
-Returns group coverage records.
+Returns native PontoSys chat room coverage records.
 
-### `POST /api/whatsapp`
+### `POST /api/chat`
 
 Required: `name`, `leader`, `ponto`.
 
 ```json
 {
-  "name": "meponto Centro Intake",
+  "name": "MePonto Centro Intake",
   "bairro": "Republica",
   "ponto": "Ponto Centro Intake",
   "leader": "Camila Nunes",
@@ -356,6 +356,14 @@ Required: `name`, `leader`, `ponto`.
   "broadcastList": "New Rider Intake"
 }
 ```
+
+### `GET /api/chat/messages`
+
+Returns native room messages. Optional query: `roomId`.
+
+### `POST /api/chat/messages`
+
+Required: `roomId`, `body`. Requires leader-management permission.
 
 ## Settings
 

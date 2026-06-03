@@ -4,9 +4,9 @@
 
 This document is the system-wide source of truth for MePonto points. Every module that earns, displays, spends, refunds, expires, reviews, or analyzes points must follow this standard.
 
-MePonto points are a rider member incentive and loyalty unit. Riders earn points through verified rider activity, MePonto missions, and approved campaigns. Riders can also scan and pay points to approved offline Partner service points. Partners that receive points from rider service payments can redeem those points in the MePonto points mall. Suppliers provide products or stock, but do not receive, hold, or spend points.
+MePonto points are a rider and Partner incentive unit. Riders earn points through verified rider activity, MePonto missions, approved campaigns, and controlled referral programs. Partners earn fixed points when they deliver verified member-benefit services. Riders do not pay Partners with points: riders pay Partners directly in cash/PIX/card and receive MePonto member discounts. Partners can redeem earned points in PontoMall. Suppliers provide products or stock, but do not receive, hold, or spend points.
 
-Points are not salary, cash balance, debt, employment compensation, or a guaranteed monetary right. They are a controlled platform benefit operated through ledger records, fraud limits, and marketplace redemption rules.
+Points are not salary, cash balance, debt, employment compensation, or a guaranteed monetary right. They are a controlled platform benefit operated through ledger records, fraud limits, and PontoMall redemption rules.
 
 ## 1.1 Normative Scope
 
@@ -14,9 +14,9 @@ This standard applies to:
 
 ```txt
 - Rider app points display and earning opportunities.
-- Partner offline service points payment.
+- Partner offline member-benefit service validation.
 - Points review and adjustment back office.
-- Marketplace catalog, redemption, refund, and fulfillment.
+- PontoMall catalog, redemption, refund, and fulfillment.
 - Gamification missions and campaigns.
 - Finance/audit reporting when points have settlement or partner impact.
 - Analytics and read models that expose points balance, pending points, or redemption behavior.
@@ -30,11 +30,11 @@ Modules may add local UI or rollout rules, but they cannot change the accounting
 1. Ledger first: points are never changed by directly updating a balance field.
 2. One rider, one points account.
 3. Every earn, spend, refund, expiry, or adjustment must have a source and audit trail.
-4. Partner service payments must be verified by both rider and partner context.
-5. Marketplace redemption must reserve inventory and debit points in one controlled flow.
+4. Partner services are member-benefit validations, not point payments.
+5. PontoMall redemption must reserve inventory and debit points in one controlled flow.
 6. Limits exist to prevent abuse, duplicate claims, partner collusion, and artificial service volume.
 7. Rider-facing balances come from read models, not private ledger tables.
-8. The same rules apply across rider app, partner, marketplace, operations, finance, and analytics.
+8. The same rules apply across PontoSys rider, partner, PontoMall, operations, finance, and analytics.
 ```
 
 ## 3. Points Account
@@ -54,13 +54,32 @@ Each rider member has one active points account tied to the unified MePonto/Pont
 
 Expiry notices should be sent 30 days and 7 days before expiration through in-app notification and Android push when available.
 
+## 3.1 Rule Set Versioning
+
+All points rules must belong to a versioned rule set.
+
+| Rule | Requirement |
+| --- | --- |
+| Active version | Exactly one active rule set per rollout scope |
+| Effective dates | Every rule set must define `effective_from`; scheduled rule sets can define future activation |
+| Historical ledger | Existing ledger records must not be recalculated after rule changes |
+| Approval | High-impact changes require Super Admin plus Finance/Risk approval |
+| Audit | Every rule change must capture old value, new value, reason, approver, and timestamp |
+| Rollback | Rollback creates a new rule set version; it must not mutate historical rule rows |
+
+The active beta rule set is `points-rules-v1-beta`. Future rule edits must be reviewed as a rule diff before activation.
+
 ## 4. Earning Sources
 
 ### 4.1 Rider Activity
 
 | Source | Base Rule | Limit |
 | --- | --- | --- |
-| Completed eligible delivery/order | 5 points per eligible completion | Max 150 points/day |
+| Completed eligible delivery/order | Configurable v1 default: 2 points per reconciled completion | Max 80 points/day |
+| TSH online service hours | Configurable v1 default: 8 points per eligible online hour after 4h minimum | Max 80 points/day |
+| AR acceptance rate | Configurable v1 default: 12 points when AR is 95% or higher | Max 60 points/day |
+| CAA eligible orders | Configurable v1 default: 6 points per reconciled CAA order | Max 90 points/day |
+| Rider registration welcome | Configurable v1 default: 20 points after member registration | One time only, starts pending |
 | Daily active mission | 30 points when mission target is reached | 1 time/day |
 | Weekly reliability mission | 120 points for meeting weekly criteria | 1 time/week |
 | Night coverage mission | 40 points for verified night mission | Max 5 times/week |
@@ -69,64 +88,119 @@ Expiry notices should be sent 30 days and 7 days before expiration through in-ap
 
 Eligibility requires the rider member to be active, not suspended, and operating through an approved Ponto/community flow.
 
-### 4.2 Offline Partner Service Payment
+Rider performance point rules must be configurable in the Points Economy rule set, not hard-coded in a page. Each rule must define points per unit, daily cap, minimum eligible value, pending days, score weight, effective dates, and audit metadata.
 
-Offline Partners are service points. When a rider member uses an eligible offline service, the rider can scan the Partner QR or use a one-time code to pay points to the Partner.
+99 source-platform imports must follow the daily import standard:
+
+| Rule | Requirement |
+| --- | --- |
+| Business date | Use the date inside the 99 export rows, not the upload timestamp |
+| Import cadence | Daily upload contains the previous business day's data |
+| Required files | Performance, earnings, and account statement exports |
+| Rider matching | 99 rider ID first, CPF second, phone third |
+| OL gate | Registered riders start at tier 1; only riders who joined OL become tier 2 and produce 99 performance records |
+| Idempotency | Re-importing the same business date must replace the draft read model and must not duplicate points |
+| Ledger posting | Import creates candidate points/read models first; points ledger posting requires approval or pending-release rules |
+
+Performance score v1 weights:
+
+| Metric | Default weight | Guardrail |
+| --- | --- | --- |
+| Completed orders | 28% | Only completed and reconciled orders count |
+| TSH | 24% | Must match platform online logs and Ponto shift windows |
+| AR | 28% | Bonus starts at 95%; traceable safety refusals should not penalize |
+| CAA orders | 20% | Requires source-platform reconciliation and duplicate protection |
+
+### 4.2 Offline Partner Member Benefit
+
+Offline Partners are service points. When a rider member uses an eligible offline service, the Partner app scans the rider's unique MePonto member QR. The rider pays the Partner directly in cash/PIX/card and receives the MePonto member discount if eligible. The Partner earns a fixed number of points for the verified service type.
 
 Eligible examples:
 
-| Partner Category | Examples | Payment Rule |
-| --- | --- | --- |
-| Fuel | Fuel partner offer | Rider pays 1 point per R$ 1 eligible service value, capped by rules |
-| Maintenance | Oil change, tire, brake, battery | Rider pays 1 point per R$ 1 eligible service value, capped by rules |
-| Phone/data | Mobile plan or approved top-up | Rider pays 1 point per R$ 1 eligible service value, capped by rules |
-| Equipment | Helmet, raincoat, delivery box | Rider pays 1 point per R$ 1 eligible service value, capped by rules |
-| Vehicle service | Rental support, inspection, repair | Rider pays 1 point per R$ 1 eligible service value, capped by rules |
+| Partner Category | Examples | Rider Benefit | Partner Earn Rule |
+| --- | --- | --- | --- |
+| Fuel | Fuel partner offer | R$ 5 discount or configured % discount | 30 fixed points |
+| Maintenance | Oil change, tire, brake, battery | R$ 20 discount | 100 fixed points |
+| Phone/data | Mobile plan or approved top-up | R$ 5 discount | 30 fixed points |
+| Equipment | Helmet, raincoat, delivery box | R$ 20 discount or configured % discount | 80 fixed points |
+| Vehicle service | Rental support, inspection, repair | R$ 30 discount | 120 fixed points |
 
 Campaigns may give the rider separate platform bonus points for using approved services, but Partners must not directly grant rider points.
 
+`1 BRL = 10 points` is a reference value for marketplace positioning and benefit design. It is not a cash-conversion promise and it is not used to calculate Partner service earnings automatically.
+
+### 4.3 Referral Earning
+
+Registration welcome points and referral points must be configured in the Points Economy acquisition rule set. Registration welcome points are intentionally low-value and pending; referral points are allowed only after real activation:
+
+| Referrer | Invited party | Trigger | Suggested v1 reward |
+| --- | --- | --- | --- |
+| Platform | Rider registration | Rider completes member registration and passes duplicate identity/device checks | 20 points |
+| Rider | Rider | Invited rider completes first valid activity period | 200 points |
+| Rider | Partner | Invited Partner is approved and completes first real service batch | 500 points |
+| Partner | Partner | Invited Partner is approved and completes first real service batch | 500-1000 points |
+
+Registration welcome points must be one-time per CPF, phone, device, PIX/account, and member identity. Registration alone must not release referral points. New-account and referral points start as pending for at least 7 days.
+
 Suppliers are brand or supply-chain providers. They can provide products, stock, catalog items, or procurement pricing, but they do not have a points account and cannot receive or redeem points.
+
+## 4.4 Pending Release And Review
+
+Pending points must use release rules by source type:
+
+| Flow | Default pending | Release | Review trigger |
+| --- | --- | --- | --- |
+| Registration welcome | 7 days | Auto if no duplicate identity/device risk | Duplicate CPF, phone, device, PIX/account, or suspicious registration cluster |
+| Performance earning | 1 day | Auto after platform reconciliation | Source mismatch, cancelled order, abnormal TSH, low-integrity AR, or duplicate CAA |
+| Partner service benefit | 3 days | Auto if no partner/rider risk flag | Duplicate receipt, repeated pattern, location mismatch, inactive/high-risk partner |
+| Referral activation | 14 days | Manual or controlled auto-release after activation proof | Registration-only invite, same identity cluster, missing real activity |
+| Manual adjustment | 0 days | Manual approval only | Missing reason, approver, or linked operational evidence |
+
+Pending points cannot be redeemed. If a pending earn is rejected, it must remain visible in audit/review history and must not affect available balance.
 
 ## 5. Partner Service Restrictions
 
-Partner service payments must use a controlled confirmation flow.
+Partner member-benefit services must use a controlled confirmation flow.
 
 ```txt
 Required confirmation:
-- Partner must be Active and allowed to accept points.
-- Rider must scan partner QR or provide a one-time code.
-- Partner must submit service category, amount, timestamp, and receipt/reference.
+- Partner must be Active and allowed to register member-benefit services.
+- Partner app must scan the rider's unique member QR.
+- Rider must be tier 2 or higher to receive Partner discounts.
+- Partner must submit service category, cash amount, timestamp, and receipt/reference.
 - System must validate rider, partner, category, amount, and limit rules.
-- Rider points are debited and Partner points are credited only after validation. Risky payments start as pending.
+- Rider pays Partner directly outside MePonto points.
+- Partner points are fixed by service type and start pending before release.
 ```
 
 Hard limits:
 
 | Limit | Rule |
 | --- | --- |
-| Per partner transaction | Max 300 points |
-| Per rider per partner per day | Max 500 points |
-| Per rider all partners per day | Max 800 points |
-| Per rider per month from partners | Max 6,000 points |
-| Same category cooldown | No duplicate same-partner same-category claim within 2 hours |
+| Minimum tier for discount | Tier 2 or higher |
+| Rider same service type | Max 1 per day unless service rule defines a longer cooldown |
+| Fuel/phone service cooldown | 1 day |
+| Maintenance cooldown | 7 days |
+| Vehicle/equipment cooldown | 30 days |
+| Partner same service type | Per-category daily cap |
 | Receipt reuse | Blocked |
-| Suspended partner | Cannot accept points |
+| Suspended partner | Cannot register benefit services |
 | Suspended rider | Cannot earn or redeem points |
-| Refunded service | Points must be reversed |
+| Refunded/invalid service | Partner points must be rejected or reversed |
 
 Risk holds:
 
 | Trigger | Result |
 | --- | --- |
-| Amount above partner category average by 3x | Pending review |
-| More than 3 services from same rider/partner in 24h | Pending review |
+| Repeated rider/Partner pattern | Pending review |
+| Partner service volume above category norm | Pending review |
 | Partner risk status is Review | Pending review |
 | Missing receipt/reference | Rejected or pending, based on category rule |
 | Rider and partner device/location mismatch | Pending review |
 
-## 6. Marketplace Redemption
+## 6. PontoMall Redemption
 
-Points can be redeemed in the MePonto points mall for approved products, supplies, services, or coupons.
+Points can be redeemed in PontoMall for approved products, supplies, services, or coupons.
 
 Allowed product types:
 
@@ -147,14 +221,14 @@ Not allowed in v1:
 - PIX conversion
 - Transfer to another rider
 - Gambling, alcohol, or restricted goods
-- Products outside approved marketplace catalog
+- Products outside approved PontoMall catalog
 ```
 
 Redemption flow:
 
 ```txt
-1. Rider opens marketplace catalog.
-2. Marketplace reads rider points balance through read model.
+1. Rider opens PontoMall catalog.
+2. PontoMall reads rider points balance through read model.
 3. Rider chooses item.
 4. System checks points balance, eligibility, inventory, city/Ponto availability, and fraud limits.
 5. Transaction creates marketplace order, points_ledger spend, inventory reserve if needed, audit log, and event outbox record.
@@ -171,6 +245,7 @@ Redemption flow:
 | Monthly redemption points | Max 20,000 points/month |
 | High-value item | Items above 8,000 points require extra verification |
 | New rider account | First 7 days can redeem max 2,000 points total |
+| Same product monthly limit | Max 1 redemption of the same product per account per month unless campaign rules override |
 | Fraud hold | Redemption disabled while account is under fraud review |
 
 The marketplace can define product-specific rules such as city availability, Ponto pickup only, required rider tier, or one-per-month limits.
@@ -233,7 +308,7 @@ All events must be versioned.
 | Actor | Scope |
 | --- | --- |
 | Rider | `member.points.read`, `marketplace.redeem` |
-| Partner staff | `partner.service.create`, `partner.points.accept_payment` |
+| Partner staff | `partner.service.create`, `partner.points.view` |
 | Partner manager | `partner.points.view`, `partner.service.review` |
 | Operations | `points.review`, `points.adjust_limited` |
 | Finance | `points.audit`, `marketplace.settlement.view` |
@@ -290,21 +365,20 @@ The rider app must not expose internal fraud scores, partner private notes, or l
 ```txt
 Rider changes tire at an active Partner.
 Service amount: R$ 120.
-Payment: rider pays 120 points.
-Limits: under 300 transaction cap and under daily cap.
-Result: rider points_ledger spend approved, partner_points_ledger earn approved, partner.service.paid.v1 emitted.
+Rider pays Partner directly after MePonto member discount.
+Partner app scans rider member QR and selects maintenance.
+Result: partner_points_ledger earn pending for 100 points, partner.service.confirmed.v1 emitted.
 ```
 
 ### Risky Partner Service
 
 ```txt
-Rider attempts to pay R$ 900 repair service in points.
-Payment would be 900 points, but transaction cap is 300.
-Amount is above category average.
-Result: 300 points pending, review required, partner.service.payment_pending.v1 emitted.
+Partner attempts to register repeated high-value repair services for the same rider.
+Service is above normal frequency.
+Result: Partner points remain pending, review required, partner.service.review_pending.v1 emitted.
 ```
 
-### Marketplace Redemption
+### PontoMall Redemption
 
 ```txt
 Rider has 2,840 available points.
@@ -316,9 +390,9 @@ Available balance becomes 1,240 points.
 ## 14. Rollout
 
 ```txt
-Phase 1: Rider app shows available/pending points, static rules, and marketplace entry.
-Phase 2: Partner service QR/OTP payment, pending holds, Partner points balance, and review queue.
-Phase 3: Marketplace catalog, rider/Partner redemption, inventory reserve, points spend, refund, and fulfillment.
+Phase 1: Rider app shows available/pending points, static rules, and PontoMall entry.
+Phase 2: Partner app scans rider member QR, registers benefit service, Partner points balance, and review queue.
+Phase 3: PontoMall catalog, rider/Partner redemption, inventory reserve, points spend, refund, and fulfillment.
 Phase 4: Campaign multipliers, tier benefits, partner settlement analytics, and gamification.
 ```
 
