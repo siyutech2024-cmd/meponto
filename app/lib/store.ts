@@ -67,6 +67,7 @@ export type AuditEntry = {
 
 type VentoState = {
   language: Language;
+  theme: "light" | "dark";
   currentRole: Role;
   riders: Rider[];
   pontos: Ponto[];
@@ -77,6 +78,7 @@ type VentoState = {
   notifications: NotificationItem[];
   auditLog: AuditEntry[];
   setLanguage: (language: Language) => void;
+  toggleTheme: () => void;
   setRole: (role: Role) => void;
   addRider: (input: RiderInput) => void;
   addPonto: (input: PontoInput) => void;
@@ -129,6 +131,7 @@ export const useVentoStore = create<VentoState>()(
   persist(
     (set, get) => ({
       language: "en",
+      theme: "light",
       currentRole: "Super Admin",
       riders: seedRiders,
       pontos: seedPontos,
@@ -139,6 +142,7 @@ export const useVentoStore = create<VentoState>()(
       notifications: seedNotificationsFromIncidents(seedIncidents),
       auditLog: seedAuditLog,
       setLanguage: (language) => set({ language }),
+      toggleTheme: () => set((state) => ({ theme: state.theme === "light" ? "dark" : "light" })),
       setRole: (role) =>
         set((state) => ({
           currentRole: role,
