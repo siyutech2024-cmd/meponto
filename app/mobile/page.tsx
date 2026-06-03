@@ -22,11 +22,11 @@ export default function MobilePage() {
 
   return (
     <AppShell>
-      <PageTitle title="Mobile Operations" eyebrow="Android / WhatsApp first" />
+      <PageTitle title="Mobile Operations" eyebrow="Android / In-App Chat first" />
 
       <section className="grid gap-3 md:grid-cols-3 xl:grid-cols-6">
         <Metric label="Android Flows" value={String(payload.summary.androidSessions)} />
-        <Metric label="WhatsApp Flows" value={String(payload.summary.whatsappSessions)} />
+        <Metric label="In-App Chat Flows" value={String(payload.summary.chatSessions)} />
         <Metric label="Check-ins Today" value={String(payload.summary.checkInsToday)} />
         <Metric label="Open Incidents" value={String(payload.summary.openMobileIncidents)} tone="warning" />
         <Metric label="SOS Target" value={payload.summary.emergencyResponseTarget} />
@@ -56,7 +56,7 @@ export default function MobilePage() {
               className="flex h-11 w-full items-center justify-center gap-2 rounded border border-[#8b5cf6] bg-[#8b5cf6] text-sm font-black text-white"
             >
               <Send size={16} />
-              Submit via WhatsApp
+              Submit via In-App Chat
             </button>
           </div>
         </PhonePanel>
@@ -144,7 +144,7 @@ export default function MobilePage() {
             <div className="rounded border border-[#fb923c] bg-[#fb923c]/15 p-3">
               <div className="flex items-center gap-2 text-sm font-black text-[#fdba74]">
                 <MessageCircle size={17} />
-                WhatsApp fallback active
+                In-App Chat active
               </div>
               <div className="mt-2 text-xs text-[#c4c4d4]">Broadcast safety pulse to Liberdade and Tatuape leaders every 30 minutes.</div>
             </div>

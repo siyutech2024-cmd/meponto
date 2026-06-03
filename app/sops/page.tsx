@@ -374,10 +374,10 @@ const recruitmentSop = [
   {
     title: "4. 总部后台绑定",
     items: [
-      "PontoSys 是 meponto 的运营系统，承接总部从 99 后台导入的数据和排班任务，不对外开放，不作为招聘页面、群话术或骑手培训入口。",
+      "PontoSys 是 MePonto 的运营系统，承接总部从 99 后台导入的数据和排班任务，不对外开放，不作为招聘页面、群话术或骑手培训入口。",
       "候选人完成 99 app 注册和平台审核后，由总部/授权后台人员在 PontoSys 处理 OL 绑定、排班和数据核验。",
       "绑定/解绑申请必须在 96 小时内批准或拒绝；超时会自动过期并被系统拒绝。",
-      "绑定成功后，总部同步站点；站点再将骑手加入对应 Ponto、Leader、WhatsApp 群和培训名单。",
+      "绑定成功后，总部同步站点；站点再将骑手加入对应 Ponto、Leader、应用内聊天室和培训名单。",
     ],
   },
   {
@@ -433,7 +433,7 @@ const siteOpsSop = [
     title: "4. 招聘与培训承接",
     items: [
       "总部投放带来的候选人到站后，站点负责线下接待、资料核验、规则讲解和注册协助。",
-      "绑定成功名单由总部同步后，站点安排 Ponto、Leader、WhatsApp 群、首班培训和首班复盘。",
+      "绑定成功名单由总部同步后，站点安排 Ponto、Leader、应用内聊天室、首班培训和首班复盘。",
       "新骑手首班表现必须记录：签到、上线、OPH、AR、取消、投诉、事故和是否转全职。",
       "站点每日向总部反馈到场率、资料完整率、首班完成率、转全职率和淘汰原因。",
     ],
@@ -452,7 +452,7 @@ const siteOpsSop = [
 const localizedSopContent = {
   en: {
     eyebrow: "Full-time riders / Recruitment / Site operations",
-    title: "meponto PontoSys SOP Center",
+    title: "MePonto PontoSys SOP Center",
     mapEyebrow: "SOP category map",
     mapTitle: "There are 5 formal SOPs",
     mapDescription:
@@ -460,6 +460,65 @@ const localizedSopContent = {
     counters: ["Formal SOPs", "Source library", "Execution roles"],
     sourceTitle: "Source Library",
     sourceDescription: "PontoSys manual, brand guide, good practices, communication guide and the training video for station managers and Leaders.",
+    sectionLabels: {
+      data: "Data foundation",
+      rider: "Full-time rider",
+      recruitment: "Recruitment conversion",
+      site: "Site operations",
+      inspection: "HQ inspection",
+      library: "Library",
+    },
+    ui: {
+      actionBadge: "Action",
+      briefingBadge: "Briefing",
+      closeoutBadge: "Closeout",
+      dailyCadenceTitle: "Daily cadence",
+      dailyRiderEyebrow: "Daily rider SOP",
+      decisionRulesEyebrow: "Decision rules",
+      dispatchBadge: "Dispatch",
+      documentLabel: "Document",
+      d1DataBadge: "D-1 99 Data",
+      evidenceBadge: "Evidence",
+      funnelQualityBadge: "Funnel quality",
+      hqDataSupportEyebrow: "HQ data support",
+      hqInspectionActionsEyebrow: "HQ inspection actions",
+      openBadge: "Open",
+      ownerBadge: "Owner",
+      ownershipEyebrow: "Ownership",
+      recruitmentActionsEyebrow: "Recruitment actions",
+      recruitmentFunnelEyebrow: "Recruitment funnel",
+      recruitmentKpiEyebrow: "Recruitment KPI",
+      recruitmentKpiTitle: "Recruitment KPIs",
+      redLinesTitle: "Red lines",
+      siteDailyFlowEyebrow: "Site daily flow",
+      siteOperationsEyebrow: "Site operations",
+      siteStaffingEyebrow: "Site staffing",
+      stepLabelPrefix: "Step",
+      trainingVideo: "Training video",
+      twoPeopleBadge: "2 people / Ponto",
+    },
+    sourceDocs: [
+      {
+        title: "PontoSys Manual",
+        description: "Daily import, site execution, recruitment conversion, inspection evidence and closeout operations.",
+        href: "/sop-assets/pontosys-manual.html",
+      },
+      {
+        title: "Brand Guide",
+        description: "99Food communication rules, tone of voice, visual identity and forbidden claims.",
+        href: "/sop-assets/communication-guide.pdf",
+      },
+      {
+        title: "Good Practices FAQ",
+        description: "OL FAQ for bags, payment, modal rules, unlinking, safety and daily best practices.",
+        href: "/sop-assets/good-practices-faq.pdf",
+      },
+      {
+        title: "Communication Guide",
+        description: "Reclame Aqui response flow, SLA, scorecard targets and reputation management.",
+        href: "/sop-assets/reclame-aqui-playbook.pdf",
+      },
+    ],
     categories: [
       {
         code: "SOP 01",
@@ -696,7 +755,7 @@ const localizedSopContent = {
   },
   pt: {
     eyebrow: "Motoboys fixos / Recrutamento / Operacao de ponto",
-    title: "Central SOP meponto PontoSys",
+    title: "Central SOP MePonto PontoSys",
     mapEyebrow: "Mapa de categorias SOP",
     mapTitle: "Existem 5 SOPs formais",
     mapDescription:
@@ -704,6 +763,65 @@ const localizedSopContent = {
     counters: ["SOPs formais", "Biblioteca", "Papeis de execucao"],
     sourceTitle: "Biblioteca",
     sourceDescription: "Manual PontoSys, brand guide, boas praticas, guia de comunicacao e video de treinamento para gerentes de ponto e Leaders.",
+    sectionLabels: {
+      data: "Base de dados",
+      rider: "Motoboy fixo",
+      recruitment: "Conversao de recrutamento",
+      site: "Operacao do ponto",
+      inspection: "Inspecao HQ",
+      library: "Biblioteca",
+    },
+    ui: {
+      actionBadge: "Acao",
+      briefingBadge: "Briefing",
+      closeoutBadge: "Fechamento",
+      dailyCadenceTitle: "Cadencia diaria",
+      dailyRiderEyebrow: "SOP diario do motoboy",
+      decisionRulesEyebrow: "Regras de decisao",
+      dispatchBadge: "Despacho",
+      documentLabel: "Documento",
+      d1DataBadge: "Dados D-1 99",
+      evidenceBadge: "Evidencia",
+      funnelQualityBadge: "Qualidade do funil",
+      hqDataSupportEyebrow: "Suporte de dados HQ",
+      hqInspectionActionsEyebrow: "Acoes de inspecao HQ",
+      openBadge: "Abertura",
+      ownerBadge: "Responsavel",
+      ownershipEyebrow: "Responsabilidades",
+      recruitmentActionsEyebrow: "Acoes de recrutamento",
+      recruitmentFunnelEyebrow: "Funil de recrutamento",
+      recruitmentKpiEyebrow: "KPI de recrutamento",
+      recruitmentKpiTitle: "KPIs de recrutamento",
+      redLinesTitle: "Linhas vermelhas",
+      siteDailyFlowEyebrow: "Fluxo diario do ponto",
+      siteOperationsEyebrow: "Operacao do ponto",
+      siteStaffingEyebrow: "Equipe do ponto",
+      stepLabelPrefix: "Etapa",
+      trainingVideo: "Video de treinamento",
+      twoPeopleBadge: "2 pessoas / Ponto",
+    },
+    sourceDocs: [
+      {
+        title: "Manual PontoSys",
+        description: "Importacao diaria, execucao do ponto, conversao de recrutamento, evidencias de inspecao e fechamento operacional.",
+        href: "/sop-assets/pontosys-manual.html",
+      },
+      {
+        title: "Guia de Marca",
+        description: "Regras de comunicacao 99Food, tom de voz, identidade visual e promessas proibidas.",
+        href: "/sop-assets/communication-guide.pdf",
+      },
+      {
+        title: "FAQ de Boas Praticas",
+        description: "FAQ OL sobre bags, repasses, regras de modal, desvinculacao, seguranca e melhores praticas diarias.",
+        href: "/sop-assets/good-practices-faq.pdf",
+      },
+      {
+        title: "Guia de Comunicacao",
+        description: "Fluxo Reclame Aqui, SLA, metas de scorecard e gestao de reputacao.",
+        href: "/sop-assets/reclame-aqui-playbook.pdf",
+      },
+    ],
     categories: [
       {
         code: "SOP 01",
@@ -947,6 +1065,38 @@ const localizedSopContent = {
   counters: string[];
   sourceTitle: string;
   sourceDescription: string;
+  sectionLabels: Record<SectionTone, string>;
+  ui: Record<
+    | "actionBadge"
+    | "briefingBadge"
+    | "closeoutBadge"
+    | "dailyCadenceTitle"
+    | "dailyRiderEyebrow"
+    | "decisionRulesEyebrow"
+    | "dispatchBadge"
+    | "documentLabel"
+    | "d1DataBadge"
+    | "evidenceBadge"
+    | "funnelQualityBadge"
+    | "hqDataSupportEyebrow"
+    | "hqInspectionActionsEyebrow"
+    | "openBadge"
+    | "ownerBadge"
+    | "ownershipEyebrow"
+    | "recruitmentActionsEyebrow"
+    | "recruitmentFunnelEyebrow"
+    | "recruitmentKpiEyebrow"
+    | "recruitmentKpiTitle"
+    | "redLinesTitle"
+    | "siteDailyFlowEyebrow"
+    | "siteOperationsEyebrow"
+    | "siteStaffingEyebrow"
+    | "stepLabelPrefix"
+    | "trainingVideo"
+    | "twoPeopleBadge",
+    string
+  >;
+  sourceDocs: typeof sourceDocs;
   categories: Array<{ code: string; name: string; owner: string; scope: string; modules: string[]; tone: SectionTone; href: string }>;
   data: { title: string; eyebrow: string; paragraph: string; flow: string[][]; video: string };
   rider: { title: string; description: string; timeline: string[][]; blocks: Array<[string, string[]]> };
@@ -1119,7 +1269,7 @@ const recruitmentSopEn = [
       "PontoSys is an internal operating system for importing 99 data and scheduling; it is not for recruitment, groups, or training.",
       "Once 99 app registration and platform review are complete, authorized HQ staff process the OL binding, scheduling, and data check in PontoSys.",
       "Binding/unbinding requests must be approved or rejected within 96 hours; otherwise, they automatically expire and get rejected.",
-      "After binding, HQ syncs with the site; the site then adds the rider to the Ponto, Leader, WhatsApp groups, and training list.",
+      "After binding, HQ syncs with the site; the site then adds the rider to the Ponto, Leader, In-App Chat rooms, and training list.",
     ],
   },
   {
@@ -1177,7 +1327,7 @@ const recruitmentSopPt = [
       "O PontoSys é um sistema interno operacional para receber dados e escalas da 99; não deve ser usado para recrutamento, grupos ou treinamento.",
       "Após o cadastro e aprovação na plataforma 99, a equipe autorizada da matriz processa a vinculação OL, escala e checagem de dados no PontoSys.",
       "Solicitações de vinculação/desvinculação devem ser tratadas em até 96 horas; caso contrário, expiram automaticamente e são rejeitadas pelo sistema.",
-      "Confirmada a vinculação, a matriz avisa o ponto; o ponto adiciona o motoboy ao Ponto, Leader, grupos de WhatsApp e lista de treinamento.",
+      "Confirmada a vinculação, a matriz avisa o ponto; o ponto adiciona o motoboy ao Ponto, Leader, salas do chat interno e lista de treinamento.",
     ],
   },
   {
@@ -1233,7 +1383,7 @@ const siteOpsSopEn = [
     title: "4. Recruitment & Training Handoff",
     items: [
       "Candidates brought by HQ marketing arrive at the site; the site handles offline reception, document verification, rules briefing, and registration support.",
-      "After binding success is synced by HQ, the site assigns the Ponto, Leader, WhatsApp groups, first-shift training, and first-shift review.",
+      "After binding success is synced by HQ, the site assigns the Ponto, Leader, In-App Chat rooms, first-shift training, and first-shift review.",
       "Performance of new riders must be logged: check-in, online status, OPH, AR, cancellations, complaints, accidents, and full-time conversion.",
       "The site reports daily show-up rate, document completeness, first-shift completion, full-time conversion, and rejection reasons to HQ.",
     ],
@@ -1281,7 +1431,7 @@ const siteOpsSopPt = [
     title: "4. Integração de Recrutamento e Treinamento",
     items: [
       "Candidatos vindos das campanhas da matriz chegam ao ponto; o ponto faz recepção presencial, checa documentos, explica regras e apoia no app.",
-      "Confirmada a vinculação pela matriz, o ponto define Ponto, Leader, grupos de WhatsApp, treinamento pré-turno e revisão do primeiro turno.",
+      "Confirmada a vinculação pela matriz, o ponto define Ponto, Leader, salas do chat interno, treinamento pré-turno e revisão do primeiro turno.",
       "O desempenho do novato deve ser registrado: check-in, online, OPH, AR, cancelamentos, reclamações, acidentes e conversão para fixo.",
       "O ponto reporta diariamente à matriz a taxa de comparecimento, completude de documentos, conclusão de primeiro turno, conversão e motivos de rejeição.",
     ],
@@ -1318,12 +1468,14 @@ function SectionShell({
   title,
   eyebrow,
   tone,
+  labelOverride,
   children,
 }: {
   id: string;
   title: string;
   eyebrow: string;
   tone: SectionTone;
+  labelOverride?: string;
   children: React.ReactNode;
 }) {
   const colors = sectionTones[tone];
@@ -1334,7 +1486,7 @@ function SectionShell({
           <div className={`text-xs font-black uppercase ${colors.accent}`}>{eyebrow}</div>
           <h2 className="text-2xl font-black text-white">{title}</h2>
         </div>
-        <span className={`rounded border px-3 py-1 text-xs font-black uppercase ${colors.chip}`}>{colors.label}</span>
+        <span className={`rounded border px-3 py-1 text-xs font-black uppercase ${colors.chip}`}>{labelOverride ?? colors.label}</span>
       </div>
       {children}
     </section>
@@ -1392,6 +1544,11 @@ function LocalizedSopsPage({ language }: { language: Exclude<Language, "zh"> }) 
   const riderSopData = isEn ? fullTimeRiderSopEn : fullTimeRiderSopPt;
   const recruitmentSopData = isEn ? recruitmentSopEn : recruitmentSopPt;
   const siteOpsSopData = isEn ? siteOpsSopEn : siteOpsSopPt;
+  const dataBadges = isEn ? ["D-1 Import", "99 Data Source", "OL Operations"] : ["Importacao D-1", "Fonte 99", "Operacao OL"];
+  const riderBadges = isEn ? ["AR 95%", "OPH 1.5", "Ponto T-30", "Location 10min"] : ["AR 95%", "OPH 1.5", "Ponto T-30", "Localizacao 10min"];
+  const recruitmentBadges = isEn
+    ? ["HQ Campaign", "Offline Registration", "Backoffice Only", "96h Binding SLA"]
+    : ["Campanha HQ", "Registro presencial", "Apenas backoffice", "SLA 96h vinculacao"];
 
   return (
     <AppShell>
@@ -1437,13 +1594,13 @@ function LocalizedSopsPage({ language }: { language: Exclude<Language, "zh"> }) 
           </div>
         </section>
 
-        <SectionShell id="data-foundation" title={copy.data.title} eyebrow={copy.data.eyebrow} tone="data">
+        <SectionShell id="data-foundation" title={copy.data.title} eyebrow={copy.data.eyebrow} tone="data" labelOverride={copy.sectionLabels.data}>
           <div className="grid gap-4 lg:grid-cols-[1.15fr_0.85fr]">
             <div className="rounded-lg border border-[#1f5f78] bg-[#081d28] p-5">
               <div className="mb-4 flex flex-wrap items-center gap-2">
-                <Badge value="D-1 Import" />
-                <Badge value="99 Data Source" />
-                <Badge value="OL Operations" />
+                {dataBadges.map((badge) => (
+                  <Badge key={badge} value={badge} />
+                ))}
               </div>
               <p className="text-sm leading-6 text-[#c4c4d4]">{copy.data.paragraph}</p>
               <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
@@ -1451,7 +1608,7 @@ function LocalizedSopsPage({ language }: { language: Exclude<Language, "zh"> }) 
                   <div key={title} className="rounded-lg border border-[#1f5f78] bg-[#0b2430] p-4">
                     <div className="mb-2 flex items-center gap-2 text-xs font-black uppercase text-[#38bdf8]">
                       <Database size={15} />
-                      Step {index + 1}
+                      {copy.ui.stepLabelPrefix} {index + 1}
                     </div>
                     <h3 className="font-black text-white">{title}</h3>
                     <p className="mt-2 text-sm leading-6 text-[#a9a9bd]">{detail}</p>
@@ -1463,7 +1620,7 @@ function LocalizedSopsPage({ language }: { language: Exclude<Language, "zh"> }) 
             <div className="rounded-lg border border-[#1f5f78] bg-[#081d28] p-5">
               <div className="mb-3 flex items-center gap-2 text-sm font-black text-white">
                 <BookOpen size={18} />
-                Training video
+                {copy.ui.trainingVideo}
               </div>
               <video className="aspect-video w-full rounded-lg border border-[#2a2a4a] bg-black" controls preload="metadata">
                 <source src="/sop-assets/pontosys-training-video.mp4" type="video/mp4" />
@@ -1473,16 +1630,15 @@ function LocalizedSopsPage({ language }: { language: Exclude<Language, "zh"> }) 
           </div>
         </SectionShell>
 
-        <SectionShell id="rider-daily" title={copy.rider.title} eyebrow="Daily rider SOP" tone="rider">
+        <SectionShell id="rider-daily" title={copy.rider.title} eyebrow={copy.ui.dailyRiderEyebrow} tone="rider" labelOverride={copy.sectionLabels.rider}>
           <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
             <div>
               <p className="text-sm leading-6 text-[#c4c4d4]">{copy.rider.description}</p>
             </div>
             <div className="flex flex-wrap gap-2">
-              <Badge value="AR 95%" />
-              <Badge value="OPH 1.5" />
-              <Badge value="Ponto T-30" />
-              <Badge value="Location 10min" />
+              {riderBadges.map((badge) => (
+                <Badge key={badge} value={badge} />
+              ))}
             </div>
           </div>
           <div className="grid gap-3 lg:grid-cols-6">
@@ -1500,14 +1656,13 @@ function LocalizedSopsPage({ language }: { language: Exclude<Language, "zh"> }) 
         <section id="recruitment" className="mt-5 rounded-xl border border-[#5542a0] bg-[#151129] p-5 shadow-[0_16px_40px_rgba(0,0,0,0.18)]">
           <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
             <div>
-              <div className="text-xs font-black uppercase text-[#8b5cf6]">Recruitment funnel</div>
+              <div className="text-xs font-black uppercase text-[#8b5cf6]">{copy.ui.recruitmentFunnelEyebrow}</div>
               <h2 className="text-2xl font-black text-white">{copy.recruitment.title}</h2>
             </div>
             <div className="flex flex-wrap gap-2">
-              <Badge value="HQ Campaign" />
-              <Badge value="Offline Registration" />
-              <Badge value="Backoffice Only" />
-              <Badge value="96h Binding SLA" />
+              {recruitmentBadges.map((badge) => (
+                <Badge key={badge} value={badge} />
+              ))}
             </div>
           </div>
           <div className="grid gap-3 lg:grid-cols-6">
@@ -1524,7 +1679,7 @@ function LocalizedSopsPage({ language }: { language: Exclude<Language, "zh"> }) 
         <section className="mt-5 grid gap-4 xl:grid-cols-[1fr_0.8fr]">
           <div className="rounded-xl border border-[#5542a0] bg-[#151129] p-5">
             <div className="mb-4">
-              <div className="text-xs font-black uppercase text-[#8b5cf6]">Recruitment actions</div>
+              <div className="text-xs font-black uppercase text-[#8b5cf6]">{copy.ui.recruitmentActionsEyebrow}</div>
               <h2 className="text-2xl font-black text-white">{copy.recruitment.actionsTitle}</h2>
             </div>
             <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
@@ -1539,7 +1694,7 @@ function LocalizedSopsPage({ language }: { language: Exclude<Language, "zh"> }) 
 
           <div className="rounded-xl border border-[#5542a0] bg-[#151129] p-5">
             <div className="mb-4">
-              <div className="text-xs font-black uppercase text-[#8b5cf6]">Ownership</div>
+              <div className="text-xs font-black uppercase text-[#8b5cf6]">{copy.ui.ownershipEyebrow}</div>
               <h2 className="text-2xl font-black text-white">{copy.recruitment.ownersTitle}</h2>
             </div>
             <div className="space-y-3">
@@ -1557,12 +1712,10 @@ function LocalizedSopsPage({ language }: { language: Exclude<Language, "zh"> }) 
           <div className="rounded-xl border border-[#5542a0] bg-[#151129] p-5">
             <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
               <div>
-                <div className="text-xs font-black uppercase text-[#8b5cf6]">Recruitment KPI</div>
-                <h2 className="text-2xl font-black text-white">
-                  {isEn ? "Recruitment KPIs" : "KPIs de Recrutamento"}
-                </h2>
+                <div className="text-xs font-black uppercase text-[#8b5cf6]">{copy.ui.recruitmentKpiEyebrow}</div>
+                <h2 className="text-2xl font-black text-white">{copy.ui.recruitmentKpiTitle}</h2>
               </div>
-              <Badge value="Funnel quality" />
+              <Badge value={copy.ui.funnelQualityBadge} />
             </div>
             <div className="grid gap-3 md:grid-cols-2">
               {copy.recruitment.kpis.map(([name, target, detail]) => (
@@ -1579,7 +1732,7 @@ function LocalizedSopsPage({ language }: { language: Exclude<Language, "zh"> }) 
 
           <div className="rounded-xl border border-[#5542a0] bg-[#151129] p-5">
             <div className="mb-4">
-              <div className="text-xs font-black uppercase text-[#8b5cf6]">Decision rules</div>
+              <div className="text-xs font-black uppercase text-[#8b5cf6]">{copy.ui.decisionRulesEyebrow}</div>
               <h2 className="text-2xl font-black text-white">{copy.recruitment.decisionTitle}</h2>
             </div>
             <div className="space-y-3">
@@ -1603,10 +1756,10 @@ function LocalizedSopsPage({ language }: { language: Exclude<Language, "zh"> }) 
           <div className="rounded-xl border border-[#7a4d10] bg-[#211707] p-5">
             <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
               <div>
-                <div className="text-xs font-black uppercase text-[#f59e0b]">Site staffing</div>
+                <div className="text-xs font-black uppercase text-[#f59e0b]">{copy.ui.siteStaffingEyebrow}</div>
                 <h2 className="text-2xl font-black text-white">{copy.site.staffingTitle}</h2>
               </div>
-              <Badge value="2 people / Ponto" />
+              <Badge value={copy.ui.twoPeopleBadge} />
             </div>
             <div className="space-y-3">
               {copy.site.staffing.map(([role, detail]) => (
@@ -1621,10 +1774,10 @@ function LocalizedSopsPage({ language }: { language: Exclude<Language, "zh"> }) 
           <div className="rounded-xl border border-[#7a4d10] bg-[#211707] p-5">
             <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
               <div>
-                <div className="text-xs font-black uppercase text-[#f59e0b]">HQ data support</div>
+                <div className="text-xs font-black uppercase text-[#f59e0b]">{copy.ui.hqDataSupportEyebrow}</div>
                 <h2 className="text-2xl font-black text-white">{copy.site.dataSupportTitle}</h2>
               </div>
-              <Badge value="D-1 99 Data" />
+              <Badge value={copy.ui.d1DataBadge} />
             </div>
             <div className="grid gap-3 md:grid-cols-2">
               {copy.site.hqDataSupport.map(([name, detail]) => (
@@ -1640,14 +1793,14 @@ function LocalizedSopsPage({ language }: { language: Exclude<Language, "zh"> }) 
         <section className="mt-5 rounded-xl border border-[#7a4d10] bg-[#211707] p-5">
           <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
             <div>
-              <div className="text-xs font-black uppercase text-[#f59e0b]">Site daily flow</div>
+              <div className="text-xs font-black uppercase text-[#f59e0b]">{copy.ui.siteDailyFlowEyebrow}</div>
               <h2 className="text-2xl font-black text-white">{copy.site.title}</h2>
             </div>
             <div className="flex flex-wrap gap-2">
-              <Badge value="Open" />
-              <Badge value="Briefing" />
-              <Badge value="Dispatch" />
-              <Badge value="Closeout" />
+              <Badge value={copy.ui.openBadge} />
+              <Badge value={copy.ui.briefingBadge} />
+              <Badge value={copy.ui.dispatchBadge} />
+              <Badge value={copy.ui.closeoutBadge} />
             </div>
           </div>
           <div className="grid gap-3 lg:grid-cols-5">
@@ -1664,13 +1817,13 @@ function LocalizedSopsPage({ language }: { language: Exclude<Language, "zh"> }) 
         <section id="inspection" className="mt-5 rounded-xl border border-[#74303c] bg-[#240d14] p-5">
           <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
             <div>
-              <div className="text-xs font-black uppercase text-[#fb7185]">HQ inspection actions</div>
+              <div className="text-xs font-black uppercase text-[#fb7185]">{copy.ui.hqInspectionActionsEyebrow}</div>
               <h2 className="text-2xl font-black text-white">{copy.inspection.title}</h2>
             </div>
             <div className="flex flex-wrap gap-2">
-              <Badge value="Action" />
-              <Badge value="Owner" />
-              <Badge value="Evidence" />
+              <Badge value={copy.ui.actionBadge} />
+              <Badge value={copy.ui.ownerBadge} />
+              <Badge value={copy.ui.evidenceBadge} />
             </div>
           </div>
           <div className="overflow-x-auto">
@@ -1709,19 +1862,19 @@ function LocalizedSopsPage({ language }: { language: Exclude<Language, "zh"> }) 
         </section>
 
         <section className="mt-5 grid gap-4 xl:grid-cols-3">
-          <SopColumn title={isEn ? "Full-time Rider SOP" : "SOP do Motoboy Fixo"} eyebrow="Full-time rider" tone="rider">
+          <SopColumn title={isEn ? "Full-time Rider SOP" : "SOP do Motoboy Fixo"} eyebrow={copy.sectionLabels.rider} tone="rider">
             {riderSopData.map((block) => (
               <SopBlock key={block.title} title={block.title} items={block.items} />
             ))}
           </SopColumn>
 
-          <SopColumn title={isEn ? "Rider Recruitment SOP" : "SOP de Recrutamento"} eyebrow="Recruitment" tone="recruitment">
+          <SopColumn title={isEn ? "Rider Recruitment SOP" : "SOP de Recrutamento"} eyebrow={copy.sectionLabels.recruitment} tone="recruitment">
             {recruitmentSopData.map((block) => (
               <SopBlock key={block.title} title={block.title} items={block.items} />
             ))}
           </SopColumn>
 
-          <SopColumn title={isEn ? "Site Operations SOP" : "SOP de Operação do Ponto"} eyebrow="Site operations" tone="site">
+          <SopColumn title={isEn ? "Site Operations SOP" : "SOP de Operação do Ponto"} eyebrow={copy.ui.siteOperationsEyebrow} tone="site">
             {siteOpsSopData.map((block) => (
               <SopBlock key={block.title} title={block.title} items={block.items} />
             ))}
@@ -1732,7 +1885,7 @@ function LocalizedSopsPage({ language }: { language: Exclude<Language, "zh"> }) 
           <div className="panel p-5">
             <div className="mb-3 flex items-center gap-2 text-sm font-black text-white">
               <Clock3 size={18} />
-              Daily cadence
+              {copy.ui.dailyCadenceTitle}
             </div>
             <div className="space-y-3 text-sm leading-6 text-[#c4c4d4]">
               {isEn ? (
@@ -1758,7 +1911,7 @@ function LocalizedSopsPage({ language }: { language: Exclude<Language, "zh"> }) 
           <div className="panel p-5">
             <div className="mb-3 flex items-center gap-2 text-sm font-black text-white">
               <ShieldCheck size={18} />
-              Red lines
+              {copy.ui.redLinesTitle}
             </div>
             <div className="grid gap-3 md:grid-cols-2">
               {(isEn ? [
@@ -1790,11 +1943,11 @@ function LocalizedSopsPage({ language }: { language: Exclude<Language, "zh"> }) 
             <h2 className="text-2xl font-black text-white">{copy.sourceDescription}</h2>
           </div>
           <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-            {sourceDocs.map((doc) => (
+            {copy.sourceDocs.map((doc) => (
               <a key={doc.href} href={doc.href} className="rounded-lg border border-[#46556b] bg-[#162033] p-4 transition hover:-translate-y-0.5">
                 <div className="mb-2 flex items-center gap-2 text-xs font-black uppercase text-[#cbd5e1]">
                   <FileText size={15} />
-                  Document
+                  {copy.ui.documentLabel}
                 </div>
                 <h3 className="font-black text-white">{doc.title}</h3>
                 <p className="mt-2 text-sm leading-6 text-[#a9a9bd]">{doc.description}</p>
@@ -1816,7 +1969,7 @@ export default function SopsPage() {
 
   return (
     <AppShell>
-      <PageTitle title="meponto PontoSys SOP Center" eyebrow="全职骑手 / 招聘 / 站点运营" />
+      <PageTitle title="MePonto PontoSys SOP Center" eyebrow="全职骑手 / 招聘 / 站点运营" />
 
       <section className="rounded-xl border border-[#2a2a4a] bg-[#0d0d1a] p-5">
         <div className="flex flex-wrap items-end justify-between gap-4">

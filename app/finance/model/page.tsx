@@ -2,6 +2,8 @@
 
 import { useState, useEffect, useCallback, useRef } from "react";
 import { AppShell } from "../../components/ui";
+import type { Language } from "../../lib/i18n";
+import { useVentoStore } from "../../lib/store";
 import {
   Check,
   AlertCircle,
@@ -32,6 +34,325 @@ interface Scenario {
   variableCost: number;
   fixedCost: number;
 }
+
+const qualityLaunchModel: Omit<Scenario, "id" | "name"> = {
+  riders: 20,
+  hours: 42,
+  oph: 1.5,
+  revenuePerOrder: 12.0,
+  variableCost: 9.0,
+  fixedCost: 3780,
+};
+
+const normalizeNumberInput = (value: string, min: number, max: number, step: number) => {
+  const parsed = step < 1 ? parseFloat(value) : parseInt(value, 10);
+  return isNaN(parsed) ? min : Math.max(min, Math.min(max, parsed));
+};
+
+const financeCopy: Record<Language, {
+  eyebrow: string;
+  title: string;
+  description: string;
+  exportLabel: string;
+  resetLabel: string;
+  presets: string;
+  scenarioPlaceholder: string;
+  save: string;
+  presetNames: Record<string, string>;
+  metrics: {
+    revenue: string;
+    totalCost: string;
+    netProfit: string;
+    contribution: string;
+    ordersUnit: string;
+    fixed: string;
+    variable: string;
+    marginRate: string;
+  };
+  sections: {
+    revenueVsCosts: string;
+    revenue: string;
+    totalCost: string;
+    costStructure: string;
+    variable: string;
+    fixed: string;
+    variableCost: string;
+    fixedCost: string;
+    margin: string;
+    sensitivity: string;
+    ophScale: string;
+    scaleParams: string;
+    financialSettings: string;
+  };
+  breakEven: {
+    negativeContribution: string;
+    reached: string;
+    notReached: string;
+    improve: string;
+    prefix: string;
+    current: string;
+    oph: string;
+    line: string;
+  };
+  labels: {
+    profit: string;
+    loss: string;
+    ridersUp: string;
+    netProfit: string;
+    current: string;
+    riders: string;
+    hours: string;
+  };
+  controls: {
+    ridersLabel: string;
+    ridersSublabel: string;
+    ridersUnit: string;
+    hoursLabel: string;
+    hoursSublabel: string;
+    hoursUnit: string;
+    ophLabel: string;
+    ophSublabel: string;
+    ophUnit: string;
+    revenuePerOrderLabel: string;
+    revenuePerOrderSublabel: string;
+    variableCostLabel: string;
+    variableCostSublabel: string;
+    fixedCostLabel: string;
+    fixedCostSublabel: string;
+  };
+}> = {
+  en: {
+    eyebrow: "Hub Financial Simulation",
+    title: "Dynamic Site Profit Model",
+    description: "Move sliders or enter exact values. All financial metrics recalculate in real time for weekly Brazil site operations.",
+    exportLabel: "Export",
+    resetLabel: "Reset",
+    presets: "Presets",
+    scenarioPlaceholder: "Scenario name...",
+    save: "Save",
+    presetNames: {
+      "preset-small": "Micro-Hub",
+      "preset-quality-launch": "Quality first site protection",
+      "preset-medium": "Standard Hub",
+      "preset-large": "Macro-Hub",
+    },
+    metrics: {
+      revenue: "Weekly Revenue",
+      totalCost: "Weekly Total Cost",
+      netProfit: "Weekly Net Profit",
+      contribution: "Contribution per Order",
+      ordersUnit: "orders",
+      fixed: "Fixed",
+      variable: "Variable",
+      marginRate: "Margin",
+    },
+    sections: {
+      revenueVsCosts: "Revenue vs Costs",
+      revenue: "Revenue",
+      totalCost: "Total cost",
+      costStructure: "Cost Structure",
+      variable: "Variable",
+      fixed: "Fixed",
+      variableCost: "Variable cost",
+      fixedCost: "Fixed cost",
+      margin: "Margin",
+      sensitivity: "Sensitivity Analysis",
+      ophScale: "Break-even OPH Scale",
+      scaleParams: "Scale & Efficiency Inputs",
+      financialSettings: "Financial Cost Settings",
+    },
+    breakEven: {
+      negativeContribution: "Revenue per order is below variable cost",
+      reached: "Break-even reached",
+      notReached: "Break-even not reached",
+      improve: "Increase price per order or reduce variable cost",
+      prefix: "Break-even",
+      current: "current",
+      oph: "Break-even OPH",
+      line: "Break-even line",
+    },
+    labels: {
+      profit: "Profit",
+      loss: "Loss",
+      ridersUp: "Riders +10%",
+      netProfit: "Net profit",
+      current: "Current",
+      riders: "riders",
+      hours: "hours",
+    },
+    controls: {
+      ridersLabel: "Riders",
+      ridersSublabel: "Active riders at this site",
+      ridersUnit: "riders",
+      hoursLabel: "Weekly Hours",
+      hoursSublabel: "Delivery hours per rider per week",
+      hoursUnit: "hours",
+      ophLabel: "Delivery Efficiency OPH",
+      ophSublabel: "Completed orders per rider hour",
+      ophUnit: "OPH",
+      revenuePerOrderLabel: "Revenue per Order",
+      revenuePerOrderSublabel: "Upstream logistics platform income per completed order",
+      variableCostLabel: "Variable Cost per Order",
+      variableCostSublabel: "Rider delivery fee and other variable expenses",
+      fixedCostLabel: "Weekly Fixed Cost",
+      fixedCostSublabel: "Site rent, utilities and management salary",
+    },
+  },
+  zh: {
+    eyebrow: "站点财务模拟",
+    title: "站点动态利润核算模型",
+    description: "拖动滑块或输入精确数值，所有财务指标实时联动计算。适配巴西本地网点周运营数据。",
+    exportLabel: "导出",
+    resetLabel: "重置",
+    presets: "预设方案",
+    scenarioPlaceholder: "方案名称...",
+    save: "保存",
+    presetNames: {
+      "preset-small": "小型网点",
+      "preset-quality-launch": "Quality 首店保护期",
+      "preset-medium": "标准网点",
+      "preset-large": "旗舰网点",
+    },
+    metrics: {
+      revenue: "每周营业额",
+      totalCost: "每周总成本",
+      netProfit: "每周净利润",
+      contribution: "单票边际贡献",
+      ordersUnit: "单",
+      fixed: "固定",
+      variable: "变动",
+      marginRate: "利润率",
+    },
+    sections: {
+      revenueVsCosts: "收支对比",
+      revenue: "营业额",
+      totalCost: "总成本",
+      costStructure: "成本结构拆解",
+      variable: "变动",
+      fixed: "固定",
+      variableCost: "变动成本",
+      fixedCost: "固定成本",
+      margin: "利润率",
+      sensitivity: "敏感度分析",
+      ophScale: "配送效率盈亏线",
+      scaleParams: "规模与效率参数",
+      financialSettings: "财务成本设定",
+    },
+    breakEven: {
+      negativeContribution: "单票结算价低于变动成本",
+      reached: "已达到盈亏平衡",
+      notReached: "未达盈亏平衡",
+      improve: "请提高结算价或降低变动成本",
+      prefix: "盈亏平衡",
+      current: "当前",
+      oph: "盈亏OPH",
+      line: "盈亏线",
+    },
+    labels: {
+      profit: "盈利",
+      loss: "亏损",
+      ridersUp: "骑手人数 +10%",
+      netProfit: "净利润",
+      current: "当前",
+      riders: "人",
+      hours: "小时",
+    },
+    controls: {
+      ridersLabel: "骑手人数",
+      ridersSublabel: "网点活跃骑手总数",
+      ridersUnit: "人",
+      hoursLabel: "周人均工时",
+      hoursSublabel: "每位骑手每周配送小时数",
+      hoursUnit: "小时",
+      ophLabel: "配送效率 OPH",
+      ophSublabel: "每小时人均完成订单数",
+      ophUnit: "OPH",
+      revenuePerOrderLabel: "单票结算价",
+      revenuePerOrderSublabel: "上游物流平台单票配送收入",
+      variableCostLabel: "单票变动成本",
+      variableCostSublabel: "骑手配送费及其他变动费用",
+      fixedCostLabel: "周固定成本",
+      fixedCostSublabel: "网点租金、水电及管理层薪资",
+    },
+  },
+  pt: {
+    eyebrow: "Simulacao Financeira de Hub",
+    title: "Modelo Dinamico de Lucro do Ponto",
+    description: "Use os sliders ou digite valores exatos. Todos os indicadores financeiros recalculam em tempo real para a operacao semanal no Brasil.",
+    exportLabel: "Exportar",
+    resetLabel: "Redefinir",
+    presets: "Cenarios",
+    scenarioPlaceholder: "Nome do cenario...",
+    save: "Salvar",
+    presetNames: {
+      "preset-small": "Micro-Hub",
+      "preset-quality-launch": "Protecao inicial Quality",
+      "preset-medium": "Hub Padrao",
+      "preset-large": "Macro-Hub",
+    },
+    metrics: {
+      revenue: "Faturamento Semanal",
+      totalCost: "Custo Total Semanal",
+      netProfit: "Lucro Liquido Semanal",
+      contribution: "Margem por Pedido",
+      ordersUnit: "pedidos",
+      fixed: "Fixo",
+      variable: "Variavel",
+      marginRate: "Margem",
+    },
+    sections: {
+      revenueVsCosts: "Receita vs Custos",
+      revenue: "Faturamento",
+      totalCost: "Custo total",
+      costStructure: "Estrutura de Custos",
+      variable: "Variavel",
+      fixed: "Fixo",
+      variableCost: "Custo variavel",
+      fixedCost: "Custo fixo",
+      margin: "Margem",
+      sensitivity: "Analise de Sensibilidade",
+      ophScale: "Escala OPH de Equilibrio",
+      scaleParams: "Parametros de Escala e Eficiencia",
+      financialSettings: "Configuracao de Custos",
+    },
+    breakEven: {
+      negativeContribution: "Valor por pedido abaixo do custo variavel",
+      reached: "Equilibrio atingido",
+      notReached: "Equilibrio ainda nao atingido",
+      improve: "Aumente o valor por pedido ou reduza o custo variavel",
+      prefix: "Equilibrio",
+      current: "atual",
+      oph: "OPH de equilibrio",
+      line: "Linha de equilibrio",
+    },
+    labels: {
+      profit: "Lucro",
+      loss: "Prejuizo",
+      ridersUp: "Motoboys +10%",
+      netProfit: "Lucro liquido",
+      current: "Atual",
+      riders: "motoboys",
+      hours: "horas",
+    },
+    controls: {
+      ridersLabel: "Motoboys",
+      ridersSublabel: "Total de motoboys ativos no ponto",
+      ridersUnit: "motoboys",
+      hoursLabel: "Horas Semanais",
+      hoursSublabel: "Horas de entrega por motoboy por semana",
+      hoursUnit: "horas",
+      ophLabel: "Eficiencia OPH",
+      ophSublabel: "Pedidos concluidos por hora online",
+      ophUnit: "OPH",
+      revenuePerOrderLabel: "Valor por Pedido",
+      revenuePerOrderSublabel: "Receita da plataforma logistica por pedido concluido",
+      variableCostLabel: "Custo Variavel por Pedido",
+      variableCostSublabel: "Repasse do motoboy e outras despesas variaveis",
+      fixedCostLabel: "Custo Fixo Semanal",
+      fixedCostSublabel: "Aluguel, utilidades e gestao do ponto",
+    },
+  },
+};
 
 /* ─────── Animated Number Component ─────── */
 function AnimatedValue({
@@ -89,6 +410,12 @@ function PremiumSlider({
 }) {
   const safeValue = isNaN(value) ? min : value;
   const percent = ((safeValue - min) / (max - min)) * 100;
+  const handleNumberInput = (rawValue: string) => {
+    onChange(normalizeNumberInput(rawValue, min, max, step));
+  };
+  const handleRangeInput = (rawValue: string) => {
+    onChange(step < 1 ? parseFloat(rawValue) : parseInt(rawValue, 10));
+  };
 
   return (
     <div className="group rounded-xl border border-[#2a2a4a] bg-[#0d0d1a]/60 p-4 transition-all hover:border-[#8b5cf6]/30 hover:bg-[#0d0d1a]/80">
@@ -112,13 +439,8 @@ function PremiumSlider({
             max={max}
             step={step}
             value={value}
-            onChange={(e) => {
-              const val =
-                step < 1
-                  ? parseFloat(e.target.value)
-                  : parseInt(e.target.value, 10);
-              onChange(isNaN(val) ? 0 : Math.max(min, Math.min(max, val)));
-            }}
+            onChange={(e) => handleNumberInput(e.target.value)}
+            onInput={(e) => handleNumberInput(e.currentTarget.value)}
             className="w-20 rounded-lg border border-[#2a2a4a] bg-[#1a1a2e] text-center font-mono text-sm font-bold text-white py-1.5 pr-1 pl-1 outline-none transition-all focus:border-[#8b5cf6] focus:shadow-[0_0_12px_rgba(139,92,246,0.15)]"
           />
           <span className="ml-1.5 text-[10px] font-bold text-[#666] min-w-[28px]">
@@ -144,13 +466,8 @@ function PremiumSlider({
           max={max}
           step={step}
           value={safeValue}
-          onChange={(e) =>
-            onChange(
-              step < 1
-                ? parseFloat(e.target.value)
-                : parseInt(e.target.value, 10)
-            )
-          }
+          onChange={(e) => handleRangeInput(e.target.value)}
+          onInput={(e) => handleRangeInput(e.currentTarget.value)}
           className="finance-slider absolute inset-x-0 h-6"
           style={
             {
@@ -185,6 +502,11 @@ function CostInput({
   onChange: (v: number) => void;
   accentColor?: string;
 }) {
+  const handleValueInput = (rawValue: string) => {
+    const val = parseFloat(rawValue);
+    onChange(isNaN(val) ? 0 : val);
+  };
+
   return (
     <div className="flex items-center justify-between gap-4 rounded-xl border border-[#2a2a4a] bg-[#0d0d1a]/40 px-4 py-3 transition-all hover:border-[#2a2a5a]">
       <div className="min-w-0">
@@ -198,10 +520,8 @@ function CostInput({
         <input
           type="number"
           value={value}
-          onChange={(e) => {
-            const val = parseFloat(e.target.value);
-            onChange(isNaN(val) ? 0 : val);
-          }}
+          onChange={(e) => handleValueInput(e.target.value)}
+          onInput={(e) => handleValueInput(e.currentTarget.value)}
           className="w-28 rounded-lg border border-[#2a2a4a] bg-[#1a1a2e] pl-9 pr-3 py-2 font-mono text-sm font-bold text-white outline-none transition-all"
           style={{
             borderColor: undefined,
@@ -259,14 +579,16 @@ function MetricCard({
    ═══════════════════════════════════════════════════ */
 export default function ProfitModelPage() {
   const [mounted, setMounted] = useState(false);
+  const language = useVentoStore((state) => state.language);
+  const copy = financeCopy[language];
 
   /* Core financial inputs */
-  const [riders, setRiders] = useState<number>(30);
-  const [hours, setHours] = useState<number>(48);
-  const [oph, setOph] = useState<number>(2.0);
-  const [revenuePerOrder, setRevenuePerOrder] = useState<number>(12.0);
-  const [variableCost, setVariableCost] = useState<number>(9.0);
-  const [fixedCost, setFixedCost] = useState<number>(8500);
+  const [riders, setRiders] = useState<number>(qualityLaunchModel.riders);
+  const [hours, setHours] = useState<number>(qualityLaunchModel.hours);
+  const [oph, setOph] = useState<number>(qualityLaunchModel.oph);
+  const [revenuePerOrder, setRevenuePerOrder] = useState<number>(qualityLaunchModel.revenuePerOrder);
+  const [variableCost, setVariableCost] = useState<number>(qualityLaunchModel.variableCost);
+  const [fixedCost, setFixedCost] = useState<number>(qualityLaunchModel.fixedCost);
 
   /* Scenario management */
   const [scenarios, setScenarios] = useState<Scenario[]>([]);
@@ -275,7 +597,7 @@ export default function ProfitModelPage() {
   const defaultPresets: Scenario[] = [
     {
       id: "preset-small",
-      name: "小型网点 Micro-Hub",
+      name: copy.presetNames["preset-small"],
       riders: 15,
       hours: 40,
       oph: 1.8,
@@ -284,8 +606,13 @@ export default function ProfitModelPage() {
       fixedCost: 3500,
     },
     {
+      id: "preset-quality-launch",
+      name: copy.presetNames["preset-quality-launch"],
+      ...qualityLaunchModel,
+    },
+    {
       id: "preset-medium",
-      name: "标准网点 Hub Padrão",
+      name: copy.presetNames["preset-medium"],
       riders: 30,
       hours: 48,
       oph: 2.0,
@@ -295,7 +622,7 @@ export default function ProfitModelPage() {
     },
     {
       id: "preset-large",
-      name: "旗舰网点 Macro-Hub",
+      name: copy.presetNames["preset-large"],
       riders: 80,
       hours: 55,
       oph: 2.3,
@@ -304,6 +631,7 @@ export default function ProfitModelPage() {
       fixedCost: 22000,
     },
   ];
+  const scenarioDisplayName = (scenario: Scenario) => copy.presetNames[scenario.id] ?? scenario.name;
 
   useEffect(() => {
     setMounted(true);
@@ -311,7 +639,16 @@ export default function ProfitModelPage() {
     try {
       const saved = localStorage.getItem("meponto_profit_scenarios");
       if (saved) {
-        loadedScenarios = JSON.parse(saved);
+        const parsed = JSON.parse(saved) as Scenario[];
+        const customScenarios = parsed.filter((scenario) => scenario.id.startsWith("custom-"));
+        loadedScenarios = [
+          ...defaultPresets,
+          ...customScenarios.filter((custom) => !defaultPresets.some((preset) => preset.id === custom.id)),
+        ];
+        localStorage.setItem(
+          "meponto_profit_scenarios",
+          JSON.stringify(loadedScenarios)
+        );
       } else {
         localStorage.setItem(
           "meponto_profit_scenarios",
@@ -387,12 +724,12 @@ export default function ProfitModelPage() {
   }, []);
 
   const handleReset = useCallback(() => {
-    setRiders(30);
-    setHours(48);
-    setOph(2.0);
-    setRevenuePerOrder(12.0);
-    setVariableCost(9.0);
-    setFixedCost(8500);
+    setRiders(qualityLaunchModel.riders);
+    setHours(qualityLaunchModel.hours);
+    setOph(qualityLaunchModel.oph);
+    setRevenuePerOrder(qualityLaunchModel.revenuePerOrder);
+    setVariableCost(qualityLaunchModel.variableCost);
+    setFixedCost(qualityLaunchModel.fixedCost);
   }, []);
 
   const handleExport = useCallback(() => {
@@ -418,7 +755,7 @@ export default function ProfitModelPage() {
       a.setAttribute("href", dataStr);
       a.setAttribute(
         "download",
-        `meponto-finance-model-${Date.now()}.json`
+        `MePonto-finance-model-${Date.now()}.json`
       );
       document.body.appendChild(a);
       a.click();
@@ -506,8 +843,9 @@ export default function ProfitModelPage() {
 
   return (
     <AppShell>
-      {/* Inline styles for custom slider and value flash */}
-      <style jsx global>{`
+      <div data-i18n-skip>
+        {/* Inline styles for custom slider and value flash */}
+        <style jsx global>{`
         .finance-slider {
           -webkit-appearance: none;
           appearance: none;
@@ -570,19 +908,19 @@ export default function ProfitModelPage() {
         .value-flash {
           animation: value-flash-anim 0.5s ease-out;
         }
-      `}</style>
+        `}</style>
 
-      {/* ─── Page Header ─── */}
-      <div className="mb-6 flex flex-wrap items-end justify-between gap-3 animate-fade-in">
+        {/* ─── Page Header ─── */}
+        <div className="mb-6 flex flex-wrap items-end justify-between gap-3 animate-fade-in">
         <div>
           <div className="text-[10px] font-extrabold uppercase tracking-[0.2em] text-[#8b5cf6] font-[family-name:var(--font-outfit)]">
-            SIMULAÇÃO FINANCEIRA DE HUB
+            {copy.eyebrow}
           </div>
           <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight font-[family-name:var(--font-outfit)] bg-gradient-to-r from-white via-[#e0e0f0] to-[#8b8ba3] bg-clip-text text-transparent">
-            站点动态利润核算模型
+            {copy.title}
           </h1>
           <p className="mt-1.5 text-xs text-[#666] max-w-lg">
-            拖动滑块或输入精确数值，所有财务指标实时联动计算。适配巴西本地网点周运营数据。
+            {copy.description}
           </p>
         </div>
         <div className="flex gap-2">
@@ -590,23 +928,23 @@ export default function ProfitModelPage() {
             onClick={handleExport}
             className="flex items-center gap-1.5 rounded-lg border border-[#2a2a4a] bg-[#1a1a2e] px-3 py-1.5 text-[11px] font-bold text-[#8b8ba3] transition-all hover:border-[#8b5cf6]/30 hover:text-white"
           >
-            <Download size={12} /> 导出
+            <Download size={12} /> {copy.exportLabel}
           </button>
           <button
             onClick={handleReset}
             className="flex items-center gap-1.5 rounded-lg border border-[#2a2a4a] bg-[#1a1a2e] px-3 py-1.5 text-[11px] font-bold text-[#8b8ba3] transition-all hover:border-[#8b5cf6]/30 hover:text-white"
           >
-            <RefreshCw size={12} /> 重置
+            <RefreshCw size={12} /> {copy.resetLabel}
           </button>
         </div>
-      </div>
+        </div>
 
       {/* ─── Scenarios ─── */}
-      <div className="mb-5 rounded-xl border border-[#2a2a4a] bg-[#0d0d1a]/60 p-4 backdrop-blur-md">
+        <div className="mb-5 rounded-xl border border-[#2a2a4a] bg-[#0d0d1a]/60 p-4 backdrop-blur-md">
         <div className="flex flex-wrap gap-2 items-center">
           <Layers size={13} className="text-[#8b5cf6]" />
           <span className="text-[10px] font-bold uppercase tracking-wider text-[#666] mr-2">
-            预设方案
+            {copy.presets}
           </span>
           {scenarios.map((s) => (
             <button
@@ -614,7 +952,7 @@ export default function ProfitModelPage() {
               onClick={() => handleLoadScenario(s)}
               className="group flex items-center gap-1.5 rounded-lg border border-[#2a2a4a] bg-[#1a1a2e]/50 px-3 py-1.5 text-[11px] font-semibold text-[#8b8ba3] transition-all hover:border-[#8b5cf6] hover:text-white hover:bg-[#8b5cf6]/10"
             >
-              {s.name}
+              {scenarioDisplayName(s)}
               {s.id.startsWith("custom-") && (
                 <Trash2
                   size={10}
@@ -631,7 +969,7 @@ export default function ProfitModelPage() {
           >
             <input
               type="text"
-              placeholder="方案名称..."
+              placeholder={copy.scenarioPlaceholder}
               value={newScenarioName}
               onChange={(e) => setNewScenarioName(e.target.value)}
               className="rounded-lg border border-[#2a2a4a] bg-[#1a1a2e]/50 px-2.5 py-1 text-[11px] text-white placeholder-[#444] outline-none focus:border-[#8b5cf6] w-28"
@@ -640,40 +978,40 @@ export default function ProfitModelPage() {
               type="submit"
               className="flex items-center gap-1 rounded-lg bg-[#8b5cf6] px-2.5 py-1 text-[11px] font-bold text-white hover:brightness-110 transition-all"
             >
-              <Save size={10} /> 保存
+              <Save size={10} /> {copy.save}
             </button>
           </form>
         </div>
-      </div>
+        </div>
 
       {/* ═══ METRICS DASHBOARD ═══ */}
-      <div className="grid gap-3 grid-cols-2 lg:grid-cols-4 mb-5 animate-fade-in">
+        <div className="grid gap-3 grid-cols-2 lg:grid-cols-4 mb-5 animate-fade-in">
         <MetricCard
-          title="每周营业额 Faturamento"
+          title={copy.metrics.revenue}
           value={revenue}
-          subtitle={`${fNum(Math.round(totalOrders))} 单 × R$ ${srpo.toFixed(2)}`}
+          subtitle={`${fNum(Math.round(totalOrders))} ${copy.metrics.ordersUnit} × R$ ${srpo.toFixed(2)}`}
           icon={DollarSign}
           valueColor="text-[#8b5cf6]"
           formatter={fBRL}
         />
         <MetricCard
-          title="每周总成本 Custo Total"
+          title={copy.metrics.totalCost}
           value={totalCost}
-          subtitle={`固定 ${fBRL(sfc)} + 变动 ${fBRL(totalVarCost)}`}
+          subtitle={`${copy.metrics.fixed} ${fBRL(sfc)} + ${copy.metrics.variable} ${fBRL(totalVarCost)}`}
           icon={BarChart3}
           valueColor="text-white"
           formatter={fBRL}
         />
         <MetricCard
-          title="每周净利润 Lucro Líquido"
+          title={copy.metrics.netProfit}
           value={netProfit}
-          subtitle={`利润率 ${fPct(profitMargin)}`}
+          subtitle={`${copy.metrics.marginRate} ${fPct(profitMargin)}`}
           icon={netProfit >= 0 ? TrendingUp : TrendingDown}
           valueColor={netProfit >= 0 ? "text-[#06d6a0]" : "text-[#f43f5e]"}
           formatter={fBRL}
         />
         <MetricCard
-          title="单票边际贡献 Margem"
+          title={copy.metrics.contribution}
           value={contributionMargin}
           subtitle={`R$ ${srpo.toFixed(2)} - R$ ${svc.toFixed(2)}`}
           icon={PieChart}
@@ -682,21 +1020,21 @@ export default function ProfitModelPage() {
           }
           formatter={fBRL}
         />
-      </div>
+        </div>
 
       {/* ═══ VISUALIZATION ROW ═══ */}
-      <div className="grid gap-5 lg:grid-cols-[1fr_280px] mb-5">
+        <div className="grid gap-5 lg:grid-cols-[1fr_280px] mb-5">
         {/* Revenue vs Cost + Cost Structure */}
         <div className="panel p-5 industrial-shadow space-y-5">
           {/* Revenue vs Cost comparison */}
           <div>
             <h3 className="text-[11px] font-bold uppercase tracking-wider text-[#666] mb-3">
-              收支对比 (Receita vs Custos)
+              {copy.sections.revenueVsCosts}
             </h3>
             <div className="space-y-2.5">
               <div>
                 <div className="flex justify-between text-[11px] mb-1">
-                  <span className="text-[#8b8ba3]">营业额</span>
+                  <span className="text-[#8b8ba3]">{copy.sections.revenue}</span>
                   <span className="font-mono font-bold text-[#8b5cf6]">
                     {fBRL(revenue)}
                   </span>
@@ -714,7 +1052,7 @@ export default function ProfitModelPage() {
               </div>
               <div>
                 <div className="flex justify-between text-[11px] mb-1">
-                  <span className="text-[#8b8ba3]">总成本</span>
+                  <span className="text-[#8b8ba3]">{copy.sections.totalCost}</span>
                   <span className="font-mono font-bold text-white">
                     {fBRL(totalCost)}
                   </span>
@@ -738,7 +1076,7 @@ export default function ProfitModelPage() {
           {/* Cost Structure Breakdown */}
           <div>
             <h3 className="text-[11px] font-bold uppercase tracking-wider text-[#666] mb-3">
-              成本结构拆解 (Estrutura de Custos)
+              {copy.sections.costStructure}
             </h3>
             <div className="h-4 rounded-full bg-[#1a1a2e] overflow-hidden flex">
               <div
@@ -750,7 +1088,7 @@ export default function ProfitModelPage() {
               >
                 {varPct > 15 && (
                   <span className="text-[8px] font-bold text-white/80">
-                    变动 {varPct.toFixed(0)}%
+                    {copy.sections.variable} {varPct.toFixed(0)}%
                   </span>
                 )}
               </div>
@@ -763,7 +1101,7 @@ export default function ProfitModelPage() {
               >
                 {fixPct > 15 && (
                   <span className="text-[8px] font-bold text-white/80">
-                    固定 {fixPct.toFixed(0)}%
+                    {copy.sections.fixed} {fixPct.toFixed(0)}%
                   </span>
                 )}
               </div>
@@ -772,13 +1110,13 @@ export default function ProfitModelPage() {
               <div className="flex items-center gap-1.5">
                 <div className="w-2 h-2 rounded-full bg-[#fb923c]" />
                 <span className="text-[#8b8ba3]">
-                  变动成本 {fBRL(totalVarCost)}
+                  {copy.sections.variableCost} {fBRL(totalVarCost)}
                 </span>
               </div>
               <div className="flex items-center gap-1.5">
                 <div className="w-2 h-2 rounded-full bg-[#8b5cf6]" />
                 <span className="text-[#8b8ba3]">
-                  固定成本 {fBRL(sfc)}
+                  {copy.sections.fixedCost} {fBRL(sfc)}
                 </span>
               </div>
             </div>
@@ -813,22 +1151,22 @@ export default function ProfitModelPage() {
               <div>
                 <div className="text-xs font-bold">
                   {contributionMargin <= 0
-                    ? "单票结算价低于变动成本"
+                    ? copy.breakEven.negativeContribution
                     : isBreakEven
-                      ? "已达到盈亏平衡"
-                      : "未达盈亏平衡"}
+                      ? copy.breakEven.reached
+                      : copy.breakEven.notReached}
                 </div>
                 <div className="text-[10px] opacity-70">
                   {contributionMargin <= 0
-                    ? "请提高结算价或降低变动成本"
-                    : `盈亏平衡 ${Math.ceil(breakEvenOrders)} 单，当前 ${fNum(Math.round(totalOrders))} 单`}
+                    ? copy.breakEven.improve
+                    : `${copy.breakEven.prefix} ${Math.ceil(breakEvenOrders)} ${copy.metrics.ordersUnit}, ${copy.breakEven.current} ${fNum(Math.round(totalOrders))} ${copy.metrics.ordersUnit}`}
                 </div>
               </div>
             </div>
             {contributionMargin > 0 && (
               <div className="text-right shrink-0">
                 <div className="text-[9px] uppercase tracking-wider opacity-50">
-                  盈亏OPH
+                  {copy.breakEven.oph}
                 </div>
                 <div className="font-mono font-bold text-sm">
                   {breakEvenOph.toFixed(2)}
@@ -844,7 +1182,7 @@ export default function ProfitModelPage() {
           <div className="panel p-5 flex flex-col items-center justify-center relative overflow-hidden">
             <div className="absolute -bottom-20 -left-20 w-60 h-60 bg-[#06d6a0]/5 rounded-full blur-3xl pointer-events-none" />
             <div className="text-[10px] font-bold uppercase tracking-wider text-[#666] mb-4 self-start">
-              利润率 Margem
+              {copy.sections.margin}
             </div>
 
             <div className="relative flex h-36 w-36 items-center justify-center rounded-full">
@@ -862,7 +1200,7 @@ export default function ProfitModelPage() {
                   className={`text-2xl font-extrabold font-[family-name:var(--font-outfit)] ${netProfit >= 0 ? "text-[#06d6a0]" : "text-[#f43f5e]"}`}
                 />
                 <div className="text-[8px] font-bold text-[#555] uppercase tracking-wider mt-0.5">
-                  {netProfit >= 0 ? "Lucro" : "Prejuízo"}
+                  {netProfit >= 0 ? copy.labels.profit : copy.labels.loss}
                 </div>
               </div>
               <div className="absolute bottom-0 left-0 right-0 h-1/2 bg-gradient-to-t from-[#0d0d1a] via-[#0d0d1a]/80 to-transparent pointer-events-none" />
@@ -880,16 +1218,16 @@ export default function ProfitModelPage() {
           {/* Sensitivity Analysis */}
           <div className="panel p-4 space-y-3">
             <div className="text-[10px] font-bold uppercase tracking-wider text-[#666] flex items-center gap-1.5">
-              <Target size={11} className="text-[#8b5cf6]" /> 敏感度分析
+              <Target size={11} className="text-[#8b5cf6]" /> {copy.sections.sensitivity}
             </div>
             <div className="rounded-lg bg-[#0d0d1a]/60 border border-[#2a2a4a] p-3">
               <div className="text-[10px] text-[#666]">
-                骑手人数 +10% → {sensRiders}人
+                {copy.labels.ridersUp} → {sensRiders} {copy.labels.riders}
               </div>
               <div
                 className={`text-xs font-mono font-bold mt-0.5 ${sensProfitRiders >= 0 ? "text-[#06d6a0]" : "text-[#f43f5e]"}`}
               >
-                净利润 {fBRL(sensProfitRiders)}
+                {copy.labels.netProfit} {fBRL(sensProfitRiders)}
                 <span className="text-[10px] ml-1 opacity-60">
                   ({sensProfitRiders > netProfit ? "+" : ""}
                   {fBRL(sensProfitRiders - netProfit)})
@@ -903,7 +1241,7 @@ export default function ProfitModelPage() {
               <div
                 className={`text-xs font-mono font-bold mt-0.5 ${sensProfitOph >= 0 ? "text-[#06d6a0]" : "text-[#f43f5e]"}`}
               >
-                净利润 {fBRL(sensProfitOph)}
+                {copy.labels.netProfit} {fBRL(sensProfitOph)}
                 <span className="text-[10px] ml-1 opacity-60">
                   ({sensProfitOph > netProfit ? "+" : ""}
                   {fBRL(sensProfitOph - netProfit)})
@@ -912,13 +1250,13 @@ export default function ProfitModelPage() {
             </div>
           </div>
         </div>
-      </div>
+        </div>
 
       {/* ═══ Break-even OPH Scale ═══ */}
       {contributionMargin > 0 && (
         <div className="panel p-5 mb-5">
           <h3 className="text-[11px] font-bold uppercase tracking-wider text-[#666] mb-6">
-            配送效率盈亏线 (Escala OPH)
+            {copy.sections.ophScale}
           </h3>
           <div className="relative w-full h-8 flex items-center">
             <div className="absolute left-0 right-0 h-2 rounded-full bg-[#1a1a2e]">
@@ -952,7 +1290,7 @@ export default function ProfitModelPage() {
                 transform: "translateX(-50%)",
               }}
             >
-              <div className="text-[9px] text-[#666]">盈亏线</div>
+              <div className="text-[9px] text-[#666]">{copy.breakEven.line}</div>
               <div className="font-mono text-[10px] font-bold text-[#666]">
                 {breakEvenOph.toFixed(2)}
               </div>
@@ -965,7 +1303,7 @@ export default function ProfitModelPage() {
               }}
             >
               <div className="text-[9px] font-bold text-white bg-[#8b5cf6]/20 px-1.5 py-0.5 rounded border border-[#8b5cf6]/20">
-                当前
+                {copy.labels.current}
               </div>
               <div className="font-mono text-[10px] font-bold text-white mt-0.5">
                 {so.toFixed(2)}
@@ -975,46 +1313,46 @@ export default function ProfitModelPage() {
         </div>
       )}
 
-      {/* ═══ CONTROLS ═══ */}
-      <div className="grid gap-5 lg:grid-cols-2 animate-fade-in">
+        {/* ═══ CONTROLS ═══ */}
+        <div className="grid gap-5 lg:grid-cols-2 animate-fade-in">
         {/* Sliders */}
         <div className="space-y-3">
           <h3 className="text-[11px] font-bold uppercase tracking-wider text-[#666] flex items-center gap-1.5 mb-1">
-            <Zap size={12} className="text-[#8b5cf6]" /> 规模与效率参数
+            <Zap size={12} className="text-[#8b5cf6]" /> {copy.sections.scaleParams}
           </h3>
           <PremiumSlider
-            label="骑手人数 Riders"
-            sublabel="网点活跃骑手总数"
+            label={copy.controls.ridersLabel}
+            sublabel={copy.controls.ridersSublabel}
             icon={Users}
             value={riders}
             min={1}
             max={150}
             step={1}
-            unit="人"
+            unit={copy.controls.ridersUnit}
             onChange={setRiders}
             color="#8b5cf6"
           />
           <PremiumSlider
-            label="周人均工时 Jornada"
-            sublabel="每位骑手每周配送小时数"
+            label={copy.controls.hoursLabel}
+            sublabel={copy.controls.hoursSublabel}
             icon={Clock}
             value={hours}
             min={10}
             max={80}
             step={1}
-            unit="小时"
+            unit={copy.controls.hoursUnit}
             onChange={setHours}
             color="#06d6a0"
           />
           <PremiumSlider
-            label="配送效率 OPH"
-            sublabel="每小时人均完成订单数"
+            label={copy.controls.ophLabel}
+            sublabel={copy.controls.ophSublabel}
             icon={Zap}
             value={oph}
             min={0.5}
             max={5.0}
             step={0.1}
-            unit="OPH"
+            unit={copy.controls.ophUnit}
             onChange={setOph}
             color="#fb923c"
           />
@@ -1023,29 +1361,30 @@ export default function ProfitModelPage() {
         {/* Financial Inputs */}
         <div className="space-y-3">
           <h3 className="text-[11px] font-bold uppercase tracking-wider text-[#666] flex items-center gap-1.5 mb-1">
-            <DollarSign size={12} className="text-[#06d6a0]" /> 财务成本设定
+            <DollarSign size={12} className="text-[#06d6a0]" /> {copy.sections.financialSettings}
           </h3>
           <CostInput
-            label="单票结算价 Valor por Pedido"
-            sublabel="上游物流平台单票配送收入"
+            label={copy.controls.revenuePerOrderLabel}
+            sublabel={copy.controls.revenuePerOrderSublabel}
             value={revenuePerOrder}
             onChange={setRevenuePerOrder}
             accentColor="#8b5cf6"
           />
           <CostInput
-            label="单票变动成本 Custo Variável"
-            sublabel="骑手配送费及其他变动费用"
+            label={copy.controls.variableCostLabel}
+            sublabel={copy.controls.variableCostSublabel}
             value={variableCost}
             onChange={setVariableCost}
             accentColor="#fb923c"
           />
           <CostInput
-            label="周固定成本 Custo Fixo"
-            sublabel="网点租金、水电及管理层薪资"
+            label={copy.controls.fixedCostLabel}
+            sublabel={copy.controls.fixedCostSublabel}
             value={fixedCost}
             onChange={setFixedCost}
             accentColor="#06d6a0"
           />
+        </div>
         </div>
       </div>
     </AppShell>

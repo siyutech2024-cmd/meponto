@@ -1,0 +1,756 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>MePonto Codex Team Collaboration Manual v1.0</title>
+  <style>
+    @page {
+      size: A4;
+      margin: 18mm 16mm 18mm 16mm;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      color: #111827;
+      background: #ffffff;
+      font-family: Arial, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+      font-size: 10.5pt;
+      line-height: 1.58;
+    }
+
+    .cover {
+      min-height: 92vh;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      border: 2px solid #111827;
+      padding: 36mm 22mm;
+      background: linear-gradient(135deg, #ffd400 0%, #ffd400 42%, #ffffff 42%, #ffffff 100%);
+      page-break-after: always;
+    }
+
+    .logo {
+      width: 170px;
+      margin-bottom: 28mm;
+    }
+
+    .eyebrow {
+      font-size: 10pt;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: #111827;
+      margin-bottom: 8mm;
+    }
+
+    .cover h1 {
+      font-size: 31pt;
+      line-height: 1.08;
+      margin: 0 0 8mm;
+      max-width: 620px;
+    }
+
+    .subtitle {
+      font-size: 13pt;
+      max-width: 560px;
+      margin: 0 0 18mm;
+    }
+
+    .meta {
+      display: grid;
+      grid-template-columns: 32mm 1fr;
+      gap: 4mm 8mm;
+      font-size: 10pt;
+      max-width: 120mm;
+    }
+
+    .meta strong {
+      color: #374151;
+    }
+
+    main {
+      max-width: 178mm;
+      margin: 0 auto;
+    }
+
+    h1 {
+      font-size: 24pt;
+      line-height: 1.2;
+      margin: 0 0 8mm;
+      padding-bottom: 5mm;
+      border-bottom: 3px solid #ffd400;
+    }
+
+    h2 {
+      font-size: 15pt;
+      line-height: 1.25;
+      margin: 9mm 0 3mm;
+      padding-top: 2mm;
+      color: #111827;
+      page-break-after: avoid;
+    }
+
+    h3 {
+      font-size: 12pt;
+      margin: 6mm 0 2mm;
+      page-break-after: avoid;
+    }
+
+    p {
+      margin: 0 0 3mm;
+    }
+
+    ul, ol {
+      margin: 0 0 4mm 6mm;
+      padding-left: 5mm;
+    }
+
+    li {
+      margin: 0 0 1.5mm;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 4mm 0 6mm;
+      page-break-inside: avoid;
+      font-size: 9.5pt;
+    }
+
+    th {
+      background: #111827;
+      color: #ffffff;
+      font-weight: 700;
+      text-align: left;
+    }
+
+    th, td {
+      border: 1px solid #d1d5db;
+      padding: 7px 8px;
+      vertical-align: top;
+    }
+
+    tr:nth-child(even) td {
+      background: #f9fafb;
+    }
+
+    code {
+      font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+      font-size: 9.2pt;
+      background: #f3f4f6;
+      border: 1px solid #e5e7eb;
+      border-radius: 4px;
+      padding: 1px 4px;
+    }
+
+    pre {
+      background: #111827;
+      color: #f9fafb;
+      border-radius: 8px;
+      padding: 10px 12px;
+      overflow-wrap: anywhere;
+      white-space: pre-wrap;
+      margin: 3mm 0 5mm;
+      page-break-inside: avoid;
+    }
+
+    pre code {
+      background: transparent;
+      border: 0;
+      color: inherit;
+      padding: 0;
+      font-size: 8.8pt;
+    }
+
+    blockquote {
+      border-left: 4px solid #ffd400;
+      margin: 4mm 0;
+      padding: 2mm 0 2mm 4mm;
+      background: #fffbeb;
+    }
+
+    a {
+      color: #0f766e;
+      text-decoration: none;
+    }
+
+    hr {
+      border: 0;
+      border-top: 1px solid #e5e7eb;
+      margin: 7mm 0;
+    }
+  </style>
+</head>
+<body>
+  <section class="cover">
+    <img class="logo" src="file:///Users/ishak/Documents/New%20project/public/meponto-logo.svg" alt="MePonto" />
+    <div class="eyebrow">Codex Collaboration Standard</div>
+    <h1>MePonto Codex Team Collaboration Manual v1.0</h1>
+    <p class="subtitle">三名开发人员使用 Codex 同步开发不同模块的统一执行手册。</p>
+    <div class="meta">
+      <strong>Brand</strong><span>MePonto</span>
+      <strong>System</strong><span>PontoSys</span>
+      <strong>Scope</strong><span>Module development, validation, commit, PR, and release workflow</span>
+      <strong>Date</strong><span>2026-05-26</span>
+    </div>
+  </section>
+  <main><h1>MePonto Codex Team Collaboration Manual v1.0</h1>
+<p>本文档用于规范 MePonto 三名开发人员使用 Codex 同步开发不同模块的方式，确保所有人按照同一套架构规则、模块边界、验证流程和提交规范工作。</p>
+<h2>1. 目标</h2>
+<p>MePonto 当前系统包括：</p>
+<ul>
+<li>主后台</li>
+<li>加盟商系统</li>
+<li>Leader 系统</li>
+<li>骑手端 App</li>
+<li>SOP 与培训系统</li>
+</ul>
+<p>后续还会增加：</p>
+<ul>
+<li>Partner 后台</li>
+<li>供应链后台</li>
+<li>积分商城系统</li>
+<li>积分商城后台</li>
+<li>养成宠物系统</li>
+<li>调度系统</li>
+<li>风控系统</li>
+<li>规则引擎</li>
+</ul>
+<p>因此协作目标不是简单地让三个人同时写代码，而是建立一套可以长期扩展的平台级开发机制。</p>
+<p>核心目标：</p>
+<pre><code class="language-txt">所有 Codex 都从仓库规则出发，不从个人习惯出发。
+</code></pre>
+<h2>2. 核心原则</h2>
+<ol>
+<li>仓库规则优先于个人口头习惯。</li>
+<li>每个开发人员负责清晰的模块边界。</li>
+<li>新模块必须先定义契约，再写代码。</li>
+<li>共享代码必须谨慎修改。</li>
+<li>所有新能力必须可灰度、可关闭、可回滚。</li>
+<li>涉及钱、积分、库存、奖励、结算，必须采用 ledger 思维。</li>
+<li>所有界面必须考虑中文、英文、葡语支持。</li>
+<li>Codex 可以执行开发和验证，但提交必须由开发人员明确触发。</li>
+<li><code>main</code> 必须保持可部署。</li>
+<li><code>dev</code> 作为日常集成分支。</li>
+</ol>
+<p>语言要求不是文案收尾工作，而是功能验收的一部分。任何新增页面、SOP、导出、报错、通知和培训内容，都必须同时考虑中文、英文、葡语。</p>
+<h2>3. 项目内规则文件</h2>
+<p>当前项目已经配置以下文件：</p>
+<pre><code class="language-txt">AGENTS.md
+docs/meponto-ecosystem-development-standard-v2.md
+docs/meponto-ecosystem-os-v2-diagram.md
+docs/module-development-playbook.md
+docs/module-contract-template.md
+docs/pr-checklist.md
+docs/codex-team-collaboration-manual.md
+.github/PULL_REQUEST_TEMPLATE.md
+.github/CODEOWNERS
+.github/workflows/codex-ci.yml
+scripts/module-guard.mjs
+scripts/codex-preflight.mjs
+</code></pre>
+<p>各文件作用：</p>
+<table>
+<thead>
+<tr>
+<th>文件</th>
+<th>作用</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>AGENTS.md</code></td>
+<td>Codex 进入项目后必须遵守的总规则</td>
+</tr>
+<tr>
+<td><code>meponto-ecosystem-development-standard-v2.md</code></td>
+<td>平台级系统开发规范</td>
+</tr>
+<tr>
+<td><code>meponto-ecosystem-os-v2-diagram.md</code></td>
+<td>架构图示</td>
+</tr>
+<tr>
+<td><code>module-development-playbook.md</code></td>
+<td>模块开发流程</td>
+</tr>
+<tr>
+<td><code>module-contract-template.md</code></td>
+<td>新模块接入模板</td>
+</tr>
+<tr>
+<td><code>pr-checklist.md</code></td>
+<td>PR 合并前检查清单</td>
+</tr>
+<tr>
+<td><code>PULL_REQUEST_TEMPLATE.md</code></td>
+<td>GitHub PR 模板</td>
+</tr>
+<tr>
+<td><code>CODEOWNERS</code></td>
+<td>核心代码负责人规则</td>
+</tr>
+<tr>
+<td><code>codex-ci.yml</code></td>
+<td>GitHub 自动检查</td>
+</tr>
+<tr>
+<td><code>module-guard.mjs</code></td>
+<td>模块规则检查</td>
+</tr>
+<tr>
+<td><code>codex-preflight.mjs</code></td>
+<td>Codex 提交前检查</td>
+</tr>
+</tbody></table>
+<h2>4. 三人分工建议</h2>
+<table>
+<thead>
+<tr>
+<th>开发人员</th>
+<th>主要负责模块</th>
+<th>常规修改范围</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>开发人员 A</td>
+<td>加盟商、财务、合作方案</td>
+<td><code>app/franchise</code>, <code>app/finance</code>, franchise docs</td>
+</tr>
+<tr>
+<td>开发人员 B</td>
+<td>骑手、Leader、移动端</td>
+<td><code>app/riders</code>, <code>app/leaders</code>, <code>app/mobile</code></td>
+</tr>
+<tr>
+<td>开发人员 C</td>
+<td>商城、积分、供应链、宠物系统</td>
+<td>future marketplace, rewards, supply-chain, gamification modules</td>
+</tr>
+</tbody></table>
+<p>共享代码需要 review：</p>
+<pre><code class="language-txt">app/lib
+app/api
+app/components
+package.json
+docs/meponto-ecosystem-development-standard-v2.md
+scripts
+.github
+</code></pre>
+<h2>5. 分支策略</h2>
+<p>建议分支结构：</p>
+<pre><code class="language-txt">main
+  生产可部署分支
+
+dev
+  日常集成分支
+
+codex/&lt;module&gt;-&lt;task&gt;
+  单个开发任务分支
+</code></pre>
+<p>示例：</p>
+<pre><code class="language-txt">codex/franchise-settlement
+codex/rider-onboarding
+codex/marketplace-catalog
+codex/supply-chain-inventory
+codex/gamification-pet-level
+</code></pre>
+<p>合并顺序：</p>
+<pre><code class="language-txt">codex/* -&gt; dev -&gt; main
+</code></pre>
+<h2>6. 每个开发人员的初始操作</h2>
+<p>每个开发人员第一次开始工作时：</p>
+<pre><code class="language-bash">cd &quot;/Users/ishak/Documents/New project&quot;
+git checkout dev
+git pull origin dev
+</code></pre>
+<p>创建自己的任务分支：</p>
+<pre><code class="language-bash">git checkout -b codex/&lt;module&gt;-&lt;task&gt;
+</code></pre>
+<p>例如：</p>
+<pre><code class="language-bash">git checkout -b codex/rider-onboarding
+</code></pre>
+<h2>7. 给 Codex 的标准启动指令</h2>
+<p>每个开发人员开始任务前，建议先对 Codex 说：</p>
+<pre><code class="language-txt">请先读取 AGENTS.md，并严格遵守 docs/module-development-playbook.md、docs/module-contract-template.md、docs/pr-checklist.md 的规则。
+本次只开发 &lt;模块名&gt; 模块。
+不要修改 auth、ledger、module registry、integration gateway、shared api，除非你先说明原因并获得确认。
+完成后运行 npm run codex:preflight。
+</code></pre>
+<p>示例：</p>
+<pre><code class="language-txt">请先读取 AGENTS.md，并严格遵守项目规则。
+本次只开发 marketplace catalog 模块。
+不要修改 rider、franchise、auth、ledger、module registry。
+完成后运行 npm run codex:preflight。
+</code></pre>
+<h2>8. 新模块开发流程</h2>
+<p>新增模块时，不能直接开始写页面。必须先完成模块契约。</p>
+<p>流程：</p>
+<ol>
+<li>复制 <code>docs/module-contract-template.md</code>。</li>
+<li>填写模块名称、负责人、状态、路由、feature flag。</li>
+<li>定义允许角色和权限。</li>
+<li>定义模块私有数据。</li>
+<li>定义模块对外 API。</li>
+<li>定义 inbound / outbound events。</li>
+<li>判断是否涉及 ledger。</li>
+<li>判断是否涉及 rule engine。</li>
+<li>判断是否需要 read model。</li>
+<li>定义中英葡语言支持。</li>
+<li>定义灰度和回滚方式。</li>
+<li>再进入代码开发。</li>
+</ol>
+<p>新增模块默认状态：</p>
+<pre><code class="language-txt">disabled 或 beta
+</code></pre>
+<p>不得一开始直接 active。</p>
+<h2>9. 模块接入总系统的逻辑</h2>
+<p>新模块不能直接进入系统主流程，必须经过以下控制点：</p>
+<pre><code class="language-txt">Module Contract
+  -&gt; Module Registry
+  -&gt; Feature Flag
+  -&gt; RBAC / Scope
+  -&gt; Integration Gateway
+  -&gt; Event / API / Read Model
+  -&gt; Monitoring
+  -&gt; Beta
+  -&gt; Active
+</code></pre>
+<p>也就是说，新模块是否允许接入总系统，应该由以下能力共同控制：</p>
+<ul>
+<li>Module Registry：控制模块是否存在、是否启用</li>
+<li>Feature Flag：控制灰度、开关、范围</li>
+<li>RBAC：控制谁能访问</li>
+<li>Integration Gateway：控制模块之间如何通信</li>
+<li>Event Schema：控制事件格式</li>
+<li>Read Model：控制跨模块数据展示</li>
+<li>Audit：记录敏感操作</li>
+</ul>
+<h2>10. Codex 可以直接做的事情</h2>
+<p>这些任务可以放心交给 Codex 执行和验证：</p>
+<pre><code class="language-txt">普通页面开发
+表格 / 表单 / dashboard
+模块 UI
+API route 基础实现
+mock data
+seed data
+SOP 页面
+培训文档
+中英葡翻译补全
+模块契约草稿
+PR 描述
+本地检查脚本
+smoke test
+构建验证
+文档整理
+页面截图检查
+导出 HTML / PDF 草稿
+</code></pre>
+<h2>11. 需要人确认后再交给 Codex 的事情</h2>
+<p>以下任务必须先由负责人确认方向，再让 Codex 执行：</p>
+<pre><code class="language-txt">登录系统
+RBAC 权限模型
+数据库结构
+钱、积分、库存、奖励、结算
+ledger
+Module Registry
+Integration Gateway
+事件总线
+调度核心
+风控核心
+PIX
+WhatsApp 正式集成
+第三方平台 API
+生产部署配置
+合同
+加盟政策
+品牌规则
+定价规则
+KPI 考核规则
+</code></pre>
+<h2>11A. 语言支持要求</h2>
+<p>MePonto / PontoSys 的系统语言要求：</p>
+<pre><code class="language-txt">中文 zh
+英文 en
+葡语 pt
+</code></pre>
+<p>使用原则：</p>
+<ol>
+<li>中文用于内部业务确认、政策讨论、总部管理和文档初稿。</li>
+<li>葡语用于巴西本地骑手、站点、加盟商、培训、SOP 和运营场景。</li>
+<li>英文用于技术交付、后台标签、跨团队协作和通用管理界面。</li>
+<li>品牌名统一使用 MePonto。</li>
+<li>系统名统一使用 PontoSys。</li>
+<li>不允许在同一个用户可见标签里随意混用三种语言。</li>
+<li>技术标识、API 字段、事件名可以使用英文。</li>
+<li>如果某次任务只做单语言，PR 里必须说明原因，并列出缺少的语言版本。</li>
+</ol>
+<p>必须检查语言覆盖的范围：</p>
+<pre><code class="language-txt">导航菜单
+页面标题
+模块标题
+按钮
+表单标签
+输入提示
+筛选项
+表格标题
+状态标签
+空状态
+加载状态
+错误状态
+成功提示
+API 返回给用户看的错误信息
+SOP 内容
+培训内容
+PDF / HTML 导出内容
+WhatsApp 消息模板
+通知模板
+加盟商方案
+骑手端 App 文案
+Leader 工作台文案
+</code></pre>
+<p>Codex 开发页面或内容时，必须在完成前自查：</p>
+<pre><code class="language-txt">是否有中文
+是否有英文
+是否有葡语
+是否有遗漏按钮/表格/报错/空状态
+是否仍有旧品牌或旧平台名称
+是否正确使用 MePonto 和 PontoSys
+</code></pre>
+<p>语言问题属于 PR 阻断项。除非负责人明确批准单语言临时发布，否则不能合并。</p>
+<h2>12. 提交前验证流程</h2>
+<p>普通模块开发完成后运行：</p>
+<pre><code class="language-bash">npm run codex:preflight
+</code></pre>
+<p>该命令会执行：</p>
+<pre><code class="language-txt">module guard
+production build
+</code></pre>
+<p>高风险变更或上线前运行：</p>
+<pre><code class="language-bash">npm run codex:preflight:full
+</code></pre>
+<p>该命令会执行：</p>
+<pre><code class="language-txt">module guard
+production build
+full smoke check
+accessibility smoke
+workflow smoke
+</code></pre>
+<p>当前高风险变更包括：</p>
+<pre><code class="language-txt">app/lib
+app/api
+app/components
+auth
+RBAC
+finance
+ledger
+rewards
+points
+inventory
+settlement
+Module Registry
+Integration Gateway
+events
+realtime
+rule engine
+deployment
+</code></pre>
+<h2>13. Codex 提交流程</h2>
+<p>Codex 不应该在没有开发人员明确要求时自动提交。</p>
+<p>推荐提交指令：</p>
+<pre><code class="language-txt">运行 npm run codex:preflight。
+如果通过，只 stage 本次任务相关文件，并创建 commit。
+commit message 使用：&lt;module&gt;: &lt;change summary&gt;
+</code></pre>
+<p>示例：</p>
+<pre><code class="language-txt">运行 npm run codex:preflight。
+如果通过，只 stage marketplace catalog 相关文件，并创建 commit。
+commit message: marketplace: add catalog module beta page
+</code></pre>
+<p>高风险提交：</p>
+<pre><code class="language-txt">运行 npm run codex:preflight:full。
+通过后再提交。
+</code></pre>
+<h2>14. PR 流程</h2>
+<p>提交后创建 PR：</p>
+<pre><code class="language-txt">codex/&lt;module&gt;-&lt;task&gt; -&gt; dev
+</code></pre>
+<p>PR 必须说明：</p>
+<ul>
+<li>本次改了哪个模块</li>
+<li>是否改了共享代码</li>
+<li>是否涉及权限</li>
+<li>是否涉及钱、积分、库存、奖励、结算</li>
+<li>是否新增事件</li>
+<li>是否新增 API</li>
+<li>是否支持中英葡</li>
+<li>是否有单语言例外说明</li>
+<li>已经运行哪些检查</li>
+</ul>
+<p>PR 合并前必须完成：</p>
+<pre><code class="language-txt">npm run codex:preflight
+</code></pre>
+<p>合并到 <code>main</code> 前必须完成：</p>
+<pre><code class="language-txt">npm run codex:preflight:full
+</code></pre>
+<h2>15. GitHub 自动检查</h2>
+<p>项目已经配置：</p>
+<pre><code class="language-txt">.github/workflows/codex-ci.yml
+</code></pre>
+<p>当代码 push 或 PR 到以下分支时会自动运行：</p>
+<pre><code class="language-txt">dev
+main
+</code></pre>
+<p>自动检查包括：</p>
+<pre><code class="language-txt">npm ci
+npm run module:guard
+npm run build
+npm run check
+</code></pre>
+<p>如果 CI 不通过，不允许合并。</p>
+<h2>16. CODEOWNERS 规则</h2>
+<p>项目已经配置：</p>
+<pre><code class="language-txt">.github/CODEOWNERS
+</code></pre>
+<p>建议在 GitHub 中开启 branch protection，并要求 CODEOWNERS review。</p>
+<p>重点：</p>
+<ul>
+<li><code>app/lib</code> 需要 core review</li>
+<li><code>app/api</code> 需要 core review</li>
+<li><code>app/components</code> 需要 core review</li>
+<li><code>app/franchise</code> 和 <code>app/finance</code> 由 franchise owner review</li>
+<li><code>app/riders</code>、<code>app/leaders</code>、<code>app/mobile</code> 由 rider owner review</li>
+<li><code>docs</code> 和 <code>app/sops</code> 由 ops owner review</li>
+</ul>
+<h2>17. 多人开发时如何避免冲突</h2>
+<p>规则：</p>
+<ol>
+<li>每个人每天开始前先 pull。</li>
+<li>每个人只在自己的模块范围内工作。</li>
+<li>不要多人同时修改同一个共享文件。</li>
+<li>修改共享代码前先说明原因。</li>
+<li>小步提交，不要一次提交太多文件。</li>
+<li>不要 force push 到别人的分支。</li>
+<li>不要用 destructive git 命令解决冲突。</li>
+<li>冲突时先判断模块所有权，再决定保留哪边逻辑。</li>
+</ol>
+<h2>18. 每日工作建议</h2>
+<p>每天开始：</p>
+<pre><code class="language-bash">git checkout dev
+git pull origin dev
+git checkout -b codex/&lt;module&gt;-&lt;task&gt;
+</code></pre>
+<p>开发中：</p>
+<pre><code class="language-bash">npm run codex:preflight
+</code></pre>
+<p>准备 PR：</p>
+<pre><code class="language-bash">git status
+git diff
+npm run codex:preflight
+</code></pre>
+<p>上线前：</p>
+<pre><code class="language-bash">npm run codex:preflight:full
+</code></pre>
+<h2>19. 新增商城模块示例</h2>
+<p>如果新增积分商城模块，执行步骤：</p>
+<ol>
+<li>新建模块契约：</li>
+</ol>
+<pre><code class="language-txt">docs/modules/marketplace-contract.md
+</code></pre>
+<ol start="2">
+<li>定义模块：</li>
+</ol>
+<pre><code class="language-txt">Module name: marketplace
+Route: /marketplace
+Status: disabled
+Feature flag: marketplace.enabled
+Owner: Developer C
+</code></pre>
+<ol start="3">
+<li>定义权限：</li>
+</ol>
+<pre><code class="language-txt">Admin: manage_marketplace
+Franchise: view_marketplace_orders
+Rider: use_marketplace
+</code></pre>
+<ol start="4">
+<li>定义数据边界：</li>
+</ol>
+<pre><code class="language-txt">marketplace owns catalog, orders, redemption requests.
+marketplace reads rider profile and points balance through API/read model.
+marketplace cannot directly modify rider balance.
+marketplace must follow docs/meponto-points-economy-standard.md.
+</code></pre>
+<ol start="5">
+<li>定义事件：</li>
+</ol>
+<pre><code class="language-txt">marketplace.order.created.v1
+marketplace.order.cancelled.v1
+marketplace.redemption.completed.v1
+</code></pre>
+<ol start="6">
+<li>定义 ledger：</li>
+</ol>
+<pre><code class="language-txt">points debit
+points refund
+inventory reservation
+inventory release
+</code></pre>
+<ol start="7">
+<li><p>开发 beta 页面和 API。</p>
+</li>
+<li><p>运行：</p>
+</li>
+</ol>
+<pre><code class="language-bash">npm run codex:preflight
+</code></pre>
+<ol start="9">
+<li><p>创建 PR 到 <code>dev</code>。</p>
+</li>
+<li><p>内部测试后启用 beta。</p>
+</li>
+<li><p>通过 full check 后合并到 <code>main</code>。</p>
+</li>
+</ol>
+<h2>20. 推荐给 Codex 的常用指令</h2>
+<p>开发模块：</p>
+<pre><code class="language-txt">请读取 AGENTS.md。本次只开发 &lt;module&gt; 模块，保持模块边界，不要修改共享核心代码。完成后运行 npm run codex:preflight。
+</code></pre>
+<p>检查模块：</p>
+<pre><code class="language-txt">请检查 &lt;module&gt; 模块是否符合 AGENTS.md、module-development-playbook 和 module-contract-template 的要求，列出缺口并修复低风险问题。
+</code></pre>
+<p>提交代码：</p>
+<pre><code class="language-txt">运行 npm run codex:preflight。通过后，只 stage 本次任务相关文件，并创建 commit。不要 stage 无关文件。
+</code></pre>
+<p>高风险检查：</p>
+<pre><code class="language-txt">这次涉及权限/API/财务，请运行 npm run codex:preflight:full，并汇总所有失败或 warning。
+</code></pre>
+<p>新增模块：</p>
+<pre><code class="language-txt">基于 docs/module-contract-template.md 为 &lt;module&gt; 创建模块契约，然后实现最小 beta 版本。必须包含 feature flag、权限说明、API、事件和验证步骤。
+</code></pre>
+<h2>21. 最终执行标准</h2>
+<p>一个模块可以合并，必须满足：</p>
+<pre><code class="language-txt">模块契约清楚
+模块边界清楚
+权限清楚
+数据边界清楚
+事件版本清楚
+语言支持清楚
+语言例外已说明或不存在
+feature flag 已配置
+preflight 通过
+PR checklist 完成
+CI 通过
+负责人 review 通过
+</code></pre>
+<p>一句话总结：</p>
+<pre><code class="language-txt">Codex 负责高效执行和验证，人负责边界、策略、商业规则和最终合并判断。
+</code></pre>
+</main>
+</body>
+</html>

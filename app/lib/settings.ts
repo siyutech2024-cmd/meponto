@@ -39,13 +39,13 @@ export const systemSettings: SystemSetting[] = [
   {
     id: "set-003",
     category: "Notification",
-    name: "WhatsApp Broadcast Throttle",
+    name: "In-App Chat Broadcast Throttle",
     value: "3",
     unit: "messages/hour",
     status: "Active",
     owner: "Regional Manager",
     updatedAt: "2026-05-15 10:05",
-    description: "Limits broadcast pressure per WhatsApp group during normal operations.",
+    description: "Limits broadcast pressure per in-app chat room during normal operations.",
   },
   {
     id: "set-004",

@@ -1,34 +1,36 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;900&family=Outfit:wght@700;800;900&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;900&family=Outfit:wght@700;800;900&family=Poppins:wght@400;500;600;700;800;900&display=swap');
 @import "tailwindcss";
 
 :root {
   color-scheme: dark;
 
-  /* 背景层级 — 深太空蓝 */
-  --background: #0a0a12;
-  --panel: rgba(18, 18, 35, 0.85);
-  --panel-strong: #1a1a2e;
-  --panel-hover: #222240;
-  --line: #2a2a4a;
-  --line-alpha: rgba(139, 92, 246, 0.2);
+  /* PontoSys / PontoMall dark operating system */
+  --background: #07090d;
+  --surface: #0d1117;
+  --surface-raised: #111722;
+  --surface-hover: #172031;
+  --panel: #0d1117;
+  --panel-strong: #111722;
+  --panel-hover: #172031;
+  --line: #263244;
+  --line-alpha: rgba(255, 209, 0, 0.18);
 
-  /* 文字 */
-  --text: #f0f0ff;
-  --muted: #8b8ba3;
+  --text: #f8fafc;
+  --text-soft: #d7dee8;
+  --muted: #9aa6b8;
+  --muted-strong: #b7c1d0;
 
-  /* 主强调色 — 电紫 */
-  --accent: #8b5cf6;
-  --accent-light: #a78bfa;
-  --accent-glow: rgba(139, 92, 246, 0.25);
+  --accent: #ffd100;
+  --accent-strong: #f2b705;
+  --accent-ink: #171400;
+  --accent-glow: rgba(255, 209, 0, 0.16);
 
-  /* 辅助强调 — 巴西绿青 */
-  --cyan: #06d6a0;
-  --cyan-glow: rgba(6, 214, 160, 0.2);
+  --cyan: #2dd4bf;
+  --cyan-glow: rgba(45, 212, 191, 0.18);
 
-  /* 状态色 */
-  --danger: #f43f5e;
-  --warning: #fb923c;
-  --ok: #06d6a0;
+  --danger: #ff5c70;
+  --warning: #ffb454;
+  --ok: #2dd4bf;
 }
 
 * {
@@ -37,10 +39,7 @@
 
 body {
   margin: 0;
-  background:
-    radial-gradient(ellipse 80% 50% at 50% -20%, rgba(139, 92, 246, 0.15), transparent),
-    radial-gradient(ellipse 60% 40% at 80% 100%, rgba(6, 214, 160, 0.08), transparent),
-    var(--background);
+  background: var(--background);
   color: var(--text);
   font-family: 'Inter', system-ui, -apple-system, sans-serif;
   -webkit-font-smoothing: antialiased;
@@ -59,27 +58,23 @@ textarea {
   font: inherit;
 }
 
-/* 玻璃态面板 */
 .panel {
   background: var(--panel);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
   border: 1px solid var(--line);
-  border-radius: 14px;
+  border-radius: 8px;
   transition: border-color 0.2s ease, box-shadow 0.2s ease;
 }
 
 .panel:hover {
-  border-color: rgba(139, 92, 246, 0.3);
+  border-color: #344256;
 }
 
-/* 标签 */
 .tag {
   border: 1px solid var(--line);
   background: var(--panel-strong);
-  border-radius: 999px;
+  border-radius: 6px;
   padding: 3px 10px;
-  color: var(--muted);
+  color: var(--text-soft);
   font-size: 12px;
   font-weight: 600;
   transition: all 0.2s ease;
@@ -87,19 +82,15 @@ textarea {
 
 .tag:hover {
   border-color: var(--accent);
-  color: var(--accent-light);
+  color: var(--accent);
 }
 
-/* 科技辉光阴影 */
 .industrial-shadow {
-  box-shadow:
-    0 4px 24px rgba(139, 92, 246, 0.08),
-    0 16px 48px rgba(0, 0, 0, 0.3);
+  box-shadow: 0 14px 32px rgba(0, 0, 0, 0.22);
 }
 
-/* 渐变文字 */
 .gradient-text {
-  background: linear-gradient(135deg, #8b5cf6, #06d6a0);
+  background: linear-gradient(135deg, #ffffff, #ffd100);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
@@ -111,7 +102,7 @@ textarea {
 }
 
 .glow-hover:hover {
-  box-shadow: 0 0 20px rgba(139, 92, 246, 0.3), 0 0 40px rgba(139, 92, 246, 0.1);
+  box-shadow: 0 0 0 1px rgba(255, 209, 0, 0.35), 0 12px 30px rgba(0, 0, 0, 0.25);
 }
 
 /* 滚动条美化 */
@@ -125,12 +116,12 @@ textarea {
 }
 
 ::-webkit-scrollbar-thumb {
-  background: rgba(139, 92, 246, 0.3);
+  background: #344256;
   border-radius: 999px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(139, 92, 246, 0.5);
+  background: #4b5d73;
 }
 
 /* 微动画 */
@@ -177,6 +168,6 @@ textarea:focus {
 
 /* 选择高亮 */
 ::selection {
-  background: rgba(139, 92, 246, 0.3);
-  color: white;
+  background: rgba(255, 209, 0, 0.28);
+  color: var(--text);
 }

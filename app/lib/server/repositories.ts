@@ -2,7 +2,7 @@ import { type Incident, type Leader, type LedgerEntry, type Ponto, type Rider, r
 import type { CrmPartner } from "../crm";
 import type { NotificationItem } from "../notifications";
 import type { SystemSetting } from "../settings";
-import type { WhatsappGroup } from "../whatsapp";
+import type { ChatMessage, ChatRoom } from "../chat";
 import { memory, type ServerAuditEntry } from "./memory";
 
 export type RewardRule = (typeof rewards)[number];
@@ -72,7 +72,8 @@ export type CoreRepositories = {
   ledgerEntries: Repository<LedgerEntry>;
   notifications: Repository<NotificationItem>;
   crmPartners: Repository<CrmPartner>;
-  whatsappGroups: Repository<WhatsappGroup>;
+  chatRooms: Repository<ChatRoom>;
+  chatMessages: Repository<ChatMessage>;
   systemSettings: Repository<SystemSetting>;
   auditEvents: Repository<AuditEvent>;
 };
@@ -87,7 +88,8 @@ export function createMemoryRepositories(): CoreRepositories {
     ledgerEntries: new MemoryRepository(() => memory.ledgerEntries),
     notifications: new MemoryRepository(() => memory.notifications),
     crmPartners: new MemoryRepository(() => memory.crmPartners),
-    whatsappGroups: new MemoryRepository(() => memory.whatsappGroups),
+    chatRooms: new MemoryRepository(() => memory.chatRooms),
+    chatMessages: new MemoryRepository(() => memory.chatMessages),
     systemSettings: new MemoryRepository(() => memory.systemSettings),
     auditEvents: new MemoryRepository(() => memory.auditEntries),
   };

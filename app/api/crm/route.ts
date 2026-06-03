@@ -40,7 +40,7 @@ export async function POST(request: Request) {
     contactName: body.contactName,
     phone: body.phone,
     bairro: body.bairro ?? "Unassigned",
-    owner: body.owner ?? "meponto Partnerships",
+    owner: body.owner ?? "MePonto Partnerships",
     slaHours: Number(body.slaHours ?? 12),
     monthlyVolume: Number(body.monthlyVolume ?? 0),
     activeDeals: Number(body.activeDeals ?? 0),
@@ -49,6 +49,8 @@ export async function POST(request: Request) {
     risk: body.risk ?? "Medium",
     notes: body.notes ?? "",
     services: body.services ?? [],
+    lat: Number(body.lat ?? -23.5505),
+    lng: Number(body.lng ?? -46.6333),
   };
 
   memory.crmPartners.unshift(partner);

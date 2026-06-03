@@ -15,8 +15,8 @@ CREATE TYPE crm_partner_category AS ENUM ('Repair Shop', 'Partner Vehicle Shop',
 CREATE TYPE crm_partner_status AS ENUM ('Active', 'Prospect', 'Review', 'Suspended');
 CREATE TYPE crm_partner_tier AS ENUM ('Strategic', 'Preferred', 'Standard', 'Watchlist');
 CREATE TYPE risk_level AS ENUM ('Low', 'Medium', 'High', 'Critical');
-CREATE TYPE whatsapp_risk_status AS ENUM ('Stable', 'Watch', 'Risk', 'Critical');
-CREATE TYPE whatsapp_coverage_status AS ENUM ('Covered', 'Thin', 'Gap');
+CREATE TYPE chat_risk_status AS ENUM ('Stable', 'Watch', 'Risk', 'Critical');
+CREATE TYPE chat_coverage_status AS ENUM ('Covered', 'Thin', 'Gap');
 CREATE TYPE setting_status AS ENUM ('Active', 'Draft', 'Paused');
 CREATE TYPE setting_category AS ENUM ('Incentive', 'Incident SLA', 'Notification', 'Night Shift', 'Security');
 CREATE TYPE audit_risk AS ENUM ('Low', 'Medium', 'High');
@@ -44,7 +44,7 @@ CREATE TABLE role_permissions (
   PRIMARY KEY (role_id, permission_id)
 );
 
-CREATE TABLE users (
+CREATE TABLE app_users (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   name text NOT NULL,
   email citext UNIQUE,
@@ -89,7 +89,7 @@ CREATE TABLE leaders (
 ALTER TABLE pontos
   ADD COLUMN leader_id uuid REFERENCES leaders(id) ON DELETE SET NULL;
 
-CREATE TABLE whatsapp_groups (
+CREATE TABLE chat_rooms (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   external_id text UNIQUE,
   name text NOT NULL UNIQUE,
@@ -100,14 +100,26 @@ CREATE TABLE whatsapp_groups (
   riders_count integer NOT NULL DEFAULT 0 CHECK (riders_count >= 0),
   active_today integer NOT NULL DEFAULT 0 CHECK (active_today >= 0),
   night_coverage integer NOT NULL DEFAULT 0 CHECK (night_coverage BETWEEN 0 AND 100),
-  risk_status whatsapp_risk_status NOT NULL DEFAULT 'Watch',
-  coverage_status whatsapp_coverage_status NOT NULL DEFAULT 'Thin',
-  last_sync_at timestamptz,
+  risk_status chat_risk_status NOT NULL DEFAULT 'Watch',
+  coverage_status chat_coverage_status NOT NULL DEFAULT 'Thin',
+  last_activity_at timestamptz,
   pending_approvals integer NOT NULL DEFAULT 0 CHECK (pending_approvals >= 0),
   unread_alerts integer NOT NULL DEFAULT 0 CHECK (unread_alerts >= 0),
   broadcast_list text NOT NULL DEFAULT 'Manual Dispatch',
   created_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE TABLE chat_messages (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  room_id uuid NOT NULL REFERENCES chat_rooms(id) ON DELETE CASCADE,
+  sender_user_id uuid REFERENCES app_users(id) ON DELETE SET NULL,
+  sender_name text NOT NULL,
+  sender_role text NOT NULL,
+  body text NOT NULL,
+  status text NOT NULL DEFAULT 'Delivered',
+  created_at timestamptz NOT NULL DEFAULT now(),
+  read_at timestamptz
 );
 
 CREATE TABLE riders (
@@ -124,7 +136,7 @@ CREATE TABLE riders (
   leader_id uuid REFERENCES leaders(id) ON DELETE SET NULL,
   invited_by_rider_id uuid REFERENCES riders(id) ON DELETE SET NULL,
   invited_by_name text,
-  whatsapp_group_id uuid REFERENCES whatsapp_groups(id) ON DELETE SET NULL,
+  chat_room_id uuid REFERENCES chat_rooms(id) ON DELETE SET NULL,
   ar integer NOT NULL DEFAULT 100 CHECK (ar BETWEEN 0 AND 100),
   status rider_status NOT NULL DEFAULT 'Active',
   vehicle_type text NOT NULL DEFAULT 'Motorcycle',
@@ -151,7 +163,7 @@ CREATE TABLE incidents (
   status incident_status NOT NULL DEFAULT 'Open',
   location text NOT NULL DEFAULT '',
   description text NOT NULL DEFAULT '',
-  responder_user_id uuid REFERENCES users(id) ON DELETE SET NULL,
+  responder_user_id uuid REFERENCES app_users(id) ON DELETE SET NULL,
   responder_name text NOT NULL DEFAULT 'VENTO Ops Desk',
   opened_at timestamptz NOT NULL DEFAULT now(),
   closed_at timestamptz,
@@ -183,7 +195,7 @@ CREATE TABLE ledger_entries (
   status ledger_status NOT NULL DEFAULT 'Pending',
   notes text NOT NULL DEFAULT '',
   idempotency_key text UNIQUE,
-  approved_by_user_id uuid REFERENCES users(id) ON DELETE SET NULL,
+  approved_by_user_id uuid REFERENCES app_users(id) ON DELETE SET NULL,
   paid_at timestamptz,
   created_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now(),
@@ -204,7 +216,7 @@ CREATE TABLE crm_partners (
   contact_name text NOT NULL,
   phone text NOT NULL,
   bairro text NOT NULL DEFAULT 'Unassigned',
-  owner_user_id uuid REFERENCES users(id) ON DELETE SET NULL,
+  owner_user_id uuid REFERENCES app_users(id) ON DELETE SET NULL,
   owner_name text NOT NULL DEFAULT 'VENTO Partnerships',
   sla_hours integer NOT NULL DEFAULT 12 CHECK (sla_hours >= 0),
   monthly_volume integer NOT NULL DEFAULT 0 CHECK (monthly_volume >= 0),
@@ -226,7 +238,7 @@ CREATE TABLE settings (
   value text NOT NULL,
   unit text NOT NULL DEFAULT '',
   status setting_status NOT NULL DEFAULT 'Draft',
-  owner_user_id uuid REFERENCES users(id) ON DELETE SET NULL,
+  owner_user_id uuid REFERENCES app_users(id) ON DELETE SET NULL,
   owner_name text NOT NULL DEFAULT 'Super Admin',
   description text NOT NULL DEFAULT '',
   updated_at timestamptz NOT NULL DEFAULT now(),
@@ -237,7 +249,7 @@ CREATE TABLE settings (
 CREATE TABLE audit_logs (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   external_id text UNIQUE,
-  actor_user_id uuid REFERENCES users(id) ON DELETE SET NULL,
+  actor_user_id uuid REFERENCES app_users(id) ON DELETE SET NULL,
   actor_name text NOT NULL,
   action text NOT NULL,
   entity text NOT NULL,
@@ -260,7 +272,8 @@ CREATE INDEX idx_incidents_ponto_id ON incidents(ponto_id);
 CREATE INDEX idx_ledger_entries_status ON ledger_entries(status);
 CREATE INDEX idx_ledger_entries_recipient ON ledger_entries(recipient_type, recipient_name);
 CREATE INDEX idx_crm_partners_category_risk ON crm_partners(category, risk);
-CREATE INDEX idx_whatsapp_groups_ponto_id ON whatsapp_groups(ponto_id);
+CREATE INDEX idx_chat_rooms_ponto_id ON chat_rooms(ponto_id);
+CREATE INDEX idx_chat_messages_room_created_at ON chat_messages(room_id, created_at DESC);
 CREATE INDEX idx_audit_logs_entity ON audit_logs(entity, entity_id);
 CREATE INDEX idx_audit_logs_created_at ON audit_logs(created_at DESC);
 

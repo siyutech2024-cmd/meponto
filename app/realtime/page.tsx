@@ -35,7 +35,7 @@ export default function RealtimePage() {
           <option>Incident Alert</option>
           <option>Rider Status</option>
           <option>Night Shift Alert</option>
-          <option>WhatsApp Sync</option>
+          <option>In-App Chat Message</option>
           <option>Finance Approval</option>
           <option>Security Event</option>
         </select>

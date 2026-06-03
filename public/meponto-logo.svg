@@ -1,13 +1,22 @@
 <svg width="256" height="256" viewBox="0 0 256 256" fill="none" xmlns="http://www.w3.org/2000/svg">
-  <rect width="256" height="256" rx="48" fill="#0B1020"/>
-  <rect width="256" height="256" rx="48" fill="url(#paint0_linear)"/>
-  <circle cx="196" cy="60" r="64" fill="#06D6A0" fill-opacity="0.32"/>
-  <path d="M64 176V96C64 76 76 64 96 64C116 64 128 76 128 96V176M128 96C128 76 140 64 160 64C180 64 192 76 192 96V128C192 148 180 160 160 160H128" stroke="white" stroke-width="22" stroke-linecap="round" stroke-linejoin="round"/>
-  <circle cx="192" cy="72" r="18" fill="#06131B" stroke="white" stroke-width="10"/>
-  <defs>
-    <linearGradient id="paint0_linear" x1="24" y1="24" x2="232" y2="232" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#8B5CF6"/>
-      <stop offset="1" stop-color="#06D6A0"/>
-    </linearGradient>
-  </defs>
+  <rect width="256" height="256" rx="44" fill="#FFD400"/>
+  <path d="M34 93H77" stroke="#0B1020" stroke-width="13" stroke-linecap="round"/>
+  <path d="M27 124H70" stroke="#0B1020" stroke-width="13" stroke-linecap="round"/>
+  <path d="M45 155H76" stroke="#0B1020" stroke-width="13" stroke-linecap="round"/>
+  <path
+    d="M83 164L111 75C116 59 136 54 149 66L177 92C184 99 195 99 203 92L222 75"
+    stroke="#0B1020"
+    stroke-width="24"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+  />
+  <path
+    d="M119 161L136 110L160 133C177 150 205 150 224 132L230 126"
+    stroke="#0B1020"
+    stroke-width="24"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+  />
+  <path d="M195 165C213 156 228 145 240 130" stroke="#0B1020" stroke-width="15" stroke-linecap="round"/>
+  <path d="M226 78L242 93L219 106" stroke="#0B1020" stroke-width="12" stroke-linecap="round" stroke-linejoin="round"/>
 </svg>

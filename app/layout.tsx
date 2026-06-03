@@ -17,10 +17,10 @@ const outfit = Outfit({
 });
 
 export const metadata: Metadata = {
-  title: "meponto PontoSys",
-  description: "Sistema operacional meponto PontoSys para riders, pontos e operacoes",
+  title: "MePonto PontoSys",
+  description: "Sistema operacional MePonto PontoSys para riders, pontos e operacoes",
   icons: {
-    icon: "/meponto-logo.svg",
+    icon: "/meponto-logo-icon.png",
   },
 };
 

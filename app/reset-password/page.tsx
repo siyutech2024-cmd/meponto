@@ -74,7 +74,7 @@ export default function ResetPasswordPage() {
           <BrandMark size="lg" />
           <div>
             <h1 className="text-3xl font-black">Reset Password</h1>
-            <p className="text-sm uppercase text-[#8b8ba3]">meponto PontoSys account recovery</p>
+            <p className="text-sm uppercase text-[#8b8ba3]">MePonto PontoSys account recovery</p>
           </div>
         </div>
 

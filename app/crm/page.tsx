@@ -15,7 +15,7 @@ const emptyForm = {
   contactName: "",
   phone: "",
   bairro: "",
-  owner: "meponto Partnerships",
+  owner: "MePonto Partnerships",
   status: "Prospect" as CrmPartnerStatus,
   tier: "Standard" as CrmPartnerTier,
   risk: "Medium" as CrmPartnerRisk,

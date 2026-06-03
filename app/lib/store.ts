@@ -40,7 +40,7 @@ export type RiderUpdate = Partial<
     | "model"
     | "rentalStatus"
     | "isMottu"
-    | "whatsappGroup"
+    | "chatRoom"
   >
 >;
 type PontoInput = Pick<Ponto, "name" | "bairro" | "ridersCount" | "nightShiftLevel" | "leader" | "safetyScore" | "lat" | "lng">;
@@ -155,8 +155,8 @@ export const useVentoStore = create<VentoState>()(
               bairro: input.bairro,
               ponto: input.ponto,
               leader: input.leader,
-              invitedBy: "meponto Admin",
-              whatsappGroup: `meponto ${input.bairro}`,
+              invitedBy: "MePonto Admin",
+              chatRoom: `MePonto ${input.bairro}`,
               ar: 100,
               status: input.status,
               vehicleType: "Motorcycle",
@@ -273,7 +273,7 @@ export const useVentoStore = create<VentoState>()(
               location: input.location,
               description: input.description,
               createdAt: new Date().toISOString().slice(0, 16).replace("T", " "),
-              responder: "meponto Ops Desk",
+              responder: "MePonto Ops Desk",
           };
 
           return {

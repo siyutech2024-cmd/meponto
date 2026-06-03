@@ -1,0 +1,181 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<title>MePonto 标准加盟商合作方案</title>
+<style>
+@page { size: A4; margin: 0; }
+* { box-sizing: border-box; }
+body { margin: 0; color: #111827; background: #fff; font-family: -apple-system,BlinkMacSystemFont,"PingFang SC","Hiragino Sans GB","Microsoft YaHei","Noto Sans CJK SC",Arial,sans-serif; }
+.page { width: 210mm; min-height: 297mm; padding: 16mm 16mm 14mm; page-break-after: always; position: relative; overflow: hidden; }
+.page:last-child { page-break-after: auto; }
+.cover { background: #ffcf00; color: #08111f; display: flex; flex-direction: column; justify-content: space-between; }
+.cover::after { content: ""; position: absolute; right: -35mm; bottom: -45mm; width: 125mm; height: 125mm; border-radius: 50%; background: rgba(255,255,255,.22); }
+.cover-top { position: relative; z-index: 1; }
+.logo-card { background: #ffcf00; border: 2px solid rgba(17,24,39,.16); border-radius: 18px; padding: 12mm 10mm; box-shadow: 0 12px 30px rgba(17,24,39,.14); }
+.logo-card img { display:block; width: 100%; border-radius: 8px; }
+.kicker { margin-top: 13mm; font-size: 10px; font-weight: 900; letter-spacing: .18em; text-transform: uppercase; }
+h1 { margin: 4mm 0 0; font-size: 33px; line-height: 1.08; letter-spacing: -.03em; }
+.cover-subtitle { margin-top: 4mm; max-width: 150mm; font-size: 15px; line-height: 1.6; font-weight: 600; }
+.cover-bottom { position: relative; z-index: 1; display: grid; grid-template-columns: repeat(5,1fr); gap: 6px; }
+.cover-chip { border: 1px solid rgba(17,24,39,.22); background: rgba(255,255,255,.35); border-radius: 999px; padding: 7px 8px; font-size: 9px; text-align: center; font-weight: 900; }
+.header { display:flex; justify-content:space-between; align-items:center; margin-bottom: 8mm; border-bottom: 1px solid #dde3ee; padding-bottom: 4mm; }
+.brand { font-size: 10px; letter-spacing: .16em; font-weight: 900; text-transform: uppercase; color:#111827; }
+.page-no { color:#7b8496; font-size: 9px; }
+h2 { font-size: 23px; line-height: 1.16; letter-spacing: -.02em; margin: 0 0 3mm; }
+.lead { color:#4b5563; font-size: 11.2px; line-height: 1.65; max-width: 170mm; margin: 0 0 6mm; }
+.grid-4 { display:grid; grid-template-columns: repeat(4,1fr); gap: 4mm; }
+.grid-3 { display:grid; grid-template-columns: repeat(3,1fr); gap: 4mm; }
+.grid-2 { display:grid; grid-template-columns: repeat(2,1fr); gap: 5mm; }
+.card { border:1px solid #dfe6f1; border-radius: 14px; padding: 5mm; background:#fff; break-inside: avoid; }
+.card.yellow { background:#fff8d8; border-color:#f0cc31; }
+.card.dark { background:#101827; color:#fff; border-color:#101827; }
+.card.green { background:#ecfdf5; border-color:#b7ead8; }
+.label { font-size: 9px; letter-spacing:.12em; text-transform:uppercase; color:#0f766e; font-weight:900; margin-bottom: 2mm; }
+.value { font-size: 25px; line-height:1; font-weight: 950; letter-spacing:-.03em; }
+.small { font-size: 10px; line-height: 1.55; color:#5b6475; margin-top: 2mm; }
+.dark .small { color:#cbd5e1; }
+.card h3 { margin:0 0 2mm; font-size: 14px; }
+ul { margin: 2mm 0 0 4.5mm; padding:0; }
+li { font-size: 10.2px; line-height: 1.52; margin: 1.2mm 0; }
+.table { width:100%; border-collapse: separate; border-spacing:0; overflow:hidden; border:1px solid #dfe6f1; border-radius: 12px; font-size: 10px; }
+.table th { background:#111827; color:#fff; text-align:left; padding: 8px; font-size: 9px; letter-spacing:.08em; text-transform:uppercase; }
+.table td { padding: 8px; border-top:1px solid #e8edf5; vertical-align: top; line-height:1.45; }
+.table tr:nth-child(even) td { background:#f8fafc; }
+.flow { display:grid; grid-template-columns: repeat(5,1fr); gap: 3mm; margin-top: 5mm; }
+.step { position:relative; border:1px solid #dfe6f1; border-radius: 13px; padding: 4mm; background:#fff; min-height: 36mm; }
+.step-num { display:inline-grid; place-items:center; width: 8mm; height: 8mm; border-radius:50%; background:#ffcf00; color:#111827; font-weight:900; margin-bottom:2mm; }
+.step-title { font-weight:900; font-size: 12px; }
+.step p { margin:2mm 0 0; font-size: 9.5px; line-height:1.45; color:#5b6475; }
+.image-frame { border:1px solid #dfe6f1; border-radius: 16px; padding: 4mm; background:#f8fafc; break-inside: avoid; }
+.image-frame img { display:block; width:100%; height:auto; border-radius: 11px; }
+.caption { font-size: 9px; color:#667085; text-align:center; margin-top: 2mm; }
+.note { border-left: 4px solid #ffcf00; background:#fff8d8; padding: 4mm; border-radius: 0 12px 12px 0; font-size: 10.2px; line-height:1.55; color:#3f3510; }
+.footer { position:absolute; left:16mm; right:16mm; bottom:7mm; display:flex; justify-content:space-between; color:#9aa3b2; font-size:8px; border-top:1px solid #edf1f7; padding-top:2mm; }
+.section-band { background:#111827; color:#fff; border-radius:18px; padding:8mm; margin-bottom:6mm; }
+.section-band p { margin:2mm 0 0; color:#cbd5e1; font-size: 11px; line-height:1.55; }
+</style>
+</head>
+<body>
+<section class="page cover">
+  <div class="cover-top">
+    <div class="logo-card"><img src="file:///Users/ishak/Documents/New%20project/exports/standard_franchise/meponto-logo-reference.png" alt="MePonto logo" /></div>
+    <div class="kicker">Brazil Franchise Cooperation Proposal</div>
+    <h1>MePonto 巴西标准加盟商合作方案</h1>
+    <div class="cover-subtitle">面向具备摩托车 / 骑手服务基础的本地合作伙伴，建立标准化骑手服务站点与区域运营网络。</div>
+  </div>
+  <div class="cover-bottom">
+    <div class="cover-chip">固定门店 ≥30㎡</div><div class="cover-chip">至少 2 名人员</div><div class="cover-chip">启动 20 名骑手</div><div class="cover-chip">周结机制</div><div class="cover-chip">条款以合同为准</div>
+  </div>
+</section>
+
+<section class="page">
+  <div class="header"><div class="brand">MePonto Franchise Proposal</div><div class="page-no">01 / 06</div></div>
+  <h2>合作方案概览</h2>
+  <p class="lead">MePonto 在巴西以 MePonto 品牌进行运营，围绕骑手服务站点、骑手管理、站点运营、数据支持和本地服务网络建设，发展标准化加盟合作伙伴。我们寻找的不是普通休息点，而是能够真正承接骑手招募、培训、服务、管理和复盘的区域运营节点。</p>
+  <div class="grid-4">
+    <div class="card yellow"><div class="label">Quality</div><div class="value">R$ 12</div><div class="small">首店参考定价，后续以合同与月度政策为准。</div></div>
+    <div class="card yellow"><div class="label">KPI</div><div class="value">80%-120%</div><div class="small">根据站点运营质量进行月度浮动。</div></div>
+    <div class="card yellow"><div class="label">Rent Support</div><div class="value">50%</div><div class="small">首店前三个月房租支持可参考 50%。</div></div>
+    <div class="card yellow"><div class="label">Settlement</div><div class="value">周结</div><div class="small">按自然周统计，具体以合同为准。</div></div>
+  </div>
+  <div class="grid-2" style="margin-top:6mm">
+    <div class="card"><h3>MePonto 提供</h3><ul><li>PontoSys 或指定系统支持。</li><li>标准 SOP、培训、巡查和运营复盘。</li><li>招聘策略、线索支持、hotzone 和数据分析。</li><li>月度定价机制、KPI 规则和品牌物料。</li></ul></div>
+    <div class="card"><h3>加盟商负责</h3><ul><li>本地站点执行、骑手招募承接和现场管理。</li><li>基础服务、骑手培训、签到和异常上报。</li><li>按 SOP 记录 PontoSys 数据和巡查证据。</li><li>维持不少于 20 名骑手的启动运营能力。</li></ul></div>
+  </div>
+  <div class="note" style="margin-top:6mm">本方案为对外合作说明文件，不构成最终法律承诺。费用、保证金、结算、退出及违约责任等，以双方正式签署合同为准。</div>
+  <div class="footer"><span>MePonto</span><span>Confidential business proposal · 2026-05-25</span></div>
+</section>
+
+<section class="page">
+  <div class="header"><div class="brand">Partner Profile</div><div class="page-no">02 / 06</div></div>
+  <h2>标准加盟对象与准入门槛</h2>
+  <p class="lead">标准加盟商必须具备摩托车或骑手服务基础。MePonto 暂不接受没有摩托车业务背景、骑手服务经验或骑手资源基础的普通门店作为标准加盟商。</p>
+  <table class="table">
+    <thead><tr><th>对象类型</th><th>合作建议</th><th>核心要求</th></tr></thead>
+    <tbody>
+      <tr><td><strong>骑手服务相关门店</strong><br/>维修、租赁、销售、装备门店</td><td>优先推荐</td><td>固定门店 ≥30㎡；至少 2 名人员；可承接 20 名骑手；具备骑手服务场景和后市场能力。</td></tr>
+      <tr><td><strong>本地运营团队</strong><br/>配送、地推、骑手社群团队</td><td>可审核</td><td>必须落实固定站点；核心成员具备摩托车 / 骑手服务或即时配送运营经验。</td></tr>
+      <tr><td><strong>普通社区门店</strong><br/>便利店、小餐饮、手机店等</td><td>暂不接受为标准加盟商</td><td>除非具备明确骑手资源和摩托车相关服务基础，否则仅可作为后期轻量服务点另行评估。</td></tr>
+    </tbody>
+  </table>
+  <div class="grid-3" style="margin-top:6mm">
+    <div class="card green"><h3>固定门店</h3><div class="value">≥30㎡</div><div class="small">可长期使用的线下经营场所。</div></div>
+    <div class="card green"><h3>人员配置</h3><div class="value">2 人+</div><div class="small">负责日常管理、沟通、数据和异常。</div></div>
+    <div class="card green"><h3>启动规模</h3><div class="value">20 名</div><div class="small">具备招募、承接、培训和管理能力。</div></div>
+  </div>
+  <div class="card" style="margin-top:6mm"><h3>必须提供的基础服务</h3><ul><li>休息区、饮用水、卫生间、手机充电。</li><li>基础维修工具或维修协助、装备检查和骑手沟通。</li><li>及时传达 MePonto 运营通知、SOP、hotzone 和异常处理要求。</li></ul></div>
+  <div class="footer"><span>MePonto</span><span>Partner requirements</span></div>
+</section>
+
+<section class="page">
+  <div class="header"><div class="brand">Brand & Store Design</div><div class="page-no">03 / 06</div></div>
+  <h2>品牌与门店形象标准</h2>
+  <p class="lead">加盟站点需按照 MePonto 品牌规范进行基础形象建设，确保骑手能够快速识别、信任并愿意进入站点接受服务。加盟商不得自行修改 logo、主色、标语、门头比例或对外物料口径。</p>
+  <div class="image-frame"><img src="file:///Users/ishak/Documents/New%20project/exports/standard_franchise/meponto-store-design-reference.png" alt="MePonto store design reference" /><div class="caption">门店设计参考：空间分区、室内效果、色彩材质、设备清单、门头与招牌规范</div></div>
+  <div class="grid-3" style="margin-top:5mm">
+    <div class="card"><h3>品牌主色</h3><ul><li>黄色 #FFD400</li><li>黑色 #111111</li><li>白色 #FFFFFF</li></ul></div>
+    <div class="card"><h3>功能分区</h3><ul><li>接待 / 咨询、休息、充电。</li><li>服务台 / 工具、培训 / 会议。</li><li>饮水 / 便捷、卫生间。</li></ul></div>
+    <div class="card"><h3>基础物料</h3><ul><li>门头招牌、品牌墙、服务说明牌。</li><li>接待台、座椅、长桌、工具柜。</li><li>饮水机、冰箱、充电插座、灭火器。</li></ul></div>
+  </div>
+  <div class="footer"><span>MePonto</span><span>Visual identity standards</span></div>
+</section>
+
+<section class="page">
+  <div class="header"><div class="brand">Operations Model</div><div class="page-no">04 / 06</div></div>
+  <h2>运营责任、支持与 KPI</h2>
+  <div class="grid-2">
+    <div class="card"><h3>加盟商核心职责</h3><ol><li>骑手招募与承接：报名、到场、资料核验和入职。</li><li>骑手培训：Ponto 纪律、slot、接单、安全和异常上报。</li><li>日常管理：签到、检查、在线纪律、区域管理和复盘。</li><li>数据反馈：骑手、排班、异常、投诉、事故和付款争议。</li><li>异常处理：事故、投诉、离线、拒单、违规和安全事件。</li></ol></div>
+    <div class="card"><h3>MePonto 支持内容</h3><ol><li>品牌规范、基础物料和对外展示标准。</li><li>PontoSys、数据、异常队列和运营复盘。</li><li>全职骑手、招聘骑手、站点运营和总部巡查 SOP。</li><li>招聘支持、培训内容、hotzone 和月度定价机制。</li><li>KPI 规则、站点巡查、运营纠偏和资源支持。</li></ol></div>
+  </div>
+  <h2 style="margin-top:8mm">KPI 参考方向</h2>
+  <table class="table">
+    <thead><tr><th>类别</th><th>评估内容</th><th>影响</th></tr></thead>
+    <tbody>
+      <tr><td>骑手规模</td><td>是否维持不少于 20 名有效骑手，新骑手首班和 7 日留存。</td><td>资源支持 / 合作评级</td></tr>
+      <tr><td>运营纪律</td><td>排班、slot、签到、在线时长、区域管理和收工复盘。</td><td>KPI 奖励或扣减</td></tr>
+      <tr><td>配送表现</td><td>AR、OPH、完成单量、拒单说明、峰值时段表现。</td><td>月度价格浮动</td></tr>
+      <tr><td>服务质量</td><td>投诉、事故、安全事件、商户和用户反馈。</td><td>整改 / 降级 / 退出</td></tr>
+      <tr><td>数据完整</td><td>PontoSys 记录、异常闭环、培训记录和巡查证据。</td><td>结算与复盘依据</td></tr>
+    </tbody>
+  </table>
+  <div class="footer"><span>MePonto</span><span>Operating model</span></div>
+</section>
+
+<section class="page">
+  <div class="header"><div class="brand">Commercial Model</div><div class="page-no">05 / 06</div></div>
+  <h2>首店参考商业模型与结算机制</h2>
+  <p class="lead">以下为首店参考模型，用于说明标准站点启动逻辑。后续不同城市、区域和站点条件，具体条款以双方合同和月度政策为准。</p>
+  <div class="grid-3">
+    <div class="card yellow"><h3>Quality 参考定价</h3><div class="value">R$ 12 / 单</div><div class="small">不构成所有城市和周期的固定承诺。</div></div>
+    <div class="card yellow"><h3>KPI 浮动区间</h3><div class="value">80%-120%</div><div class="small">结合站点绩效、服务质量和数据完整性。</div></div>
+    <div class="card yellow"><h3>保护期参考</h3><div class="value">3 个月</div><div class="small">首店可参考前三个月房租 50% 支持。</div></div>
+  </div>
+  <div class="grid-2" style="margin-top:6mm">
+    <div class="card"><h3>周结机制</h3><ul><li>按自然周统计运营结果和应结算金额。</li><li>以 MePonto 确认的数据、订单、KPI、异常、扣罚和合同约定为准。</li><li>付款日期、税费、发票、扣罚和保证金以正式合同为准。</li></ul></div>
+    <div class="card"><h3>费用口径</h3><ul><li>加盟费、保证金、系统费、设备费等以合同为准。</li><li>任何收入、补贴、平台政策或系统能力不得未经 MePonto 确认对外承诺。</li><li>异常、投诉、事故和付款争议需核查后进入结算或调整。</li></ul></div>
+  </div>
+  <h2 style="margin-top:8mm">合作启动流程</h2>
+  <div class="flow">
+    <div class="step"><div class="step-num">1</div><div class="step-title">提交申请</div><p>提交门店、人员、骑手资源、业务背景和合作意向。</p></div>
+    <div class="step"><div class="step-num">2</div><div class="step-title">资质评估</div><p>评估门店面积、人员、骑手资源和业务基础。</p></div>
+    <div class="step"><div class="step-num">3</div><div class="step-title">商务确认</div><p>确认区域、定价、KPI、费用、结算和合同条款。</p></div>
+    <div class="step"><div class="step-num">4</div><div class="step-title">签约培训</div><p>完成合同、系统权限、站点人员和骑手 SOP 培训。</p></div>
+    <div class="step"><div class="step-num">5</div><div class="step-title">上线运营</div><p>进入周度复盘、月度 KPI 和总部巡查管理。</p></div>
+  </div>
+  <div class="footer"><span>MePonto</span><span>Commercial model and launch flow</span></div>
+</section>
+
+<section class="page">
+  <div class="header"><div class="brand">Next Steps</div><div class="page-no">06 / 06</div></div>
+  <div class="section-band"><h2 style="color:#fff;margin:0">申请资料与退出交接</h2><p>MePonto 将根据城市、区域、骑手资源、站点条件和运营能力综合评估，筛选符合标准的加盟商进入下一步合作沟通。</p></div>
+  <div class="grid-2">
+    <div class="card"><h3>申请资料</h3><ul><li>门店照片、地址和面积说明。</li><li>公司或经营主体信息。</li><li>摩托车、维修、租赁、销售、装备或骑手服务经验说明。</li><li>当前骑手资源或可启动骑手名单。</li><li>站点人员配置和负责人信息。</li><li>可提供的基础服务清单。</li></ul></div>
+    <div class="card"><h3>退出与交接</h3><ul><li>骑手名单、状态、排班、培训和异常记录。</li><li>站点资产、物料、设备和系统权限。</li><li>未结订单、付款争议、投诉、事故和安全事件。</li><li>PontoSys 数据、hotzone 执行记录、KPI 复盘和巡查证据。</li><li>未完成事项的责任人、状态和预计完成时间。</li></ul></div>
+  </div>
+  <div class="note" style="margin-top:7mm">退出、退款、保证金、赔偿、违约责任和数据归属等事项，以双方正式合同为准。</div>
+  <div class="card dark" style="margin-top:10mm; padding:10mm"><div class="label" style="color:#ffcf00">MePonto</div><h2 style="color:#fff;margin:0 0 3mm">连接骑手 · 支持站点 · 完成交付</h2><div class="small">CONECTAR · APOIAR · ENTREGAR</div></div>
+  <div class="footer"><span>MePonto</span><span>End of proposal</span></div>
+</section>
+</body>
+</html>

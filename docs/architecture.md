@@ -11,12 +11,12 @@ PontoSys MVP is currently a Next.js app with API route handlers under `app/api/*
 | Server memory store | `app/lib/server/memory.ts` | Initializes process-local collections from seed data and returns `no-store` JSON responses. |
 | Seed domain data | `app/lib/data.ts` | Riders, pontos, leaders, incidents, rewards, finance ledger entries, and core TypeScript domain types. |
 | CRM partners | `app/lib/crm.ts` | Partner shop, supplier, and vehicle partner records plus category/status/risk types. |
-| WhatsApp groups | `app/lib/whatsapp.ts` | Group coverage, sync, alert, and leader routing data. |
+| In-App Chat rooms | `app/lib/chat.ts` | Native room coverage, messages, broadcasts, alerts, and leader routing data. |
 | Settings | `app/lib/settings.ts` | Demo settings for incentives, incident SLA, notifications, night shift, and security. |
 | RBAC | `app/lib/rbac.ts` | Static roles, permissions, labels, and the `can(role, permission)` helper. |
 | Analytics | `app/lib/analytics.ts` | Derived network, rider risk, and ponto risk metrics. |
 | Security posture | `app/lib/security.ts` | Demo login audit, readiness checks, RBAC risk checks, and security summary. |
-| Integration readiness | `app/lib/integrations.ts` | Typed provider skeletons for WhatsApp, maps, object storage, PIX/payout, and SMS/email. Checks required environment variable presence without external calls. |
+| Integration readiness | `app/lib/integrations.ts` | Typed provider skeletons for maps, object storage, PIX/payout, and SMS/email. Checks required environment variable presence without external calls. |
 | Client store | `app/lib/store.ts` | Zustand persisted browser state used by some pages for demo mutations and audit entries. |
 | Repository prep | `app/lib/server/repositories.ts` | Typed repository/service facade over the current process-local collections. It is available for incremental route migration and keeps memory as the backing store for now. |
 
@@ -41,7 +41,8 @@ All server API routes return JSON. List endpoints usually return `{ data: [...] 
 | `/api/finance` | `GET`, `POST` | `memory.ledgerEntries` |
 | `/api/finance/:id` | `PUT` | `memory.ledgerEntries` |
 | `/api/crm` | `GET`, `POST` | `memory.crmPartners` |
-| `/api/whatsapp` | `GET`, `POST` | `memory.whatsappGroups` |
+| `/api/chat` | `GET`, `POST` | `memory.chatRooms` |
+| `/api/chat/messages` | `GET`, `POST` | `memory.chatMessages` |
 | `/api/settings` | `GET`, `POST` | `memory.systemSettings` |
 | `/api/integrations` | `GET` | Environment readiness derived from `app/lib/integrations.ts` |
 | `/api/analytics` | `GET` | Derived from riders and incidents |
@@ -55,7 +56,7 @@ See `docs/api.md` for request and response examples.
 
 `app/lib/server/repositories.ts` introduces a typed repository boundary without changing route behavior. The exported `repositories` registry wraps the same arrays exposed by `app/lib/server/memory.ts`, so `all`, `findById`, `insert`, `update`, and `delete` preserve the current process-local semantics. Routes can continue importing `memory` directly until each handler is migrated.
 
-The wrapper covers riders, incidents, pontos, leaders, rewards, finance ledger entries, notifications, CRM partners, WhatsApp groups, system settings, and in-memory server audit entries. `repositoryServices` also exposes the smallest service facade requested for riders, rewards, and audit. This gives the PostgreSQL migration a stable interface target while avoiding a broad route rewrite in the MVP.
+The wrapper covers riders, incidents, pontos, leaders, rewards, finance ledger entries, notifications, CRM partners, In-App Chat rooms, system settings, and in-memory server audit entries. `repositoryServices` also exposes the smallest service facade requested for riders, rewards, and audit. This gives the PostgreSQL migration a stable interface target while avoiding a broad route rewrite in the MVP.
 
 When PostgreSQL is introduced, keep the repository method signatures stable and replace the in-memory implementation behind `createMemoryRepositories` with database-backed adapters. Route contracts should stay unchanged during that swap: the route layer should continue to own response envelopes, masking decisions, RBAC checks, and HTTP status codes, while repositories own persistence and lookup semantics.
 
@@ -88,14 +89,14 @@ Mutation API route handlers now enforce the static RBAC matrix through `x-vento-
 
 ## Migration Path
 
-1. Introduce a NestJS backend with modules matching the bounded contexts: `RidersModule`, `PontosModule`, `LeadersModule`, `IncidentsModule`, `RewardsModule`, `FinanceModule`, `CrmModule`, `WhatsappModule`, `SettingsModule`, `AnalyticsModule`, `AuditModule`, and `AuthzModule`.
+1. Introduce a NestJS backend with modules matching the bounded contexts: `RidersModule`, `PontosModule`, `LeadersModule`, `IncidentsModule`, `RewardsModule`, `FinanceModule`, `CrmModule`, `ChatModule`, `SettingsModule`, `AnalyticsModule`, `AuditModule`, and `AuthzModule`.
 2. Migrate Next.js API routes gradually from direct `memory` access to the typed repositories in `app/lib/server/repositories.ts`, keeping response envelopes, masking, and status codes unchanged.
 3. Add PostgreSQL using the schema in `docs/schema.sql`. Start with normalized tables for source-of-truth records, reference lookup tables for roles/permissions, and append-only audit/ledger records.
 4. Swap repository implementations from process-local arrays to PostgreSQL adapters, then move current route contracts behind NestJS controllers. Keep response envelopes compatible with the MVP while adding DTO validation and typed error responses.
 5. Enforce authentication and RBAC in NestJS guards. Use a permission guard per route, with resource-level ownership checks for leader and ponto-manager scopes.
 6. Use PostgreSQL transactions for incident creation, ledger status changes, rider status changes, and audit writes.
-7. Use Redis for cache, queues, and ephemeral coordination: analytics cache, rate limits, login throttles, WhatsApp sync jobs, notification fanout, and idempotency keys.
-8. Introduce background workers for WhatsApp sync, partner SLA checks, finance payout workflows, and audit export jobs.
+7. Use Redis for cache, queues, and ephemeral coordination: analytics cache, rate limits, login throttles, in-app chat fanout, notification fanout, and idempotency keys.
+8. Introduce background workers for in-app chat fanout, partner SLA checks, finance payout workflows, and audit export jobs.
 9. Replace demo counters with database views/materialized views or transactional projection tables. Invalidate Redis caches after writes.
 10. Add field-level protection for CPF and PIX: encryption at rest, masked read DTOs, limited reveal endpoints, and audit events for access.
 11. Retire browser-only mutation paths by making pages call API endpoints consistently, then remove divergent Zustand persistence for source-of-truth data.
@@ -105,5 +106,5 @@ Mutation API route handlers now enforce the static RBAC matrix through `x-vento-
 - Treat `audit_logs` as append-only and write from every privileged mutation.
 - Treat `ledger_entries` as append-only for money movement. Prefer status transitions and compensating entries over destructive edits.
 - Add optimistic locking or `updated_at` checks to mutable operational records.
-- Use idempotency keys for payout, incident intake, and WhatsApp broadcast APIs.
+- Use idempotency keys for payout, incident intake, and In-App Chat broadcast APIs.
 - Keep analytics derived. Avoid letting dashboard calculations become hidden source-of-truth fields.

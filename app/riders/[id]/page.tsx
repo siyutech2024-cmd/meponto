@@ -192,7 +192,7 @@ export default function RiderDetailPage() {
                           ponto: pontoName,
                           bairro: ponto?.bairro ?? rider.bairro,
                           leader: String(form.get("leader")),
-                          whatsappGroup: ponto ? `meponto ${ponto.bairro}` : rider.whatsappGroup,
+                          chatRoom: ponto ? `MePonto ${ponto.bairro}` : rider.chatRoom,
                         };
                       },
                       "MOVE_RIDER_PONTO",
@@ -254,7 +254,7 @@ export default function RiderDetailPage() {
             <Field label="Current Ponto" value={rider.ponto} />
             <Field label="Current Leader" value={rider.leader} />
             <Field label="Invited By" value={rider.invitedBy} />
-            <Field label="WhatsApp Group" value={rider.whatsappGroup} />
+            <Field label="In-App Chat Room" value={rider.chatRoom} />
           </div>
         </div>
       </section>

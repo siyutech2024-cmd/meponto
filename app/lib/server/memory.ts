@@ -1,8 +1,21 @@
 import { incidents, leaders, ledgerEntries, pontos, rewards, riders, type Incident, type LedgerEntry, type Rider } from "../data";
 import { seedNotificationsFromIncidents, type NotificationItem } from "../notifications";
 import { crmPartners, type CrmPartner } from "../crm";
+import {
+  marketplaceOrders,
+  marketplaceProducts,
+  partnerServiceRecords,
+  partnerPointsLedgerEntries,
+  pointsLedgerEntries,
+  type MarketplaceOrder,
+  type MarketplaceProduct,
+  type PartnerServiceRecord,
+  type PartnerPointsLedgerEntry,
+  type PointsLedgerEntry,
+} from "../points";
 import { systemSettings, type SystemSetting } from "../settings";
-import { whatsappGroups, type WhatsappGroup } from "../whatsapp";
+import { chatMessages, chatRooms, type ChatMessage, type ChatRoom } from "../chat";
+import { riderSlots, slotEnrollments, type RiderSlot, type SlotEnrollment } from "../slots";
 
 type Reward = (typeof rewards)[number];
 type Ponto = (typeof pontos)[number];
@@ -31,8 +44,16 @@ const globalState = globalThis as typeof globalThis & {
     ledgerEntries: LedgerEntry[];
     notifications: NotificationItem[];
     crmPartners: CrmPartner[];
-    whatsappGroups: WhatsappGroup[];
+    pointsLedgerEntries: PointsLedgerEntry[];
+    partnerServiceRecords: PartnerServiceRecord[];
+    partnerPointsLedgerEntries: PartnerPointsLedgerEntry[];
+    marketplaceProducts: MarketplaceProduct[];
+    marketplaceOrders: MarketplaceOrder[];
+    chatRooms: ChatRoom[];
+    chatMessages: ChatMessage[];
     systemSettings: SystemSetting[];
+    riderSlots: RiderSlot[];
+    slotEnrollments: SlotEnrollment[];
     auditEntries: ServerAuditEntry[];
   };
 };
@@ -48,16 +69,32 @@ export const memory =
     ledgerEntries: [...ledgerEntries],
     notifications: seedNotificationsFromIncidents(incidents),
     crmPartners: [...crmPartners],
-    whatsappGroups: [...whatsappGroups],
+    pointsLedgerEntries: [...pointsLedgerEntries],
+    partnerServiceRecords: [...partnerServiceRecords],
+    partnerPointsLedgerEntries: [...partnerPointsLedgerEntries],
+    marketplaceProducts: [...marketplaceProducts],
+    marketplaceOrders: [...marketplaceOrders],
+    chatRooms: [...chatRooms],
+    chatMessages: [...chatMessages],
     systemSettings: [...systemSettings],
+    riderSlots: [...riderSlots],
+    slotEnrollments: [...slotEnrollments],
     auditEntries: [],
   });
 
 memory.ledgerEntries ??= [...ledgerEntries];
 memory.notifications ??= seedNotificationsFromIncidents(memory.incidents);
 memory.crmPartners ??= [...crmPartners];
-memory.whatsappGroups ??= [...whatsappGroups];
+memory.pointsLedgerEntries ??= [...pointsLedgerEntries];
+memory.partnerServiceRecords ??= [...partnerServiceRecords];
+memory.partnerPointsLedgerEntries ??= [...partnerPointsLedgerEntries];
+memory.marketplaceProducts ??= [...marketplaceProducts];
+memory.marketplaceOrders ??= [...marketplaceOrders];
+memory.chatRooms ??= [...chatRooms];
+memory.chatMessages ??= [...chatMessages];
 memory.systemSettings ??= [...systemSettings];
+memory.riderSlots ??= [...riderSlots];
+memory.slotEnrollments ??= [...slotEnrollments];
 memory.auditEntries ??= [];
 
 export function jsonResponse<T>(data: T, init?: ResponseInit) {

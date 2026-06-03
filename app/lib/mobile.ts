@@ -6,7 +6,7 @@ export type MobileWorkflow = {
   id: string;
   role: MobileRole;
   title: string;
-  channel: "Android" | "WhatsApp" | "Android + WhatsApp";
+  channel: "Android" | "In-App Chat" | "Android + In-App Chat";
   status: MobileWorkflowStatus;
   primaryAction: string;
   responseTarget: string;
@@ -30,7 +30,7 @@ export type MobileIncidentDraft = {
   category: "Crash" | "Police Stop" | "Robbery Risk" | "Mechanical";
   severity: "Low" | "Medium" | "High" | "Critical";
   location: string;
-  submittedVia: "WhatsApp" | "Android";
+  submittedVia: "In-App Chat" | "Android";
   etaToHuman: string;
 };
 
@@ -46,7 +46,7 @@ export type MobilePayload = {
   generatedAt: string;
   summary: {
     androidSessions: number;
-    whatsappSessions: number;
+    chatSessions: number;
     checkInsToday: number;
     openMobileIncidents: number;
     emergencyResponseTarget: string;
@@ -63,17 +63,17 @@ export const mobileWorkflows: MobileWorkflow[] = [
     id: "mw-checkin",
     role: "Rider",
     title: "Shift Check-in",
-    channel: "Android + WhatsApp",
+    channel: "Android + In-App Chat",
     status: "Ready",
     primaryAction: "Send GPS + selfie check",
     responseTarget: "under 30 sec",
-    detail: "Rider confirms ponto, vehicle, battery, and WhatsApp reachability before going online.",
+    detail: "Rider confirms ponto, vehicle, battery, and In-App Chat reachability before going online.",
   },
   {
     id: "mw-incident",
     role: "Rider",
     title: "Incident Submit",
-    channel: "WhatsApp",
+    channel: "In-App Chat",
     status: "Queued",
     primaryAction: "Attach voice note + location",
     responseTarget: "under 2 min",
@@ -83,11 +83,11 @@ export const mobileWorkflows: MobileWorkflow[] = [
     id: "mw-emergency",
     role: "Leader",
     title: "Emergency Support",
-    channel: "Android + WhatsApp",
+    channel: "Android + In-App Chat",
     status: "Escalated",
     primaryAction: "Open SOS bridge",
     responseTarget: "under 60 sec",
-    detail: "Leader triggers a human support lane, shares rider location, and keeps WhatsApp fallback active.",
+    detail: "Leader triggers a human support lane and shares rider location through the PontoSys in-app chat.",
   },
   {
     id: "mw-roster",
@@ -103,7 +103,7 @@ export const mobileWorkflows: MobileWorkflow[] = [
     id: "mw-night",
     role: "Leader",
     title: "Night Shift Status",
-    channel: "WhatsApp",
+    channel: "In-App Chat",
     status: "Ready",
     primaryAction: "Broadcast safety pulse",
     responseTarget: "every 30 min",
@@ -161,7 +161,7 @@ export const mobileIncidentDrafts: MobileIncidentDraft[] = [
     category: "Crash",
     severity: "Critical",
     location: "Av. Celso Garcia, Tatuape",
-    submittedVia: "WhatsApp",
+    submittedVia: "In-App Chat",
     etaToHuman: "00:42",
   },
   {
@@ -179,7 +179,7 @@ export const mobileIncidentDrafts: MobileIncidentDraft[] = [
     category: "Mechanical",
     severity: "Low",
     location: "Av. Reboucas, Pinheiros",
-    submittedVia: "WhatsApp",
+    submittedVia: "In-App Chat",
     etaToHuman: "04:30",
   },
 ];
@@ -190,7 +190,7 @@ export const mobileEmergencyLanes: MobileEmergencyLane[] = [
     label: "SOS Human Bridge",
     target: "Operator + Leader + Rider",
     status: "Escalated",
-    nextStep: "Confirm ambulance need and keep WhatsApp audio open.",
+    nextStep: "Confirm ambulance need and keep In-App Chat audio open.",
   },
   {
     id: "mel-002",
@@ -210,14 +210,14 @@ export const mobileEmergencyLanes: MobileEmergencyLane[] = [
 
 export function getMobilePayload(): MobilePayload {
   const androidSessions = mobileWorkflows.filter((workflow) => workflow.channel.includes("Android")).length;
-  const whatsappSessions = mobileWorkflows.filter((workflow) => workflow.channel.includes("WhatsApp")).length;
+  const chatSessions = mobileWorkflows.filter((workflow) => workflow.channel.includes("In-App Chat")).length;
   const nightShiftOnline = mobileRoster.filter((member) => member.nightStatus === "Online" || member.nightStatus === "Support").length;
 
   return {
     generatedAt: "2026-05-15 02:25",
     summary: {
       androidSessions,
-      whatsappSessions,
+      chatSessions,
       checkInsToday: 118,
       openMobileIncidents: mobileIncidentDrafts.filter((incident) => incident.severity !== "Low").length,
       emergencyResponseTarget: "under 60 sec",

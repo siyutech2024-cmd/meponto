@@ -1,0 +1,20 @@
+# MePonto code ownership.
+# Use GitHub branch protection to require review from owners for protected areas.
+
+* @meponto/core
+
+/app/lib/ @meponto/core
+/app/api/ @meponto/core
+/app/components/ @meponto/core
+/package.json @meponto/core
+/docs/meponto-ecosystem-development-standard-v2.md @meponto/core
+
+/app/franchise/ @meponto/franchise
+/app/finance/ @meponto/franchise
+
+/app/riders/ @meponto-rider
+/app/leaders/ @meponto-rider
+/app/mobile/ @meponto-rider
+
+/app/sops/ @meponto-ops
+/docs/ @meponto-ops

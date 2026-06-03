@@ -2,7 +2,7 @@ export type RealtimeEventType =
   | "Incident Alert"
   | "Rider Status"
   | "Night Shift Alert"
-  | "WhatsApp Sync"
+  | "In-App Chat Message"
   | "Finance Approval"
   | "Security Event";
 
@@ -43,11 +43,11 @@ export const realtimeEvents: RealtimeEvent[] = [
   },
   {
     id: "rt-003",
-    type: "WhatsApp Sync",
+    type: "In-App Chat Message",
     severity: "Medium",
-    source: "WhatsApp Connector",
+    source: "PontoSys Chat Service",
     title: "Group approval backlog",
-    detail: "meponto Tatuape Risk has pending riders waiting for Leader review.",
+    detail: "MePonto Tatuape Risk has pending riders waiting for Leader review.",
     target: "Marcos Lima",
     status: "Acknowledged",
     createdAt: "2026-05-15 21:40",
@@ -80,7 +80,7 @@ export const realtimeEvents: RealtimeEvent[] = [
     severity: "Low",
     source: "Rider Online Status",
     title: "Night rider checked in",
-    detail: "Andre Santos completed scheduled WhatsApp check-in for Liberdade night route.",
+    detail: "Andre Santos completed scheduled In-App Chat check-in for Liberdade night route.",
     target: "Ponto Liberdade Sul",
     status: "Resolved",
     createdAt: "2026-05-15 21:25",
