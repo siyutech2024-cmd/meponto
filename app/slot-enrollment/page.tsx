@@ -165,17 +165,17 @@ export default function SlotEnrollmentPage() {
         <div className="panel p-4">
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
-              <div className="text-xs font-black uppercase text-[#8b5cf6]">{payload?.featureFlag ?? "slot_enrollment_beta"}</div>
+              <div className="text-xs font-black uppercase text-[var(--accent)]">{payload?.featureFlag ?? "slot_enrollment_beta"}</div>
               <h2 className="mt-1 text-xl font-black">{t.boardTitle}</h2>
-              <p className="mt-1 text-sm leading-6 text-[#8b8ba3]">{t.boardHint}</p>
+              <p className="mt-1 text-sm leading-6 text-[var(--muted)]">{t.boardHint}</p>
             </div>
             <Badge value={message} />
           </div>
           <div className="mt-4 grid gap-3 lg:grid-cols-7">
             {slotsByDay.map(({ day, slots }) => (
-              <div key={day} className="min-w-0 rounded border border-[#2a2a4a] bg-[#0d0d1a] p-3">
+              <div key={day} className="min-w-0 rounded border border-[var(--line)] bg-[var(--surface)] p-3">
                 <div className="text-center text-lg font-black">{slots[0]?.weekday ?? day}</div>
-                <div className="mt-1 text-center text-sm font-bold text-[#8b8ba3]">{formatMonthDay(slots[0]?.date)}</div>
+                <div className="mt-1 text-center text-sm font-bold text-[var(--muted)]">{formatMonthDay(slots[0]?.date)}</div>
                 <div className="mt-3 grid gap-2">
                   {slots.map((slot) => (
                     <SlotCard key={slot.id} slot={slot} />
@@ -194,12 +194,12 @@ export default function SlotEnrollmentPage() {
             </div>
             <div className="grid gap-2">
               {(payload?.workflow ?? []).map((step) => (
-                <div key={step.key} className="rounded border border-[#2a2a4a] bg-[#0d0d1a] p-3">
+                <div key={step.key} className="rounded border border-[var(--line)] bg-[var(--surface)] p-3">
                   <div className="flex items-start justify-between gap-2">
-                    <div className="font-black text-white">{step.label}</div>
+                    <div className="font-black text-[var(--text)]">{step.label}</div>
                     <Badge value={step.owner} />
                   </div>
-                  <div className="mt-1 text-xs leading-5 text-[#8b8ba3]">{step.guardrail}</div>
+                  <div className="mt-1 text-xs leading-5 text-[var(--muted)]">{step.guardrail}</div>
                   <div className="mt-2 font-mono text-[11px] text-[#a5a5bd]">{step.output}</div>
                 </div>
               ))}
@@ -207,7 +207,7 @@ export default function SlotEnrollmentPage() {
           </div>
           <div className="panel p-4">
             <div className="mb-3 flex items-center gap-2">
-              <FileBarChart2 className="text-[#8b5cf6]" size={18} />
+              <FileBarChart2 className="text-[var(--accent)]" size={18} />
               <h2 className="text-lg font-black">{t.hqSummary}</h2>
             </div>
             <div className="grid grid-cols-2 gap-2">
@@ -258,7 +258,7 @@ function SlotCard({ slot }: { slot: RiderSlot }) {
       <div className="px-3 pb-4 pt-5 text-center">
         <div className="text-lg font-black">{slot.startTime}-{slot.endTime}</div>
         <div className="mt-2 text-lg font-black">{slot.enrolled} / {slot.capacity}</div>
-        <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-black/10">
+        <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-[var(--line-soft)]">
           <div className="h-full rounded-full bg-[#ff7a00]" style={{ width: `${ratio}%` }} />
         </div>
       </div>

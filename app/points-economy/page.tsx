@@ -82,7 +82,7 @@ export default function PointsEconomyPage() {
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
               <h2 className="text-lg font-black">Rule Set Versions</h2>
-              <p className="mt-1 text-sm text-[#8b8ba3]">Rule changes are versioned so old ledger records never get recalculated.</p>
+              <p className="mt-1 text-sm text-[var(--muted)]">Rule changes are versioned so old ledger records never get recalculated.</p>
             </div>
             <Badge value={(payload?.ruleSetVersions ?? []).find((rule) => rule.status === "active")?.id ?? "No active version" } />
           </div>
@@ -102,7 +102,7 @@ export default function PointsEconomyPage() {
 
         <div className="panel p-4">
           <h2 className="text-lg font-black">Pending Release Rules</h2>
-          <p className="mt-1 text-sm text-[#8b8ba3]">Pending points release automatically only when the rule allows it and no risk trigger appears.</p>
+          <p className="mt-1 text-sm text-[var(--muted)]">Pending points release automatically only when the rule allows it and no risk trigger appears.</p>
           <div className="mt-4 overflow-x-auto">
             <DataTable
               headers={["Flow", "Pending", "Auto", "Review at", "Reviewer", "Reject trigger"]}
@@ -124,7 +124,7 @@ export default function PointsEconomyPage() {
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
               <h2 className="text-lg font-black">Acquisition Points Config</h2>
-              <p className="mt-1 text-sm text-[#8b8ba3]">Registration welcome points and referral rewards are configurable with pending release controls.</p>
+              <p className="mt-1 text-sm text-[var(--muted)]">Registration welcome points and referral rewards are configurable with pending release controls.</p>
             </div>
             <Badge value="Welcome 20 pts" />
           </div>
@@ -145,12 +145,12 @@ export default function PointsEconomyPage() {
 
         <div className="panel p-4">
           <h2 className="text-lg font-black">Acquisition Guardrails</h2>
-          <p className="mt-1 text-sm text-[#8b8ba3]">Registration rewards stay low-value and pending to prevent fake-account farming.</p>
+          <p className="mt-1 text-sm text-[var(--muted)]">Registration rewards stay low-value and pending to prevent fake-account farming.</p>
           <div className="mt-4 grid gap-2">
             {(payload?.acquisitionRules ?? []).map((rule) => (
-              <div key={rule.key} className="rounded border border-[#2a2a4a] bg-[#0d0d1a] p-3">
-                <div className="text-sm font-black text-white">{rule.label}</div>
-                <div className="mt-1 text-xs font-bold leading-5 text-[#8b8ba3]">{rule.riskGuard}</div>
+              <div key={rule.key} className="rounded border border-[var(--line)] bg-[var(--surface)] p-3">
+                <div className="text-sm font-black text-[var(--text)]">{rule.label}</div>
+                <div className="mt-1 text-xs font-bold leading-5 text-[var(--muted)]">{rule.riskGuard}</div>
               </div>
             ))}
           </div>
@@ -162,7 +162,7 @@ export default function PointsEconomyPage() {
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
               <h2 className="text-lg font-black">PontoMall Redemption Limits</h2>
-              <p className="mt-1 text-sm text-[#8b8ba3]">Controls for daily, monthly, new-account, high-value, and product-level redemption.</p>
+              <p className="mt-1 text-sm text-[var(--muted)]">Controls for daily, monthly, new-account, high-value, and product-level redemption.</p>
             </div>
             <Badge value="Redemption guarded" />
           </div>
@@ -181,12 +181,12 @@ export default function PointsEconomyPage() {
 
         <div className="panel p-4">
           <h2 className="text-lg font-black">Redemption Guardrails</h2>
-          <p className="mt-1 text-sm text-[#8b8ba3]">PontoMall limits protect inventory, account security, and points liability.</p>
+          <p className="mt-1 text-sm text-[var(--muted)]">PontoMall limits protect inventory, account security, and points liability.</p>
           <div className="mt-4 grid gap-2">
             {(payload?.redemptionLimitRules ?? []).map((rule) => (
-              <div key={rule.key} className="rounded border border-[#2a2a4a] bg-[#0d0d1a] p-3">
-                <div className="text-sm font-black text-white">{rule.label}</div>
-                <div className="mt-1 text-xs font-bold leading-5 text-[#8b8ba3]">{rule.riskGuard}</div>
+              <div key={rule.key} className="rounded border border-[var(--line)] bg-[var(--surface)] p-3">
+                <div className="text-sm font-black text-[var(--text)]">{rule.label}</div>
+                <div className="mt-1 text-xs font-bold leading-5 text-[var(--muted)]">{rule.riskGuard}</div>
               </div>
             ))}
           </div>
@@ -198,7 +198,7 @@ export default function PointsEconomyPage() {
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
               <h2 className="text-lg font-black">Rider Earning Rule Config</h2>
-              <p className="mt-1 text-sm text-[#8b8ba3]">Configurable v1 parameters for orders, TSH, AR, and CAA order incentives.</p>
+              <p className="mt-1 text-sm text-[var(--muted)]">Configurable v1 parameters for orders, TSH, AR, and CAA order incentives.</p>
             </div>
             <Badge value="Version v1 beta" />
           </div>
@@ -220,12 +220,12 @@ export default function PointsEconomyPage() {
 
         <div className="panel p-4">
           <h2 className="text-lg font-black">Rule Guardrails</h2>
-          <p className="mt-1 text-sm text-[#8b8ba3]">These limits keep configurable points from becoming uncontrolled incentives.</p>
+          <p className="mt-1 text-sm text-[var(--muted)]">These limits keep configurable points from becoming uncontrolled incentives.</p>
           <div className="mt-4 grid gap-2">
             {(payload?.riderPerformanceRules ?? []).map((rule) => (
-              <div key={rule.key} className="rounded border border-[#2a2a4a] bg-[#0d0d1a] p-3">
-                <div className="text-sm font-black text-white">{rule.label}</div>
-                <div className="mt-1 text-xs font-bold leading-5 text-[#8b8ba3]">{rule.riskGuard}</div>
+              <div key={rule.key} className="rounded border border-[var(--line)] bg-[var(--surface)] p-3">
+                <div className="text-sm font-black text-[var(--text)]">{rule.label}</div>
+                <div className="mt-1 text-xs font-bold leading-5 text-[var(--muted)]">{rule.riskGuard}</div>
               </div>
             ))}
           </div>
@@ -248,7 +248,7 @@ export default function PointsEconomyPage() {
         />
         <div className="panel p-4">
           <h2 className="text-lg font-black">Global Limits</h2>
-          <p className="mt-1 text-sm text-[#8b8ba3]">All PontoSys rider, partner, PontoMall, and analytics modules follow the same points standard.</p>
+          <p className="mt-1 text-sm text-[var(--muted)]">All PontoSys rider, partner, PontoMall, and analytics modules follow the same points standard.</p>
           <div className="mt-4 grid gap-3">
             <Field label="Value reference" value={`R$1 = ${payload?.rules.pointsPerBrlReference ?? 0} pts`} />
             <Field label="Minimum discount tier" value={`${payload?.rules.minimumDiscountTier ?? 0} estrelas`} />

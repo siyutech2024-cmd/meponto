@@ -86,28 +86,28 @@ export default function ToolsPage() {
         <div className="panel p-4">
           <div className="mb-3 flex items-center justify-between gap-3">
             <div>
-              <div className="text-xs font-black uppercase text-[#8b5cf6]">Riders CSV</div>
+              <div className="text-xs font-black uppercase text-[var(--accent)]">Riders CSV</div>
               <h2 className="text-xl font-black">Import Preview</h2>
             </div>
-            <FileSpreadsheet className="text-[#8b5cf6]" size={22} />
+            <FileSpreadsheet className="text-[var(--accent)]" size={22} />
           </div>
           <textarea
             value={csvText}
             onChange={(event) => setCsvText(event.target.value)}
-            className="min-h-40 w-full rounded border border-[#2a2a4a] bg-[#0d0d1a] p-3 font-mono text-sm outline-none"
+            className="min-h-40 w-full rounded border border-[var(--line)] bg-[var(--surface)] p-3 font-mono text-sm outline-none"
             spellCheck={false}
           />
         </div>
 
         <div className="panel p-4">
-          <div className="mb-3 text-xs font-black uppercase text-[#8b5cf6]">Available Exports</div>
+          <div className="mb-3 text-xs font-black uppercase text-[var(--accent)]">Available Exports</div>
           <div className="space-y-3">
             {exports.map((item) => (
-              <div key={item.id} className="rounded border border-[#2a2a4a] bg-[#0d0d1a] p-3">
+              <div key={item.id} className="rounded border border-[var(--line)] bg-[var(--surface)] p-3">
                 <div className="flex items-start justify-between gap-3">
                   <div>
                     <div className="font-black">{item.entity}</div>
-                    <div className="text-xs text-[#8b8ba3]">
+                    <div className="text-xs text-[var(--muted)]">
                       {item.records} records / {item.format} / {item.lastRunAt}
                     </div>
                   </div>
@@ -116,7 +116,7 @@ export default function ToolsPage() {
                 <button
                   type="button"
                   onClick={() => downloadExport(item.entity, item.filename)}
-                  className="mt-3 inline-flex h-10 w-full items-center justify-center gap-2 rounded border border-[#2a2a4a] bg-[#1a1a2e] text-sm font-black hover:border-[#8b5cf6]"
+                  className="mt-3 inline-flex h-10 w-full items-center justify-center gap-2 rounded border border-[var(--line)] bg-[var(--surface-raised)] text-sm font-black hover:border-[var(--accent)]"
                 >
                   <Download size={16} />
                   Export

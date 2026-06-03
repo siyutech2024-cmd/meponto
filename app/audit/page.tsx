@@ -29,13 +29,13 @@ export default function AuditPage() {
         <input
           value={query}
           onChange={(event) => setQuery(event.target.value)}
-          className="h-11 rounded border border-[#2a2a4a] bg-[#0d0d1a] px-3 outline-none"
+          className="h-11 rounded border border-[var(--line)] bg-[var(--surface)] px-3 outline-none"
           placeholder="Search actor / action / entity / detail"
         />
         <select
           value={riskFilter}
           onChange={(event) => setRiskFilter(event.target.value)}
-          className="h-11 rounded border border-[#2a2a4a] bg-[#0d0d1a] px-3 outline-none"
+          className="h-11 rounded border border-[var(--line)] bg-[var(--surface)] px-3 outline-none"
         >
           <option>All Risk</option>
           <option>Low</option>

@@ -224,7 +224,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 <Bell size={18} />
               </IconButton>
               {unreadCount ? (
-                <span className="absolute -right-1 -top-1 grid h-5 min-w-5 place-items-center rounded-full border border-[var(--surface)] bg-[var(--danger)] px-1 text-[10px] font-black text-white animate-pulse">
+                <span className="absolute -right-1 -top-1 grid h-5 min-w-5 place-items-center rounded-full border border-[var(--surface)] bg-[var(--danger)] px-1 text-[10px] font-black text-[var(--text)] animate-pulse">
                   {unreadCount}
                 </span>
               ) : null}

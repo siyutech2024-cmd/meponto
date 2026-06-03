@@ -386,10 +386,10 @@ const franchiseCopies: Record<Language, FranchiseCopy> = {
 
 function Panel({ title, eyebrow, children }: { title: string; eyebrow: string; children: React.ReactNode }) {
   return (
-    <section className="rounded-xl border border-[#2a2a4a] bg-[#0d0d1a] p-5">
+    <section className="rounded-xl border border-[var(--line)] bg-[var(--surface)] p-5">
       <div className="mb-4">
-        <div className="text-xs font-black uppercase text-[#8b5cf6]">{eyebrow}</div>
-        <h2 className="text-2xl font-black text-white">{title}</h2>
+        <div className="text-xs font-black uppercase text-[var(--accent)]">{eyebrow}</div>
+        <h2 className="text-2xl font-black text-[var(--text)]">{title}</h2>
       </div>
       {children}
     </section>
@@ -398,10 +398,10 @@ function Panel({ title, eyebrow, children }: { title: string; eyebrow: string; c
 
 function ActionCard({ title, detail, meta }: { title: string; detail: string; meta?: string }) {
   return (
-    <div className="rounded-lg border border-[#2a2a4a] bg-[#111827] p-4">
+    <div className="rounded-lg border border-[var(--line)] bg-[var(--surface-raised)] p-4">
       {meta ? <div className="mb-2 text-xs font-black uppercase text-[#06d6a0]">{meta}</div> : null}
-      <h3 className="font-black text-white">{title}</h3>
-      <p className="mt-2 text-sm leading-6 text-[#c4c4d4]">{detail}</p>
+      <h3 className="font-black text-[var(--text)]">{title}</h3>
+      <p className="mt-2 text-sm leading-6 text-[var(--text-soft)]">{detail}</p>
     </div>
   );
 }
@@ -417,10 +417,10 @@ export default function FranchisePage() {
 
       <section className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
         {copy.commercialTerms.map(([label, value, detail]) => (
-          <div key={label} className="rounded-xl border border-[#2a2a4a] bg-[#0d0d1a] p-4">
-            <div className="text-xs font-black uppercase text-[#8b8ba3]">{label}</div>
-            <div className="mt-2 text-3xl font-black text-white">{value}</div>
-            <p className="mt-2 text-sm leading-6 text-[#c4c4d4]">{detail}</p>
+          <div key={label} className="rounded-xl border border-[var(--line)] bg-[var(--surface)] p-4">
+            <div className="text-xs font-black uppercase text-[var(--muted)]">{label}</div>
+            <div className="mt-2 text-3xl font-black text-[var(--text)]">{value}</div>
+            <p className="mt-2 text-sm leading-6 text-[var(--text-soft)]">{detail}</p>
           </div>
         ))}
       </section>
@@ -429,7 +429,7 @@ export default function FranchisePage() {
         <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
           <div>
             <div className="text-xs font-black uppercase text-[#a78bfa]">{copy.governance.eyebrow}</div>
-            <h2 className="text-2xl font-black text-white">{copy.governance.title}</h2>
+            <h2 className="text-2xl font-black text-[var(--text)]">{copy.governance.title}</h2>
           </div>
           <Badge value={copy.governance.badge} />
         </div>
@@ -444,12 +444,12 @@ export default function FranchisePage() {
         <Panel title={copy.productTitle} eyebrow={copy.productEyebrow}>
           <div className="grid gap-3 md:grid-cols-2">
             {copy.productMilestones.map((group) => (
-              <div key={group.title} className="rounded-lg border border-[#2a2a4a] bg-[#111827] p-4">
+              <div key={group.title} className="rounded-lg border border-[var(--line)] bg-[var(--surface-raised)] p-4">
                 <div className="mb-3 flex items-center gap-2">
                   <Target className="text-[#06d6a0]" size={18} />
-                  <h3 className="font-black text-white">{group.title}</h3>
+                  <h3 className="font-black text-[var(--text)]">{group.title}</h3>
                 </div>
-                <ul className="space-y-2 text-sm leading-6 text-[#c4c4d4]">
+                <ul className="space-y-2 text-sm leading-6 text-[var(--text-soft)]">
                   {group.items.map((item) => (
                     <li key={item} className="flex gap-2">
                       <CheckCircle2 className="mt-1 shrink-0 text-[#06d6a0]" size={15} />
@@ -528,7 +528,7 @@ export default function FranchisePage() {
       <section className="mt-5 rounded-xl border border-[#74303c] bg-[#240d14] p-5">
         <div className="mb-3 flex items-center gap-2">
           <AlertTriangle className="text-[#fb7185]" size={20} />
-          <h2 className="text-2xl font-black text-white">{copy.exitTitle}</h2>
+          <h2 className="text-2xl font-black text-[var(--text)]">{copy.exitTitle}</h2>
         </div>
         <p className="max-w-4xl text-sm leading-6 text-[#ffc1cb]">
           {copy.exitDescription}
@@ -536,25 +536,25 @@ export default function FranchisePage() {
       </section>
 
       <section className="mt-5 grid gap-3 md:grid-cols-4">
-        <a href="/franchise-cooperation-plan.md" className="rounded-lg border border-[#2a2a4a] bg-[#111827] p-4">
-          <FileText className="mb-2 text-[#8b5cf6]" size={20} />
-          <div className="font-black text-white">{copy.docTitle}</div>
-          <p className="mt-2 text-sm text-[#8b8ba3]">{copy.docDescription}</p>
+        <a href="/franchise-cooperation-plan.md" className="rounded-lg border border-[var(--line)] bg-[var(--surface-raised)] p-4">
+          <FileText className="mb-2 text-[var(--accent)]" size={20} />
+          <div className="font-black text-[var(--text)]">{copy.docTitle}</div>
+          <p className="mt-2 text-sm text-[var(--muted)]">{copy.docDescription}</p>
         </a>
-        <div className="rounded-lg border border-[#2a2a4a] bg-[#111827] p-4">
+        <div className="rounded-lg border border-[var(--line)] bg-[var(--surface-raised)] p-4">
           <CalendarDays className="mb-2 text-[#38bdf8]" size={20} />
-          <div className="font-black text-white">{copy.dateTitle}</div>
-          <p className="mt-2 text-sm text-[#8b8ba3]">{copy.dateDescription}</p>
+          <div className="font-black text-[var(--text)]">{copy.dateTitle}</div>
+          <p className="mt-2 text-sm text-[var(--muted)]">{copy.dateDescription}</p>
         </div>
-        <div className="rounded-lg border border-[#2a2a4a] bg-[#111827] p-4">
+        <div className="rounded-lg border border-[var(--line)] bg-[var(--surface-raised)] p-4">
           <MapPinned className="mb-2 text-[#f59e0b]" size={20} />
-          <div className="font-black text-white">{copy.targetTitle}</div>
-          <p className="mt-2 text-sm text-[#8b8ba3]">{copy.targetDescription}</p>
+          <div className="font-black text-[var(--text)]">{copy.targetTitle}</div>
+          <p className="mt-2 text-sm text-[var(--muted)]">{copy.targetDescription}</p>
         </div>
-        <div className="rounded-lg border border-[#2a2a4a] bg-[#111827] p-4">
+        <div className="rounded-lg border border-[var(--line)] bg-[var(--surface-raised)] p-4">
           <TrendingUp className="mb-2 text-[#06d6a0]" size={20} />
-          <div className="font-black text-white">{copy.modelTitle}</div>
-          <p className="mt-2 text-sm text-[#8b8ba3]">{copy.modelDescription}</p>
+          <div className="font-black text-[var(--text)]">{copy.modelTitle}</div>
+          <p className="mt-2 text-sm text-[var(--muted)]">{copy.modelDescription}</p>
         </div>
       </section>
       </div>

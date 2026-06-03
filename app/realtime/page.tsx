@@ -30,7 +30,7 @@ export default function RealtimePage() {
       </section>
 
       <section className="panel my-4 grid gap-3 p-3 md:grid-cols-[220px_180px_1fr]">
-        <select value={typeFilter} onChange={(event) => setTypeFilter(event.target.value)} className="h-11 rounded border border-[#2a2a4a] bg-[#0d0d1a] px-3 outline-none">
+        <select value={typeFilter} onChange={(event) => setTypeFilter(event.target.value)} className="h-11 rounded border border-[var(--line)] bg-[var(--surface)] px-3 outline-none">
           <option>All Events</option>
           <option>Incident Alert</option>
           <option>Rider Status</option>
@@ -39,14 +39,14 @@ export default function RealtimePage() {
           <option>Finance Approval</option>
           <option>Security Event</option>
         </select>
-        <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)} className="h-11 rounded border border-[#2a2a4a] bg-[#0d0d1a] px-3 outline-none">
+        <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)} className="h-11 rounded border border-[var(--line)] bg-[var(--surface)] px-3 outline-none">
           <option>All Status</option>
           <option>New</option>
           <option>Acknowledged</option>
           <option>Routed</option>
           <option>Resolved</option>
         </select>
-        <div className="flex items-center text-sm font-bold text-[#8b8ba3]">
+        <div className="flex items-center text-sm font-bold text-[var(--muted)]">
           MVP polling mode now, WebSocket / Socket.IO ready for backend phase.
         </div>
       </section>

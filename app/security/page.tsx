@@ -27,15 +27,15 @@ function ReadinessPanel({ title, icon, items }: { title: string; icon: React.Rea
       </div>
       <div className="space-y-3">
         {items.map((item) => (
-          <div key={item.id} className="rounded border border-[#2a2a4a] bg-[#0d0d1a] p-3">
+          <div key={item.id} className="rounded border border-[var(--line)] bg-[var(--surface)] p-3">
             <div className="flex items-start justify-between gap-3">
               <div>
                 <div className="font-black">{item.title}</div>
-                <div className="mt-1 text-sm text-[#8b8ba3]">{item.detail}</div>
+                <div className="mt-1 text-sm text-[var(--muted)]">{item.detail}</div>
               </div>
               <StatusIcon status={item.status} />
             </div>
-            <div className="mt-3 flex items-center justify-between gap-3 text-xs uppercase text-[#8b8ba3]">
+            <div className="mt-3 flex items-center justify-between gap-3 text-xs uppercase text-[var(--muted)]">
               <span>{item.owner}</span>
               <Badge value={item.status} />
             </div>
@@ -53,44 +53,44 @@ export default function SecurityPage() {
 
       <section className="mb-5 grid gap-4 md:grid-cols-2 xl:grid-cols-5">
         <div className="panel industrial-shadow p-4 xl:col-span-2">
-          <div className="text-sm font-bold uppercase text-[#8b8ba3]">Posture Score</div>
+          <div className="text-sm font-bold uppercase text-[var(--muted)]">Posture Score</div>
           <div className="mt-3 flex items-end justify-between gap-3">
             <div className="text-5xl font-black">{posture.postureScore}</div>
             <Badge value={posture.postureScore >= 85 ? "Ready" : "Monitor"} />
           </div>
-          <div className="mt-4 text-sm text-[#8b8ba3]">
+          <div className="mt-4 text-sm text-[var(--muted)]">
             Demo posture combines login limits, elevated RBAC checks, token readiness, CPF protection, and open risk events.
           </div>
         </div>
         <div className="panel p-4">
-          <div className="text-sm font-bold uppercase text-[#8b8ba3]">Login Limits</div>
+          <div className="text-sm font-bold uppercase text-[var(--muted)]">Login Limits</div>
           <div className="mt-4 flex items-center justify-between gap-3">
             <Badge value={posture.summary.loginLimitStatus} />
-            <LockKeyhole className="text-[#8b5cf6]" size={28} />
+            <LockKeyhole className="text-[var(--accent)]" size={28} />
           </div>
         </div>
         <div className="panel p-4">
-          <div className="text-sm font-bold uppercase text-[#8b8ba3]">Token / JWT</div>
+          <div className="text-sm font-bold uppercase text-[var(--muted)]">Token / JWT</div>
           <div className="mt-4 flex items-center justify-between gap-3">
             <Badge value={posture.summary.tokenJwtReadiness} />
-            <KeyRound className="text-[#8b5cf6]" size={28} />
+            <KeyRound className="text-[var(--accent)]" size={28} />
           </div>
         </div>
         <div className="panel p-4">
-          <div className="text-sm font-bold uppercase text-[#8b8ba3]">High Risk Events</div>
+          <div className="text-sm font-bold uppercase text-[var(--muted)]">High Risk Events</div>
           <div className="mt-3 text-5xl font-black">{posture.summary.highRiskEvents}</div>
         </div>
       </section>
 
       <section className="mb-5 grid gap-4 xl:grid-cols-3">
-        <ReadinessPanel title="Token / JWT Readiness" icon={<KeyRound className="text-[#8b5cf6]" size={20} />} items={posture.readiness.tokenJwt} />
-        <ReadinessPanel title="Login Limit Status" icon={<LockKeyhole className="text-[#8b5cf6]" size={20} />} items={posture.readiness.loginLimits} />
-        <ReadinessPanel title="CPF Encryption Readiness" icon={<ShieldCheck className="text-[#8b5cf6]" size={20} />} items={posture.readiness.cpfEncryption} />
+        <ReadinessPanel title="Token / JWT Readiness" icon={<KeyRound className="text-[var(--accent)]" size={20} />} items={posture.readiness.tokenJwt} />
+        <ReadinessPanel title="Login Limit Status" icon={<LockKeyhole className="text-[var(--accent)]" size={20} />} items={posture.readiness.loginLimits} />
+        <ReadinessPanel title="CPF Encryption Readiness" icon={<ShieldCheck className="text-[var(--accent)]" size={20} />} items={posture.readiness.cpfEncryption} />
       </section>
 
       <section className="mb-5 grid gap-4 xl:grid-cols-[1fr_420px]">
         <div>
-          <div className="mb-2 text-xs font-black uppercase text-[#8b8ba3]">Login audit</div>
+          <div className="mb-2 text-xs font-black uppercase text-[var(--muted)]">Login audit</div>
           <DataTable
             headers={["Created At", "Actor", "Role", "Method", "Location", "Outcome", "Risk"]}
             rows={posture.loginAudit.map((entry) => [
@@ -106,18 +106,18 @@ export default function SecurityPage() {
         </div>
 
         <section className="panel p-4">
-          <div className="mb-3 text-xs font-black uppercase text-[#8b8ba3]">Risk events</div>
+          <div className="mb-3 text-xs font-black uppercase text-[var(--muted)]">Risk events</div>
           <div className="space-y-3">
             {posture.riskEvents.map((event) => (
-              <div key={event.id} className="rounded border border-[#2a2a4a] bg-[#0d0d1a] p-3">
+              <div key={event.id} className="rounded border border-[var(--line)] bg-[var(--surface)] p-3">
                 <div className="flex items-start justify-between gap-3">
                   <div>
                     <div className="font-black">{event.title}</div>
-                    <div className="mt-1 text-sm text-[#8b8ba3]">{event.detail}</div>
+                    <div className="mt-1 text-sm text-[var(--muted)]">{event.detail}</div>
                   </div>
                   <Badge value={event.risk} />
                 </div>
-                <div className="mt-3 flex items-center justify-between gap-3 text-xs uppercase text-[#8b8ba3]">
+                <div className="mt-3 flex items-center justify-between gap-3 text-xs uppercase text-[var(--muted)]">
                   <span>{event.createdAt}</span>
                   <span>{event.status}</span>
                 </div>
@@ -128,7 +128,7 @@ export default function SecurityPage() {
       </section>
 
       <section>
-        <div className="mb-2 text-xs font-black uppercase text-[#8b8ba3]">RBAC risk checks</div>
+        <div className="mb-2 text-xs font-black uppercase text-[var(--muted)]">RBAC risk checks</div>
         <DataTable
           headers={["Role", "Permission", "Status", "Risk", "Detail"]}
           rows={posture.rbacRiskChecks.map((check) => [

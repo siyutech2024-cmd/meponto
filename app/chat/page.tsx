@@ -76,24 +76,24 @@ export default function ChatPage() {
               <div className="text-sm font-black">
                 {filteredGroups.length} <span>room records</span>
               </div>
-              <div className="text-xs text-[#8b8ba3]">Delivery status, leader coverage, and in-app broadcast readiness</div>
+              <div className="text-xs text-[var(--muted)]">Delivery status, leader coverage, and in-app broadcast readiness</div>
             </div>
             <div className="flex flex-wrap gap-2">
-              <label className="flex h-11 items-center gap-2 rounded border border-[#2a2a4a] bg-[#0d0d1a] px-3">
-                <Search size={16} className="text-[#8b8ba3]" />
+              <label className="flex h-11 items-center gap-2 rounded border border-[var(--line)] bg-[var(--surface)] px-3">
+                <Search size={16} className="text-[var(--muted)]" />
                 <input
                   value={query}
                   onChange={(event) => setQuery(event.target.value)}
                   placeholder="Search room, leader, ponto"
-                  className="w-52 bg-transparent text-sm outline-none placeholder:text-[#4a4a60]"
+                  className="w-52 bg-transparent text-sm outline-none placeholder:text-[var(--muted)]"
                 />
               </label>
-              <select value={riskFilter} onChange={(event) => setRiskFilter(event.target.value as (typeof riskFilters)[number])} className="h-11 rounded border border-[#2a2a4a] bg-[#0d0d1a] px-3 outline-none">
+              <select value={riskFilter} onChange={(event) => setRiskFilter(event.target.value as (typeof riskFilters)[number])} className="h-11 rounded border border-[var(--line)] bg-[var(--surface)] px-3 outline-none">
                 {riskFilters.map((filter) => (
                   <option key={filter}>{filter}</option>
                 ))}
               </select>
-              <select value={coverageFilter} onChange={(event) => setCoverageFilter(event.target.value as (typeof coverageFilters)[number])} className="h-11 rounded border border-[#2a2a4a] bg-[#0d0d1a] px-3 outline-none">
+              <select value={coverageFilter} onChange={(event) => setCoverageFilter(event.target.value as (typeof coverageFilters)[number])} className="h-11 rounded border border-[var(--line)] bg-[var(--surface)] px-3 outline-none">
                 {coverageFilters.map((filter) => (
                   <option key={filter}>{filter}</option>
                 ))}
@@ -106,11 +106,11 @@ export default function ChatPage() {
             rows={filteredGroups.map((group) => [
               <div key="group">
                 <div className="font-black">{group.name}</div>
-                <div className="text-xs text-[#8b8ba3]">{group.ponto}</div>
+                <div className="text-xs text-[var(--muted)]">{group.ponto}</div>
               </div>,
               <div key="leader">
                 <div>{group.leader}</div>
-                <div className="text-xs text-[#8b8ba3]">{group.leaderPhone}</div>
+                <div className="text-xs text-[var(--muted)]">{group.leaderPhone}</div>
               </div>,
               group.ridersCount,
               group.activeToday,
@@ -139,24 +139,24 @@ export default function ChatPage() {
 
         <aside className="space-y-4">
           <div className="panel p-4">
-            <div className="mb-3 flex items-center gap-2 text-sm font-black uppercase text-[#8b5cf6]">
+            <div className="mb-3 flex items-center gap-2 text-sm font-black uppercase text-[var(--accent)]">
               <MessageCircle size={16} />
               {selectedRoom.name}
             </div>
             <div className="space-y-2">
               {visibleMessages.length ? (
                 visibleMessages.map((message) => (
-                  <div key={message.id} className="rounded border border-[#2a2a4a] bg-[#1a1a2e] p-3">
+                  <div key={message.id} className="rounded border border-[var(--line)] bg-[var(--surface-raised)] p-3">
                     <div className="flex items-center justify-between gap-2 text-xs">
-                      <span className="font-black text-[#f0f0ff]">{message.sender}</span>
+                      <span className="font-black text-[var(--text)]">{message.sender}</span>
                       <Badge value={message.status} />
                     </div>
-                    <div className="mt-2 text-sm text-[#c4c4d4]">{message.body}</div>
-                    <div className="mt-2 text-[10px] text-[#8b8ba3]">{message.createdAt}</div>
+                    <div className="mt-2 text-sm text-[var(--text-soft)]">{message.body}</div>
+                    <div className="mt-2 text-[10px] text-[var(--muted)]">{message.createdAt}</div>
                   </div>
                 ))
               ) : (
-                <div className="text-sm text-[#8b8ba3]">No messages in this room yet.</div>
+                <div className="text-sm text-[var(--muted)]">No messages in this room yet.</div>
               )}
             </div>
             <div className="mt-3 flex gap-2">
@@ -164,27 +164,27 @@ export default function ChatPage() {
                 value={draft}
                 onChange={(event) => setDraft(event.target.value)}
                 placeholder="Write an in-app message"
-                className="min-w-0 flex-1 rounded border border-[#2a2a4a] bg-[#0d0d1a] px-3 text-sm outline-none"
+                className="min-w-0 flex-1 rounded border border-[var(--line)] bg-[var(--surface)] px-3 text-sm outline-none"
               />
-              <button type="button" onClick={sendMessage} className="grid h-10 w-10 place-items-center rounded border border-[#8b5cf6] bg-[#8b5cf6] text-white" aria-label="Send in-app message">
+              <button type="button" onClick={sendMessage} className="grid h-10 w-10 place-items-center rounded border border-[var(--accent)] bg-[var(--accent)] text-[var(--accent-ink)]" aria-label="Send in-app message">
                 <Send size={16} />
               </button>
             </div>
           </div>
 
           <div className="panel p-4">
-            <div className="mb-3 flex items-center gap-2 text-sm font-black uppercase text-[#8b5cf6]">
+            <div className="mb-3 flex items-center gap-2 text-sm font-black uppercase text-[var(--accent)]">
               <Radio size={16} />
               Operator Queue
             </div>
             <div className="space-y-2">
               {alertGroups.map((group) => (
-                <div key={group.id} className="rounded border border-[#2a2a4a] bg-[#1a1a2e] p-3">
+                <div key={group.id} className="rounded border border-[var(--line)] bg-[var(--surface-raised)] p-3">
                   <div className="flex items-center justify-between gap-3">
                     <span className="font-black">{group.name}</span>
                     <Badge value={group.riskStatus} />
                   </div>
-                  <div className="mt-1 text-sm text-[#8b8ba3]">
+                  <div className="mt-1 text-sm text-[var(--muted)]">
                     {group.pendingApprovals} approvals waiting, {group.unreadAlerts} unread alerts.
                   </div>
                 </div>
@@ -193,15 +193,15 @@ export default function ChatPage() {
           </div>
 
           <div className="panel p-4">
-            <div className="mb-3 flex items-center gap-2 text-sm font-black uppercase text-[#8b5cf6]">
+            <div className="mb-3 flex items-center gap-2 text-sm font-black uppercase text-[var(--accent)]">
               <MessageCircle size={16} />
               Broadcast Lanes
             </div>
             <div className="space-y-2 text-sm">
               {chatRooms.map((group) => (
-                <div key={group.id} className="flex items-center justify-between gap-3 border-b border-[#1e1e3a] pb-2 last:border-0 last:pb-0">
+                <div key={group.id} className="flex items-center justify-between gap-3 border-b border-[var(--line)] pb-2 last:border-0 last:pb-0">
                   <span className="font-bold">{group.broadcastList}</span>
-                  <span className="text-[#8b8ba3]">{group.ridersCount} riders</span>
+                  <span className="text-[var(--muted)]">{group.ridersCount} riders</span>
                 </div>
               ))}
             </div>
@@ -215,7 +215,7 @@ export default function ChatPage() {
 function Metric({ label, value, tone = "default" }: { label: string; value: string; tone?: "default" | "warning" }) {
   return (
     <div className="panel p-4">
-      <div className="text-xs font-black uppercase text-[#8b8ba3]">{label}</div>
+      <div className="text-xs font-black uppercase text-[var(--muted)]">{label}</div>
       <div className={tone === "warning" ? "mt-2 text-3xl font-black text-[#fb923c]" : "mt-2 text-3xl font-black"}>{value}</div>
     </div>
   );

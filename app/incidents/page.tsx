@@ -26,8 +26,8 @@ export default function IncidentsPage() {
         action={<AddButton label="Create Incident" disabled={!can(currentRole, "create_incidents")} onClick={() => setDrawerOpen(true)} />}
       />
       <div className="panel mb-4 flex flex-wrap items-center justify-between gap-3 p-3">
-        <div className="text-sm font-bold text-[#8b8ba3]">{visibleIncidents.length} incident records</div>
-        <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)} className="h-11 rounded border border-[#2a2a4a] bg-[#0d0d1a] px-3 outline-none">
+        <div className="text-sm font-bold text-[var(--muted)]">{visibleIncidents.length} incident records</div>
+        <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)} className="h-11 rounded border border-[var(--line)] bg-[var(--surface)] px-3 outline-none">
           <option>All Status</option>
           <option>Open</option>
           <option>Processing</option>
