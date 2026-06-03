@@ -1,3 +1,5 @@
+import Image from "next/image";
+
 type BrandMarkProps = {
   size?: "sm" | "lg";
 };
@@ -39,4 +41,3 @@ export function BrandLockup({ markSize = "sm", heading = false }: { markSize?: B
     </div>
   );
 }
-import Image from "next/image";
