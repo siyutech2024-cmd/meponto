@@ -30,10 +30,11 @@ import {
   ShieldQuestion,
   Store,
   Smartphone,
+  Sun,
   Users,
   X,
 } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { BrandLockup } from "./brand";
 import { languages, translate, type Language, type TranslationKey } from "../lib/i18n";
 import { getNotificationStatus } from "../lib/notifications";
@@ -164,6 +165,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const language = useVentoStore((state) => state.language);
   const setLanguage = useVentoStore((state) => state.setLanguage);
+  const theme = useVentoStore((state) => state.theme);
+  const setTheme = useVentoStore((state) => state.setTheme);
   const currentRole = useVentoStore((state) => state.currentRole);
   const setRole = useVentoStore((state) => state.setRole);
   const resetDemoData = useVentoStore((state) => state.resetDemoData);
@@ -174,14 +177,19 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const unreadCount = useMemo(() => notifications.filter((notification) => !notification.readAt).length, [notifications]);
   const canReset = can(currentRole, "reset_demo");
   const t = (key: TranslationKey) => translate(language, key);
+  const nextTheme = theme === "dark" ? "light" : "dark";
+
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme;
+  }, [theme]);
 
   return (
-    <div className="min-h-screen bg-[var(--background)] lg:grid lg:grid-cols-[272px_1fr]">
+    <div className="min-h-screen bg-[var(--background)] text-[var(--text)] lg:grid lg:grid-cols-[260px_1fr]">
       <aside className="border-b border-[var(--line)] bg-[var(--surface)] lg:sticky lg:top-0 lg:h-screen lg:border-b-0 lg:border-r">
-        <div className="flex h-[72px] items-center px-5 py-4">
+        <div className="flex h-[72px] items-center border-b border-[var(--line)] px-5 py-4">
           <BrandLockup />
         </div>
-        <nav className="flex gap-2 overflow-x-auto px-3 pb-3 lg:block lg:h-[calc(100vh-72px)] lg:space-y-5 lg:overflow-y-auto lg:px-4 lg:pb-6">
+        <nav className="flex gap-2 overflow-x-auto px-3 py-3 lg:block lg:h-[calc(100vh-72px)] lg:space-y-4 lg:overflow-y-auto lg:px-3 lg:pb-6">
           {navGroups.map((group) => (
             <section key={group.title} className="min-w-max lg:min-w-0">
               <div className="mb-2 px-2 text-[10px] font-black uppercase tracking-[0.16em] text-[var(--muted)]">{group.title}</div>
@@ -192,7 +200,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                     <Link
                       key={item.href}
                       href={item.href}
-                      className="flex min-h-10 shrink-0 items-center gap-3 rounded-[8px] border border-transparent px-3 text-sm font-semibold text-[var(--text-soft)] transition-colors hover:border-[var(--line)] hover:bg-[var(--surface-hover)] hover:text-[var(--accent)]"
+                      className="flex min-h-10 shrink-0 items-center gap-3 rounded-[8px] border border-transparent px-3 text-sm font-semibold text-[var(--text-soft)] transition-colors hover:border-[var(--line)] hover:bg-[var(--surface-hover)] hover:text-[var(--text)]"
                     >
                       <Icon size={17} />
                       <span className="whitespace-nowrap">{t(item.labelKey)}</span>
@@ -216,11 +224,14 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 <Bell size={18} />
               </IconButton>
               {unreadCount ? (
-                <span className="absolute -right-1 -top-1 grid h-5 min-w-5 place-items-center rounded-full border border-[#0d0d1a] bg-[#f43f5e] px-1 text-[10px] font-black text-white animate-pulse">
+                <span className="absolute -right-1 -top-1 grid h-5 min-w-5 place-items-center rounded-full border border-[var(--surface)] bg-[var(--danger)] px-1 text-[10px] font-black text-white animate-pulse">
                   {unreadCount}
                 </span>
               ) : null}
             </div>
+            <IconButton label={nextTheme === "dark" ? "Switch to dark mode" : "Switch to light mode"} onClick={() => setTheme(nextTheme)}>
+              {theme === "dark" ? <Sun size={18} /> : <Moon size={18} />}
+            </IconButton>
             <IconButton label={canReset ? t("resetDemoData") : t("resetRequiresSuperAdmin")} onClick={canReset ? resetDemoData : undefined} disabled={!canReset}>
               <RotateCcw size={18} />
             </IconButton>
@@ -258,17 +269,17 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             </div>
             <Link
               href="/login"
-              className="flex h-10 items-center gap-2 rounded-[8px] border border-[var(--line)] px-3 text-sm font-semibold text-[var(--muted-strong)] transition-colors hover:border-[var(--danger)] hover:bg-[rgba(255,92,112,0.1)] hover:text-white"
+              className="flex h-10 items-center gap-2 rounded-[8px] border border-[var(--line)] px-3 text-sm font-semibold text-[var(--muted-strong)] transition-colors hover:border-[var(--danger)] hover:bg-[var(--danger-bg)] hover:text-[var(--danger-ink)]"
             >
               <LogOut size={17} />
               {t("logout")}
             </Link>
           </div>
         </header>
-        <div className="mx-auto max-w-[1440px] px-4 py-5 sm:px-6 lg:px-8 animate-fade-in">{children}</div>
+        <div className="mx-auto max-w-[1500px] px-4 py-5 sm:px-6 lg:px-7 animate-fade-in">{children}</div>
       </main>
       {notificationsOpen ? (
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex justify-end">
+        <div className="fixed inset-0 z-50 flex justify-end bg-[var(--overlay)] backdrop-blur-sm">
           <aside className="h-full w-full max-w-md flex flex-col border-l border-[var(--line)] bg-[var(--surface)] shadow-2xl animate-slide-up">
             <div className="flex min-h-16 items-center justify-between border-b border-[var(--line)] px-4">
               <div>
@@ -488,11 +499,11 @@ export function StatCard({
 export function Badge({ value }: { value: string }) {
   const tone =
     value === "Critical" || value === "Risk" || value === "Open"
-      ? "border-[rgba(255,92,112,0.55)] text-[#ff9aa7] bg-[rgba(255,92,112,0.14)]"
+      ? "border-[var(--danger)] text-[var(--danger-ink)] bg-[var(--danger-bg)]"
       : value === "High" || value === "Medium" || value === "Processing" || value === "Night Shift"
-        ? "border-[rgba(255,180,84,0.55)] text-[#ffd39a] bg-[rgba(255,180,84,0.14)]"
+        ? "border-[var(--warning)] text-[var(--warning-ink)] bg-[var(--warning-bg)]"
         : value === "Active" || value === "Closed" || value === "Elite"
-          ? "border-[rgba(45,212,191,0.5)] text-[#7de9db] bg-[rgba(45,212,191,0.12)]"
+          ? "border-[var(--ok)] text-[var(--ok-ink)] bg-[var(--ok-bg)]"
           : "border-[var(--line)] text-[var(--muted-strong)] bg-[var(--surface-raised)]";
 
   return <span className={`inline-flex rounded-[6px] border px-2 py-0.5 text-[11px] font-bold tracking-wide ${tone}`}>{value}</span>;
@@ -520,7 +531,7 @@ export function DataTable({
           </thead>
           <tbody>
             {rows.map((row, index) => (
-              <tr key={index} className="border-b border-[rgba(38,50,68,0.65)] last:border-0 transition-colors hover:bg-[var(--surface-hover)]">
+              <tr key={index} className="border-b border-[var(--line-soft)] last:border-0 transition-colors hover:bg-[var(--surface-hover)]">
                 {row.map((cell, cellIndex) => (
                   <td key={cellIndex} className="whitespace-nowrap px-4 py-3 align-middle text-[var(--text-soft)]">
                     {cell}

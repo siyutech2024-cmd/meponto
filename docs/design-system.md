@@ -11,12 +11,14 @@
 The interface is an operating system, not a marketing site. Every module should help users scan, decide, and act quickly.
 
 1. Keep screens dense but calm.
-2. Use dark mode by default with high text contrast.
+2. Support light and dark modes with high text contrast in both.
 3. Prefer tables, queues, status chips, drawers, and compact workflow panels.
 4. Avoid hero sections, decorative backgrounds, gradient cards, nested cards, and oversized copy.
 5. Every function must remain reachable; simplification means fewer steps, not fewer capabilities.
 
-## Dark Theme Tokens
+## Theme Tokens
+
+PontoSys and PontoMall use one semantic token set with two palettes. Components must reference tokens, not raw hex colors, so every workflow remains readable when the user switches between light and dark.
 
 | Token | Use |
 | --- | --- |
@@ -33,6 +35,14 @@ The interface is an operating system, not a marketing site. Every module should 
 | `--warning` | Pending/medium risk |
 | `--danger` | Critical/risk/open incident |
 
+Required behavior:
+
+- Default mode is dark.
+- The shell exposes a light/dark toggle in the top control bar.
+- The selected theme is persisted locally.
+- Inputs, tables, drawers, badges, side panels, and hover states must use semantic tokens.
+- Text must pass visual contrast in both modes; never place muted text on a low-contrast surface.
+
 ## Layout Standard
 
 ```txt
@@ -40,8 +50,9 @@ Left navigation -> grouped by system area
 Top bar -> region, notifications, language, role, logout
 Page title -> short product/module title + operational eyebrow
 Summary row -> 3 to 5 compact metrics
-Work area -> table, queue, workflow, map, or catalog
-Detail/action -> drawer, inline form, or right-side focused panel
+Main workspace -> table, queue, workflow, map, or catalog
+Right action panel -> selected record, next action, form, or operational summary
+Drawer -> create/edit workflows that need more fields
 ```
 
 ## Direction Mockups

@@ -1,6 +1,7 @@
 "use client";
 
 import { FormEvent, useEffect, useMemo, useState } from "react";
+import { PackageCheck, ShoppingCart, Store } from "lucide-react";
 import { AppShell, Badge, DataTable, Field, PageTitle } from "../components/ui";
 import type { MarketplaceOrder, MarketplaceProduct } from "../lib/points";
 import type { Rider } from "../lib/data";
@@ -38,6 +39,17 @@ export default function MarketplacePage() {
   }, []);
 
   const stock = useMemo(() => products.reduce((sum, product) => sum + product.stock, 0), [products]);
+  const availableProducts = useMemo(
+    () => products.filter((product) => product.audience === "both" || product.audience === accountType),
+    [accountType, products],
+  );
+  const selectedProduct = products.find((product) => product.id === productId) ?? availableProducts[0];
+
+  useEffect(() => {
+    if (availableProducts.length && !availableProducts.some((product) => product.id === productId)) {
+      setProductId(availableProducts[0].id);
+    }
+  }, [availableProducts, productId]);
 
   async function redeem(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -61,65 +73,104 @@ export default function MarketplacePage() {
     <AppShell>
       <PageTitle title="PontoMall" eyebrow="Points catalog, redemption, stock reserve" />
       <section className="grid gap-3 md:grid-cols-4">
-        <Field label="Active Products" value={String(products.length)} />
-        <Field label="Stock Units" value={String(stock)} />
-        <Field label="Orders" value={String(orders.length)} />
+        <Field label="Active Products" value={<span className="text-2xl">{products.length}</span>} />
+        <Field label="Stock Units" value={<span className="text-2xl">{stock}</span>} />
+        <Field label="Orders" value={<span className="text-2xl">{orders.length}</span>} />
         <Field label="Rule Source" value="Points Economy" />
       </section>
 
-      <form onSubmit={redeem} className="panel my-4 grid gap-3 p-4 lg:grid-cols-[180px_1fr_1fr_auto]">
-        <select value={accountType} onChange={(event) => setAccountType(event.target.value as "rider" | "partner")} className="h-10 rounded-[8px] border border-[var(--line)] bg-[var(--surface-raised)] px-3 text-[var(--text)] outline-none">
-          <option value="rider">Rider account</option>
-          <option value="partner">Partner account</option>
-        </select>
-        {accountType === "partner" ? (
-          <select value={partnerId} onChange={(event) => setPartnerId(event.target.value)} className="h-10 rounded-[8px] border border-[var(--line)] bg-[var(--surface-raised)] px-3 text-[var(--text)] outline-none">
-            {partners.map((partner) => (
-              <option key={partner.id} value={partner.id}>{partner.name}</option>
-            ))}
-          </select>
-        ) : (
-          <select value={riderId} onChange={(event) => setRiderId(event.target.value)} className="h-10 rounded-[8px] border border-[var(--line)] bg-[var(--surface-raised)] px-3 text-[var(--text)] outline-none">
-            {riders.map((rider) => (
-              <option key={rider.id} value={rider.id}>{rider.name}</option>
-            ))}
-          </select>
-        )}
-        <select value={productId} onChange={(event) => setProductId(event.target.value)} className="h-10 rounded-[8px] border border-[var(--line)] bg-[var(--surface-raised)] px-3 text-[var(--text)] outline-none">
-          {products
-            .filter((product) => product.audience === "both" || product.audience === accountType)
-            .map((product) => (
-              <option key={product.id} value={product.id}>{product.name} - {product.pointsPrice} pts</option>
-            ))}
-        </select>
-        <button className="h-10 rounded-[8px] border border-transparent bg-[var(--accent)] px-4 text-sm font-black text-[var(--accent-ink)] transition-colors hover:bg-[var(--accent-strong)]">Redeem</button>
-        {message ? <div className="text-sm font-bold text-[var(--text-soft)] lg:col-span-3">{message}</div> : null}
-      </form>
+      <section className="mt-4 grid gap-4 xl:grid-cols-[minmax(0,1fr)_380px]">
+        <div className="space-y-4">
+          <div className="panel p-4">
+            <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <div className="flex items-center gap-2 text-xs font-black uppercase text-[var(--accent)]">
+                  <Store size={16} />
+                  Catalog workspace
+                </div>
+                <h2 className="mt-1 text-xl font-black">商品库存与兑换规则</h2>
+              </div>
+              <Badge value={`${availableProducts.length} eligible`} />
+            </div>
+            <DataTable
+              headers={["Product", "Audience", "Type", "Price", "Stock", "City", "Status"]}
+              rows={products.map((product) => [
+                product.name,
+                product.audience,
+                product.type,
+                `${product.pointsPrice} pts`,
+                product.stock,
+                product.city,
+                <Badge key="status" value={product.status} />,
+              ])}
+            />
+          </div>
 
-      <section className="grid gap-4 xl:grid-cols-2">
-        <DataTable
-          headers={["Product", "Audience", "Type", "Price", "Stock", "City", "Status"]}
-          rows={products.map((product) => [
-            product.name,
-            product.audience,
-            product.type,
-            `${product.pointsPrice} pts`,
-            product.stock,
-            product.city,
-            <Badge key="status" value={product.status} />,
-          ])}
-        />
-        <DataTable
-          headers={["Created", "Order", "Account", "Product", "Points", "Status"]}
-          rows={orders.map((order) => [
-            order.createdAt,
-            order.id,
-            order.accountType === "partner" ? order.partnerId : order.riderId,
-            order.productId,
-            order.pointsSpent,
-            <Badge key="status" value={order.status} />,
-          ])}
-        />
+          <div className="panel p-4">
+            <div className="mb-3 flex items-center gap-2">
+              <ShoppingCart className="text-[var(--ok)]" size={18} />
+              <h2 className="text-lg font-black">兑换订单</h2>
+            </div>
+            <DataTable
+              headers={["Created", "Order", "Account", "Product", "Points", "Status"]}
+              rows={orders.map((order) => [
+                order.createdAt,
+                order.id,
+                order.accountType === "partner" ? order.partnerId : order.riderId,
+                order.productId,
+                order.pointsSpent,
+                <Badge key="status" value={order.status} />,
+              ])}
+            />
+          </div>
+        </div>
+
+        <aside className="space-y-4">
+          <form onSubmit={redeem} className="panel grid gap-3 p-4">
+            <div>
+              <div className="flex items-center gap-2 text-xs font-black uppercase text-[var(--accent)]">
+                <PackageCheck size={16} />
+                Quick redemption
+              </div>
+              <h2 className="mt-1 text-xl font-black">创建兑换订单</h2>
+            </div>
+            <select value={accountType} onChange={(event) => setAccountType(event.target.value as "rider" | "partner")} className="h-11 rounded-[8px] border border-[var(--line)] bg-[var(--surface-raised)] px-3 text-[var(--text)] outline-none">
+              <option value="rider">Rider account</option>
+              <option value="partner">Partner account</option>
+            </select>
+            {accountType === "partner" ? (
+              <select value={partnerId} onChange={(event) => setPartnerId(event.target.value)} className="h-11 rounded-[8px] border border-[var(--line)] bg-[var(--surface-raised)] px-3 text-[var(--text)] outline-none">
+                {partners.map((partner) => (
+                  <option key={partner.id} value={partner.id}>{partner.name}</option>
+                ))}
+              </select>
+            ) : (
+              <select value={riderId} onChange={(event) => setRiderId(event.target.value)} className="h-11 rounded-[8px] border border-[var(--line)] bg-[var(--surface-raised)] px-3 text-[var(--text)] outline-none">
+                {riders.map((rider) => (
+                  <option key={rider.id} value={rider.id}>{rider.name}</option>
+                ))}
+              </select>
+            )}
+            <select value={productId} onChange={(event) => setProductId(event.target.value)} className="h-11 rounded-[8px] border border-[var(--line)] bg-[var(--surface-raised)] px-3 text-[var(--text)] outline-none">
+              {availableProducts.map((product) => (
+                <option key={product.id} value={product.id}>{product.name} - {product.pointsPrice} pts</option>
+              ))}
+            </select>
+            <button className="h-11 rounded-[8px] border border-transparent bg-[var(--accent)] px-4 text-sm font-black text-[var(--accent-ink)] transition-colors hover:bg-[var(--accent-strong)]">Redeem</button>
+            {message ? <div className="rounded-[8px] border border-[var(--line)] bg-[var(--surface-raised)] p-3 text-sm font-bold text-[var(--text-soft)]">{message}</div> : null}
+          </form>
+
+          <div className="panel p-4">
+            <div className="text-xs font-black uppercase text-[var(--muted)]">Selected product</div>
+            <h2 className="mt-1 text-xl font-black">{selectedProduct?.name ?? "No product"}</h2>
+            <div className="mt-4 grid gap-3">
+              <Field label="Price" value={selectedProduct ? `${selectedProduct.pointsPrice} pts` : "-"} />
+              <Field label="Stock" value={selectedProduct?.stock ?? "-"} />
+              <Field label="Audience" value={selectedProduct?.audience ?? "-"} />
+              <Field label="City" value={selectedProduct?.city ?? "-"} />
+            </div>
+          </div>
+        </aside>
       </section>
     </AppShell>
   );
