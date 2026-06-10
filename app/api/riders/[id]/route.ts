@@ -1,4 +1,5 @@
 import { appendServerAudit, jsonResponse, memory } from "../../../lib/server/memory";
+import { persistDeleteRecord } from "../../../lib/server/persistence";
 import { requirePermission } from "../../../lib/server/authz";
 import type { Rider } from "../../../lib/data";
 import { getRiderSensitiveRevealDecision, maskRiderSensitive } from "../../../lib/masking";
@@ -49,5 +50,6 @@ export async function DELETE(_request: Request, { params }: { params: Promise<{ 
   if (index === -1) return jsonResponse({ error: "Rider not found" }, { status: 404 });
 
   const [removed] = memory.riders.splice(index, 1);
+  persistDeleteRecord("riders", id);
   return jsonResponse({ data: removed });
 }

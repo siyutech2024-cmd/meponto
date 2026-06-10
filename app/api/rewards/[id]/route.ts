@@ -1,5 +1,6 @@
 import { jsonResponse, memory } from "../../../lib/server/memory";
 import { requirePermission } from "../../../lib/server/authz";
+import { persistDeleteRecord } from "../../../lib/server/persistence";
 
 const rewardTypes = new Set(["Rider", "Leader"]);
 
@@ -39,5 +40,6 @@ export async function DELETE(request: Request, { params }: { params: Promise<{ i
   if (index === -1) return jsonResponse({ error: "Reward not found" }, { status: 404 });
 
   const [removed] = memory.rewards.splice(index, 1);
+  persistDeleteRecord("rewards", id);
   return jsonResponse({ data: removed });
 }

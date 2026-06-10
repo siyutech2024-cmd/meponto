@@ -22,6 +22,10 @@ type AnyRecord = { id: string } & Record<string, unknown>;
 type PersistenceState = {
   tracked: Map<string, AnyRecord[]>;
   dirty: Set<string>;
+  /** Record ids explicitly deleted in this instance, per collection. */
+  pendingDeletes: Map<string, Set<string>>;
+  /** Collections whose database rows must be wiped before the next upsert. */
+  pendingPurges: Set<string>;
   flushTimer: ReturnType<typeof setTimeout> | null;
   warned: boolean;
   client: SupabaseClient | null;
@@ -39,12 +43,18 @@ const state: PersistenceState =
   (globalState.mepontoPersistence = {
     tracked: new Map(),
     dirty: new Set(),
+    pendingDeletes: new Map(),
+    pendingPurges: new Set(),
     flushTimer: null,
     warned: false,
     client: null,
     hydrationPromise: null,
     hydrated: false,
   });
+
+// Older hot-reloaded state may miss the newer fields.
+state.pendingDeletes ??= new Map();
+state.pendingPurges ??= new Set();
 
 function persistenceEnabled(): boolean {
   return (
@@ -103,6 +113,27 @@ async function flushDirtyCollections() {
     if (!collection) continue;
 
     try {
+      // Purge first (demo reset): wipe every database row of the collection
+      // before re-upserting the current in-memory state.
+      if (state.pendingPurges.has(name)) {
+        const { error: purgeError } = await supabase.from(TABLE).delete().eq("collection", name);
+        if (purgeError) throw new Error(purgeError.message);
+        state.pendingPurges.delete(name);
+      }
+
+      // Explicit single-record deletes (DELETE routes).
+      const deletes = state.pendingDeletes.get(name);
+      if (deletes && deletes.size > 0) {
+        const ids = Array.from(deletes);
+        const { error: deleteError } = await supabase
+          .from(TABLE)
+          .delete()
+          .eq("collection", name)
+          .in("record_id", ids);
+        if (deleteError) throw new Error(deleteError.message);
+        state.pendingDeletes.delete(name);
+      }
+
       const records = collection.filter((record) => record && typeof record.id === "string");
       const rows = records.map((record) => ({
         collection: name,
@@ -118,24 +149,34 @@ async function flushDirtyCollections() {
         if (upsertError) throw new Error(upsertError.message);
       }
 
-      // Remove rows for records that no longer exist in memory (deletes).
-      const ids = records.map((record) => record.id);
-      let deleteQuery = supabase.from(TABLE).delete().eq("collection", name);
-      if (ids.length > 0) {
-        deleteQuery = deleteQuery.not(
-          "record_id",
-          "in",
-          `(${ids.map((id) => `"${id.replace(/"/g, "")}"`).join(",")})`,
-        );
-      }
-      const { error: deleteError } = await deleteQuery;
-      if (deleteError) throw new Error(deleteError.message);
+      // NOTE: we deliberately do NOT delete rows that are merely absent from
+      // this instance's memory. On serverless, several instances run the same
+      // collections concurrently and an instance that has not seen a freshly
+      // created record would otherwise wipe it from the database.
     } catch (error) {
       // Re-mark dirty so the next flush retries the sync.
       state.dirty.add(name);
       warnOnce((error as Error).message);
     }
   }
+}
+
+/** Mark a record as explicitly deleted so the database row is removed. */
+export function persistDeleteRecord(collectionName: string, recordId: string) {
+  const set = state.pendingDeletes.get(collectionName) ?? new Set<string>();
+  set.add(recordId);
+  state.pendingDeletes.set(collectionName, set);
+  state.dirty.add(collectionName);
+  scheduleFlush();
+}
+
+/** Wipe all database rows of the given collections before the next flush. */
+export function persistPurgeCollections(collectionNames: string[]) {
+  for (const name of collectionNames) {
+    state.pendingPurges.add(name);
+    state.dirty.add(name);
+  }
+  scheduleFlush();
 }
 
 /** Force-write every tracked collection (used after demo resets). */
