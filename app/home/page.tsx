@@ -195,41 +195,37 @@ const copy = {
 
 const cardIcons = { map: MapPinned, clock: Clock4, coins: Coins, shield: ShieldCheck } as const;
 
-/** Animated counter that counts up once when it enters the viewport. */
+/** Animated counter that counts up shortly after mount (hero stats). */
 function StatValue({ value, suffix }: { value: string | number; suffix?: string }) {
-  const ref = useRef<HTMLSpanElement>(null);
   const [display, setDisplay] = useState(typeof value === "number" ? 0 : value);
 
   useEffect(() => {
     if (typeof value !== "number") return;
-    const element = ref.current;
-    if (!element) return;
     if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
       setDisplay(value);
       return;
     }
 
-    const observer = new IntersectionObserver(
-      (entries) => {
-        if (!entries[0].isIntersecting) return;
-        observer.disconnect();
-        const start = performance.now();
-        const duration = 1100;
-        const tick = (now: number) => {
-          const progress = Math.min((now - start) / duration, 1);
-          setDisplay(Math.round(value * (1 - Math.pow(1 - progress, 3))));
-          if (progress < 1) requestAnimationFrame(tick);
-        };
-        requestAnimationFrame(tick);
-      },
-      { threshold: 0.6 },
-    );
-    observer.observe(element);
-    return () => observer.disconnect();
+    let frame = 0;
+    const timer = setTimeout(() => {
+      const start = performance.now();
+      const duration = 1100;
+      const tick = (now: number) => {
+        const progress = Math.min((now - start) / duration, 1);
+        setDisplay(Math.round(value * (1 - Math.pow(1 - progress, 3))));
+        if (progress < 1) frame = requestAnimationFrame(tick);
+      };
+      frame = requestAnimationFrame(tick);
+    }, 500);
+
+    return () => {
+      clearTimeout(timer);
+      cancelAnimationFrame(frame);
+    };
   }, [value]);
 
   return (
-    <span ref={ref}>
+    <span>
       {display}
       {suffix ?? ""}
     </span>
