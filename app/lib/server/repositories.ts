@@ -13,34 +13,44 @@ export type EntityWithId = {
   id: string;
 };
 
+/**
+ * Unified repository interface.
+ *
+ * All methods return Promise so both the in-memory and Supabase
+ * implementations satisfy the same contract. Callers must `await`.
+ */
 export type Repository<T extends EntityWithId> = {
-  all(): T[];
-  findById(id: string): T | undefined;
-  insert(record: T): T;
-  update(id: string, patch: Partial<T>): T | undefined;
-  delete(id: string): T | undefined;
-  count(): number;
+  all(): Promise<T[]>;
+  findById(id: string): Promise<T | undefined>;
+  insert(record: T): Promise<T>;
+  update(id: string, patch: Partial<T>): Promise<T | undefined>;
+  delete(id: string): Promise<T | undefined>;
+  count(): Promise<number>;
 };
 
 type CollectionProvider<T extends EntityWithId> = () => T[];
 
+/**
+ * In-memory repository — wraps the existing global `memory` store.
+ * Methods return resolved Promises so they match the async interface.
+ */
 class MemoryRepository<T extends EntityWithId> implements Repository<T> {
   constructor(private readonly getCollection: CollectionProvider<T>) {}
 
-  all() {
+  async all() {
     return this.getCollection();
   }
 
-  findById(id: string) {
+  async findById(id: string) {
     return this.getCollection().find((record) => record.id === id);
   }
 
-  insert(record: T) {
+  async insert(record: T) {
     this.getCollection().unshift(record);
     return record;
   }
 
-  update(id: string, patch: Partial<T>) {
+  async update(id: string, patch: Partial<T>) {
     const collection = this.getCollection();
     const index = collection.findIndex((record) => record.id === id);
     if (index === -1) return undefined;
@@ -49,7 +59,7 @@ class MemoryRepository<T extends EntityWithId> implements Repository<T> {
     return collection[index];
   }
 
-  delete(id: string) {
+  async delete(id: string) {
     const collection = this.getCollection();
     const index = collection.findIndex((record) => record.id === id);
     if (index === -1) return undefined;
@@ -58,7 +68,7 @@ class MemoryRepository<T extends EntityWithId> implements Repository<T> {
     return removed;
   }
 
-  count() {
+  async count() {
     return this.getCollection().length;
   }
 }
@@ -95,7 +105,50 @@ export function createMemoryRepositories(): CoreRepositories {
   };
 }
 
-export const repositories = createMemoryRepositories();
+// ─── Feature-flagged factory ─────────────────────────────────────────────────
+
+function shouldUseSupabase(): boolean {
+  return process.env.USE_SUPABASE === "true";
+}
+
+/**
+ * Create the active repository set based on the USE_SUPABASE env var.
+ *
+ * - USE_SUPABASE=true  → Supabase-backed (real Postgres)
+ * - USE_SUPABASE=false → In-memory (dev/demo seed data)
+ *
+ * Lazy-initialised to avoid import-time side-effects when the env is
+ * not yet available (e.g. during build).
+ */
+function createRepositories(): CoreRepositories {
+  if (shouldUseSupabase()) {
+    // Dynamic import avoids pulling Supabase SDK into bundles that don't need it
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { createSupabaseRepositories } = require("./supabase-repositories");
+    console.log("[MePonto] Using Supabase repositories");
+    return createSupabaseRepositories();
+  }
+
+  console.log("[MePonto] Using in-memory repositories");
+  return createMemoryRepositories();
+}
+
+/** Lazy singleton — created on first access. */
+let _repositories: CoreRepositories | null = null;
+
+export function getRepositories(): CoreRepositories {
+  if (!_repositories) {
+    _repositories = createRepositories();
+  }
+  return _repositories;
+}
+
+/** Convenience alias — backwards-compatible default export. */
+export const repositories: CoreRepositories = new Proxy({} as CoreRepositories, {
+  get(_target, prop: string) {
+    return (getRepositories() as Record<string, unknown>)[prop];
+  },
+});
 
 export type RepositoryServices = {
   riders: Repository<Rider>;
@@ -104,7 +157,13 @@ export type RepositoryServices = {
 };
 
 export const repositoryServices: RepositoryServices = {
-  riders: repositories.riders,
-  rewards: repositories.rewards,
-  audit: repositories.auditEvents,
+  get riders() {
+    return getRepositories().riders;
+  },
+  get rewards() {
+    return getRepositories().rewards;
+  },
+  get audit() {
+    return getRepositories().auditEvents;
+  },
 };
