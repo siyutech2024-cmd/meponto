@@ -179,6 +179,53 @@ export function persistPurgeCollections(collectionNames: string[]) {
   scheduleFlush();
 }
 
+/**
+ * Read-through refresh: pull the latest database rows for the given
+ * collections into memory before serving a request. Needed on serverless
+ * where a warm instance only hydrates once at boot and would otherwise miss
+ * records written by sibling instances. Records that exist only locally
+ * (not yet flushed) are kept on top of the database state.
+ */
+export async function refreshCollectionsFromDatabase(collectionNames: string[]): Promise<void> {
+  if (!persistenceEnabled()) return;
+  if (state.hydrationPromise) await state.hydrationPromise.catch(() => undefined);
+
+  const supabase = await getClient();
+  if (!supabase) return;
+
+  for (const name of collectionNames) {
+    const collection = state.tracked.get(name);
+    if (!collection) continue;
+
+    try {
+      const { data, error } = await supabase
+        .from(TABLE)
+        .select("record_id, data")
+        .eq("collection", name)
+        .order("updated_at", { ascending: false });
+      if (error) throw new Error(error.message);
+
+      const dbRows = ((data ?? []) as Array<{ data: AnyRecord }>)
+        .map((row) => row.data)
+        .filter((row) => row && typeof row.id === "string");
+      const dbIds = new Set(dbRows.map((row) => row.id));
+      const pendingDeletes = state.pendingDeletes.get(name) ?? new Set<string>();
+      const localOnly = collection.filter(
+        (record) => record && typeof record.id === "string" && !dbIds.has(record.id) && !pendingDeletes.has(record.id),
+      );
+
+      collection.splice(0, collection.length, ...localOnly, ...dbRows.filter((row) => !pendingDeletes.has(row.id)));
+      // The splice marked the collection dirty; only keep it dirty when there
+      // is genuinely local-only data that still needs to reach the database.
+      if (localOnly.length === 0 && !state.pendingPurges.has(name) && pendingDeletes.size === 0) {
+        state.dirty.delete(name);
+      }
+    } catch (error) {
+      warnOnce((error as Error).message);
+    }
+  }
+}
+
 /** Force-write every tracked collection (used after demo resets). */
 export function persistAllCollections() {
   for (const name of state.tracked.keys()) state.dirty.add(name);
