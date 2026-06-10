@@ -261,6 +261,15 @@ export const portalHostMap: Record<string, PortalId> = {
   "mall.meponto.com": "pontomall",
   "meponto.com": "rider",
   "www.meponto.com": "rider",
+  // Interim per-portal entrances on vercel.app, usable before meponto.com DNS
+  // is configured. Each maps one deployment alias to its portal.
+  "meponto-sys.vercel.app": "pontosys",
+  "meponto-franchise.vercel.app": "franchise",
+  "meponto-ponto.vercel.app": "ponto",
+  "meponto-riders.vercel.app": "rider",
+  "meponto-mall.vercel.app": "pontomall",
+  "meponto-partner.vercel.app": "partner",
+  "meponto-supplier.vercel.app": "supplier",
 };
 
 export function findTestAccount(identifier: string, password: string) {
