@@ -1,4 +1,5 @@
 import { acceptClientId, appendServerAudit, makeServerId, memory, jsonResponse } from "../../lib/server/memory";
+import { getAvailablePoints } from "../../lib/points";
 import { requirePermission } from "../../lib/server/authz";
 import type { Rider, RiderStatus } from "../../lib/data";
 import { getRiderSensitiveRevealDecision, maskRiderSensitive } from "../../lib/masking";
@@ -19,7 +20,11 @@ export function GET(request: Request) {
     });
   }
 
-  const data = reveal.allowed ? memory.riders : memory.riders.map(maskRiderSensitive);
+  const base = reveal.allowed ? memory.riders : memory.riders.map(maskRiderSensitive);
+  const data = base.map((rider) => ({
+    ...rider,
+    pointsBalance: getAvailablePoints(memory.pointsLedgerEntries, rider.id),
+  }));
   return jsonResponse({ data });
 }
 
@@ -58,6 +63,8 @@ export async function POST(request: Request) {
     nightShiftCount: body.nightShiftCount ?? 0,
     incidentCount: body.incidentCount ?? 0,
     joinDate: body.joinDate ?? new Date().toISOString().slice(0, 10),
+    ninetyNineId: body.ninetyNineId ?? "",
+    franchise: body.franchise ?? "Unassigned",
   };
 
   memory.riders.unshift(rider);
