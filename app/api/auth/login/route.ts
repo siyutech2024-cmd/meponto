@@ -20,9 +20,12 @@ export async function POST(request: Request) {
     return jsonResponse({ error: "identifier and password are required" }, { status: 400 });
   }
 
-  const account = (await findSupabaseTestAccount(identifier, body.password)) ?? findTestAccount(identifier, body.password);
+  const account =
+    (await findAppUserAccount(identifier, body.password)) ??
+    (await findSupabaseTestAccount(identifier, body.password)) ??
+    findTestAccount(identifier, body.password);
   if (!account) {
-    return jsonResponse({ error: "Invalid test account or password" }, { status: 401 });
+    return jsonResponse({ error: "Invalid account or password" }, { status: 401 });
   }
 
   if (body.portal && account.portal !== body.portal) {
@@ -58,6 +61,43 @@ export async function POST(request: Request) {
   });
   response.headers.append("Set-Cookie", sessionCookie(token));
   return response;
+}
+
+/** Real multi-user accounts created from the admin console (/users). */
+async function findAppUserAccount(identifier: string, password: string): Promise<TestAccount | undefined> {
+  const { createHash } = await import("node:crypto");
+  const { memory } = await import("../../../lib/server/memory");
+  const { refreshCollectionsFromDatabase } = await import("../../../lib/server/persistence");
+
+  await refreshCollectionsFromDatabase(["appUsers"]);
+
+  const normalized = identifier.trim().toLowerCase();
+  const compactPhone = identifier.replace(/\s/g, "");
+  const user = memory.appUsers.find(
+    (item) => item.status === "active" && (item.identifier === normalized || (item.phone && item.phone.replace(/\s/g, "") === compactPhone)),
+  );
+  if (!user) return undefined;
+
+  const hash = createHash("sha256").update(`${user.salt}:${password}`).digest("hex");
+  if (hash !== user.passwordHash) return undefined;
+
+  const index = memory.appUsers.findIndex((item) => item.id === user.id);
+  if (index !== -1) {
+    memory.appUsers[index] = { ...memory.appUsers[index], lastLoginAt: new Date().toISOString().slice(0, 16).replace("T", " ") };
+  }
+
+  return {
+    id: user.id,
+    portal: user.portal,
+    name: user.name,
+    role: user.role,
+    identifier: user.identifier,
+    phone: user.phone,
+    password: "",
+    organization: user.organization,
+    tenantId: user.tenantId,
+    defaultPath: user.defaultPath,
+  };
 }
 
 async function findSupabaseTestAccount(identifier: string, password: string): Promise<TestAccount | undefined> {
