@@ -23,6 +23,8 @@ export type Rider = {
   nightShiftCount: number;
   incidentCount: number;
   joinDate: string;
+  /** Eastwind (99Food) rider id used when reporting shift rosters. */
+  ninetyNineId?: string;
 };
 export type Incident = {
   id: string;

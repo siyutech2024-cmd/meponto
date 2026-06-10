@@ -47,6 +47,7 @@ export const portalConfigs: Record<PortalId, PortalConfig> = {
     vercelPath: "/pontosys",
     futureDomain: "sys.meponto.com",
     modules: [
+      { href: "/dispatch", label: "运力调度中心", description: "Eastwind 周计划导入、配额分发、报名审核与填报清单。", permission: "manage_slots" },
       { href: "/operations-core", label: "运力运营核心", description: "T+1 报表、KPI、三级名额与白名单导出。", permission: "view_dashboard" },
       { href: "/dashboard", label: "总部仪表盘", description: "全网运营、风险和排班汇总。", permission: "view_dashboard" },
       { href: "/slot-enrollment", label: "排班总览", description: "查看站点、加盟商、总部审核链路并导出清单。", permission: "manage_slots" },
