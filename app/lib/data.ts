@@ -25,6 +25,8 @@ export type Rider = {
   joinDate: string;
   /** Eastwind (99Food) rider id used when reporting shift rosters. */
   ninetyNineId?: string;
+  /** Franchise that owns the rider's station. */
+  franchise?: string;
 };
 export type Incident = {
   id: string;

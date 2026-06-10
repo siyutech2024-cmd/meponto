@@ -79,7 +79,14 @@ type ReportBody = {
   confirm?: boolean; // true → mark reported; false → just return the roster text
 };
 
-type Body = ImportBody | QuotaBody | SignupBody | ReviewBody | ReportBody;
+type SetWeekBody = {
+  action: "setWeek";
+  city?: string;
+  hotzone?: string;
+  entries: Array<{ date: string; timeRange: string; plannedCount: number; isCritical?: boolean }>;
+};
+
+type Body = ImportBody | QuotaBody | SignupBody | ReviewBody | ReportBody | SetWeekBody;
 
 export async function POST(request: Request) {
   const forbidden = requirePermission(request, "manage_slots");
@@ -291,6 +298,66 @@ export async function POST(request: Request) {
           reportedAt: confirm ? memory.dispatchShifts.find((item) => item.id === shiftId)?.reportedAt : shift.reportedAt,
         },
       });
+    }
+
+    case "setWeek": {
+      const { entries, hotzone = "Santo Amaro", city = "圣保罗" } = body as SetWeekBody;
+      if (!Array.isArray(entries) || entries.length === 0) {
+        return jsonResponse({ error: "entries are required" }, { status: 400 });
+      }
+
+      let created = 0;
+      let updated = 0;
+      const importedAt = nowStamp();
+
+      for (const entry of entries.slice(0, 50)) {
+        const date = String(entry.date ?? "");
+        const timeRange = String(entry.timeRange ?? "").replace("-", "~");
+        const plannedCount = Math.max(0, Math.floor(Number(entry.plannedCount)));
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !/^\d{1,2}:\d{2}~\d{1,2}:\d{2}$/.test(timeRange) || !Number.isFinite(plannedCount)) {
+          continue;
+        }
+
+        const index = memory.dispatchShifts.findIndex(
+          (shift) => shift.date === date && shift.timeRange === timeRange && shift.hotzone === hotzone,
+        );
+        if (index !== -1) {
+          memory.dispatchShifts[index] = {
+            ...memory.dispatchShifts[index],
+            plannedCount,
+            isCritical: entry.isCritical ?? memory.dispatchShifts[index].isCritical,
+          };
+          updated += 1;
+        } else if (plannedCount > 0) {
+          const record: DispatchShift = {
+            id: `ms-${date}-${timeRange.replace(/[:~]/g, "")}-${hotzone.replace(/\s+/g, "")}`.toLowerCase(),
+            planId: "",
+            planName: "手动排班",
+            city,
+            hotzone,
+            date,
+            timeRange,
+            plannedCount,
+            filled99Count: 0,
+            isCritical: entry.isCritical ?? false,
+            status: "scheduling",
+            importedAt,
+          };
+          memory.dispatchShifts.unshift(record);
+          created += 1;
+        }
+      }
+
+      appendServerAudit({
+        actor,
+        action: "DISPATCH_SET_WEEK",
+        entity: "DispatchShift",
+        entityId: hotzone,
+        detail: `Manual weekly plan: ${created} shifts created, ${updated} updated.`,
+        risk: "Low",
+      });
+
+      return jsonResponse({ data: { created, updated } }, { status: 201 });
     }
 
     default:

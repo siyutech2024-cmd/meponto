@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Bike, Filter, Search, ShieldAlert } from "lucide-react";
 import { AddRiderDrawer, IncidentDrawer } from "../components/forms";
 import { AddButton, AppShell, Badge, DataTable, Field, GuardedButton, PageTitle } from "../components/ui";
@@ -18,6 +18,26 @@ export default function RidersPage() {
   const [statusFilter, setStatusFilter] = useState("All Status");
   const [addOpen, setAddOpen] = useState(false);
   const [incidentFor, setIncidentFor] = useState<{ name: string; ponto: string } | null>(null);
+  const [pointsBalances, setPointsBalances] = useState<Record<string, number>>({});
+
+  // Points balances live on the server ledger — fetch alongside the list.
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/riders", { headers: { "x-vento-role": "Super Admin" }, cache: "no-store" })
+      .then((response) => (response.ok ? response.json() : null))
+      .then((payload) => {
+        if (cancelled || !payload?.data) return;
+        const next: Record<string, number> = {};
+        for (const rider of payload.data as Array<{ id: string; pointsBalance?: number }>) {
+          next[rider.id] = rider.pointsBalance ?? 0;
+        }
+        setPointsBalances(next);
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [liveRiders.length]);
 
   const filteredRiders = useMemo(() => {
     const term = query.trim().toLowerCase();
@@ -79,14 +99,19 @@ export default function RidersPage() {
           </div>
 
           <DataTable
-            headers={["Rider ID", "Name", "CPF", "Phone", "Ponto", "Leader", "AR", "Status", "Actions"]}
+            headers={["Rider ID", "Name", "CPF", "PIX", "Phone", "99 ID", "Franchise", "Ponto", "Leader", "Join Date", "Points", "AR", "Status", "Actions"]}
             rows={filteredRiders.map((rider) => [
               rider.id,
               rider.name ?? "Unknown Rider",
               rider.cpf ?? "",
+              rider.pix ?? "",
               rider.phone ?? "",
+              rider.ninetyNineId ?? "--",
+              <span className="tag" key="franchise">{rider.franchise ?? "Unassigned"}</span>,
               <span className="tag" key="ponto">{rider.ponto ?? "Unassigned"}</span>,
               <span className="tag" key="leader">{rider.leader ?? "Unassigned"}</span>,
+              rider.joinDate ?? "--",
+              <span key="points" className="font-black text-[var(--accent)]">{pointsBalances[rider.id] ?? 0}</span>,
               `${rider.ar ?? 0}%`,
               <Badge key="status" value={rider.status} />,
               <div key="actions" className="flex flex-wrap gap-2">
@@ -114,9 +139,15 @@ export default function RidersPage() {
           {selectedRider ? (
             <>
               <div className="mt-4 grid gap-3">
+                <Field label="Franchise" value={selectedRider.franchise ?? "Unassigned"} />
                 <Field label="Ponto" value={selectedRider.ponto ?? "Unassigned"} />
                 <Field label="Leader" value={selectedRider.leader ?? "Unassigned"} />
+                <Field label="CPF" value={selectedRider.cpf ?? "-"} />
+                <Field label="PIX" value={selectedRider.pix ?? "-"} />
                 <Field label="Phone" value={selectedRider.phone ?? "-"} />
+                <Field label="99 ID" value={selectedRider.ninetyNineId ?? "-"} />
+                <Field label="Join Date" value={selectedRider.joinDate ?? "-"} />
+                <Field label="Points" value={<span className="font-black text-[var(--accent)]">{pointsBalances[selectedRider.id] ?? 0}</span>} />
                 <Field label="Acceptance Rate" value={`${selectedRider.ar ?? 0}%`} />
               </div>
               <div className="mt-4 grid gap-2">

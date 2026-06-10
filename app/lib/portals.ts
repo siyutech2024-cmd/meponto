@@ -56,6 +56,7 @@ export const portalConfigs: Record<PortalId, PortalConfig> = {
       { href: "/franchise", label: "加盟治理", description: "合作条款、SOP 和加盟商管理口径。", permission: "view_analytics" },
       { href: "/finance", label: "财务与结算", description: "激励、付款和积分财务审批。", permission: "view_finance" },
       { href: "/marketplace", label: "PontoMall 管理", description: "商城库存、兑换订单和积分规则。", permission: "manage_marketplace" },
+      { href: "/users", label: "用户与权限", description: "创建多用户账号、分配角色与系统归属。", permission: "view_audit" },
       { href: "/access-control", label: "权限矩阵", description: "账号、角色和功能权限分离。", permission: "view_audit" },
       { href: "/reports", label: "报表导出", description: "运营、站点、骑手和排班报表。", permission: "view_analytics" },
     ],
