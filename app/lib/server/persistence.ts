@@ -144,6 +144,25 @@ export function persistAllCollections() {
   scheduleFlush();
 }
 
+/** True when there are mutations not yet written to the database. */
+export function hasPendingPersistence(): boolean {
+  return persistenceEnabled() && state.dirty.size > 0;
+}
+
+/**
+ * Flush immediately, bypassing the debounce timer. Returned promise resolves
+ * when the write completes — pass it to Next's `after()` on serverless so the
+ * function isn't frozen before the database write finishes.
+ */
+export async function flushPendingToDatabase(): Promise<void> {
+  if (!persistenceEnabled()) return;
+  if (state.flushTimer) {
+    clearTimeout(state.flushTimer);
+    state.flushTimer = null;
+  }
+  await flushDirtyCollections();
+}
+
 /** Wrap a collection array in a mutation-tracking proxy and register it. */
 export function trackCollection<T extends { id: string }>(name: string, array: T[]): T[] {
   const existing = state.tracked.get(name);
@@ -212,10 +231,21 @@ export function hydrateFromDatabase(): Promise<void> {
 
       for (const [name, collection] of state.tracked) {
         const persisted = byCollection.get(name);
+        const wasDirty = state.dirty.has(name);
         if (persisted && persisted.length > 0) {
-          // Replace seed contents with the persisted records (newest first).
-          collection.splice(0, collection.length, ...persisted);
-          state.dirty.delete(name);
+          if (wasDirty) {
+            // The collection was mutated before hydration finished (cold-start
+            // race): keep records that aren't in the database yet on top of
+            // the persisted state, and flush them right after.
+            const persistedIds = new Set(persisted.map((record) => record.id));
+            const localNew = collection.filter((record) => record && !persistedIds.has(record.id));
+            collection.splice(0, collection.length, ...localNew, ...persisted);
+            state.dirty.add(name);
+          } else {
+            // Replace seed contents with the persisted records (newest first).
+            collection.splice(0, collection.length, ...persisted);
+            state.dirty.delete(name);
+          }
         } else {
           // Nothing in the DB yet: push the seeds so the DB mirrors the app.
           state.dirty.add(name);

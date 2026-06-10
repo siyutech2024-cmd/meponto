@@ -7,5 +7,9 @@
 export async function register() {
   if (process.env.NEXT_RUNTIME === "nodejs") {
     await import("./app/lib/server/memory");
+    // Block boot until persisted data is restored, so the very first request
+    // already sees the database state (critical on serverless cold starts).
+    const { hydrateFromDatabase } = await import("./app/lib/server/persistence");
+    await hydrateFromDatabase();
   }
 }

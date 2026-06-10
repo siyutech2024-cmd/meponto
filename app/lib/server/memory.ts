@@ -1,5 +1,34 @@
 import { incidents, leaders, ledgerEntries, pontos, rewards, riders, type Incident, type LedgerEntry, type Rider } from "../data";
-import { hydrateFromDatabase, trackCollection } from "./persistence";
+import { flushPendingToDatabase, hasPendingPersistence, hydrateFromDatabase, trackCollection } from "./persistence";
+
+/**
+ * Next's `after()` keeps a serverless function alive until the given promise
+ * settles. Without it, Vercel freezes the function right after the response
+ * is sent and the database write-through would never run. Loaded dynamically
+ * so this module keeps working outside the Next runtime (tests, scripts).
+ */
+type NextAfter = (task: Promise<unknown>) => void;
+let nextAfter: NextAfter | undefined;
+void import("next/server")
+  .then((mod) => {
+    nextAfter = (mod as { after?: NextAfter }).after;
+  })
+  .catch(() => {
+    nextAfter = undefined;
+  });
+
+function scheduleResponseFlush() {
+  if (!hasPendingPersistence()) return;
+  const task = flushPendingToDatabase().catch(() => undefined);
+  if (nextAfter) {
+    try {
+      nextAfter(task);
+      return;
+    } catch {
+      // outside a request scope — the floating promise below still runs
+    }
+  }
+}
 import { seedNotificationsFromIncidents, type NotificationItem } from "../notifications";
 import { crmPartners, type CrmPartner } from "../crm";
 import {
@@ -124,6 +153,10 @@ memory.slotEnrollments = trackCollection("slotEnrollments", memory.slotEnrollmen
 memory.auditEntries = trackCollection("auditEntries", memory.auditEntries);
 
 export function jsonResponse<T>(data: T, init?: ResponseInit) {
+  // Make sure pending mutations reach the database even on serverless,
+  // where the runtime freezes as soon as the response is returned.
+  scheduleResponseFlush();
+
   return Response.json(data, {
     headers: {
       "Cache-Control": "no-store",
