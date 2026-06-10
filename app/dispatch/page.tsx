@@ -22,11 +22,27 @@ const statusLabel: Record<string, string> = {
 
 const tabs = [
   { id: "board", label: "周计划总览", icon: CalendarDays },
+  { id: "setup", label: "排班设置", icon: ClipboardList },
   { id: "import", label: "导入 99 计划", icon: Upload },
   { id: "quota", label: "配额分配", icon: Users },
   { id: "review", label: "报名与审核", icon: ClipboardList },
   { id: "report", label: "填报工作台", icon: Send },
 ] as const;
+
+const SLOT_RANGES = ["11:00~14:00", "14:00~18:00", "18:00~22:00"] as const;
+
+function mondayOf(offsetWeeks: number): string {
+  const now = new Date();
+  const day = now.getDay() === 0 ? 7 : now.getDay();
+  now.setDate(now.getDate() - day + 1 + offsetWeeks * 7);
+  return now.toISOString().slice(0, 10);
+}
+
+function addDays(date: string, days: number): string {
+  const d = new Date(`${date}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + days);
+  return d.toISOString().slice(0, 10);
+}
 
 type TabId = (typeof tabs)[number]["id"];
 
@@ -113,6 +129,7 @@ export default function DispatchPage() {
       )}
 
       {tab === "board" && <BoardTab board={board} byShift={byShift} dates={dates} loading={loading} />}
+      {tab === "setup" && <WeekSetupTab board={board} onSave={post} setMessage={setMessage} />}
       {tab === "import" && <ImportTab onImport={post} setMessage={setMessage} />}
       {tab === "quota" && <QuotaTab board={board} byShift={byShift} onSave={post} setMessage={setMessage} />}
       {tab === "review" && <ReviewTab board={board} onAction={post} setMessage={setMessage} />}
@@ -195,6 +212,114 @@ function BoardTab({ board, byShift, dates, loading }: { board: Board; byShift: {
           </div>
         );
       })}
+    </div>
+  );
+}
+
+function WeekSetupTab({ board, onSave, setMessage }: { board: Board; onSave: (body: Record<string, unknown>) => Promise<Record<string, unknown> | null>; setMessage: (m: { tone: "ok" | "warn" | "err"; text: string } | null) => void }) {
+  const [weekStart, setWeekStart] = useState(() => mondayOf(1));
+  const [hotzone, setHotzone] = useState("Santo Amaro");
+  const [grid, setGrid] = useState<Record<string, string>>({});
+  const [busy, setBusy] = useState(false);
+
+  const days = useMemo(() => Array.from({ length: 7 }, (_, index) => addDays(weekStart, index)), [weekStart]);
+  const weekdayName = ["周一", "周二", "周三", "周四", "周五", "周六", "周日"];
+
+  // Prefill from existing shifts whenever week/hotzone/board changes.
+  useEffect(() => {
+    const next: Record<string, string> = {};
+    for (const date of days) {
+      for (const range of SLOT_RANGES) {
+        const existing = board.shifts.find((shift) => shift.date === date && shift.timeRange === range && shift.hotzone === hotzone);
+        if (existing) next[`${date}|${range}`] = String(existing.plannedCount);
+      }
+    }
+    setGrid(next);
+  }, [days, hotzone, board.shifts]);
+
+  const input = "h-11 rounded-[8px] border border-[var(--line)] bg-[var(--surface)] px-3 text-sm font-bold outline-none focus:border-[var(--accent)]";
+
+  return (
+    <div className="panel space-y-4 p-5">
+      <div className="text-sm font-bold leading-6 text-[var(--muted-strong)]">
+        每天固定三个时段，直接填写计划人数（留空 = 不创建）。已有班次会按日期更新人数；保存后到「配额分配」拆给加盟商和站点。
+      </div>
+      <div className="grid gap-3 md:grid-cols-3">
+        <label className="text-xs font-black uppercase text-[var(--muted)]">
+          周一日期
+          <input type="date" className={`${input} mt-1 w-full`} value={weekStart} onChange={(e) => setWeekStart(e.target.value)} />
+        </label>
+        <label className="text-xs font-black uppercase text-[var(--muted)]">
+          热区
+          <input className={`${input} mt-1 w-full`} value={hotzone} onChange={(e) => setHotzone(e.target.value)} />
+        </label>
+        <div className="flex items-end gap-2">
+          <button type="button" onClick={() => setWeekStart(mondayOf(0))} className="tag">本周</button>
+          <button type="button" onClick={() => setWeekStart(mondayOf(1))} className="tag">下周</button>
+        </div>
+      </div>
+
+      <div className="overflow-x-auto">
+        <table className="w-full min-w-[760px] text-center text-sm">
+          <thead>
+            <tr className="text-[10px] font-black uppercase text-[var(--muted)]">
+              <th className="pb-2 text-left">时段</th>
+              {days.map((date, index) => (
+                <th key={date} className="pb-2">
+                  <div>{weekdayName[index]}</div>
+                  <div className="font-bold text-[var(--muted-strong)]">{date.slice(5)}</div>
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {SLOT_RANGES.map((range) => (
+              <tr key={range} className="border-t border-[var(--line)]">
+                <td className="py-2 text-left font-black">{range}</td>
+                {days.map((date) => {
+                  const key = `${date}|${range}`;
+                  return (
+                    <td key={key} className="px-1 py-2">
+                      <input
+                        inputMode="numeric"
+                        className="h-10 w-16 rounded-[8px] border border-[var(--line)] bg-[var(--surface)] text-center text-sm font-black outline-none focus:border-[var(--accent)]"
+                        value={grid[key] ?? ""}
+                        onChange={(e) => setGrid({ ...grid, [key]: e.target.value.replace(/\D/g, "") })}
+                      />
+                    </td>
+                  );
+                })}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      <button
+        type="button"
+        disabled={busy}
+        onClick={async () => {
+          setBusy(true);
+          setMessage(null);
+          const entries = Object.entries(grid)
+            .filter(([, value]) => value !== "")
+            .map(([key, value]) => {
+              const [date, timeRange] = key.split("|");
+              return { date, timeRange, plannedCount: Number(value) };
+            });
+          if (entries.length === 0) {
+            setMessage({ tone: "warn", text: "请至少填写一个时段的人数。" });
+            setBusy(false);
+            return;
+          }
+          const result = await onSave({ action: "setWeek", hotzone: hotzone.trim() || "Santo Amaro", entries });
+          setBusy(false);
+          if (result) setMessage({ tone: "ok", text: `排班已保存：新建 ${result.created} 个班次，更新 ${result.updated} 个班次。` });
+        }}
+        className="inline-flex h-11 items-center gap-2 rounded-[8px] bg-[var(--accent)] px-6 text-sm font-black uppercase text-[var(--accent-ink)] hover:bg-[var(--accent-strong)] disabled:opacity-50"
+      >
+        {busy ? "保存中..." : "保存本周排班"}
+      </button>
     </div>
   );
 }
