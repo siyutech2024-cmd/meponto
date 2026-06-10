@@ -68,6 +68,8 @@ export function AddRiderDrawer({ open, onClose }: { open: boolean; onClose: () =
             ponto: String(form.get("ponto")),
             leader: String(form.get("leader")),
             status: String(form.get("status")) as RiderStatus,
+            franchise: String(form.get("franchise") ?? ""),
+            ninetyNineId: String(form.get("ninetyNineId") ?? ""),
           });
           event.currentTarget.reset();
           onClose();
@@ -79,6 +81,8 @@ export function AddRiderDrawer({ open, onClose }: { open: boolean; onClose: () =
           <TextInput name="phone" label="Phone" />
           <TextInput name="pix" label="PIX" />
           <TextInput name="bairro" label="Bairro" />
+          <TextInput name="franchise" label="Franchise" />
+          <TextInput name="ninetyNineId" label="99 Rider ID" />
           <label className="block">
             <span className="mb-2 block text-[10px] font-bold uppercase tracking-wider text-[var(--muted)]">Status</span>
             <select name="status" className="h-11 w-full rounded-xl border border-[var(--line)] bg-[var(--surface-raised)] px-3.5 text-[var(--text)] outline-none transition-all duration-200 focus:border-[var(--accent)]">
