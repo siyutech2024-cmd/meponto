@@ -1,7 +1,7 @@
 import { incidents, leaders, ledgerEntries, pontos, rewards, riders } from "../../../lib/data";
 import { seedNotificationsFromIncidents } from "../../../lib/notifications";
 import { jsonResponse, memory } from "../../../lib/server/memory";
-import { persistAllCollections } from "../../../lib/server/persistence";
+import { persistAllCollections, persistPurgeCollections } from "../../../lib/server/persistence";
 import { requirePermission } from "../../../lib/server/authz";
 
 /** Restore the core demo collections to their seed state (server + database). */
@@ -18,6 +18,8 @@ export async function POST(request: Request) {
   memory.notifications.splice(0, memory.notifications.length, ...seedNotificationsFromIncidents(incidents));
   memory.auditEntries.splice(0, memory.auditEntries.length);
 
+  // Wipe stray rows (created records) before pushing the seed state back.
+  persistPurgeCollections(["riders", "pontos", "leaders", "incidents", "rewards", "ledgerEntries", "notifications", "auditEntries"]);
   persistAllCollections();
 
   return jsonResponse({ ok: true, resetAt: new Date().toISOString() });
