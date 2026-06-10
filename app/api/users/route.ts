@@ -1,0 +1,183 @@
+import { createHash, randomBytes } from "node:crypto";
+import { appendServerAudit, jsonResponse, makeServerId, memory } from "../../lib/server/memory";
+import { refreshCollectionsFromDatabase } from "../../lib/server/persistence";
+import { requirePermission, roleFromRequest } from "../../lib/server/authz";
+import { roles, type Role } from "../../lib/rbac";
+import { portalConfigs, type PortalId } from "../../lib/portals";
+import type { AppUser } from "../../lib/users";
+
+export function hashPassword(salt: string, password: string): string {
+  return createHash("sha256").update(`${salt}:${password}`).digest("hex");
+}
+
+function sanitize(user: AppUser) {
+  const { passwordHash: _hash, salt: _salt, ...safe } = user;
+  return safe;
+}
+
+function nowStamp() {
+  return new Date().toISOString().slice(0, 16).replace("T", " ");
+}
+
+export async function GET(request: Request) {
+  const forbidden = requirePermission(request, "view_audit");
+  if (forbidden) return forbidden;
+
+  await refreshCollectionsFromDatabase(["appUsers"]);
+  return jsonResponse({
+    data: memory.appUsers.map(sanitize),
+    summary: {
+      total: memory.appUsers.length,
+      active: memory.appUsers.filter((user) => user.status === "active").length,
+    },
+  });
+}
+
+type CreateBody = {
+  action: "create";
+  name: string;
+  identifier: string;
+  phone?: string;
+  password: string;
+  role: Role;
+  portal: PortalId;
+  franchise?: string;
+  station?: string;
+  organization?: string;
+};
+
+type UpdateBody = {
+  action: "update";
+  userId: string;
+  name?: string;
+  phone?: string;
+  role?: Role;
+  portal?: PortalId;
+  franchise?: string;
+  station?: string;
+  status?: "active" | "disabled";
+};
+
+type ResetBody = { action: "resetPassword"; userId: string; password: string };
+
+type Body = CreateBody | UpdateBody | ResetBody;
+
+export async function POST(request: Request) {
+  const forbidden = requirePermission(request, "view_audit");
+  if (forbidden) return forbidden;
+
+  await refreshCollectionsFromDatabase(["appUsers"]);
+  const body = (await request.json().catch(() => ({}))) as Partial<Body>;
+  const actor = roleFromRequest(request);
+
+  switch (body.action) {
+    case "create": {
+      const { name, identifier, phone = "", password, role, portal, franchise = "", station = "", organization = "" } = body as CreateBody;
+      const normalized = String(identifier ?? "").trim().toLowerCase();
+      if (!name || !normalized || !password || String(password).length < 6) {
+        return jsonResponse({ error: "name, identifier and password (min 6 chars) are required" }, { status: 400 });
+      }
+      if (!roles.includes(role as Role)) return jsonResponse({ error: "invalid role" }, { status: 400 });
+      if (!portalConfigs[portal as PortalId]) return jsonResponse({ error: "invalid portal" }, { status: 400 });
+      if (memory.appUsers.some((user) => user.identifier === normalized)) {
+        return jsonResponse({ error: "identifier already exists" }, { status: 409 });
+      }
+      if (!portalConfigs[portal as PortalId].allowedRoles.includes(role as Role)) {
+        return jsonResponse({ error: `role ${role} is not allowed for portal ${portal}` }, { status: 400 });
+      }
+
+      const salt = randomBytes(8).toString("hex");
+      const user: AppUser = {
+        id: makeServerId("usr", memory.appUsers.length + 1),
+        name: String(name).slice(0, 80),
+        identifier: normalized,
+        phone: String(phone).slice(0, 40),
+        passwordHash: hashPassword(salt, String(password)),
+        salt,
+        role: role as Role,
+        portal: portal as PortalId,
+        organization: String(organization || franchise || "MePonto").slice(0, 80),
+        tenantId: `tenant-${(franchise || "hq").toLowerCase().replace(/\s+/g, "-")}`.slice(0, 60),
+        defaultPath: portalConfigs[portal as PortalId].homePath,
+        franchise: String(franchise).slice(0, 80),
+        station: String(station).slice(0, 80),
+        status: "active",
+        createdAt: nowStamp(),
+      };
+      memory.appUsers.unshift(user);
+
+      appendServerAudit({
+        actor,
+        action: "USER_CREATED",
+        entity: "AppUser",
+        entityId: user.id,
+        detail: `${user.name} (${user.identifier}) created as ${user.role} on ${user.portal}.`,
+        risk: "Medium",
+      });
+
+      return jsonResponse({ data: sanitize(user) }, { status: 201 });
+    }
+
+    case "update": {
+      const { userId, ...patch } = body as UpdateBody;
+      const index = memory.appUsers.findIndex((user) => user.id === userId);
+      if (index === -1) return jsonResponse({ error: "user not found" }, { status: 404 });
+
+      const current = memory.appUsers[index];
+      const nextRole = patch.role && roles.includes(patch.role) ? patch.role : current.role;
+      const nextPortal = patch.portal && portalConfigs[patch.portal] ? patch.portal : current.portal;
+      if (!portalConfigs[nextPortal].allowedRoles.includes(nextRole)) {
+        return jsonResponse({ error: `role ${nextRole} is not allowed for portal ${nextPortal}` }, { status: 400 });
+      }
+
+      memory.appUsers[index] = {
+        ...current,
+        name: patch.name !== undefined ? String(patch.name).slice(0, 80) : current.name,
+        phone: patch.phone !== undefined ? String(patch.phone).slice(0, 40) : current.phone,
+        role: nextRole,
+        portal: nextPortal,
+        defaultPath: portalConfigs[nextPortal].homePath,
+        franchise: patch.franchise !== undefined ? String(patch.franchise).slice(0, 80) : current.franchise,
+        station: patch.station !== undefined ? String(patch.station).slice(0, 80) : current.station,
+        status: patch.status === "active" || patch.status === "disabled" ? patch.status : current.status,
+      };
+
+      appendServerAudit({
+        actor,
+        action: "USER_UPDATED",
+        entity: "AppUser",
+        entityId: userId ?? "",
+        detail: `${current.identifier} updated (${Object.keys(patch).join(", ")}).`,
+        risk: patch.status === "disabled" ? "Medium" : "Low",
+      });
+
+      return jsonResponse({ data: sanitize(memory.appUsers[index]) });
+    }
+
+    case "resetPassword": {
+      const { userId, password } = body as ResetBody;
+      if (!password || String(password).length < 6) {
+        return jsonResponse({ error: "password must have at least 6 characters" }, { status: 400 });
+      }
+      const index = memory.appUsers.findIndex((user) => user.id === userId);
+      if (index === -1) return jsonResponse({ error: "user not found" }, { status: 404 });
+
+      const salt = randomBytes(8).toString("hex");
+      memory.appUsers[index] = { ...memory.appUsers[index], salt, passwordHash: hashPassword(salt, String(password)) };
+
+      appendServerAudit({
+        actor,
+        action: "USER_PASSWORD_RESET",
+        entity: "AppUser",
+        entityId: userId ?? "",
+        detail: `Password reset for ${memory.appUsers[index].identifier}.`,
+        risk: "Medium",
+      });
+
+      return jsonResponse({ data: { ok: true } });
+    }
+
+    default:
+      return jsonResponse({ error: "unknown action" }, { status: 400 });
+  }
+}
