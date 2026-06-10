@@ -9,6 +9,7 @@ export const languages: Array<{ code: Language; label: string; shortLabel: strin
 const dictionary = {
   en: {
     navDashboard: "Dashboard",
+    navOperationsCore: "Operations Core",
     navRiders: "Riders",
     navRiderApp: "MePonto",
     navPontos: "Pontos",
@@ -76,6 +77,7 @@ const dictionary = {
   },
   zh: {
     navDashboard: "仪表盘",
+    navOperationsCore: "运力运营核心",
     navRiders: "骑手",
     navRiderApp: "MePonto",
     navPontos: "Ponto站点",
@@ -143,6 +145,7 @@ const dictionary = {
   },
   pt: {
     navDashboard: "Painel",
+    navOperationsCore: "Núcleo Operacional",
     navRiders: "Motoboys",
     navRiderApp: "MePonto",
     navPontos: "Pontos",

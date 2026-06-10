@@ -1,6 +1,6 @@
 export type SlotDayKey = "mon" | "tue" | "wed" | "thu" | "fri" | "sat" | "sun";
 export type SlotEnrollmentStatus = "open" | "full" | "ended";
-export type SlotApprovalStatus = "submitted" | "ponto_approved" | "franchise_confirmed" | "rejected" | "cancelled";
+export type SlotApprovalStatus = "submitted" | "ponto_approved" | "franchise_confirmed" | "hq_reviewed" | "rejected" | "cancelled";
 
 export type RiderSlot = {
   id: string;
@@ -17,6 +17,7 @@ export type RiderSlot = {
   pontoName: string;
   franchiseId: string;
   franchiseName: string;
+  quotaNote: string;
 };
 
 export type SlotEnrollment = {
@@ -31,6 +32,8 @@ export type SlotEnrollment = {
   pontoReviewedAt?: string;
   franchiseConfirmedBy?: string;
   franchiseConfirmedAt?: string;
+  hqReviewedBy?: string;
+  hqReviewedAt?: string;
   note: string;
 };
 
@@ -68,39 +71,39 @@ export const slotWorkflowSteps: SlotWorkflowStep[] = [
   },
   {
     key: "hq_summary",
-    label: "Headquarters receives aggregated data",
+    label: "Headquarters reviews final roster",
     owner: "Master Admin",
-    output: "slot.summary.generated.v1",
-    guardrail: "HQ reads summary projections and audit records, not private rider edits from other modules.",
+    output: "slot.enrollment.hq_reviewed.v1",
+    guardrail: "HQ locks the reviewed roster for export and operational follow-up.",
   },
 ];
 
 export const riderSlots: RiderSlot[] = [
-  { id: "slot-20260601-1100", dayKey: "mon", date: "2026-06-01", weekday: "周一", startTime: "11:00", endTime: "14:00", capacity: 17, enrolled: 17, status: "ended", priority: false, pontoId: "p-002", pontoName: "Ponto Liberdade Sul", franchiseId: "fr-sp-01", franchiseName: "SP Core Franchise" },
-  { id: "slot-20260601-1400", dayKey: "mon", date: "2026-06-01", weekday: "周一", startTime: "14:00", endTime: "18:00", capacity: 11, enrolled: 11, status: "ended", priority: false, pontoId: "p-002", pontoName: "Ponto Liberdade Sul", franchiseId: "fr-sp-01", franchiseName: "SP Core Franchise" },
-  { id: "slot-20260601-1800", dayKey: "mon", date: "2026-06-01", weekday: "周一", startTime: "18:00", endTime: "22:00", capacity: 16, enrolled: 16, status: "ended", priority: false, pontoId: "p-002", pontoName: "Ponto Liberdade Sul", franchiseId: "fr-sp-01", franchiseName: "SP Core Franchise" },
-  { id: "slot-20260602-1100", dayKey: "tue", date: "2026-06-02", weekday: "周二", startTime: "11:00", endTime: "14:00", capacity: 17, enrolled: 17, status: "ended", priority: false, pontoId: "p-002", pontoName: "Ponto Liberdade Sul", franchiseId: "fr-sp-01", franchiseName: "SP Core Franchise" },
-  { id: "slot-20260602-1400", dayKey: "tue", date: "2026-06-02", weekday: "周二", startTime: "14:00", endTime: "18:00", capacity: 11, enrolled: 11, status: "ended", priority: false, pontoId: "p-002", pontoName: "Ponto Liberdade Sul", franchiseId: "fr-sp-01", franchiseName: "SP Core Franchise" },
-  { id: "slot-20260602-1800", dayKey: "tue", date: "2026-06-02", weekday: "周二", startTime: "18:00", endTime: "22:00", capacity: 16, enrolled: 16, status: "ended", priority: false, pontoId: "p-002", pontoName: "Ponto Liberdade Sul", franchiseId: "fr-sp-01", franchiseName: "SP Core Franchise" },
-  { id: "slot-20260603-1100", dayKey: "wed", date: "2026-06-03", weekday: "周三", startTime: "11:00", endTime: "14:00", capacity: 17, enrolled: 17, status: "open", priority: false, pontoId: "p-002", pontoName: "Ponto Liberdade Sul", franchiseId: "fr-sp-01", franchiseName: "SP Core Franchise" },
-  { id: "slot-20260603-1400", dayKey: "wed", date: "2026-06-03", weekday: "周三", startTime: "14:00", endTime: "18:00", capacity: 11, enrolled: 0, status: "open", priority: false, pontoId: "p-002", pontoName: "Ponto Liberdade Sul", franchiseId: "fr-sp-01", franchiseName: "SP Core Franchise" },
-  { id: "slot-20260603-1800", dayKey: "wed", date: "2026-06-03", weekday: "周三", startTime: "18:00", endTime: "22:00", capacity: 16, enrolled: 0, status: "open", priority: false, pontoId: "p-002", pontoName: "Ponto Liberdade Sul", franchiseId: "fr-sp-01", franchiseName: "SP Core Franchise" },
-  { id: "slot-20260604-1100", dayKey: "thu", date: "2026-06-04", weekday: "周四", startTime: "11:00", endTime: "14:00", capacity: 17, enrolled: 0, status: "open", priority: false, pontoId: "p-002", pontoName: "Ponto Liberdade Sul", franchiseId: "fr-sp-01", franchiseName: "SP Core Franchise" },
-  { id: "slot-20260604-1400", dayKey: "thu", date: "2026-06-04", weekday: "周四", startTime: "14:00", endTime: "18:00", capacity: 11, enrolled: 0, status: "open", priority: false, pontoId: "p-002", pontoName: "Ponto Liberdade Sul", franchiseId: "fr-sp-01", franchiseName: "SP Core Franchise" },
-  { id: "slot-20260604-1800", dayKey: "thu", date: "2026-06-04", weekday: "周四", startTime: "18:00", endTime: "22:00", capacity: 16, enrolled: 0, status: "open", priority: false, pontoId: "p-002", pontoName: "Ponto Liberdade Sul", franchiseId: "fr-sp-01", franchiseName: "SP Core Franchise" },
-  { id: "slot-20260605-1100", dayKey: "fri", date: "2026-06-05", weekday: "周五", startTime: "11:00", endTime: "14:00", capacity: 20, enrolled: 0, status: "open", priority: false, pontoId: "p-002", pontoName: "Ponto Liberdade Sul", franchiseId: "fr-sp-01", franchiseName: "SP Core Franchise" },
-  { id: "slot-20260605-1400", dayKey: "fri", date: "2026-06-05", weekday: "周五", startTime: "14:00", endTime: "18:00", capacity: 13, enrolled: 0, status: "open", priority: false, pontoId: "p-002", pontoName: "Ponto Liberdade Sul", franchiseId: "fr-sp-01", franchiseName: "SP Core Franchise" },
-  { id: "slot-20260605-1800", dayKey: "fri", date: "2026-06-05", weekday: "周五", startTime: "18:00", endTime: "22:00", capacity: 21, enrolled: 0, status: "open", priority: true, pontoId: "p-002", pontoName: "Ponto Liberdade Sul", franchiseId: "fr-sp-01", franchiseName: "SP Core Franchise" },
-  { id: "slot-20260606-1100", dayKey: "sat", date: "2026-06-06", weekday: "周六", startTime: "11:00", endTime: "14:00", capacity: 20, enrolled: 0, status: "open", priority: false, pontoId: "p-002", pontoName: "Ponto Liberdade Sul", franchiseId: "fr-sp-01", franchiseName: "SP Core Franchise" },
-  { id: "slot-20260606-1400", dayKey: "sat", date: "2026-06-06", weekday: "周六", startTime: "14:00", endTime: "18:00", capacity: 13, enrolled: 0, status: "open", priority: false, pontoId: "p-002", pontoName: "Ponto Liberdade Sul", franchiseId: "fr-sp-01", franchiseName: "SP Core Franchise" },
-  { id: "slot-20260606-1800", dayKey: "sat", date: "2026-06-06", weekday: "周六", startTime: "18:00", endTime: "22:00", capacity: 21, enrolled: 0, status: "open", priority: true, pontoId: "p-002", pontoName: "Ponto Liberdade Sul", franchiseId: "fr-sp-01", franchiseName: "SP Core Franchise" },
-  { id: "slot-20260607-1100", dayKey: "sun", date: "2026-06-07", weekday: "周日", startTime: "11:00", endTime: "14:00", capacity: 18, enrolled: 0, status: "open", priority: true, pontoId: "p-002", pontoName: "Ponto Liberdade Sul", franchiseId: "fr-sp-01", franchiseName: "SP Core Franchise" },
-  { id: "slot-20260607-1400", dayKey: "sun", date: "2026-06-07", weekday: "周日", startTime: "14:00", endTime: "18:00", capacity: 14, enrolled: 0, status: "open", priority: true, pontoId: "p-002", pontoName: "Ponto Liberdade Sul", franchiseId: "fr-sp-01", franchiseName: "SP Core Franchise" },
-  { id: "slot-20260607-1800", dayKey: "sun", date: "2026-06-07", weekday: "周日", startTime: "18:00", endTime: "22:00", capacity: 22, enrolled: 0, status: "open", priority: true, pontoId: "p-002", pontoName: "Ponto Liberdade Sul", franchiseId: "fr-sp-01", franchiseName: "SP Core Franchise" },
+  { id: "slot-20260601-1100", dayKey: "mon", date: "2026-06-01", weekday: "周一", startTime: "11:00", endTime: "14:00", capacity: 17, enrolled: 17, status: "ended", priority: false, pontoId: "p-001", pontoName: "Ponto Paulista Garage", franchiseId: "fr-sp-01", franchiseName: "SP Core Franchise", quotaNote: "Lunch peak quota assigned by Ponto Paulista." },
+  { id: "slot-20260601-1400", dayKey: "mon", date: "2026-06-01", weekday: "周一", startTime: "14:00", endTime: "18:00", capacity: 11, enrolled: 11, status: "ended", priority: false, pontoId: "p-002", pontoName: "Ponto Liberdade Sul", franchiseId: "fr-sp-01", franchiseName: "SP Core Franchise", quotaNote: "Afternoon quota held for Liberdade riders." },
+  { id: "slot-20260601-1800", dayKey: "mon", date: "2026-06-01", weekday: "周一", startTime: "18:00", endTime: "22:00", capacity: 16, enrolled: 16, status: "ended", priority: false, pontoId: "p-003", pontoName: "Ponto Tatuape Norte", franchiseId: "fr-sp-02", franchiseName: "Tatuape Growth Franchise", quotaNote: "Evening quota owned by Tatuape." },
+  { id: "slot-20260602-1100", dayKey: "tue", date: "2026-06-02", weekday: "周二", startTime: "11:00", endTime: "14:00", capacity: 17, enrolled: 17, status: "ended", priority: false, pontoId: "p-001", pontoName: "Ponto Paulista Garage", franchiseId: "fr-sp-01", franchiseName: "SP Core Franchise", quotaNote: "Station-assigned lunch quota." },
+  { id: "slot-20260602-1400", dayKey: "tue", date: "2026-06-02", weekday: "周二", startTime: "14:00", endTime: "18:00", capacity: 11, enrolled: 11, status: "ended", priority: false, pontoId: "p-004", pontoName: "Ponto Pinheiros Base", franchiseId: "fr-sp-03", franchiseName: "Pinheiros Partner Franchise", quotaNote: "Pinheiros partner allocation." },
+  { id: "slot-20260602-1800", dayKey: "tue", date: "2026-06-02", weekday: "周二", startTime: "18:00", endTime: "22:00", capacity: 16, enrolled: 16, status: "ended", priority: false, pontoId: "p-003", pontoName: "Ponto Tatuape Norte", franchiseId: "fr-sp-02", franchiseName: "Tatuape Growth Franchise", quotaNote: "High-risk evening quota." },
+  { id: "slot-20260603-1100", dayKey: "wed", date: "2026-06-03", weekday: "周三", startTime: "11:00", endTime: "14:00", capacity: 17, enrolled: 17, status: "open", priority: false, pontoId: "p-001", pontoName: "Ponto Paulista Garage", franchiseId: "fr-sp-01", franchiseName: "SP Core Franchise", quotaNote: "Main station lunch allocation." },
+  { id: "slot-20260603-1400", dayKey: "wed", date: "2026-06-03", weekday: "周三", startTime: "14:00", endTime: "18:00", capacity: 11, enrolled: 0, status: "open", priority: false, pontoId: "p-002", pontoName: "Ponto Liberdade Sul", franchiseId: "fr-sp-01", franchiseName: "SP Core Franchise", quotaNote: "Liberdade controlled quota." },
+  { id: "slot-20260603-1800", dayKey: "wed", date: "2026-06-03", weekday: "周三", startTime: "18:00", endTime: "22:00", capacity: 16, enrolled: 0, status: "open", priority: false, pontoId: "p-003", pontoName: "Ponto Tatuape Norte", franchiseId: "fr-sp-02", franchiseName: "Tatuape Growth Franchise", quotaNote: "Tatuape night-shift quota." },
+  { id: "slot-20260604-1100", dayKey: "thu", date: "2026-06-04", weekday: "周四", startTime: "11:00", endTime: "14:00", capacity: 17, enrolled: 0, status: "open", priority: false, pontoId: "p-001", pontoName: "Ponto Paulista Garage", franchiseId: "fr-sp-01", franchiseName: "SP Core Franchise", quotaNote: "Paulista lunch quota." },
+  { id: "slot-20260604-1400", dayKey: "thu", date: "2026-06-04", weekday: "周四", startTime: "14:00", endTime: "18:00", capacity: 11, enrolled: 0, status: "open", priority: false, pontoId: "p-004", pontoName: "Ponto Pinheiros Base", franchiseId: "fr-sp-03", franchiseName: "Pinheiros Partner Franchise", quotaNote: "Pinheiros afternoon quota." },
+  { id: "slot-20260604-1800", dayKey: "thu", date: "2026-06-04", weekday: "周四", startTime: "18:00", endTime: "22:00", capacity: 16, enrolled: 0, status: "open", priority: false, pontoId: "p-003", pontoName: "Ponto Tatuape Norte", franchiseId: "fr-sp-02", franchiseName: "Tatuape Growth Franchise", quotaNote: "Evening quota assigned by Tatuape." },
+  { id: "slot-20260605-1100", dayKey: "fri", date: "2026-06-05", weekday: "周五", startTime: "11:00", endTime: "14:00", capacity: 20, enrolled: 0, status: "open", priority: false, pontoId: "p-001", pontoName: "Ponto Paulista Garage", franchiseId: "fr-sp-01", franchiseName: "SP Core Franchise", quotaNote: "Friday lunch surge quota." },
+  { id: "slot-20260605-1400", dayKey: "fri", date: "2026-06-05", weekday: "周五", startTime: "14:00", endTime: "18:00", capacity: 13, enrolled: 0, status: "open", priority: false, pontoId: "p-004", pontoName: "Ponto Pinheiros Base", franchiseId: "fr-sp-03", franchiseName: "Pinheiros Partner Franchise", quotaNote: "Pinheiros franchise quota." },
+  { id: "slot-20260605-1800", dayKey: "fri", date: "2026-06-05", weekday: "周五", startTime: "18:00", endTime: "22:00", capacity: 21, enrolled: 0, status: "open", priority: true, pontoId: "p-003", pontoName: "Ponto Tatuape Norte", franchiseId: "fr-sp-02", franchiseName: "Tatuape Growth Franchise", quotaNote: "Priority evening quota." },
+  { id: "slot-20260606-1100", dayKey: "sat", date: "2026-06-06", weekday: "周六", startTime: "11:00", endTime: "14:00", capacity: 20, enrolled: 0, status: "open", priority: false, pontoId: "p-002", pontoName: "Ponto Liberdade Sul", franchiseId: "fr-sp-01", franchiseName: "SP Core Franchise", quotaNote: "Weekend Liberdade quota." },
+  { id: "slot-20260606-1400", dayKey: "sat", date: "2026-06-06", weekday: "周六", startTime: "14:00", endTime: "18:00", capacity: 13, enrolled: 0, status: "open", priority: false, pontoId: "p-004", pontoName: "Ponto Pinheiros Base", franchiseId: "fr-sp-03", franchiseName: "Pinheiros Partner Franchise", quotaNote: "Weekend Pinheiros quota." },
+  { id: "slot-20260606-1800", dayKey: "sat", date: "2026-06-06", weekday: "周六", startTime: "18:00", endTime: "22:00", capacity: 21, enrolled: 0, status: "open", priority: true, pontoId: "p-003", pontoName: "Ponto Tatuape Norte", franchiseId: "fr-sp-02", franchiseName: "Tatuape Growth Franchise", quotaNote: "Saturday night priority quota." },
+  { id: "slot-20260607-1100", dayKey: "sun", date: "2026-06-07", weekday: "周日", startTime: "11:00", endTime: "14:00", capacity: 18, enrolled: 0, status: "open", priority: true, pontoId: "p-001", pontoName: "Ponto Paulista Garage", franchiseId: "fr-sp-01", franchiseName: "SP Core Franchise", quotaNote: "Sunday high-demand quota." },
+  { id: "slot-20260607-1400", dayKey: "sun", date: "2026-06-07", weekday: "周日", startTime: "14:00", endTime: "18:00", capacity: 14, enrolled: 0, status: "open", priority: true, pontoId: "p-004", pontoName: "Ponto Pinheiros Base", franchiseId: "fr-sp-03", franchiseName: "Pinheiros Partner Franchise", quotaNote: "Sunday partner quota." },
+  { id: "slot-20260607-1800", dayKey: "sun", date: "2026-06-07", weekday: "周日", startTime: "18:00", endTime: "22:00", capacity: 22, enrolled: 0, status: "open", priority: true, pontoId: "p-003", pontoName: "Ponto Tatuape Norte", franchiseId: "fr-sp-02", franchiseName: "Tatuape Growth Franchise", quotaNote: "Sunday night Tatuape quota." },
 ];
 
 export const slotEnrollments: SlotEnrollment[] = [
-  { id: "enr-001", slotId: "slot-20260603-1100", riderId: "r-1002", riderName: "Andre Santos", riderTier: 5, status: "franchise_confirmed", submittedAt: "2026-06-03 08:12", pontoReviewedBy: "Joao Pereira", pontoReviewedAt: "2026-06-03 08:18", franchiseConfirmedBy: "SP Core Franchise", franchiseConfirmedAt: "2026-06-03 08:31", note: "Night rider, confirmed for lunch peak." },
+  { id: "enr-001", slotId: "slot-20260603-1100", riderId: "r-1002", riderName: "Andre Santos", riderTier: 5, status: "hq_reviewed", submittedAt: "2026-06-03 08:12", pontoReviewedBy: "Joao Pereira", pontoReviewedAt: "2026-06-03 08:18", franchiseConfirmedBy: "SP Core Franchise", franchiseConfirmedAt: "2026-06-03 08:31", hqReviewedBy: "HQ Operations", hqReviewedAt: "2026-06-03 08:44", note: "Night rider, reviewed for lunch peak." },
   { id: "enr-002", slotId: "slot-20260605-1800", riderId: "r-1001", riderName: "Carlos Mendes", riderTier: 3, status: "ponto_approved", submittedAt: "2026-06-03 09:05", pontoReviewedBy: "Rafael Costa", pontoReviewedAt: "2026-06-03 09:22", note: "Waiting franchise cost confirmation." },
   { id: "enr-003", slotId: "slot-20260607-1800", riderId: "r-1003", riderName: "Felipe Rocha", riderTier: 2, status: "submitted", submittedAt: "2026-06-03 09:40", note: "Priority Sunday night slot. Ponto review pending." },
 ];
@@ -111,6 +114,7 @@ export function getSlotSummary(slots = riderSlots, enrollments = slotEnrollments
   const submitted = enrollments.filter((item) => item.status === "submitted").length;
   const pontoApproved = enrollments.filter((item) => item.status === "ponto_approved").length;
   const franchiseConfirmed = enrollments.filter((item) => item.status === "franchise_confirmed").length;
+  const hqReviewed = enrollments.filter((item) => item.status === "hq_reviewed").length;
   const prioritySlots = slots.filter((slot) => slot.priority).length;
 
   return {
@@ -122,6 +126,7 @@ export function getSlotSummary(slots = riderSlots, enrollments = slotEnrollments
     submitted,
     pontoApproved,
     franchiseConfirmed,
+    hqReviewed,
     prioritySlots,
   };
 }

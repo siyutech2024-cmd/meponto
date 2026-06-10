@@ -1,4 +1,4 @@
-import { makeServerId, memory, jsonResponse } from "../../lib/server/memory";
+import { acceptClientId, makeServerId, memory, jsonResponse } from "../../lib/server/memory";
 import { requirePermission } from "../../lib/server/authz";
 
 export function GET() {
@@ -14,8 +14,12 @@ export async function POST(request: Request) {
     return jsonResponse({ error: "name and phone are required" }, { status: 400 });
   }
 
+  const id = acceptClientId(body.id) ?? makeServerId("l", memory.leaders.length + 1);
+  const existing = memory.leaders.find((item) => item.id === id);
+  if (existing) return jsonResponse({ data: existing });
+
   const leader = {
-    id: makeServerId("l", memory.leaders.length + 1),
+    id,
     name: String(body.name),
     phone: String(body.phone),
     ponto: String(body.ponto ?? "Unassigned"),

@@ -1,4 +1,4 @@
-import { makeServerId, memory, jsonResponse } from "../../lib/server/memory";
+import { acceptClientId, makeServerId, memory, jsonResponse } from "../../lib/server/memory";
 import { requirePermission } from "../../lib/server/authz";
 import type { LedgerEntry } from "../../lib/data";
 
@@ -23,8 +23,12 @@ export async function POST(request: Request) {
     return jsonResponse({ error: "recipient, recipientType, ledgerType and amount are required" }, { status: 400 });
   }
 
+  const id = acceptClientId(body.id) ?? makeServerId("led", memory.ledgerEntries.length + 1);
+  const existing = memory.ledgerEntries.find((item) => item.id === id);
+  if (existing) return jsonResponse({ data: existing });
+
   const entry: LedgerEntry = {
-    id: makeServerId("led", memory.ledgerEntries.length + 1),
+    id,
     recipient: body.recipient,
     recipientType: body.recipientType,
     ledgerType: body.ledgerType,

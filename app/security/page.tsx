@@ -108,18 +108,18 @@ export default function SecurityPage() {
         <section className="panel p-4">
           <div className="mb-3 text-xs font-black uppercase text-[var(--muted)]">Risk events</div>
           <div className="space-y-3">
-            {posture.riskEvents.map((event) => (
-              <div key={event.id} className="rounded border border-[var(--line)] bg-[var(--surface)] p-3">
+            {posture.riskEvents.map((riskItem) => (
+              <div key={riskItem.id} className="rounded border border-[var(--line)] bg-[var(--surface)] p-3">
                 <div className="flex items-start justify-between gap-3">
                   <div>
-                    <div className="font-black">{event.title}</div>
-                    <div className="mt-1 text-sm text-[var(--muted)]">{event.detail}</div>
+                    <div className="font-black">{riskItem.title}</div>
+                    <div className="mt-1 text-sm text-[var(--muted)]">{riskItem.detail}</div>
                   </div>
-                  <Badge value={event.risk} />
+                  <Badge value={riskItem.risk} />
                 </div>
                 <div className="mt-3 flex items-center justify-between gap-3 text-xs uppercase text-[var(--muted)]">
-                  <span>{event.createdAt}</span>
-                  <span>{event.status}</span>
+                  <span>{riskItem.createdAt}</span>
+                  <span>{riskItem.status}</span>
                 </div>
               </div>
             ))}

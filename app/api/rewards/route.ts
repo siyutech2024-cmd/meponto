@@ -1,4 +1,4 @@
-import { makeServerId, memory, jsonResponse } from "../../lib/server/memory";
+import { acceptClientId, makeServerId, memory, jsonResponse } from "../../lib/server/memory";
 import { requirePermission } from "../../lib/server/authz";
 
 const rewardTypes = new Set(["Rider", "Leader"]);
@@ -20,8 +20,12 @@ export async function POST(request: Request) {
     return jsonResponse({ error: "ruleName, numeric points and type Rider or Leader are required" }, { status: 400 });
   }
 
+  const id = acceptClientId(body.id) ?? makeServerId("rw", memory.rewards.length + 1);
+  const existing = memory.rewards.find((item) => item.id === id);
+  if (existing) return jsonResponse({ data: existing });
+
   const reward = {
-    id: makeServerId("rw", memory.rewards.length + 1),
+    id,
     ruleName,
     points,
     type,

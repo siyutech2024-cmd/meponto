@@ -1,3 +1,5 @@
+"use client";
+
 import {
   AlertTriangle,
   BadgeCheck,
@@ -26,9 +28,25 @@ import {
   Trophy,
   WalletCards,
 } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
 import { crmPartners } from "../lib/crm";
 import { incidents, ledgerEntries, riders } from "../lib/data";
 import { getPointsAccount, marketplaceProducts, partnerServiceBenefitRules, pointsLedgerEntries, type PartnerServiceCategory } from "../lib/points";
+import type { RiderSlot, SlotEnrollment } from "../lib/slots";
+
+type SlotPayload = {
+  data: {
+    slots: RiderSlot[];
+    enrollments: SlotEnrollment[];
+    summary: {
+      week: string;
+      submitted: number;
+      pontoApproved: number;
+      franchiseConfirmed: number;
+      hqReviewed: number;
+    };
+  };
+};
 
 const wallet = {
   available: 438.7,
@@ -130,7 +148,7 @@ const tierPreviews = [
 ];
 
 export default function RiderAppPage() {
-  const member = riders.find((item) => item.status === "Night Shift") ?? riders[0];
+  const member = riders[0];
   const openCase = incidents.find((incident) => incident.rider === member.name && incident.status !== "Closed");
   const benefit = ledgerEntries.find((entry) => entry.recipient === member.name);
   const pointsAccount = getPointsAccount(pointsLedgerEntries, member.id);
@@ -139,6 +157,70 @@ export default function RiderAppPage() {
   const riderProducts = marketplaceProducts.filter((product) => product.audience === "rider" || product.audience === "both").slice(0, 3);
   const tier = getRiderTier(member);
   const tierScore = getRiderTierScore(member);
+  const [slotPayload, setSlotPayload] = useState<SlotPayload["data"] | null>(null);
+  const [selectedSlotId, setSelectedSlotId] = useState("");
+  const [slotMessage, setSlotMessage] = useState("Escolha um horario e envie para revisao do Ponto.");
+
+  useEffect(() => {
+    let active = true;
+    fetch("/api/slots", { cache: "no-store" })
+      .then((response) => response.json())
+      .then((payload: SlotPayload) => {
+        if (!active) return;
+        setSlotPayload(payload.data);
+        setSelectedSlotId((current) => current || payload.data.slots.find((slot) => slot.status === "open" && slot.enrolled < slot.capacity)?.id || "");
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  const riderEnrollments = useMemo(
+    () => (slotPayload?.enrollments ?? []).filter((item) => item.riderId === member.id),
+    [member.id, slotPayload?.enrollments],
+  );
+  const openSlots = useMemo(
+    () =>
+      (slotPayload?.slots ?? []).filter(
+        (slot) =>
+          slot.status === "open" &&
+          slot.enrolled < slot.capacity &&
+          !riderEnrollments.some((enrollment) => enrollment.slotId === slot.id && enrollment.status !== "cancelled" && enrollment.status !== "rejected"),
+      ),
+    [riderEnrollments, slotPayload?.slots],
+  );
+  const riderSlotSummary = {
+    week: slotPayload?.summary.week.replace("2026-06-01 / 2026-06-07", "01-07 Jun") ?? slotSummary.week,
+    openSlots: slotPayload ? openSlots.length : slotSummary.openSlots,
+    pendingReview: slotPayload ? riderEnrollments.filter((item) => item.status === "submitted" || item.status === "ponto_approved").length : slotSummary.pendingReview,
+    confirmed: slotPayload ? riderEnrollments.filter((item) => item.status === "franchise_confirmed" || item.status === "hq_reviewed").length : slotSummary.confirmed,
+  };
+
+  async function submitRiderSlot() {
+    const slot = openSlots.find((item) => item.id === selectedSlotId);
+    if (!slot) {
+      setSlotMessage("Selecione um slot disponivel.");
+      return;
+    }
+
+    const response = await fetch("/api/slots", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        slotId: slot.id,
+        note: `${member.name} submitted from rider app for ${slot.pontoName}.`,
+      }),
+    });
+    const result = await response.json();
+    if (!response.ok) {
+      setSlotMessage(result.error ?? "Falha ao enviar inscricao.");
+      return;
+    }
+
+    const fresh = await fetch("/api/slots", { cache: "no-store" }).then((item) => item.json() as Promise<SlotPayload>);
+    setSlotPayload(fresh.data);
+    setSlotMessage(`${result.data.id} enviado para ${slot.pontoName}.`);
+  }
 
   return (
     <main className="min-h-screen bg-[#101010] text-[#050505]" style={{ fontFamily: "Poppins, Inter, system-ui, sans-serif" }}>
@@ -254,9 +336,9 @@ export default function RiderAppPage() {
             <PartnerMapSection partners={riderPartnerMap} />
 
             <section className="px-4 pt-4">
-              <div className="grid gap-3 rounded-[8px] bg-[#050505] p-4 text-white shadow-[0_12px_26px_rgba(0,0,0,0.16)]">
-                <div className="flex items-start justify-between gap-3">
-                  <div>
+              <div className="grid min-w-0 gap-3 overflow-hidden rounded-[8px] bg-[#050505] p-4 text-white shadow-[0_12px_26px_rgba(0,0,0,0.16)]">
+                <div className="flex min-w-0 items-start justify-between gap-3">
+                  <div className="min-w-0">
                     <div className="flex items-center gap-2 text-sm font-black text-[#ffb238]">
                       <CalendarDays size={17} />
                       Inscricao de slots
@@ -264,20 +346,41 @@ export default function RiderAppPage() {
                     <h2 className="mt-2 text-2xl font-black leading-7">Escolha seus horarios da semana</h2>
                     <p className="mt-2 text-sm font-bold leading-5 text-white/62">Ponto revisa sua inscricao e a franquia confirma antes de entrar no plano oficial.</p>
                   </div>
-                  <div className="rounded-[8px] bg-white/10 px-3 py-2 text-right">
+                  <div className="shrink-0 rounded-[8px] bg-white/10 px-3 py-2 text-right">
                     <div className="text-[10px] font-black uppercase text-white/45">Semana</div>
-                    <div className="text-sm font-black">{slotSummary.week}</div>
+                    <div className="text-sm font-black">{riderSlotSummary.week}</div>
                   </div>
                 </div>
-                <div className="grid grid-cols-3 gap-2">
-                  <RulePill label="Abertos" value={String(slotSummary.openSlots)} dark />
-                  <RulePill label="Em analise" value={String(slotSummary.pendingReview)} dark />
-                  <RulePill label="Confirmados" value={String(slotSummary.confirmed)} dark />
+                <div className="grid min-w-0 grid-cols-3 gap-2">
+                  <RulePill label="Abertos" value={String(riderSlotSummary.openSlots)} dark />
+                  <RulePill label="Em analise" value={String(riderSlotSummary.pendingReview)} dark />
+                  <RulePill label="Confirmados" value={String(riderSlotSummary.confirmed)} dark />
                 </div>
-                <a href="/slot-enrollment" className="flex h-12 items-center justify-center gap-2 rounded-[8px] bg-[#ff7a00] text-sm font-black text-[#050505]">
-                  Ver slots e se inscrever
-                  <ChevronRight size={18} />
-                </a>
+                <div className="grid min-w-0 gap-2">
+                  <select value={selectedSlotId} onChange={(event) => setSelectedSlotId(event.target.value)} className="h-12 w-full min-w-0 max-w-full rounded-[8px] border border-white/10 bg-white/10 px-3 text-sm font-black text-white outline-none">
+                    {openSlots.map((slot) => (
+                      <option key={slot.id} value={slot.id} className="text-[#050505]">
+                        {slot.weekday} {slot.startTime}-{slot.endTime} / {slot.pontoName} / {slot.franchiseName} / {slot.enrolled}-{slot.capacity}
+                      </option>
+                    ))}
+                  </select>
+                  <button type="button" onClick={submitRiderSlot} className="flex h-12 items-center justify-center gap-2 rounded-[8px] bg-[#ff7a00] text-sm font-black text-[#050505]">
+                    Enviar inscricao
+                    <ChevronRight size={18} />
+                  </button>
+                  <div className="rounded-[8px] bg-white/10 p-3 text-xs font-bold leading-5 text-white/70">{slotMessage}</div>
+                </div>
+                <div className="grid min-w-0 gap-2">
+                  {openSlots.slice(0, 3).map((slot) => (
+                    <div key={slot.id} className="rounded-[8px] bg-white/[0.08] p-3">
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="text-sm font-black">{slot.weekday} {slot.startTime}-{slot.endTime}</div>
+                        <span className="rounded-full bg-white/10 px-2 py-1 text-[10px] font-black">{slot.enrolled}/{slot.capacity}</span>
+                      </div>
+                      <div className="mt-1 text-xs font-bold text-white/58">{slot.pontoName} / {slot.franchiseName}</div>
+                    </div>
+                  ))}
+                </div>
               </div>
             </section>
 

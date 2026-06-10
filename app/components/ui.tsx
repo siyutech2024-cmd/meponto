@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import {
   AlertTriangle,
   BarChart3,
@@ -38,38 +39,45 @@ import { useEffect, useMemo, useState } from "react";
 import { BrandLockup } from "./brand";
 import { languages, translate, type Language, type TranslationKey } from "../lib/i18n";
 import { getNotificationStatus } from "../lib/notifications";
-import { can, roles, type Permission, type Role } from "../lib/rbac";
+import { can, type Permission, type Role } from "../lib/rbac";
 import { useVentoStore } from "../lib/store";
+import { portalConfigs, portalForPath, portalForRole, type PortalId } from "../lib/portals";
 
-const navItems: Array<{ href: string; labelKey: TranslationKey; icon: React.ComponentType<{ size?: number }> }> = [
-  { href: "/dashboard", labelKey: "navDashboard", icon: LayoutDashboard },
-  { href: "/riders", labelKey: "navRiders", icon: Bike },
-  { href: "/rider-app", labelKey: "navRiderApp", icon: Bike },
-  { href: "/pontos", labelKey: "navPontos", icon: MapPinned },
-  { href: "/territory", labelKey: "navTerritory", icon: MapPinned },
-  { href: "/leaders", labelKey: "navLeaders", icon: Users },
-  { href: "/mobile", labelKey: "navMobile", icon: Smartphone },
-  { href: "/chat", labelKey: "navChat", icon: MessageCircle },
-  { href: "/incidents", labelKey: "navIncidents", icon: ShieldAlert },
-  { href: "/rewards", labelKey: "navRewards", icon: CircleDollarSign },
-  { href: "/points-economy", labelKey: "navPointsEconomy", icon: CircleDollarSign },
-  { href: "/ninety-nine-import", labelKey: "navNinetyNineImport", icon: FileSpreadsheet },
-  { href: "/slot-enrollment", labelKey: "navSlotEnrollment", icon: CalendarDays },
-  { href: "/marketplace", labelKey: "navMarketplace", icon: Store },
-  { href: "/partner-points", labelKey: "navPartnerPoints", icon: Handshake },
-  { href: "/finance", labelKey: "navFinance", icon: CircleDollarSign },
-  { href: "/crm", labelKey: "navCrm", icon: Handshake },
-  { href: "/franchise", labelKey: "navFranchise", icon: Store },
-  { href: "/night-shift", labelKey: "navNightShift", icon: Moon },
-  { href: "/analytics", labelKey: "navAnalytics", icon: BarChart3 },
-  { href: "/reports", labelKey: "navReports", icon: FileBarChart2 },
-  { href: "/realtime", labelKey: "navRealtime", icon: RadioTower },
-  { href: "/sops", labelKey: "navSops", icon: FileText },
-  { href: "/tools", labelKey: "navTools", icon: DatabaseBackup },
-  { href: "/audit", labelKey: "navAudit", icon: ClipboardList },
-  { href: "/access-control", labelKey: "navAccessControl", icon: ShieldCheck },
-  { href: "/security", labelKey: "navSecurity", icon: ShieldQuestion },
-  { href: "/settings", labelKey: "navSettings", icon: Settings },
+const navItems: Array<{
+  href: string;
+  labelKey: TranslationKey;
+  icon: React.ComponentType<{ size?: number }>;
+  permission?: Permission;
+}> = [
+  { href: "/dashboard", labelKey: "navDashboard", icon: LayoutDashboard, permission: "view_dashboard" },
+  { href: "/operations-core", labelKey: "navOperationsCore", icon: DatabaseBackup, permission: "view_dashboard" },
+  { href: "/riders", labelKey: "navRiders", icon: Bike, permission: "manage_riders" },
+  { href: "/rider-app", labelKey: "navRiderApp", icon: Bike, permission: "use_rider_app" },
+  { href: "/pontos", labelKey: "navPontos", icon: MapPinned, permission: "manage_pontos" },
+  { href: "/territory", labelKey: "navTerritory", icon: MapPinned, permission: "view_analytics" },
+  { href: "/leaders", labelKey: "navLeaders", icon: Users, permission: "manage_leaders" },
+  { href: "/mobile", labelKey: "navMobile", icon: Smartphone, permission: "view_dashboard" },
+  { href: "/chat", labelKey: "navChat", icon: MessageCircle, permission: "view_dashboard" },
+  { href: "/incidents", labelKey: "navIncidents", icon: ShieldAlert, permission: "create_incidents" },
+  { href: "/rewards", labelKey: "navRewards", icon: CircleDollarSign, permission: "manage_rewards" },
+  { href: "/points-economy", labelKey: "navPointsEconomy", icon: CircleDollarSign, permission: "manage_points" },
+  { href: "/ninety-nine-import", labelKey: "navNinetyNineImport", icon: FileSpreadsheet, permission: "manage_riders" },
+  { href: "/slot-enrollment", labelKey: "navSlotEnrollment", icon: CalendarDays, permission: "manage_slots" },
+  { href: "/marketplace", labelKey: "navMarketplace", icon: Store, permission: "manage_marketplace" },
+  { href: "/partner-points", labelKey: "navPartnerPoints", icon: Handshake, permission: "manage_partner_points" },
+  { href: "/finance", labelKey: "navFinance", icon: CircleDollarSign, permission: "view_finance" },
+  { href: "/crm", labelKey: "navCrm", icon: Handshake, permission: "view_analytics" },
+  { href: "/franchise", labelKey: "navFranchise", icon: Store, permission: "view_analytics" },
+  { href: "/night-shift", labelKey: "navNightShift", icon: Moon, permission: "view_analytics" },
+  { href: "/analytics", labelKey: "navAnalytics", icon: BarChart3, permission: "view_analytics" },
+  { href: "/reports", labelKey: "navReports", icon: FileBarChart2, permission: "view_analytics" },
+  { href: "/realtime", labelKey: "navRealtime", icon: RadioTower, permission: "view_dashboard" },
+  { href: "/sops", labelKey: "navSops", icon: FileText, permission: "view_dashboard" },
+  { href: "/tools", labelKey: "navTools", icon: DatabaseBackup, permission: "manage_riders" },
+  { href: "/audit", labelKey: "navAudit", icon: ClipboardList, permission: "view_audit" },
+  { href: "/access-control", labelKey: "navAccessControl", icon: ShieldCheck, permission: "view_audit" },
+  { href: "/security", labelKey: "navSecurity", icon: ShieldQuestion, permission: "view_audit" },
+  { href: "/settings", labelKey: "navSettings", icon: Settings, permission: "reset_demo" },
 ];
 
 const navGroups: Array<{
@@ -80,6 +88,7 @@ const navGroups: Array<{
     title: "PontoSys",
     items: navItems.filter((item) =>
       [
+        "/operations-core",
         "/dashboard",
         "/riders",
         "/rider-app",
@@ -134,35 +143,18 @@ const navGroups: Array<{
   },
 ];
 
-const roleLabels: Record<Language, Record<Role, string>> = {
-  en: {
-    "Super Admin": "Super Admin",
-    "Regional Manager": "Regional Manager",
-    "Ponto Manager": "Ponto Manager",
-    Leader: "Leader",
-    Finance: "Finance",
-    Support: "Support",
-  },
-  zh: {
-    "Super Admin": "总部管理员",
-    "Regional Manager": "区域经理",
-    "Ponto Manager": "Ponto经理",
-    Leader: "Leader",
-    Finance: "财务",
-    Support: "支持",
-  },
-  pt: {
-    "Super Admin": "Super Admin",
-    "Regional Manager": "Gerente Regional",
-    "Ponto Manager": "Gerente de Ponto",
-    Leader: "Líder",
-    Finance: "Financeiro",
-    Support: "Suporte",
-  },
+type SessionUser = {
+  name: string;
+  role: Role;
+  portal: PortalId;
+  organization: string;
+  defaultPath: string;
 };
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const [notificationsOpen, setNotificationsOpen] = useState(false);
+  const [sessionUser, setSessionUser] = useState<SessionUser | null>(null);
+  const pathname = usePathname();
   const language = useVentoStore((state) => state.language);
   const setLanguage = useVentoStore((state) => state.setLanguage);
   const theme = useVentoStore((state) => state.theme);
@@ -175,22 +167,55 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const acknowledgeNotification = useVentoStore((state) => state.acknowledgeNotification);
   const auditLog = useVentoStore((state) => state.auditLog);
   const unreadCount = useMemo(() => notifications.filter((notification) => !notification.readAt).length, [notifications]);
-  const canReset = can(currentRole, "reset_demo");
   const t = (key: TranslationKey) => translate(language, key);
   const nextTheme = theme === "dark" ? "light" : "dark";
+  const activeRole = sessionUser?.role ?? currentRole;
+  const canReset = can(activeRole, "reset_demo");
+  const portal = sessionUser ? portalConfigs[sessionUser.portal] : portalForRole(activeRole) ?? portalForPath(pathname ?? "/dashboard");
+  const portalModuleHrefs = new Set(portal.modules.map((module) => module.href));
+  const visibleGroups = navGroups
+    .map((group) => ({
+      ...group,
+      items: group.items.filter(
+        (item) => portalModuleHrefs.has(item.href) && (!item.permission || can(activeRole, item.permission)),
+      ),
+    }))
+    .filter((group) => group.items.length > 0);
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
   }, [theme]);
 
+  useEffect(() => {
+    let active = true;
+    fetch("/api/auth/session", { cache: "no-store" })
+      .then(async (response) => {
+        if (!response.ok) return null;
+        return response.json() as Promise<{ user: SessionUser }>;
+      })
+      .then((payload) => {
+        if (!active || !payload?.user) return;
+        setSessionUser(payload.user);
+        setRole(payload.user.role);
+      });
+    return () => {
+      active = false;
+    };
+  }, [setRole]);
+
   return (
-    <div className="min-h-screen bg-[var(--background)] text-[var(--text)] lg:grid lg:grid-cols-[260px_1fr]">
+    <div className="min-h-screen overflow-x-hidden bg-[var(--background)] text-[var(--text)] lg:grid lg:grid-cols-[260px_1fr]">
       <aside className="border-b border-[var(--line)] bg-[var(--surface)] lg:sticky lg:top-0 lg:h-screen lg:border-b-0 lg:border-r">
         <div className="flex h-[72px] items-center border-b border-[var(--line)] px-5 py-4">
-          <BrandLockup />
+          <Link href={portal.homePath} className="min-w-0">
+            <BrandLockup />
+            <span className="mt-1 block truncate text-[10px] font-black uppercase tracking-[0.14em] text-[var(--muted)]">
+              {portal.productName}
+            </span>
+          </Link>
         </div>
         <nav className="flex gap-2 overflow-x-auto px-3 py-3 lg:block lg:h-[calc(100vh-72px)] lg:space-y-4 lg:overflow-y-auto lg:px-3 lg:pb-6">
-          {navGroups.map((group) => (
+          {visibleGroups.map((group) => (
             <section key={group.title} className="min-w-max lg:min-w-0">
               <div className="mb-2 px-2 text-[10px] font-black uppercase tracking-[0.16em] text-[var(--muted)]">{group.title}</div>
               <div className="flex gap-2 lg:block lg:space-y-1">
@@ -248,32 +273,27 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 </option>
               ))}
             </select>
-            <select
-              data-i18n-skip
-              aria-label="Current role"
-              value={currentRole}
-              onChange={(event) => setRole(event.target.value as Role)}
-              className="h-10 rounded-[8px] border border-[var(--line)] bg-[var(--surface-raised)] px-2 text-sm font-bold text-[var(--text)] outline-none"
-            >
-              {roles.map((role) => (
-                <option key={role} value={role}>
-                  {roleLabels[language][role]}
-                </option>
-              ))}
-            </select>
-            <div className="grid h-10 w-10 place-items-center rounded-[8px] border border-[var(--line)] bg-[var(--surface-raised)] text-sm font-black text-[var(--accent)]">
-              {currentRole
+            <div className="hidden min-w-0 text-right md:block">
+              <div className="truncate text-sm font-black">{sessionUser?.name ?? activeRole}</div>
+              <div className="truncate text-[10px] font-bold uppercase text-[var(--muted)]">{sessionUser?.organization ?? portal.productName}</div>
+            </div>
+            <div title={activeRole} className="grid h-10 w-10 place-items-center rounded-[8px] border border-[var(--line)] bg-[var(--surface-raised)] text-sm font-black text-[var(--accent)]">
+              {activeRole
                 .split(" ")
                 .map((word) => word[0])
                 .join("")}
             </div>
-            <Link
-              href="/login"
+            <button
+              type="button"
+              onClick={async () => {
+                await fetch("/api/auth/logout", { method: "POST" });
+                window.location.href = `/login/${portal.id}`;
+              }}
               className="flex h-10 items-center gap-2 rounded-[8px] border border-[var(--line)] px-3 text-sm font-semibold text-[var(--muted-strong)] transition-colors hover:border-[var(--danger)] hover:bg-[var(--danger-bg)] hover:text-[var(--danger-ink)]"
             >
               <LogOut size={17} />
               {t("logout")}
-            </Link>
+            </button>
           </div>
         </header>
         <div className="mx-auto max-w-[1500px] px-4 py-5 sm:px-6 lg:px-7 animate-fade-in">{children}</div>

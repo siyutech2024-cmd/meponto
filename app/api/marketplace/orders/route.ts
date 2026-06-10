@@ -90,7 +90,14 @@ export async function POST(request: Request) {
     };
     memory.pointsLedgerEntries.unshift(ledger);
   }
-  memory.marketplaceProducts = memory.marketplaceProducts.map((item) => (item.id === product.id ? { ...item, stock: item.stock - 1 } : item));
+  // Mutate in place (index assignment) so the persistence proxy sees the change.
+  const productIndex = memory.marketplaceProducts.findIndex((item) => item.id === product.id);
+  if (productIndex !== -1) {
+    memory.marketplaceProducts[productIndex] = {
+      ...memory.marketplaceProducts[productIndex],
+      stock: memory.marketplaceProducts[productIndex].stock - 1,
+    };
+  }
   appendServerAudit({
     actor: "Marketplace",
     action: "MARKETPLACE_ORDER_CREATED",

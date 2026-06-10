@@ -10,9 +10,9 @@ export default function RealtimePage() {
   const summary = getRealtimeSummary(realtimeEvents);
   const visibleEvents = useMemo(
     () =>
-      realtimeEvents.filter((event) => {
-        const matchesType = typeFilter === "All Events" || event.type === typeFilter;
-        const matchesStatus = statusFilter === "All Status" || event.status === statusFilter;
+      realtimeEvents.filter((item) => {
+        const matchesType = typeFilter === "All Events" || item.type === typeFilter;
+        const matchesStatus = statusFilter === "All Status" || item.status === statusFilter;
         return matchesType && matchesStatus;
       }),
     [typeFilter, statusFilter],
@@ -53,14 +53,14 @@ export default function RealtimePage() {
 
       <DataTable
         headers={["Created At", "Type", "Severity", "Title", "Target", "Status", "Detail"]}
-        rows={visibleEvents.map((event) => [
-          event.createdAt,
-          event.type,
-          <Badge key="severity" value={event.severity} />,
-          event.title,
-          event.target,
-          <Badge key="status" value={event.status} />,
-          event.detail,
+        rows={visibleEvents.map((item) => [
+          item.createdAt,
+          item.type,
+          <Badge key="severity" value={item.severity} />,
+          item.title,
+          item.target,
+          <Badge key="status" value={item.status} />,
+          item.detail,
         ])}
       />
     </AppShell>

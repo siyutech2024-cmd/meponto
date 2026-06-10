@@ -1,4 +1,5 @@
 import { incidents, leaders, ledgerEntries, pontos, rewards, riders, type Incident, type LedgerEntry, type Rider } from "../data";
+import { hydrateFromDatabase, trackCollection } from "./persistence";
 import { seedNotificationsFromIncidents, type NotificationItem } from "../notifications";
 import { crmPartners, type CrmPartner } from "../crm";
 import {
@@ -61,26 +62,29 @@ const globalState = globalThis as typeof globalThis & {
 export const memory =
   globalState.ventoMemory ??
   (globalState.ventoMemory = {
-    riders: [...riders],
-    incidents: [...incidents],
-    pontos: [...pontos],
-    leaders: [...leaders],
-    rewards: [...rewards],
-    ledgerEntries: [...ledgerEntries],
-    notifications: seedNotificationsFromIncidents(incidents),
-    crmPartners: [...crmPartners],
-    pointsLedgerEntries: [...pointsLedgerEntries],
-    partnerServiceRecords: [...partnerServiceRecords],
-    partnerPointsLedgerEntries: [...partnerPointsLedgerEntries],
-    marketplaceProducts: [...marketplaceProducts],
-    marketplaceOrders: [...marketplaceOrders],
-    chatRooms: [...chatRooms],
-    chatMessages: [...chatMessages],
-    systemSettings: [...systemSettings],
-    riderSlots: [...riderSlots],
-    slotEnrollments: [...slotEnrollments],
-    auditEntries: [],
+    riders: trackCollection("riders", [...riders]),
+    incidents: trackCollection("incidents", [...incidents]),
+    pontos: trackCollection("pontos", [...pontos]),
+    leaders: trackCollection("leaders", [...leaders]),
+    rewards: trackCollection("rewards", [...rewards]),
+    ledgerEntries: trackCollection("ledgerEntries", [...ledgerEntries]),
+    notifications: trackCollection("notifications", seedNotificationsFromIncidents(incidents)),
+    crmPartners: trackCollection("crmPartners", [...crmPartners]),
+    pointsLedgerEntries: trackCollection("pointsLedgerEntries", [...pointsLedgerEntries]),
+    partnerServiceRecords: trackCollection("partnerServiceRecords", [...partnerServiceRecords]),
+    partnerPointsLedgerEntries: trackCollection("partnerPointsLedgerEntries", [...partnerPointsLedgerEntries]),
+    marketplaceProducts: trackCollection("marketplaceProducts", [...marketplaceProducts]),
+    marketplaceOrders: trackCollection("marketplaceOrders", [...marketplaceOrders]),
+    chatRooms: trackCollection("chatRooms", [...chatRooms]),
+    chatMessages: trackCollection("chatMessages", [...chatMessages]),
+    systemSettings: trackCollection("systemSettings", [...systemSettings]),
+    riderSlots: trackCollection("riderSlots", [...riderSlots]),
+    slotEnrollments: trackCollection("slotEnrollments", [...slotEnrollments]),
+    auditEntries: trackCollection<ServerAuditEntry>("auditEntries", []),
   });
+
+// Restore persisted data from the database (no-op when USE_SUPABASE is off).
+void hydrateFromDatabase();
 
 memory.ledgerEntries ??= [...ledgerEntries];
 memory.notifications ??= seedNotificationsFromIncidents(memory.incidents);
@@ -97,6 +101,28 @@ memory.riderSlots ??= [...riderSlots];
 memory.slotEnrollments ??= [...slotEnrollments];
 memory.auditEntries ??= [];
 
+// Ensure every collection is mutation-tracked, even when an older in-memory
+// state survived a dev hot reload before tracking existed.
+memory.riders = trackCollection("riders", memory.riders);
+memory.incidents = trackCollection("incidents", memory.incidents);
+memory.pontos = trackCollection("pontos", memory.pontos);
+memory.leaders = trackCollection("leaders", memory.leaders);
+memory.rewards = trackCollection("rewards", memory.rewards);
+memory.ledgerEntries = trackCollection("ledgerEntries", memory.ledgerEntries);
+memory.notifications = trackCollection("notifications", memory.notifications);
+memory.crmPartners = trackCollection("crmPartners", memory.crmPartners);
+memory.pointsLedgerEntries = trackCollection("pointsLedgerEntries", memory.pointsLedgerEntries);
+memory.partnerServiceRecords = trackCollection("partnerServiceRecords", memory.partnerServiceRecords);
+memory.partnerPointsLedgerEntries = trackCollection("partnerPointsLedgerEntries", memory.partnerPointsLedgerEntries);
+memory.marketplaceProducts = trackCollection("marketplaceProducts", memory.marketplaceProducts);
+memory.marketplaceOrders = trackCollection("marketplaceOrders", memory.marketplaceOrders);
+memory.chatRooms = trackCollection("chatRooms", memory.chatRooms);
+memory.chatMessages = trackCollection("chatMessages", memory.chatMessages);
+memory.systemSettings = trackCollection("systemSettings", memory.systemSettings);
+memory.riderSlots = trackCollection("riderSlots", memory.riderSlots);
+memory.slotEnrollments = trackCollection("slotEnrollments", memory.slotEnrollments);
+memory.auditEntries = trackCollection("auditEntries", memory.auditEntries);
+
 export function jsonResponse<T>(data: T, init?: ResponseInit) {
   return Response.json(data, {
     headers: {
@@ -109,6 +135,12 @@ export function jsonResponse<T>(data: T, init?: ResponseInit) {
 
 export function makeServerId(prefix: string, count: number) {
   return `${prefix}-${Date.now().toString(36)}-${count}`;
+}
+
+/** Accept a client-generated id when it is a safe identifier, so the browser
+ *  store and the server/database share the same record ids. */
+export function acceptClientId(id: unknown): string | null {
+  return typeof id === "string" && /^[\w.:-]{1,64}$/.test(id) ? id : null;
 }
 
 export function appendServerAudit(entry: Omit<ServerAuditEntry, "id" | "createdAt">) {
