@@ -26,6 +26,15 @@ type PersistenceState = {
   pendingDeletes: Map<string, Set<string>>;
   /** Collections whose database rows must be wiped before the next upsert. */
   pendingPurges: Set<string>;
+  /**
+   * Record ids created/updated by THIS instance and possibly not flushed yet.
+   * Used by the read-through refresh to decide which records that are absent
+   * from the database are genuinely new (keep) versus deleted by a sibling
+   * instance (drop). Prevents deleted records from being resurrected.
+   */
+  localNew: Map<string, Set<string>>;
+  /** Set while refresh/hydrate rewrite collections so the proxy traps stay quiet. */
+  suspendTracking: boolean;
   flushTimer: ReturnType<typeof setTimeout> | null;
   warned: boolean;
   client: SupabaseClient | null;
@@ -45,6 +54,8 @@ const state: PersistenceState =
     dirty: new Set(),
     pendingDeletes: new Map(),
     pendingPurges: new Set(),
+    localNew: new Map(),
+    suspendTracking: false,
     flushTimer: null,
     warned: false,
     client: null,
@@ -55,6 +66,16 @@ const state: PersistenceState =
 // Older hot-reloaded state may miss the newer fields.
 state.pendingDeletes ??= new Map();
 state.pendingPurges ??= new Set();
+state.localNew ??= new Map();
+state.suspendTracking ??= false;
+
+function markLocalNew(name: string, value: unknown) {
+  const id = (value as AnyRecord | null)?.id;
+  if (typeof id !== "string") return;
+  const set = state.localNew.get(name) ?? new Set<string>();
+  set.add(id);
+  state.localNew.set(name, set);
+}
 
 function persistenceEnabled(): boolean {
   return (
@@ -147,6 +168,10 @@ async function flushDirtyCollections() {
           .from(TABLE)
           .upsert(rows, { onConflict: "collection,record_id" });
         if (upsertError) throw new Error(upsertError.message);
+        // These records are in the database now — they no longer need the
+        // local-only protection during read-through refreshes.
+        const localNewSet = state.localNew.get(name);
+        if (localNewSet) for (const row of rows) localNewSet.delete(row.record_id);
       }
 
       // NOTE: we deliberately do NOT delete rows that are merely absent from
@@ -210,15 +235,30 @@ export async function refreshCollectionsFromDatabase(collectionNames: string[]):
         .filter((row) => row && typeof row.id === "string");
       const dbIds = new Set(dbRows.map((row) => row.id));
       const pendingDeletes = state.pendingDeletes.get(name) ?? new Set<string>();
+      const localNewSet = state.localNew.get(name) ?? new Set<string>();
+      // Keep a record that's absent from the database ONLY if this instance
+      // created it (not flushed yet). Anything else absent from the database
+      // was deleted by a sibling instance and must not be resurrected.
       const localOnly = collection.filter(
-        (record) => record && typeof record.id === "string" && !dbIds.has(record.id) && !pendingDeletes.has(record.id),
+        (record) =>
+          record &&
+          typeof record.id === "string" &&
+          !dbIds.has(record.id) &&
+          !pendingDeletes.has(record.id) &&
+          localNewSet.has(record.id),
       );
 
-      collection.splice(0, collection.length, ...localOnly, ...dbRows.filter((row) => !pendingDeletes.has(row.id)));
-      // The splice marked the collection dirty; only keep it dirty when there
-      // is genuinely local-only data that still needs to reach the database.
-      if (localOnly.length === 0 && !state.pendingPurges.has(name) && pendingDeletes.size === 0) {
-        state.dirty.delete(name);
+      state.suspendTracking = true;
+      try {
+        collection.splice(0, collection.length, ...localOnly, ...dbRows.filter((row) => !pendingDeletes.has(row.id)));
+      } finally {
+        state.suspendTracking = false;
+      }
+      // Ids now present in the database no longer count as local-only.
+      for (const id of dbIds) localNewSet.delete(id);
+      if (localOnly.length > 0) {
+        state.dirty.add(name);
+        scheduleFlush();
       }
     } catch (error) {
       warnOnce((error as Error).message);
@@ -259,14 +299,19 @@ export function trackCollection<T extends { id: string }>(name: string, array: T
   const proxy = new Proxy(array, {
     set(target, property, value, receiver) {
       const result = Reflect.set(target, property, value, receiver);
-      state.dirty.add(name);
-      scheduleFlush();
+      if (!state.suspendTracking) {
+        state.dirty.add(name);
+        markLocalNew(name, value);
+        scheduleFlush();
+      }
       return result;
     },
     deleteProperty(target, property) {
       const result = Reflect.deleteProperty(target, property);
-      state.dirty.add(name);
-      scheduleFlush();
+      if (!state.suspendTracking) {
+        state.dirty.add(name);
+        scheduleFlush();
+      }
       return result;
     },
   });
@@ -326,16 +371,29 @@ export function hydrateFromDatabase(): Promise<void> {
             // race): keep records that aren't in the database yet on top of
             // the persisted state, and flush them right after.
             const persistedIds = new Set(persisted.map((record) => record.id));
-            const localNew = collection.filter((record) => record && !persistedIds.has(record.id));
-            collection.splice(0, collection.length, ...localNew, ...persisted);
+            const keepLocal = collection.filter((record) => record && !persistedIds.has(record.id));
+            for (const record of keepLocal) markLocalNew(name, record);
+            state.suspendTracking = true;
+            try {
+              collection.splice(0, collection.length, ...keepLocal, ...persisted);
+            } finally {
+              state.suspendTracking = false;
+            }
             state.dirty.add(name);
           } else {
             // Replace seed contents with the persisted records (newest first).
-            collection.splice(0, collection.length, ...persisted);
+            state.suspendTracking = true;
+            try {
+              collection.splice(0, collection.length, ...persisted);
+            } finally {
+              state.suspendTracking = false;
+            }
             state.dirty.delete(name);
           }
         } else {
           // Nothing in the DB yet: push the seeds so the DB mirrors the app.
+          // Seeds count as local-new until the first flush lands.
+          for (const record of collection) markLocalNew(name, record);
           state.dirty.add(name);
         }
       }
