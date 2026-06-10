@@ -47,6 +47,7 @@ import { systemSettings, type SystemSetting } from "../settings";
 import { chatMessages, chatRooms, type ChatMessage, type ChatRoom } from "../chat";
 import { riderSlots, slotEnrollments, type RiderSlot, type SlotEnrollment } from "../slots";
 import { leads, type Lead } from "../leads";
+import { dispatchShifts, shiftQuotas, shiftSignups, type DispatchShift, type ShiftQuota, type ShiftSignup } from "../dispatch";
 
 type Reward = (typeof rewards)[number];
 type Ponto = (typeof pontos)[number];
@@ -87,6 +88,9 @@ const globalState = globalThis as typeof globalThis & {
     slotEnrollments: SlotEnrollment[];
     auditEntries: ServerAuditEntry[];
     leads: Lead[];
+    dispatchShifts: DispatchShift[];
+    shiftQuotas: ShiftQuota[];
+    shiftSignups: ShiftSignup[];
   };
 };
 
@@ -113,6 +117,9 @@ export const memory =
     slotEnrollments: trackCollection("slotEnrollments", [...slotEnrollments]),
     auditEntries: trackCollection<ServerAuditEntry>("auditEntries", []),
     leads: trackCollection("leads", [...leads]),
+    dispatchShifts: trackCollection("dispatchShifts", [...dispatchShifts]),
+    shiftQuotas: trackCollection("shiftQuotas", [...shiftQuotas]),
+    shiftSignups: trackCollection("shiftSignups", [...shiftSignups]),
   });
 
 // Restore persisted data from the database (no-op when USE_SUPABASE is off).
@@ -156,6 +163,12 @@ memory.slotEnrollments = trackCollection("slotEnrollments", memory.slotEnrollmen
 memory.auditEntries = trackCollection("auditEntries", memory.auditEntries);
 memory.leads ??= [];
 memory.leads = trackCollection("leads", memory.leads);
+memory.dispatchShifts ??= [];
+memory.dispatchShifts = trackCollection("dispatchShifts", memory.dispatchShifts);
+memory.shiftQuotas ??= [];
+memory.shiftQuotas = trackCollection("shiftQuotas", memory.shiftQuotas);
+memory.shiftSignups ??= [];
+memory.shiftSignups = trackCollection("shiftSignups", memory.shiftSignups);
 
 export function jsonResponse<T>(data: T, init?: ResponseInit) {
   // Make sure pending mutations reach the database even on serverless,
