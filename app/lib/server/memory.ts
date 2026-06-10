@@ -48,6 +48,7 @@ import { chatMessages, chatRooms, type ChatMessage, type ChatRoom } from "../cha
 import { riderSlots, slotEnrollments, type RiderSlot, type SlotEnrollment } from "../slots";
 import { leads, type Lead } from "../leads";
 import { dispatchShifts, shiftQuotas, shiftSignups, type DispatchShift, type ShiftQuota, type ShiftSignup } from "../dispatch";
+import { appUsers, type AppUser } from "../users";
 
 type Reward = (typeof rewards)[number];
 type Ponto = (typeof pontos)[number];
@@ -91,6 +92,7 @@ const globalState = globalThis as typeof globalThis & {
     dispatchShifts: DispatchShift[];
     shiftQuotas: ShiftQuota[];
     shiftSignups: ShiftSignup[];
+    appUsers: AppUser[];
   };
 };
 
@@ -120,6 +122,7 @@ export const memory =
     dispatchShifts: trackCollection("dispatchShifts", [...dispatchShifts]),
     shiftQuotas: trackCollection("shiftQuotas", [...shiftQuotas]),
     shiftSignups: trackCollection("shiftSignups", [...shiftSignups]),
+    appUsers: trackCollection("appUsers", [...appUsers]),
   });
 
 // Restore persisted data from the database (no-op when USE_SUPABASE is off).
@@ -169,6 +172,8 @@ memory.shiftQuotas ??= [];
 memory.shiftQuotas = trackCollection("shiftQuotas", memory.shiftQuotas);
 memory.shiftSignups ??= [];
 memory.shiftSignups = trackCollection("shiftSignups", memory.shiftSignups);
+memory.appUsers ??= [];
+memory.appUsers = trackCollection("appUsers", memory.appUsers);
 
 export function jsonResponse<T>(data: T, init?: ResponseInit) {
   // Make sure pending mutations reach the database even on serverless,
