@@ -2,11 +2,20 @@ import { NextResponse, type NextRequest } from "next/server";
 import { portalConfigs, portalHostMap } from "./app/lib/portals";
 import { SESSION_COOKIE, verifySessionToken } from "./app/lib/auth-session";
 
+// Brand site hosts: the root path serves the public marketing page.
+const marketingHosts = new Set(["meponto.com", "www.meponto.com"]);
+
 export async function proxy(request: NextRequest) {
   const host = request.headers.get("host")?.split(":")[0]?.toLowerCase() ?? "";
   const hostPortalId = portalHostMap[host];
   const pathname = request.nextUrl.pathname;
   const session = await verifySessionToken(request.cookies.get(SESSION_COOKIE)?.value);
+
+  if (marketingHosts.has(host) && pathname === "/") {
+    const url = request.nextUrl.clone();
+    url.pathname = "/home";
+    return NextResponse.rewrite(url);
+  }
 
   if (pathname === "/") {
     if (hostPortalId) {
