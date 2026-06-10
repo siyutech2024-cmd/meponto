@@ -176,7 +176,7 @@ function BoardTab({ board, byShift, loading, onAction, setMessage }: { board: Bo
     <div className="space-y-4">
       <div className="panel flex flex-wrap items-center gap-3 p-3">
         <button type="button" className="tag" onClick={() => setWeekStart(addDays(weekStart, -7))}>← 上一周</button>
-        <div className="text-sm font-black">
+        <div key={weekStart} translate="no" className="text-sm font-black">
           {weekStart} ~ {addDays(weekStart, 6)}
           <span className="ml-2 text-[10px] font-black uppercase text-[var(--muted)]">{weekShiftCount} 个班次</span>
         </div>
