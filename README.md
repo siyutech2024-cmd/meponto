@@ -15,12 +15,34 @@ npm run dev
 
 Open `http://localhost:3000`.
 
+## Formal Systems
+
+- PontoSys main backend: `/pontosys`
+- Franchise backend: `/franchise-admin`
+- Ponto station backend: `/ponto-admin`
+- MePonto rider app: `/app`
+- PontoMall: `/pontomall`
+- Partner service point: `/partner-app`
+- Supplier backend: `/supplier-admin`
+- T+1 / KPI / quota / whitelist core: `/operations-core`
+
+Test accounts are shown on `/login` and documented in `docs/formal-system-deployment.md`.
+
 ## Main Routes
 
 - `/login`
 - `/reset-password`
+- `/pontosys`
+- `/franchise-admin`
+- `/ponto-admin`
+- `/app`
+- `/pontomall`
+- `/partner-app`
+- `/supplier-admin`
+- `/operations-core`
 - `/dashboard`
 - `/riders`
+- `/rider-app`
 - `/pontos`
 - `/territory`
 - `/leaders`
@@ -39,6 +61,19 @@ Open `http://localhost:3000`.
 - `/access-control`
 - `/security`
 - `/settings`
+
+## Deployment
+
+The current Vercel deployment can use path-based system entries first. Production host routing supports `sys.meponto.com`, `franchise.meponto.com`, `station.meponto.com`, `app.meponto.com`, `partner.meponto.com`, `supplier.meponto.com`, and `mall.meponto.com`. See `docs/pontosys-prd-v2-architecture.md`.
+
+## Docker
+
+```bash
+npm run docker:up
+npm run docker:down
+```
+
+The Compose stack includes the Next.js application, PostgreSQL 16, and Redis 7.
 
 ## API Routes
 

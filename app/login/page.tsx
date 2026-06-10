@@ -1,129 +1,62 @@
-"use client";
-
 import Link from "next/link";
-import { Eye, EyeOff, Lock, Phone } from "lucide-react";
-import { useState } from "react";
+import { ArrowRight, Bike, Building2, MapPinned, Store, Warehouse, type LucideIcon } from "lucide-react";
 import { BrandLockup } from "../components/brand";
-import { languages, translate, type Language, type TranslationKey } from "../lib/i18n";
-import { useVentoStore } from "../lib/store";
+import { portalConfigs, type PortalId } from "../lib/portals";
 
-export default function LoginPage() {
-  const language = useVentoStore((state) => state.language);
-  const setLanguage = useVentoStore((state) => state.setLanguage);
-  const [showPassword, setShowPassword] = useState(false);
-  const [error, setError] = useState("");
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const t = (key: TranslationKey) => translate(language, key);
+const primaryPortals: Array<{ id: PortalId; icon: LucideIcon }> = [
+  { id: "pontosys", icon: Building2 },
+  { id: "franchise", icon: Warehouse },
+  { id: "ponto", icon: MapPinned },
+  { id: "rider", icon: Bike },
+  { id: "pontomall", icon: Store },
+];
 
+export default function LoginGatewayPage() {
   return (
-    <main className="grid min-h-screen place-items-center px-4 py-8">
-      <div className="industrial-shadow w-full max-w-md rounded border border-[var(--line)] bg-[var(--surface)] p-5">
-        <div className="mb-8 flex items-center gap-4">
+    <main className="min-h-screen bg-[var(--background)] px-4 py-8 text-[var(--text)] sm:px-6 lg:px-10">
+      <div className="mx-auto max-w-6xl">
+        <div className="flex items-center justify-between gap-4 border-b border-[var(--line)] pb-6">
           <BrandLockup markSize="lg" heading />
-          <select
-            data-i18n-skip
-            aria-label={t("language")}
-            value={language}
-            onChange={(event) => setLanguage(event.target.value as Language)}
-            className="ml-auto h-10 rounded border border-[var(--line)] bg-[var(--surface-raised)] px-2 text-sm font-black outline-none"
-          >
-            {languages.map((item) => (
-              <option key={item.code} value={item.code}>
-                {item.shortLabel}
-              </option>
-            ))}
-          </select>
+          <div className="text-right">
+            <div className="text-xs font-black uppercase text-[var(--accent)]">Secure system access</div>
+            <div className="mt-1 text-sm font-bold text-[var(--muted)]">请选择需要登录的独立系统</div>
+          </div>
         </div>
 
-        <div className="mb-4 rounded border border-[var(--line)] bg-[var(--surface-raised)] p-3 text-sm text-[var(--muted)]">
-          {t("loginDemo")} <span className="font-black text-[var(--text)]">+55 11 90000-0000</span> {t("withPassword")}{" "}
-          <span className="font-black text-[var(--text)]">pontosys-demo</span>.
-        </div>
+        <section className="py-10">
+          <h1 className="max-w-3xl text-3xl font-black leading-tight md:text-5xl">MePonto 运营生态系统</h1>
+          <p className="mt-4 max-w-3xl text-base font-bold leading-7 text-[var(--muted-strong)]">
+            每个系统使用独立账号、固定角色和固定数据范围。登录后不能切换角色或进入其他系统。
+          </p>
 
-        <form
-          className="space-y-4"
-          onSubmit={async (event) => {
-            event.preventDefault();
-            const form = new FormData(event.currentTarget);
-            const phone = String(form.get("phone") ?? "");
-            const password = String(form.get("password") ?? "");
+          <div className="mt-8 grid gap-3 md:grid-cols-2 xl:grid-cols-5">
+            {primaryPortals.map(({ id, icon: Icon }) => {
+              const portal = portalConfigs[id];
+              return (
+                <Link
+                  key={id}
+                  href={`/login/${id}`}
+                  className="group flex min-h-52 flex-col justify-between rounded-[8px] border border-[var(--line)] bg-[var(--surface)] p-5 transition-colors hover:border-[var(--accent)] hover:bg-[var(--surface-hover)]"
+                >
+                  <div>
+                    <Icon size={24} className="text-[var(--accent)]" />
+                    <h2 className="mt-5 text-xl font-black">{portal.title}</h2>
+                    <p className="mt-3 text-sm font-bold leading-6 text-[var(--muted)]">{portal.description}</p>
+                  </div>
+                  <div className="mt-5 flex items-center justify-between text-sm font-black">
+                    登录
+                    <ArrowRight size={17} className="text-[var(--muted)] group-hover:text-[var(--accent)]" />
+                  </div>
+                </Link>
+              );
+            })}
+          </div>
 
-            if (!phone || !password) {
-              setError(t("invalidLogin"));
-              return;
-            }
-
-            setIsSubmitting(true);
-            setError("");
-
-            try {
-              const response = await fetch("/api/auth/login", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ phone, password }),
-              });
-              const data = (await response.json()) as { error?: string };
-
-              if (!response.ok) {
-                setError(data.error ?? t("invalidLogin"));
-                return;
-              }
-
-              window.location.href = "/dashboard";
-            } catch {
-              setError(t("loginServiceUnavailable"));
-            } finally {
-              setIsSubmitting(false);
-            }
-          }}
-        >
-          <label className="block">
-            <span className="mb-2 block text-xs font-black uppercase text-[var(--muted)]">{t("phoneNumber")}</span>
-            <span className="flex h-12 items-center gap-3 rounded border border-[var(--line)] bg-[var(--surface-raised)] px-3">
-              <Phone size={18} className="text-[var(--muted)]" />
-              <input
-                name="phone"
-                className="min-w-0 flex-1 bg-transparent outline-none"
-                placeholder={t("enterPhoneNumber")}
-                inputMode="tel"
-              />
-            </span>
-          </label>
-
-          <label className="block">
-            <span className="mb-2 block text-xs font-black uppercase text-[var(--muted)]">{t("password")}</span>
-            <span className="flex h-12 items-center gap-3 rounded border border-[var(--line)] bg-[var(--surface-raised)] px-3">
-              <Lock size={18} className="text-[var(--muted)]" />
-              <input
-                name="password"
-                className="min-w-0 flex-1 bg-transparent outline-none"
-                placeholder={t("enterPassword")}
-                type={showPassword ? "text" : "password"}
-              />
-              <button
-                aria-label={t("showPassword")}
-                title={t("showPassword")}
-                type="button"
-                onClick={() => setShowPassword((value) => !value)}
-                className="grid h-9 w-9 place-items-center rounded border border-[var(--line)]"
-              >
-                {showPassword ? <EyeOff size={17} /> : <Eye size={17} />}
-              </button>
-            </span>
-          </label>
-
-          {error ? <div className="rounded border border-[#f43f5e] bg-[#f43f5e]/15 px-3 py-2 text-sm font-bold text-[#fb7185]">{error}</div> : null}
-
-          <button
-            disabled={isSubmitting}
-            className="h-12 w-full rounded border border-[var(--accent)] bg-[var(--accent)] font-black text-[var(--accent-ink)] disabled:cursor-not-allowed disabled:border-[var(--line)] disabled:bg-[var(--surface-raised)] disabled:text-[var(--muted)]"
-          >
-            {isSubmitting ? t("loggingIn") : t("login")}
-          </button>
-          <Link href="/reset-password" className="block text-center text-sm font-bold text-[var(--muted)]">
-            {t("forgotPassword")}
-          </Link>
-        </form>
+          <div className="mt-4 flex flex-wrap gap-2">
+            <Link href="/login/partner" className="tag">Partner 服务点登录</Link>
+            <Link href="/login/supplier" className="tag">供应商登录</Link>
+          </div>
+        </section>
       </div>
     </main>
   );

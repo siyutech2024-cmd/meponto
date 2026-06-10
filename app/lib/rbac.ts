@@ -1,4 +1,15 @@
-export type Role = "Super Admin" | "Regional Manager" | "Ponto Manager" | "Leader" | "Finance" | "Support";
+export type Role =
+  | "Super Admin"
+  | "Franchise Admin"
+  | "Ponto Manager"
+  | "Rider"
+  | "Mall Operator"
+  | "Partner Operator"
+  | "Supplier Admin"
+  | "Regional Manager"
+  | "Leader"
+  | "Finance"
+  | "Support";
 
 export type Permission =
   | "view_dashboard"
@@ -11,13 +22,28 @@ export type Permission =
   | "manage_points"
   | "manage_marketplace"
   | "manage_partner_points"
+  | "manage_partner_services"
+  | "manage_supplier_catalog"
   | "manage_slots"
+  | "use_rider_app"
   | "view_finance"
   | "view_analytics"
   | "view_audit"
   | "reset_demo";
 
-export const roles: Role[] = ["Super Admin", "Regional Manager", "Ponto Manager", "Leader", "Finance", "Support"];
+export const roles: Role[] = [
+  "Super Admin",
+  "Franchise Admin",
+  "Ponto Manager",
+  "Rider",
+  "Mall Operator",
+  "Partner Operator",
+  "Supplier Admin",
+  "Regional Manager",
+  "Leader",
+  "Finance",
+  "Support",
+];
 
 export const permissionLabels: Record<Permission, string> = {
   view_dashboard: "View dashboard",
@@ -30,7 +56,10 @@ export const permissionLabels: Record<Permission, string> = {
   manage_points: "Manage points",
   manage_marketplace: "Manage marketplace",
   manage_partner_points: "Manage partner points",
+  manage_partner_services: "Manage partner services",
+  manage_supplier_catalog: "Manage supplier catalog",
   manage_slots: "Manage rider slots",
+  use_rider_app: "Use rider app",
   view_finance: "View finance",
   view_analytics: "View analytics",
   view_audit: "View audit",
@@ -49,11 +78,28 @@ export const rolePermissions: Record<Role, Permission[]> = {
     "manage_points",
     "manage_marketplace",
     "manage_partner_points",
+    "manage_partner_services",
+    "manage_supplier_catalog",
     "manage_slots",
+    "use_rider_app",
     "view_finance",
     "view_analytics",
     "view_audit",
     "reset_demo",
+  ],
+  "Franchise Admin": [
+    "view_dashboard",
+    "manage_riders",
+    "manage_pontos",
+    "create_incidents",
+    "close_incidents",
+    "manage_rewards",
+    "manage_points",
+    "manage_marketplace",
+    "manage_partner_points",
+    "manage_slots",
+    "view_analytics",
+    "view_audit",
   ],
   "Regional Manager": [
     "view_dashboard",
@@ -71,6 +117,10 @@ export const rolePermissions: Record<Role, Permission[]> = {
     "view_audit",
   ],
   "Ponto Manager": ["view_dashboard", "manage_riders", "create_incidents", "close_incidents", "manage_rewards", "manage_partner_points", "manage_slots", "view_analytics"],
+  Rider: ["use_rider_app", "manage_marketplace"],
+  "Mall Operator": ["view_dashboard", "manage_marketplace", "manage_points", "manage_partner_points", "view_analytics", "view_audit"],
+  "Partner Operator": ["view_dashboard", "manage_marketplace", "manage_partner_points", "manage_partner_services"],
+  "Supplier Admin": ["view_dashboard", "manage_marketplace", "manage_supplier_catalog", "view_analytics"],
   Leader: ["view_dashboard", "create_incidents", "manage_slots", "view_analytics"],
   Finance: ["view_dashboard", "manage_rewards", "manage_points", "manage_marketplace", "view_finance", "view_analytics", "view_audit"],
   Support: ["view_dashboard", "create_incidents", "close_incidents", "view_analytics", "view_audit"],

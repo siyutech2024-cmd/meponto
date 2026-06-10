@@ -9,10 +9,13 @@
     "smoke": "node scripts/smoke.mjs",
     "a11y:smoke": "node scripts/a11y-smoke.mjs",
     "workflow:smoke": "node scripts/workflow-smoke.mjs",
+    "verify:persistence": "node scripts/verify-persistence.mjs",
     "module:guard": "node scripts/module-guard.mjs",
     "codex:preflight": "node scripts/codex-preflight.mjs",
     "codex:preflight:full": "node scripts/codex-preflight.mjs --full",
     "check": "node scripts/check.mjs",
+    "docker:up": "sh scripts/docker-start.sh",
+    "docker:down": "sh scripts/docker-stop.sh",
     "start": "next start",
     "lint": "next lint"
   },

@@ -18,6 +18,37 @@ export function GET() {
   });
 }
 
+export async function POST(request: Request) {
+  const forbidden = requirePermission(request, "view_dashboard");
+  if (forbidden) return forbidden;
+
+  const body = (await request.json()) as Partial<import("../../lib/notifications").NotificationItem>;
+  if (!body.id || !body.title) {
+    return jsonResponse({ error: "id and title are required" }, { status: 400 });
+  }
+
+  const existing = memory.notifications.find((notification) => notification.id === body.id);
+  if (existing) return jsonResponse({ data: existing });
+
+  const notification = {
+    id: String(body.id),
+    title: String(body.title),
+    body: String(body.body ?? ""),
+    href: String(body.href ?? "/dashboard"),
+    source: (body.source === "System" ? "System" : "Incident") as "Incident" | "System",
+    sourceId: String(body.sourceId ?? ""),
+    severity: (["Low", "Medium", "High", "Critical"].includes(String(body.severity))
+      ? body.severity
+      : "Medium") as "Low" | "Medium" | "High" | "Critical",
+    createdAt: typeof body.createdAt === "string" ? body.createdAt : nowStamp(),
+    readAt: typeof body.readAt === "string" ? body.readAt : undefined,
+    acknowledgedAt: typeof body.acknowledgedAt === "string" ? body.acknowledgedAt : undefined,
+  };
+
+  memory.notifications.unshift(notification);
+  return jsonResponse({ data: notification }, { status: 201 });
+}
+
 export async function PUT(request: Request) {
   const forbidden = requirePermission(request, "view_dashboard");
   if (forbidden) return forbidden;

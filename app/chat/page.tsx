@@ -1,9 +1,9 @@
 "use client";
 
 import { MessageCircle, Radio, RefreshCcw, Search, Send, Users } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { AppShell, Badge, DataTable, PageTitle } from "../components/ui";
-import { chatMessages, chatRooms, type ChatCoverageStatus, type ChatMessage, type ChatRiskStatus } from "../lib/chat";
+import { chatMessages as seedChatMessages, chatRooms as seedChatRooms, type ChatCoverageStatus, type ChatMessage, type ChatRiskStatus, type ChatRoom } from "../lib/chat";
 
 const riskFilters: Array<"All Risk" | ChatRiskStatus> = ["All Risk", "Stable", "Watch", "Risk", "Critical"];
 const coverageFilters: Array<"All Coverage" | ChatCoverageStatus> = ["All Coverage", "Covered", "Thin", "Gap"];
@@ -14,7 +14,32 @@ export default function ChatPage() {
   const [query, setQuery] = useState("");
   const [selectedRoomId, setSelectedRoomId] = useState("chat-003");
   const [draft, setDraft] = useState("");
-  const [sentMessages, setSentMessages] = useState<ChatMessage[]>([]);
+  const [chatRooms, setChatRooms] = useState<ChatRoom[]>(seedChatRooms);
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>(seedChatMessages);
+
+  // Load rooms and message history from the server (database-backed).
+  useEffect(() => {
+    let cancelled = false;
+    async function load() {
+      try {
+        const [roomsRes, messagesRes] = await Promise.all([fetch("/api/chat"), fetch("/api/chat/messages")]);
+        if (roomsRes.ok) {
+          const payload = (await roomsRes.json()) as { data?: ChatRoom[] };
+          if (!cancelled && Array.isArray(payload.data) && payload.data.length > 0) setChatRooms(payload.data);
+        }
+        if (messagesRes.ok) {
+          const payload = (await messagesRes.json()) as { data?: ChatMessage[] };
+          if (!cancelled && Array.isArray(payload.data)) setChatMessages(payload.data);
+        }
+      } catch {
+        // keep seeds when the API is unreachable
+      }
+    }
+    void load();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const filteredGroups = useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase();
@@ -37,25 +62,41 @@ export default function ChatPage() {
   const coverageGaps = chatRooms.filter((group) => group.coverageStatus === "Gap").length;
   const alertGroups = chatRooms.filter((group) => group.unreadAlerts > 0 || group.pendingApprovals >= 10);
   const selectedRoom = chatRooms.find((room) => room.id === selectedRoomId) ?? chatRooms[0];
-  const visibleMessages = [...chatMessages, ...sentMessages].filter((message) => message.roomId === selectedRoom.id);
+  const visibleMessages = chatMessages.filter((message) => message.roomId === selectedRoom.id);
 
   function sendMessage() {
     const body = draft.trim();
     if (!body) return;
 
-    setSentMessages((messages) => [
-      ...messages,
-      {
-        id: `draft-${Date.now()}`,
-        roomId: selectedRoom.id,
-        sender: "Ops Desk",
-        senderRole: "HQ",
-        body,
-        createdAt: new Date().toISOString().slice(0, 16).replace("T", " "),
-        status: "Delivered",
-      },
-    ]);
+    const optimistic: ChatMessage = {
+      id: `draft-${Date.now()}`,
+      roomId: selectedRoom.id,
+      sender: "Ops Desk",
+      senderRole: "HQ",
+      body,
+      createdAt: new Date().toISOString().slice(0, 16).replace("T", " "),
+      status: "Delivered",
+    };
+
+    setChatMessages((messages) => [...messages, optimistic]);
     setDraft("");
+
+    // Persist the message to the server/database and swap in the saved record.
+    void fetch("/api/chat/messages", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-vento-role": "Super Admin" },
+      body: JSON.stringify({ roomId: optimistic.roomId, sender: optimistic.sender, senderRole: optimistic.senderRole, body: optimistic.body }),
+    })
+      .then(async (response) => {
+        if (!response.ok) return;
+        const payload = (await response.json()) as { data?: ChatMessage };
+        if (payload.data) {
+          setChatMessages((messages) => messages.map((message) => (message.id === optimistic.id ? payload.data! : message)));
+        }
+      })
+      .catch(() => {
+        // keep the optimistic message; it will not persist if the API is down
+      });
   }
 
   return (

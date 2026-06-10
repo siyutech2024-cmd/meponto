@@ -1,4 +1,5 @@
 const baseUrl = process.env.PONTOSYS_BASE_URL ?? "http://localhost:3000";
+let hqCookie;
 
 const pageChecks = [
   { path: "/login", nav: false },
@@ -110,7 +111,17 @@ function checkPage({ path, nav }, html) {
 
 async function fetchPage(path) {
   const url = new URL(path, baseUrl);
-  const response = await fetch(url);
+  if (path === "/dashboard" && !hqCookie) {
+    const login = await fetch(new URL("/api/auth/login", baseUrl), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ identifier: "hq@meponto.com", password: "pontosys-hq", portal: "pontosys" }),
+    });
+    hqCookie = login.headers.get("set-cookie")?.split(";")[0];
+  }
+  const response = await fetch(url, {
+    headers: hqCookie && path === "/dashboard" ? { Cookie: hqCookie } : undefined,
+  });
   const body = await response.text();
 
   if (!response.ok) {

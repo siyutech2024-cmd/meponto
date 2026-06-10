@@ -1,4 +1,4 @@
-import { appendServerAudit, makeServerId, memory, jsonResponse } from "../../lib/server/memory";
+import { acceptClientId, appendServerAudit, makeServerId, memory, jsonResponse } from "../../lib/server/memory";
 import { requirePermission } from "../../lib/server/authz";
 import type { Rider, RiderStatus } from "../../lib/data";
 import { getRiderSensitiveRevealDecision, maskRiderSensitive } from "../../lib/masking";
@@ -32,8 +32,12 @@ export async function POST(request: Request) {
     return jsonResponse({ error: "name, cpf and phone are required" }, { status: 400 });
   }
 
+  const id = acceptClientId(body.id) ?? makeServerId("r", memory.riders.length + 1);
+  const existing = memory.riders.find((item) => item.id === id);
+  if (existing) return jsonResponse({ data: existing });
+
   const rider: Rider = {
-    id: makeServerId("r", memory.riders.length + 1),
+    id,
     name: body.name,
     cpf: body.cpf,
     phone: body.phone,

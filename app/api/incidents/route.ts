@@ -1,4 +1,4 @@
-import { makeServerId, memory, jsonResponse } from "../../lib/server/memory";
+import { acceptClientId, makeServerId, memory, jsonResponse } from "../../lib/server/memory";
 import { requirePermission } from "../../lib/server/authz";
 import type { Incident, Severity } from "../../lib/data";
 
@@ -15,8 +15,12 @@ export async function POST(request: Request) {
     return jsonResponse({ error: "rider, ponto and severity are required" }, { status: 400 });
   }
 
+  const id = acceptClientId(body.id) ?? makeServerId("inc", memory.incidents.length + 1);
+  const existing = memory.incidents.find((item) => item.id === id);
+  if (existing) return jsonResponse({ data: existing });
+
   const incident: Incident = {
-    id: makeServerId("inc", memory.incidents.length + 1),
+    id,
     rider: body.rider,
     ponto: body.ponto,
     severity: body.severity as Severity,
