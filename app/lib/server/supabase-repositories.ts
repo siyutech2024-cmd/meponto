@@ -49,7 +49,7 @@ function mapEntityToRow(entity: Record<string, unknown>): Record<string, unknown
 
 // ─── Generic Supabase Repository ─────────────────────────────────────────────
 
-class SupabaseRepository<T extends EntityWithId> {
+class SupabaseRepository<T extends EntityWithId> implements Repository<T> {
   constructor(
     private readonly tableName: string,
     private readonly client: SupabaseClient,
@@ -210,17 +210,17 @@ export function createSupabaseRepositories(): CoreRepositories {
   const client = getSupabaseServerClient();
 
   return {
-    riders: new SupabaseRepository<Rider>("riders", client, "id", mapRiderRow) as unknown as Repository<Rider>,
-    incidents: new SupabaseRepository<Incident>("incidents", client, "id", mapIncidentRow) as unknown as Repository<Incident>,
-    pontos: new SupabaseRepository<Ponto>("pontos", client, "id", mapPontoRow) as unknown as Repository<Ponto>,
-    leaders: new SupabaseRepository<Leader>("leaders", client, "id", mapLeaderRow) as unknown as Repository<Leader>,
-    rewards: new SupabaseRepository<RewardRule>("rewards", client) as unknown as Repository<RewardRule>,
-    ledgerEntries: new SupabaseRepository<LedgerEntry>("ledger_entries", client, "id", mapLedgerRow) as unknown as Repository<LedgerEntry>,
-    notifications: new SupabaseRepository<NotificationItem>("notifications", client) as unknown as Repository<NotificationItem>,
-    crmPartners: new SupabaseRepository<CrmPartner>("crm_partners", client) as unknown as Repository<CrmPartner>,
-    chatRooms: new SupabaseRepository<ChatRoom>("chat_rooms", client) as unknown as Repository<ChatRoom>,
-    chatMessages: new SupabaseRepository<ChatMessage>("chat_messages", client) as unknown as Repository<ChatMessage>,
-    systemSettings: new SupabaseRepository<SystemSetting>("settings", client) as unknown as Repository<SystemSetting>,
-    auditEvents: new SupabaseRepository<AuditEvent>("audit_logs", client, "id", mapAuditRow) as unknown as Repository<AuditEvent>,
+    riders: new SupabaseRepository<Rider>("riders", client, "id", mapRiderRow),
+    incidents: new SupabaseRepository<Incident>("incidents", client, "id", mapIncidentRow),
+    pontos: new SupabaseRepository<Ponto>("pontos", client, "id", mapPontoRow),
+    leaders: new SupabaseRepository<Leader>("leaders", client, "id", mapLeaderRow),
+    rewards: new SupabaseRepository<RewardRule>("rewards", client),
+    ledgerEntries: new SupabaseRepository<LedgerEntry>("ledger_entries", client, "id", mapLedgerRow),
+    notifications: new SupabaseRepository<NotificationItem>("notifications", client),
+    crmPartners: new SupabaseRepository<CrmPartner>("crm_partners", client),
+    chatRooms: new SupabaseRepository<ChatRoom>("chat_rooms", client),
+    chatMessages: new SupabaseRepository<ChatMessage>("chat_messages", client),
+    systemSettings: new SupabaseRepository<SystemSetting>("settings", client),
+    auditEvents: new SupabaseRepository<AuditEvent>("audit_logs", client, "id", mapAuditRow),
   };
 }
