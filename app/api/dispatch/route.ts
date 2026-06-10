@@ -1,15 +1,21 @@
 import { acceptClientId, appendServerAudit, jsonResponse, makeServerId, memory } from "../../lib/server/memory";
+import { refreshCollectionsFromDatabase } from "../../lib/server/persistence";
 import { requirePermission, roleFromRequest } from "../../lib/server/authz";
 import { parseEastwindShifts, type DispatchShift, type ShiftQuota, type ShiftSignup, type ShiftSignupStatus } from "../../lib/dispatch";
+
+const DISPATCH_COLLECTIONS = ["dispatchShifts", "shiftQuotas", "shiftSignups"];
 
 function nowStamp() {
   return new Date().toISOString().slice(0, 16).replace("T", " ");
 }
 
 /** Aggregated board: shifts + quotas + signups, optionally filtered by date range. */
-export function GET(request: Request) {
+export async function GET(request: Request) {
   const forbidden = requirePermission(request, "manage_slots");
   if (forbidden) return forbidden;
+
+  // Serverless instances hydrate once at boot — always read the latest state.
+  await refreshCollectionsFromDatabase(DISPATCH_COLLECTIONS);
 
   const url = new URL(request.url);
   const from = url.searchParams.get("from") ?? "";
@@ -81,6 +87,9 @@ export async function POST(request: Request) {
 
   const body = (await request.json().catch(() => ({}))) as Partial<Body>;
   const actor = roleFromRequest(request);
+
+  // Work on the latest cross-instance state before mutating.
+  await refreshCollectionsFromDatabase(DISPATCH_COLLECTIONS);
 
   switch (body.action) {
     case "import": {
