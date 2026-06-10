@@ -46,6 +46,7 @@ import {
 import { systemSettings, type SystemSetting } from "../settings";
 import { chatMessages, chatRooms, type ChatMessage, type ChatRoom } from "../chat";
 import { riderSlots, slotEnrollments, type RiderSlot, type SlotEnrollment } from "../slots";
+import { leads, type Lead } from "../leads";
 
 type Reward = (typeof rewards)[number];
 type Ponto = (typeof pontos)[number];
@@ -85,6 +86,7 @@ const globalState = globalThis as typeof globalThis & {
     riderSlots: RiderSlot[];
     slotEnrollments: SlotEnrollment[];
     auditEntries: ServerAuditEntry[];
+    leads: Lead[];
   };
 };
 
@@ -110,6 +112,7 @@ export const memory =
     riderSlots: trackCollection("riderSlots", [...riderSlots]),
     slotEnrollments: trackCollection("slotEnrollments", [...slotEnrollments]),
     auditEntries: trackCollection<ServerAuditEntry>("auditEntries", []),
+    leads: trackCollection("leads", [...leads]),
   });
 
 // Restore persisted data from the database (no-op when USE_SUPABASE is off).
@@ -151,6 +154,8 @@ memory.systemSettings = trackCollection("systemSettings", memory.systemSettings)
 memory.riderSlots = trackCollection("riderSlots", memory.riderSlots);
 memory.slotEnrollments = trackCollection("slotEnrollments", memory.slotEnrollments);
 memory.auditEntries = trackCollection("auditEntries", memory.auditEntries);
+memory.leads ??= [];
+memory.leads = trackCollection("leads", memory.leads);
 
 export function jsonResponse<T>(data: T, init?: ResponseInit) {
   // Make sure pending mutations reach the database even on serverless,
