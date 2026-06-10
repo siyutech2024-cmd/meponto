@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { CalendarDays, CheckCircle2, ClipboardCopy, ClipboardList, Download, RefreshCcw, Send, Star, Upload, Users } from "lucide-react";
+import { CalendarDays, CheckCircle2, ClipboardCopy, ClipboardList, Download, RefreshCcw, Send, Star, Upload, Users, X } from "lucide-react";
 import { AppShell, Badge, PageTitle } from "../components/ui";
 import type { DispatchShift, ShiftQuota, ShiftSignup } from "../lib/dispatch";
 
@@ -90,7 +90,6 @@ export default function DispatchPage() {
     return { quotaMap, signupMap };
   }, [board]);
 
-  const dates = useMemo(() => [...new Set(board.shifts.map((shift) => shift.date))].sort(), [board.shifts]);
 
   return (
     <AppShell>
@@ -128,7 +127,7 @@ export default function DispatchPage() {
         </div>
       )}
 
-      {tab === "board" && <BoardTab board={board} byShift={byShift} dates={dates} loading={loading} />}
+      {tab === "board" && <BoardTab board={board} byShift={byShift} loading={loading} onAction={post} setMessage={setMessage} />}
       {tab === "setup" && <WeekSetupTab board={board} onSave={post} setMessage={setMessage} />}
       {tab === "import" && <ImportTab onImport={post} setMessage={setMessage} />}
       {tab === "quota" && <QuotaTab board={board} byShift={byShift} onSave={post} setMessage={setMessage} />}
@@ -145,73 +144,128 @@ function statBadge(value: number, target: number) {
   return "text-[var(--danger-ink)]";
 }
 
-function BoardTab({ board, byShift, dates, loading }: { board: Board; byShift: { quotaMap: Map<string, ShiftQuota[]>; signupMap: Map<string, ShiftSignup[]> }; dates: string[]; loading: boolean }) {
+function BoardTab({ board, byShift, loading, onAction, setMessage }: { board: Board; byShift: { quotaMap: Map<string, ShiftQuota[]>; signupMap: Map<string, ShiftSignup[]> }; loading: boolean; onAction: (body: Record<string, unknown>) => Promise<Record<string, unknown> | null>; setMessage: (m: { tone: "ok" | "warn" | "err"; text: string } | null) => void }) {
+  const [weekStart, setWeekStart] = useState(() => mondayOf(0));
+  const weekdayName = ["周一", "周二", "周三", "周四", "周五", "周六", "周日"];
+  const days = useMemo(() => Array.from({ length: 7 }, (_, index) => addDays(weekStart, index)), [weekStart]);
+  const weekShiftCount = board.shifts.filter((shift) => days.includes(shift.date)).length;
+
   if (loading && board.shifts.length === 0) {
     return <div className="panel p-6 text-sm font-bold text-[var(--muted)]">加载中...</div>;
   }
-  if (board.shifts.length === 0) {
-    return (
-      <div className="panel p-6 text-sm font-bold text-[var(--muted)]">
-        还没有班次数据。请先到「导入 99 计划」粘贴 Eastwind 排班计划详情。
-      </div>
-    );
+
+  async function quickAdd(date: string, timeRange: string) {
+    const value = window.prompt(`${date} ${timeRange} 计划人数：`);
+    if (!value) return;
+    const plannedCount = Number(value.replace(/\D/g, ""));
+    if (!Number.isFinite(plannedCount) || plannedCount <= 0) {
+      setMessage({ tone: "warn", text: "请输入大于 0 的人数。" });
+      return;
+    }
+    const result = await onAction({ action: "setWeek", entries: [{ date, timeRange, plannedCount }] });
+    if (result) setMessage({ tone: "ok", text: `已排班：${date} ${timeRange} 计划 ${plannedCount} 人。` });
+  }
+
+  async function removeShift(shift: DispatchShift) {
+    if (!window.confirm(`删除班次 ${shift.date} ${shift.timeRange} ${shift.hotzone}（计划 ${shift.plannedCount} 人）？关联的配额与报名也会一并删除。`)) return;
+    const result = await onAction({ action: "deleteShift", shiftId: shift.id });
+    if (result) setMessage({ tone: "ok", text: "班次已删除。" });
   }
 
   return (
-    <div className="grid gap-4 lg:grid-cols-2 xl:grid-cols-3">
-      {dates.map((date) => {
-        const shifts = board.shifts.filter((shift) => shift.date === date);
-        return (
-          <div key={date} className="panel p-4">
-            <div className="mb-3 flex items-center justify-between">
-              <div className="text-sm font-black">{date}</div>
-              <div className="text-[10px] font-black uppercase text-[var(--muted)]">{shifts.length} 个班次</div>
+    <div className="space-y-4">
+      <div className="panel flex flex-wrap items-center gap-3 p-3">
+        <button type="button" className="tag" onClick={() => setWeekStart(addDays(weekStart, -7))}>← 上一周</button>
+        <div className="text-sm font-black">
+          {weekStart} ~ {addDays(weekStart, 6)}
+          <span className="ml-2 text-[10px] font-black uppercase text-[var(--muted)]">{weekShiftCount} 个班次</span>
+        </div>
+        <button type="button" className="tag" onClick={() => setWeekStart(addDays(weekStart, 7))}>下一周 →</button>
+        <button type="button" className="tag" onClick={() => setWeekStart(mondayOf(0))}>本周</button>
+        <button type="button" className="tag" onClick={() => setWeekStart(mondayOf(1))}>下周</button>
+      </div>
+
+      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-7">
+        {days.map((date, dayIndex) => {
+          const dayShifts = board.shifts
+            .filter((shift) => shift.date === date)
+            .sort((a, b) => a.timeRange.localeCompare(b.timeRange));
+          return (
+            <div key={date} className="panel p-3">
+              <div className="mb-2 text-center">
+                <div className="text-[10px] font-black uppercase text-[var(--muted)]">{weekdayName[dayIndex]}</div>
+                <div className="text-sm font-black">{date.slice(5)}</div>
+              </div>
+              <div className="space-y-2">
+                {SLOT_RANGES.map((range) => {
+                  const slotShifts = dayShifts.filter((shift) => shift.timeRange === range);
+                  if (slotShifts.length === 0) {
+                    return (
+                      <button
+                        key={range}
+                        type="button"
+                        onClick={() => void quickAdd(date, range)}
+                        className="block w-full rounded-[8px] border border-dashed border-[var(--line)] px-2 py-3 text-center text-[11px] font-black text-[var(--muted)] hover:border-[var(--accent)] hover:text-[var(--accent)]"
+                      >
+                        {range}
+                        <span className="block">+ 排班</span>
+                      </button>
+                    );
+                  }
+                  return slotShifts.map((shift) => {
+                    const quotas = byShift.quotaMap.get(shift.id) ?? [];
+                    const signups = byShift.signupMap.get(shift.id) ?? [];
+                    const franchiseQuota = quotas.filter((quota) => quota.level === "franchise").reduce((sum, quota) => sum + quota.quota, 0);
+                    const approved = signups.filter((signup) => signup.status === "approved" || signup.status === "reported").length;
+                    const pending = signups.filter((signup) => signup.status === "submitted").length;
+                    return (
+                      <div key={shift.id} className="rounded-[8px] border border-[var(--line)] bg-[var(--surface-raised)] p-2">
+                        <div className="flex items-center justify-between gap-1">
+                          <div className="flex items-center gap-1 text-[12px] font-black">
+                            {shift.isCritical && <Star size={12} className="text-[var(--accent)]" />}
+                            {shift.timeRange}
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => void removeShift(shift)}
+                            className="text-[var(--muted)] hover:text-[var(--danger-ink)]"
+                            aria-label="删除班次"
+                          >
+                            <X size={13} />
+                          </button>
+                        </div>
+                        <div className="text-[10px] font-bold text-[var(--muted)]">{shift.hotzone}</div>
+                        <div className="mt-1 flex items-center gap-1">
+                          {shift.reportedAt && <Badge value="已填报" />}
+                          <Badge value={statusLabel[shift.status] ?? shift.status} />
+                        </div>
+                        <div className="mt-2 grid grid-cols-2 gap-1 text-center text-[10px] font-black">
+                          <div>
+                            <div className="text-[var(--muted)]">99名额</div>
+                            <div>{shift.plannedCount}</div>
+                          </div>
+                          <div>
+                            <div className="text-[var(--muted)]">已分配额</div>
+                            <div className={statBadge(franchiseQuota, shift.plannedCount)}>{franchiseQuota}</div>
+                          </div>
+                          <div>
+                            <div className="text-[var(--muted)]">已审通过</div>
+                            <div className={statBadge(approved, shift.plannedCount)}>{approved}</div>
+                          </div>
+                          <div>
+                            <div className="text-[var(--muted)]">待审核</div>
+                            <div>{pending}</div>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  });
+                })}
+              </div>
             </div>
-            <div className="space-y-2">
-              {shifts.map((shift) => {
-                const quotas = byShift.quotaMap.get(shift.id) ?? [];
-                const signups = byShift.signupMap.get(shift.id) ?? [];
-                const franchiseQuota = quotas.filter((quota) => quota.level === "franchise").reduce((sum, quota) => sum + quota.quota, 0);
-                const approved = signups.filter((signup) => signup.status === "approved" || signup.status === "reported").length;
-                const pending = signups.filter((signup) => signup.status === "submitted").length;
-                return (
-                  <div key={shift.id} className="rounded-[8px] border border-[var(--line)] bg-[var(--surface-raised)] p-3">
-                    <div className="flex items-center justify-between gap-2">
-                      <div className="flex items-center gap-2 text-sm font-black">
-                        {shift.isCritical && <Star size={14} className="text-[var(--accent)]" />}
-                        {shift.timeRange}
-                        <span className="text-[10px] font-bold text-[var(--muted)]">{shift.hotzone}</span>
-                      </div>
-                      <div className="flex items-center gap-1">
-                        {shift.reportedAt && <Badge value="已填报" />}
-                        <Badge value={statusLabel[shift.status] ?? shift.status} />
-                      </div>
-                    </div>
-                    <div className="mt-2 grid grid-cols-4 gap-2 text-center text-[11px] font-black">
-                      <div>
-                        <div className="text-[var(--muted)]">99名额</div>
-                        <div>{shift.plannedCount}</div>
-                      </div>
-                      <div>
-                        <div className="text-[var(--muted)]">已分配额</div>
-                        <div className={statBadge(franchiseQuota, shift.plannedCount)}>{franchiseQuota}</div>
-                      </div>
-                      <div>
-                        <div className="text-[var(--muted)]">已审通过</div>
-                        <div className={statBadge(approved, shift.plannedCount)}>{approved}</div>
-                      </div>
-                      <div>
-                        <div className="text-[var(--muted)]">待审核</div>
-                        <div>{pending}</div>
-                      </div>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        );
-      })}
+          );
+        })}
+      </div>
     </div>
   );
 }
