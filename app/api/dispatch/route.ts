@@ -1,5 +1,5 @@
 import { acceptClientId, appendServerAudit, jsonResponse, makeServerId, memory } from "../../lib/server/memory";
-import { refreshCollectionsFromDatabase } from "../../lib/server/persistence";
+import { persistDeleteRecord, refreshCollectionsFromDatabase } from "../../lib/server/persistence";
 import { requirePermission, roleFromRequest } from "../../lib/server/authz";
 import { parseEastwindShifts, type DispatchShift, type ShiftQuota, type ShiftSignup, type ShiftSignupStatus } from "../../lib/dispatch";
 
@@ -86,7 +86,9 @@ type SetWeekBody = {
   entries: Array<{ date: string; timeRange: string; plannedCount: number; isCritical?: boolean }>;
 };
 
-type Body = ImportBody | QuotaBody | SignupBody | ReviewBody | ReportBody | SetWeekBody;
+type DeleteShiftBody = { action: "deleteShift"; shiftId: string };
+
+type Body = ImportBody | QuotaBody | SignupBody | ReviewBody | ReportBody | SetWeekBody | DeleteShiftBody;
 
 export async function POST(request: Request) {
   const forbidden = requirePermission(request, "manage_slots");
@@ -358,6 +360,43 @@ export async function POST(request: Request) {
       });
 
       return jsonResponse({ data: { created, updated } }, { status: 201 });
+    }
+
+    case "deleteShift": {
+      const { shiftId } = body as DeleteShiftBody;
+      const index = memory.dispatchShifts.findIndex((shift) => shift.id === shiftId);
+      if (index === -1) return jsonResponse({ error: "shift not found" }, { status: 404 });
+
+      const removed = memory.dispatchShifts[index];
+      memory.dispatchShifts.splice(index, 1);
+      persistDeleteRecord("dispatchShifts", shiftId);
+
+      let cleaned = 0;
+      for (let i = memory.shiftQuotas.length - 1; i >= 0; i -= 1) {
+        if (memory.shiftQuotas[i].shiftId === shiftId) {
+          persistDeleteRecord("shiftQuotas", memory.shiftQuotas[i].id);
+          memory.shiftQuotas.splice(i, 1);
+          cleaned += 1;
+        }
+      }
+      for (let i = memory.shiftSignups.length - 1; i >= 0; i -= 1) {
+        if (memory.shiftSignups[i].shiftId === shiftId) {
+          persistDeleteRecord("shiftSignups", memory.shiftSignups[i].id);
+          memory.shiftSignups.splice(i, 1);
+          cleaned += 1;
+        }
+      }
+
+      appendServerAudit({
+        actor,
+        action: "DISPATCH_SHIFT_DELETED",
+        entity: "DispatchShift",
+        entityId: shiftId,
+        detail: `Shift ${removed.date} ${removed.timeRange} ${removed.hotzone} deleted with ${cleaned} related quota/signup record(s).`,
+        risk: "Medium",
+      });
+
+      return jsonResponse({ data: { ok: true, cleaned } });
     }
 
     default:
