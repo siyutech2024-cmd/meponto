@@ -118,7 +118,7 @@ export default function SupportAdminPage() {
         </div>
       )}
 
-      <div className="space-y-3">
+      <div className="max-h-[560px] space-y-3 overflow-y-auto pr-1">
         {[...open, ...rest].map((ticket) => (
           <div key={ticket.id} className="panel p-4">
             <div className="flex flex-wrap items-center justify-between gap-2">
