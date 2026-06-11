@@ -29,15 +29,39 @@ export async function proxy(request: NextRequest) {
       url.pathname = "/rider-app/mall";
       return NextResponse.rewrite(url);
     }
-    if (pathname === "/rider-app/mall") {
+    if (pathname === "/rider-app/mall" || pathname === "/mall") {
       return NextResponse.redirect(new URL("https://mall.meponto.com/"));
     }
-    if (pathname.startsWith("/rider-app")) {
+    if (pathname.startsWith("/rider-app/")) {
+      return NextResponse.redirect(new URL(`https://app.meponto.com${pathname.slice("/rider-app".length)}`));
+    }
+    // Rider APP sections opened on the mall host belong to app.meponto.com.
+    const mallFirstSegment = pathname.split("/")[1] ?? "";
+    if (["wallet", "shifts", "agenda", "support", "scan"].includes(mallFirstSegment)) {
       return NextResponse.redirect(new URL(`https://app.meponto.com${pathname}`));
     }
   }
-  if (host === "app.meponto.com" && pathname === "/" && !session) {
-    return NextResponse.redirect(new URL("/rider-login", request.url));
+  if (host === "app.meponto.com") {
+    // Clean URLs: app.meponto.com/shifts (not /rider-app/shifts).
+    if (pathname === "/rider-app" || pathname === "/rider-app/") {
+      return NextResponse.redirect(new URL("/", request.url));
+    }
+    if (pathname.startsWith("/rider-app/")) {
+      return NextResponse.redirect(new URL(pathname.slice("/rider-app".length), request.url));
+    }
+    if (pathname === "/" && !session) {
+      return NextResponse.redirect(new URL("/rider-login", request.url));
+    }
+    const riderSections = new Set(["wallet", "shifts", "agenda", "mall", "support", "scan"]);
+    const firstSegment = pathname.split("/")[1] ?? "";
+    // /scan?partner=… and /scan?ref=… are the PUBLIC QR validation page; the
+    // bare /scan is the in-app camera scanner.
+    const isPublicScan = firstSegment === "scan" && (request.nextUrl.searchParams.has("partner") || request.nextUrl.searchParams.has("ref"));
+    if (riderSections.has(firstSegment) && !isPublicScan) {
+      const url = request.nextUrl.clone();
+      url.pathname = `/rider-app${pathname}`;
+      return NextResponse.rewrite(url);
+    }
   }
 
   if (pathname === "/") {
