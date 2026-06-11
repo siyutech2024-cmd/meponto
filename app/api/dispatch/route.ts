@@ -1,6 +1,7 @@
 import { acceptClientId, appendServerAudit, jsonResponse, makeServerId, memory } from "../../lib/server/memory";
 import { flushPendingToDatabase, persistDeleteRecord, refreshCollectionsFromDatabase } from "../../lib/server/persistence";
 import { requirePermission, roleFromRequest } from "../../lib/server/authz";
+import { sendPushToRider } from "../../lib/server/notify";
 import { parseEastwindShifts, type DispatchShift, type ShiftQuota, type ShiftSignup, type ShiftSignupStatus } from "../../lib/dispatch";
 
 const DISPATCH_COLLECTIONS = ["dispatchShifts", "shiftQuotas", "shiftSignups"];
@@ -11,6 +12,20 @@ function nowStamp() {
 
 /** Aggregated board: shifts + quotas + signups, optionally filtered by date range. */
 export async function GET(request: Request) {
+  {
+    const url = new URL(request.url);
+    const mine = url.searchParams.get("mine");
+    if (mine) {
+      const forbidden = requirePermission(request, "use_rider_app");
+      if (forbidden) return forbidden;
+      await refreshCollectionsFromDatabase(["dispatchShifts", "shiftSignups"]);
+      const signups = memory.shiftSignups
+        .filter((signup) => signup.riderName === mine)
+        .map((signup) => ({ ...signup, shift: memory.dispatchShifts.find((shift) => shift.id === signup.shiftId) ?? null }))
+        .sort((a, b) => (b.shift?.date ?? "").localeCompare(a.shift?.date ?? ""));
+      return jsonResponse({ data: { signups } });
+    }
+  }
   const url = new URL(request.url);
   const view = url.searchParams.get("view") ?? "";
   // Rider self-service view only needs the rider-app permission.
@@ -263,6 +278,7 @@ async function handlePost(request: Request) {
 
       let changed = 0;
       const stamp = nowStamp();
+      const approvedRiders: Array<{ name: string; shiftId: string }> = [];
       for (const signupId of signupIds.slice(0, 500)) {
         const index = memory.shiftSignups.findIndex((item) => item.id === signupId);
         if (index === -1) continue;
@@ -272,7 +288,13 @@ async function handlePost(request: Request) {
           note: typeof note === "string" ? note.slice(0, 300) : memory.shiftSignups[index].note,
           updatedAt: stamp,
         };
+        if (status === "approved") approvedRiders.push({ name: memory.shiftSignups[index].riderName, shiftId: memory.shiftSignups[index].shiftId });
         changed += 1;
+      }
+      // Notify approved riders on their devices (best-effort).
+      for (const rider of approvedRiders.slice(0, 100)) {
+        const shift = memory.dispatchShifts.find((item) => item.id === rider.shiftId);
+        await sendPushToRider(rider.name, "Escala aprovada ✅", shift ? `Seu turno ${shift.date} ${shift.timeRange} (${shift.hotzone}) foi confirmado.` : "Sua inscrição de turno foi aprovada.", "/rider-app/agenda");
       }
 
       appendServerAudit({
