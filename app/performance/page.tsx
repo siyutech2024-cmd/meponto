@@ -3,6 +3,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { BarChart3, Building2, CircleDollarSign, FileSpreadsheet, MapPin, RefreshCcw, Upload, Users } from "lucide-react";
 import { AppShell, Badge, PageTitle } from "../components/ui";
+import { downloadCsv } from "../lib/csv";
 import { readSession } from "../lib/session";
 import { readXlsxRows, rowsToObjects } from "../lib/xlsx-lite";
 import type { EarningAggregate, KpiAggregate, RiderDailyEarning, RiderDailyKpi } from "../lib/performance";
@@ -159,9 +160,39 @@ export default function PerformancePage() {
         title="T+1 考核看板"
         eyebrow={scopeStation ? `站点视角 · ${scopeStation}` : scopeFranchise ? `加盟商视角 · ${scopeFranchise}` : "Eastwind T+1 · 骑手/站点/加盟商三级 KPI"}
         action={
-          <button type="button" onClick={() => void load(date)} className="tag inline-flex items-center gap-1">
-            <RefreshCcw size={13} /> 刷新
-          </button>
+          <div className="flex gap-2">
+            <button
+              type="button"
+              className="tag inline-flex items-center gap-1"
+              onClick={() => {
+                if (!data) return;
+                downloadCsv(
+                  `kpi-${data.date ?? "all"}`,
+                  ["骑手", "99ID", "加盟商", "站点", "完单", "TSH", "AR%", "CAA", "超时", "报名时长"],
+                  data.riders.map((r) => [r.riderName, r.rider99Id, r.franchise, r.station, r.completedOrders, r.tsh, r.ar, r.caa, r.overtime, r.signedShiftHours]),
+                );
+              }}
+            >
+              导出KPI
+            </button>
+            <button
+              type="button"
+              className="tag inline-flex items-center gap-1"
+              onClick={() => {
+                if (!data) return;
+                downloadCsv(
+                  `settlement-${data.date ?? "all"}`,
+                  ["骑手", "99ID", "加盟商", "站点", "今日统计R$", "行程收入", "奖励", "小费", "完单", "结算金额R$"],
+                  data.earnings.riders.map((r) => [r.riderName, r.rider99Id, r.franchise, r.station, r.total, r.tripIncome, r.bonus, r.tips, r.orders, r.settleAmount]),
+                );
+              }}
+            >
+              导出结算
+            </button>
+            <button type="button" onClick={() => void load(date)} className="tag inline-flex items-center gap-1">
+              <RefreshCcw size={13} /> 刷新
+            </button>
+          </div>
         }
       />
 
