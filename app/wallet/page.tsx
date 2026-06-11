@@ -53,6 +53,22 @@ export default function WalletAdminPage() {
   const pending = withdrawals.filter((w) => w.status === "requested");
   const history = withdrawals.filter((w) => w.status !== "requested").slice(0, 30);
 
+  // Weekly billing statement: per-rider daily settle rows, last 7 days.
+  async function exportStatement(franchise: string) {
+    const to = new Date().toISOString().slice(0, 10);
+    const from = new Date(Date.now() - 6 * 86400000).toISOString().slice(0, 10);
+    const response = await fetch(`/api/wallet?statement=${encodeURIComponent(franchise)}&from=${from}&to=${to}`, { headers, cache: "no-store" });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      setMessage({ tone: "err", text: payload.error ?? "账单导出失败" });
+      return;
+    }
+    const rows = payload.data.rows.map((r: { date: string; riderName: string; rider99Id: string; station: string; settleAmount: number }) => [r.date, r.riderName, r.rider99Id, r.station, r.settleAmount.toFixed(2)]);
+    rows.push(["合计", "", "", "", Number(payload.data.total).toFixed(2)]);
+    downloadCsv(`statement-${franchise}-${from}_${to}`, ["日期", "骑手", "99ID", "站点", "结算金额"], rows);
+    setMessage({ tone: "ok", text: `已导出「${franchise}」${from} ~ ${to} 周期账单（${rows.length - 1} 行，合计 R$ ${Number(payload.data.total).toFixed(2)}）。` });
+  }
+
   return (
     <AppShell>
       <PageTitle
@@ -74,6 +90,9 @@ export default function WalletAdminPage() {
             >
               导出流水
             </button>
+            {scopeFranchise && (
+              <button type="button" className="tag" onClick={() => void exportStatement(scopeFranchise)}>导出周账单</button>
+            )}
             <button type="button" onClick={() => void load()} className="tag inline-flex items-center gap-1"><RefreshCcw size={13} /> 刷新</button>
           </div>
         }
@@ -91,7 +110,7 @@ export default function WalletAdminPage() {
           <table className="w-full text-sm">
             <thead>
               <tr className="text-left text-[10px] font-black uppercase text-[var(--muted)]">
-                <th className="pb-2">加盟商</th><th className="pb-2 text-right">骑手累计结算</th><th className="pb-2 text-right">已付骑手</th><th className="pb-2 text-right">提现在途</th><th className="pb-2 text-right">应结余额</th>
+                <th className="pb-2">加盟商</th><th className="pb-2 text-right">骑手累计结算</th><th className="pb-2 text-right">已付骑手</th><th className="pb-2 text-right">提现在途</th><th className="pb-2 text-right">应结余额</th><th className="pb-2 text-right">账单</th>
               </tr>
             </thead>
             <tbody>
@@ -102,6 +121,7 @@ export default function WalletAdminPage() {
                   <td className="py-2 text-right text-[var(--ok-ink)]">{money(f.paidOut)}</td>
                   <td className="py-2 text-right text-[var(--warning-ink)]">{money(f.pendingRequests)}</td>
                   <td className="py-2 text-right font-black text-[var(--accent)]">{money(f.payable)}</td>
+                  <td className="py-2 text-right"><button type="button" className="tag" onClick={() => void exportStatement(f.franchise)}>周账单</button></td>
                 </tr>
               ))}
             </tbody>
