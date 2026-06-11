@@ -70,6 +70,7 @@ const navItems: Array<{
   { href: "/partner-points", labelKey: "navPartnerPoints", icon: Handshake, permission: "manage_partner_points" },
   { href: "/finance", labelKey: "navFinance", icon: CircleDollarSign, permission: "view_finance" },
   { href: "/wallet", labelKey: "navWallet", icon: CircleDollarSign, permission: "view_finance" },
+  { href: "/support", labelKey: "navSupport", icon: ShieldCheck, permission: "view_audit" },
   { href: "/crm", labelKey: "navCrm", icon: Handshake, permission: "view_analytics" },
   { href: "/franchise", labelKey: "navFranchise", icon: Store, permission: "view_analytics" },
   { href: "/night-shift", labelKey: "navNightShift", icon: Moon, permission: "view_analytics" },
@@ -138,6 +139,7 @@ const navGroups: Array<{
       [
         "/finance",
         "/wallet",
+        "/support",
         "/analytics",
         "/reports",
         "/realtime",
