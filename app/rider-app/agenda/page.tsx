@@ -28,6 +28,7 @@ export default function RiderAgendaPage() {
 
   const [signups, setSignups] = useState<MySignup[]>([]);
   const [kpi, setKpi] = useState<MyKpi | null>(null);
+  const [ranking, setRanking] = useState<Array<{ name: string; orders: number; isMe?: boolean }>>([]);
 
   const load = useCallback(async () => {
     if (!session?.name) return;
@@ -37,6 +38,11 @@ export default function RiderAgendaPage() {
     if (perf.ok) {
       const payload = await perf.json();
       setKpi(payload.data ?? null);
+    }
+    const rank = await fetch("/api/performance?ranking=1", { headers, cache: "no-store" });
+    if (rank.ok) {
+      const payload = await rank.json();
+      setRanking((payload.data?.top ?? []).map((row: { name: string; orders: number }) => ({ ...row, isMe: row.name === session.name })));
     }
   }, [headers, session]);
 
@@ -109,6 +115,22 @@ export default function RiderAgendaPage() {
           );
         })}
       </div>
+
+      {ranking.length > 0 && (
+        <div className="panel p-4" data-i18n-skip>
+          <div className="text-[10px] font-black uppercase text-[var(--muted)]">🏆 Ranking · pedidos acumulados</div>
+          <div className="mt-2 space-y-1">
+            {ranking.map((row, index) => (
+              <div key={row.name} className={`flex items-center justify-between rounded-[6px] px-2 py-1 text-[12px] font-bold ${row.isMe ? "bg-[var(--accent-glow)] font-black text-[var(--accent)]" : ""}`}>
+                <span className="min-w-0 truncate">
+                  {index === 0 ? "🥇" : index === 1 ? "🥈" : index === 2 ? "🥉" : `${index + 1}.`} {row.name}{row.isMe && "（você）"}
+                </span>
+                <span className="shrink-0 pl-2">{row.orders}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {past.length > 0 && (
         <div className="space-y-2">

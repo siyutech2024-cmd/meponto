@@ -22,6 +22,53 @@ function lifetimeOrders(rider99Id: string | undefined): number | null {
   return rows.reduce((sum, row) => sum + (row.completedOrders ?? 0), 0);
 }
 
+const MONTH_MS = 30 * 24 * 3600 * 1000;
+
+/**
+ * FIFO points expiry: points earned more than 12 months ago that were never
+ * consumed (spends/expiries count against the oldest earns first) are written
+ * off with an auditable "expire" ledger entry. Runs lazily on account access.
+ */
+function applyPointsExpiry(riderId: string): number {
+  const now = Date.now();
+  let earnedOld = 0;
+  let consumed = 0;
+  for (const entry of memory.pointsLedgerEntries) {
+    if (entry.riderId !== riderId || entry.status !== "approved") continue;
+    if (entry.type === "earn" && now - new Date(entry.createdAt.replace(" ", "T")).getTime() > 12 * MONTH_MS) earnedOld += entry.points;
+    if (entry.type === "spend" || entry.type === "expire") consumed += entry.points;
+  }
+  if (earnedOld <= 0) return 0;
+  const available = getAvailablePoints(memory.pointsLedgerEntries, riderId);
+  const toExpire = Math.min(available, earnedOld - consumed);
+  if (toExpire <= 0) return 0;
+  memory.pointsLedgerEntries.unshift({
+    id: makeServerId("pts", memory.pointsLedgerEntries.length + 1),
+    riderId,
+    accountId: `pts-${riderId}`,
+    type: "expire",
+    points: toExpire,
+    status: "approved",
+    sourceType: "expiry",
+    sourceId: `exp-${Date.now()}`,
+    balanceAfter: available - toExpire,
+    reasonCode: "POINTS_EXPIRED_12M",
+    note: "Pontos com mais de 12 meses expiraram automaticamente (FIFO).",
+    createdBy: "System",
+    createdAt: nowStamp(),
+  });
+  return toExpire;
+}
+
+/** Achievement badges driven by lifetime completed orders. */
+const badgeMilestones = [
+  { at: 1, icon: "🚀", label: "Primeira entrega" },
+  { at: 50, icon: "🔥", label: "50 pedidos" },
+  { at: 100, icon: "💪", label: "100 pedidos" },
+  { at: 300, icon: "🏅", label: "300 pedidos" },
+  { at: 600, icon: "👑", label: "600 pedidos" },
+];
+
 function creditPoints(riderId: string, points: number, reasonCode: string, note: string, sourceId: string, actor: string): PointsLedgerEntry {
   const available = getAvailablePoints(memory.pointsLedgerEntries, riderId);
   const entry: PointsLedgerEntry = {
@@ -60,11 +107,15 @@ export async function GET(request: Request) {
 
   // Rider context (membership + balance) when requested by the rider app.
   let me: Record<string, unknown> | null = null;
+  let expiredNow = 0;
   const rider = memory.riders.find((item) => (riderId && item.id === riderId) || (riderName && item.name === riderName));
   if (rider) {
+    expiredNow = applyPointsExpiry(rider.id);
     const orderCount = lifetimeOrders(rider.ninetyNineId);
     const tier = resolveTier(orderCount);
     me = {
+      badges: badgeMilestones.map((m) => ({ ...m, achieved: (orderCount ?? 0) >= m.at })),
+      expiredNow,
       riderId: rider.id,
       name: rider.name,
       station: rider.ponto ?? "Unassigned",
@@ -102,6 +153,9 @@ export async function GET(request: Request) {
     }
   }
 
+  // Persist lazily-created expiry entries before the instance can freeze.
+  if (expiredNow > 0) await flushPendingToDatabase();
+
   return jsonResponse({
     data: {
       config,
@@ -117,7 +171,7 @@ export async function GET(request: Request) {
 type Body =
   | { action: "setConfig"; perOrderPoints?: number; referralPoints?: number; partnerServicePoints?: number; partnerServiceCount?: number }
   | { action: "supplierAddProduct"; name: string; supplierName: string; supplyPrice: number; deliveryCycleDays: number; stock: number; description?: string; imageUrl?: string; category?: string; isVirtual?: boolean }
-  | { action: "updateProduct"; productId: string; name?: string; description?: string; imageUrl?: string; category?: string; stock?: number; deliveryCycleDays?: number }
+  | { action: "updateProduct"; productId: string; name?: string; description?: string; imageUrl?: string; category?: string; stock?: number; deliveryCycleDays?: number; purchaseLimit?: number }
   | { action: "priceProduct"; productId: string; pointsPrice: number; marginPct?: number; status?: "active" | "paused" }
   | { action: "deleteProduct"; productId: string }
   | { action: "redeem"; productId: string; riderId?: string; riderName?: string }
@@ -225,6 +279,7 @@ async function handlePost(request: Request) {
         ...(fields.category !== undefined ? { category: String(fields.category).slice(0, 40) } : {}),
         ...(fields.stock !== undefined ? { stock: Math.max(0, Number(fields.stock) || 0) } : {}),
         ...(fields.deliveryCycleDays !== undefined ? { deliveryCycleDays: Math.max(0, Number(fields.deliveryCycleDays) || 0) } : {}),
+        ...(fields.purchaseLimit !== undefined ? { purchaseLimit: Math.max(0, Math.floor(Number(fields.purchaseLimit) || 0)) } : {}),
       };
       appendServerAudit({ actor, action: "MALL_PRODUCT_UPDATED", entity: "MarketplaceProduct", entityId: productId ?? "", detail: JSON.stringify(fields).slice(0, 180), risk: "Low" });
       return jsonResponse({ data: memory.marketplaceProducts[index] });
@@ -246,6 +301,21 @@ async function handlePost(request: Request) {
       const product = memory.marketplaceProducts.find((item) => item.id === productId && item.status === "active");
       if (!product) return jsonResponse({ error: "商品不存在或未上架" }, { status: 404 });
       if (product.stock <= 0) return jsonResponse({ error: "商品库存不足" }, { status: 409 });
+
+      // Per-rider monthly purchase limit (anti-hoarding for scarce items).
+      const purchaseLimit = product.purchaseLimit ?? 0;
+      if (purchaseLimit > 0) {
+        const month = nowStamp().slice(0, 7);
+        const monthCount = memory.marketplaceOrders.filter(
+          (order) => order.riderId === rider.id && order.productId === product.id && order.status !== "cancelled" && order.createdAt.startsWith(month),
+        ).length;
+        if (monthCount >= purchaseLimit) {
+          return jsonResponse({ error: `Limite de resgate atingido: ${purchaseLimit}/mês por entregador.` }, { status: 429 });
+        }
+      }
+
+      // Expire stale points first so the redemption uses the true balance.
+      applyPointsExpiry(rider.id);
 
       const tier = resolveTier(lifetimeOrders(rider.ninetyNineId));
       const price = Math.ceil(product.pointsPrice * tier.redeemDiscount);

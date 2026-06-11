@@ -91,6 +91,8 @@ export type MarketplaceProduct = {
   imageUrl?: string;
   /** Storefront category, e.g. Equipamento / Voucher / Serviço. */
   category?: string;
+  /** Per-rider monthly redemption cap for this product (0 / undefined = unlimited). */
+  purchaseLimit?: number;
 };
 
 export type MarketplaceOrderStatus = "created" | "arrived" | "fulfilled" | "cancelled";

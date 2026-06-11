@@ -4,7 +4,7 @@ import { requirePermission, roleFromRequest } from "../../lib/server/authz";
 import { sendPushToRider } from "../../lib/server/notify";
 import { computeBalance, type RiderWithdrawal } from "../../lib/finance";
 
-const COLLECTIONS = ["riderWithdrawals", "riderDailyEarnings", "riders"];
+const COLLECTIONS = ["riderWithdrawals", "riderDailyEarnings", "riders", "franchises"];
 
 const today = () => new Date().toISOString().slice(0, 10);
 const nowStamp = () => new Date().toISOString().slice(0, 16).replace("T", " ");
@@ -21,6 +21,28 @@ export async function GET(request: Request) {
 
   const franchiseScope = url.searchParams.get("franchise") ?? "";
   const stationScope = url.searchParams.get("station") ?? "";
+
+  // Periodic billing statement: per-rider daily settle rows for one franchise.
+  const statementFranchise = url.searchParams.get("statement") ?? "";
+  if (statementFranchise) {
+    const to = url.searchParams.get("to") || today();
+    const from = url.searchParams.get("from") || new Date(Date.now() - 6 * 86400000).toISOString().slice(0, 10);
+    const byNinetyNine = new Map(memory.riders.filter((r) => r.ninetyNineId).map((r) => [r.ninetyNineId!, r]));
+    const rows = memory.riderDailyEarnings
+      .filter((row) => row.date >= from && row.date <= to)
+      .map((row) => ({ row, rider: byNinetyNine.get(row.rider99Id) }))
+      .filter(({ rider }) => statementFranchise === "all" || (rider?.franchise ?? "Unassigned") === statementFranchise)
+      .map(({ row, rider }) => ({
+        date: row.date,
+        riderName: rider?.name ?? row.rider99Id,
+        rider99Id: row.rider99Id,
+        station: rider?.ponto ?? "Unassigned",
+        settleAmount: Math.round((row.settleAmount ?? 0) * 100) / 100,
+      }))
+      .sort((a, b) => a.date.localeCompare(b.date) || a.riderName.localeCompare(b.riderName));
+    const total = Math.round(rows.reduce((sum, row) => sum + row.settleAmount, 0) * 100) / 100;
+    return jsonResponse({ data: { franchise: statementFranchise, from, to, rows, total } });
+  }
 
   // Single-rider wallet (rider app).
   if (riderName || riderId) {
@@ -149,6 +171,21 @@ async function handlePost(request: Request) {
       const stamp = nowStamp();
       if (body.action === "confirmPayment") {
         memory.riderWithdrawals[index] = { ...current, status: "paid", paidAt: stamp, paidBy: actor, note: String(note).slice(0, 200) };
+        // Auto-deduct the payout from the franchise's prepaid deposit (may go
+        // negative — a negative balance means the franchise owes HQ a top-up).
+        const fIndex = memory.franchises.findIndex((f) => f.name === current.franchise);
+        if (fIndex !== -1) {
+          const nextBalance = Math.round(((memory.franchises[fIndex].depositBalance ?? 0) - current.amount) * 100) / 100;
+          memory.franchises[fIndex] = { ...memory.franchises[fIndex], depositBalance: nextBalance };
+          appendServerAudit({
+            actor,
+            action: "FRANCHISE_DEPOSIT_AUTO_DEDUCT",
+            entity: "Franchise",
+            entityId: memory.franchises[fIndex].id,
+            detail: `Payout ${current.riderName} R$${current.amount.toFixed(2)} → ${current.franchise} deposit R$${nextBalance.toFixed(2)}${nextBalance < 0 ? " (OVERDRAWN)" : ""}.`,
+            risk: nextBalance < 0 ? "High" : "Medium",
+          });
+        }
         await sendPushToRider(current.riderName, "Pagamento enviado 💰", `Seu saque de R$ ${current.amount.toFixed(2)} foi pago via PIX. Confira seu extrato.`, "/rider-app/wallet");
       } else {
         memory.riderWithdrawals[index] = { ...current, status: "rejected", rejectedAt: stamp, note: String(note).slice(0, 200) };

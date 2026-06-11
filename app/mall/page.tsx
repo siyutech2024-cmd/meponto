@@ -149,7 +149,7 @@ export default function MallAdminPage() {
                               {product.isVirtual && <span className="tag border-[var(--accent)] text-[var(--accent)]">虚拟</span>}
                             </div>
                             <div className="text-[11px] font-bold text-[var(--muted)]">
-                              {product.supplierName ?? "平台自营"} ｜ 供应价 {product.supplyPrice ? `R$${product.supplyPrice}` : "-"} ｜ 周期 {product.deliveryCycleDays ?? 7} 天 ｜ 库存 {product.stock}
+                              {product.supplierName ?? "平台自营"} ｜ 供应价 {product.supplyPrice ? `R$${product.supplyPrice}` : "-"} ｜ 周期 {product.deliveryCycleDays ?? 7} 天 ｜ 库存 {product.stock}{(product.purchaseLimit ?? 0) > 0 ? ` ｜ 限购 ${product.purchaseLimit}/月` : ""}
                             </div>
                           </div>
                         </div>
@@ -263,6 +263,7 @@ function ProductConfigRow({ product, onSave }: { product: MarketplaceProduct; on
   const [category, setCategory] = useState(product.category ?? "");
   const [stock, setStock] = useState(String(product.stock));
   const [cycle, setCycle] = useState(String(product.deliveryCycleDays ?? 7));
+  const [limit, setLimit] = useState(String(product.purchaseLimit ?? 0));
   const [description, setDescription] = useState(product.description ?? "");
   const field = "h-10 rounded-[8px] border border-[var(--line)] bg-[var(--surface)] px-3 text-sm font-bold outline-none focus:border-[var(--accent)]";
   return (
@@ -271,10 +272,11 @@ function ProductConfigRow({ product, onSave }: { product: MarketplaceProduct; on
       <input className={field} placeholder="分类（如 Equipamento / Voucher）" value={category} onChange={(e) => setCategory(e.target.value)} />
       <input className={field} inputMode="numeric" placeholder="库存" value={stock} onChange={(e) => setStock(e.target.value.replace(/\D/g, ""))} />
       <input className={field} inputMode="numeric" placeholder="派送周期(天)" value={cycle} onChange={(e) => setCycle(e.target.value.replace(/\D/g, ""))} />
-      <input className={`${field} sm:col-span-2`} placeholder="商品说明" value={description} onChange={(e) => setDescription(e.target.value)} />
+      <input className={field} inputMode="numeric" placeholder="每人每月限购（0=不限）" value={limit} onChange={(e) => setLimit(e.target.value.replace(/\D/g, ""))} />
+      <input className={field} placeholder="商品说明" value={description} onChange={(e) => setDescription(e.target.value)} />
       <button
         type="button"
-        onClick={() => void onSave({ imageUrl, category, stock: Number(stock), deliveryCycleDays: Number(cycle), description })}
+        onClick={() => void onSave({ imageUrl, category, stock: Number(stock), deliveryCycleDays: Number(cycle), purchaseLimit: Number(limit), description })}
         className="inline-flex h-10 items-center justify-center rounded-[8px] bg-[var(--accent)] px-5 text-xs font-black uppercase text-[var(--accent-ink)] sm:col-span-2"
       >
         保存商品配置
