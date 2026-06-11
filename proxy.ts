@@ -17,6 +17,14 @@ export async function proxy(request: NextRequest) {
     return NextResponse.rewrite(url);
   }
 
+  // mall.meponto.com goes STRAIGHT to the rider storefront (not the back office).
+  if (host === "mall.meponto.com" && pathname === "/") {
+    if (!session) return NextResponse.redirect(new URL("/rider-login", request.url));
+    const url = request.nextUrl.clone();
+    url.pathname = "/rider-app/mall";
+    return NextResponse.rewrite(url);
+  }
+
   if (pathname === "/") {
     if (hostPortalId) {
       if (!session) return NextResponse.redirect(new URL(`/login/${hostPortalId}`, request.url));
