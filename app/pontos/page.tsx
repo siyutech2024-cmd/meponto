@@ -87,7 +87,25 @@ export default function NetworkPage() {
                 <div className="mt-1 text-[11px] font-bold text-[var(--muted)]">
                   {franchise.owner || "—"}{franchise.phone && ` ｜ ${franchise.phone}`} ｜ {franchise.city}
                 </div>
-                <div className="mt-2"><Badge value={`${franchise.stationCount} 个站点`} /></div>
+                <div className="mt-2 flex flex-wrap items-center gap-2">
+                  <Badge value={`${franchise.stationCount} 个站点`} />
+                  <span className={`text-[11px] font-black ${(franchise.depositBalance ?? 0) < 0 ? "text-[var(--danger-ink)]" : "text-[var(--accent)]"}`}>
+                    预存 R$ {(franchise.depositBalance ?? 0).toFixed(2)}{(franchise.depositBalance ?? 0) < 0 && "（欠款，请充值）"}
+                  </span>
+                  <button
+                    type="button"
+                    className="tag"
+                    onClick={async () => {
+                      const raw = window.prompt(`为「${franchise.name}」充值预存金额（负数=扣减）：`, "");
+                      const amount = Number(raw);
+                      if (!raw || !Number.isFinite(amount) || amount === 0) return;
+                      const r = await post({ action: "depositFranchise", franchiseId: franchise.id, amount, note: "后台手工调整" });
+                      if (r) setMessage({ tone: "ok", text: `「${franchise.name}」预存余额已更新：R$ ${Number(r.data?.depositBalance ?? 0).toFixed(2)}` });
+                    }}
+                  >
+                    充值
+                  </button>
+                </div>
               </div>
             ))}
             {franchises.length === 0 && <div className="text-sm font-bold text-[var(--muted)]">还没有加盟商，先在下方创建。</div>}
