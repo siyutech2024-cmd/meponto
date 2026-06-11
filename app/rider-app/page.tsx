@@ -301,11 +301,11 @@ export default function RiderAppPage() {
             </div>
 
             <div className="relative z-10 grid grid-cols-[1fr_1fr] gap-2 p-3">
-              <a href="#wallet" className={`flex h-12 items-center justify-center gap-2 rounded-[8px] text-sm font-black ${tier.buttonClass}`}>
+              <a href="/rider-app/shifts" className={`flex h-12 items-center justify-center gap-2 rounded-[8px] text-sm font-black ${tier.buttonClass}`}>
                 Sacar
                 <ChevronRight size={17} />
               </a>
-              <a href="#wallet" className="flex h-12 items-center justify-center gap-2 rounded-[8px] bg-white/10 text-sm font-black text-white">
+              <a href="/rider-app/wallet" className="flex h-12 items-center justify-center gap-2 rounded-[8px] bg-white/10 text-sm font-black text-white">
                 Extrato
                 <QrCode size={17} />
               </a>
@@ -387,7 +387,7 @@ export default function RiderAppPage() {
             <section className="px-4 pt-4">
               <div className="mb-2 flex items-center justify-between">
                 <h2 className="text-lg font-black">PontoMall</h2>
-                <a href="#points" className="text-sm font-black text-[#ff7a00]">Trocar</a>
+                <a href="/rider-app/mall" className="text-sm font-black text-[#ff7a00]">Trocar</a>
               </div>
               <div className="grid grid-cols-[1fr_auto] items-center gap-3 rounded-[8px] bg-white p-3 shadow-[0_12px_26px_rgba(0,0,0,0.06)]">
                 <div>
@@ -401,7 +401,7 @@ export default function RiderAppPage() {
             <section className="px-4 pt-4">
               <div className="mb-2 flex items-center justify-between">
                 <h2 className="text-lg font-black">Missoes e premios</h2>
-                <a href="#points" className="text-sm font-black text-[#ff7a00]">Ver tudo</a>
+                <a href="/rider-app/mall" className="text-sm font-black text-[#ff7a00]">Ver tudo</a>
               </div>
               <div className="grid gap-2">
                 {missions.map((mission) => (
@@ -439,10 +439,10 @@ export default function RiderAppPage() {
         </div>
 
         <nav className="fixed bottom-3 left-1/2 z-20 grid w-[calc(100%-24px)] max-w-[406px] -translate-x-1/2 grid-cols-4 rounded-[8px] bg-[#050505] p-1.5 text-white shadow-[0_18px_42px_rgba(0,0,0,0.3)]">
-          <Tab icon={<Home size={18} />} label="Inicio" href="#home" active />
-          <Tab icon={<WalletCards size={18} />} label="Carteira" href="#wallet" />
-          <Tab icon={<Gift size={18} />} label="Pontos" href="#points" />
-          <Tab icon={<Headphones size={18} />} label="Ajuda" href="#help" />
+          <Tab icon={<Home size={18} />} label="Inicio" href="/rider-app" active />
+          <Tab icon={<WalletCards size={18} />} label="Carteira" href="/rider-app/wallet" />
+          <Tab icon={<Gift size={18} />} label="Loja" href="/rider-app/mall" />
+          <Tab icon={<Headphones size={18} />} label="Ajuda" href="/rider-app/support" />
         </nav>
       </div>
     </main>
