@@ -60,7 +60,10 @@ export default function RiderMallPage() {
 
   async function redeem(product: MarketplaceProduct) {
     if (!me) {
-      setMessage({ tone: "err", text: "Cadastro não encontrado — fale com o gestor da estação." });
+      // Public storefront: browsing is open, redemption requires an account.
+      if (window.confirm("Para resgatar é preciso entrar na sua conta MePonto. Ir para o login?")) {
+        window.location.href = "/rider-login";
+      }
       return;
     }
     const price = Math.ceil(product.pointsPrice * (me.redeemDiscount ?? 1));
@@ -159,9 +162,9 @@ export default function RiderMallPage() {
             </div>
           ) : (
             <div className="rounded-[8px] bg-white p-4 text-sm font-bold text-[#77746f] shadow-[0_12px_26px_rgba(0,0,0,0.06)]">
-              Cadastro não encontrado.{" "}
-              <Link href="/rider-login" style={{ color: "#ff7a00" }} className="font-black underline">Crie sua conta</Link>{" "}
-              para virar membro, acumular pontos e resgatar produtos.
+              Bem-vindo ao PontoMall! Navegue à vontade —{" "}
+              <Link href="/rider-login" style={{ color: "#ff7a00" }} className="font-black underline">entre ou crie sua conta</Link>{" "}
+              quando quiser resgatar produtos com pontos.
             </div>
           )}
         </section>
