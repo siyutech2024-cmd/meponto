@@ -235,6 +235,152 @@ const copy = {
 const cardIcons = { map: MapPinned, clock: Clock4, coins: Coins, shield: ShieldCheck } as const;
 const systemIcons = [Bike, Store, Warehouse, Building2];
 
+
+/**
+ * Active Theory-style ambient particle field: drifting points connected by
+ * lines, gently attracted to the cursor. Plain canvas 2D — zero dependencies.
+ */
+function ParticleField() {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+
+    let width = 0;
+    let height = 0;
+    let raf = 0;
+    const mouse = { x: -9999, y: -9999 };
+    const DPR = Math.min(window.devicePixelRatio || 1, 2);
+
+    const resize = () => {
+      width = window.innerWidth;
+      height = window.innerHeight;
+      canvas.width = width * DPR;
+      canvas.height = height * DPR;
+      ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+    };
+    resize();
+
+    const COUNT = Math.min(110, Math.floor((width * height) / 16000));
+    const particles = Array.from({ length: COUNT }, () => ({
+      x: Math.random() * width,
+      y: Math.random() * height,
+      vx: (Math.random() - 0.5) * 0.35,
+      vy: (Math.random() - 0.5) * 0.35,
+      r: Math.random() * 1.6 + 0.6,
+      gold: Math.random() < 0.35,
+    }));
+
+    const onMove = (event: MouseEvent) => {
+      mouse.x = event.clientX;
+      mouse.y = event.clientY;
+    };
+    const onLeave = () => {
+      mouse.x = -9999;
+      mouse.y = -9999;
+    };
+
+    const tick = () => {
+      ctx.clearRect(0, 0, width, height);
+      for (const particle of particles) {
+        // Gentle cursor attraction, Active Theory style.
+        const dx = mouse.x - particle.x;
+        const dy = mouse.y - particle.y;
+        const dist = Math.hypot(dx, dy);
+        if (dist < 220 && dist > 0.001) {
+          particle.vx += (dx / dist) * 0.012;
+          particle.vy += (dy / dist) * 0.012;
+        }
+        particle.vx *= 0.985;
+        particle.vy *= 0.985;
+        particle.x += particle.vx;
+        particle.y += particle.vy;
+        if (particle.x < -20) particle.x = width + 20;
+        if (particle.x > width + 20) particle.x = -20;
+        if (particle.y < -20) particle.y = height + 20;
+        if (particle.y > height + 20) particle.y = -20;
+
+        ctx.beginPath();
+        ctx.arc(particle.x, particle.y, particle.r, 0, Math.PI * 2);
+        ctx.fillStyle = particle.gold ? "rgba(255,216,77,0.55)" : "rgba(120,170,255,0.45)";
+        ctx.fill();
+      }
+      // Constellation lines between close particles.
+      for (let i = 0; i < particles.length; i += 1) {
+        for (let j = i + 1; j < particles.length; j += 1) {
+          const a = particles[i];
+          const b = particles[j];
+          const dx = a.x - b.x;
+          const dy = a.y - b.y;
+          const d2 = dx * dx + dy * dy;
+          if (d2 < 110 * 110) {
+            const alpha = 0.14 * (1 - d2 / (110 * 110));
+            ctx.strokeStyle = `rgba(140,180,255,${alpha.toFixed(3)})`;
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            ctx.moveTo(a.x, a.y);
+            ctx.lineTo(b.x, b.y);
+            ctx.stroke();
+          }
+        }
+      }
+      raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+
+    window.addEventListener("resize", resize);
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseleave", onLeave);
+    return () => {
+      cancelAnimationFrame(raf);
+      window.removeEventListener("resize", resize);
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseleave", onLeave);
+    };
+  }, []);
+
+  return <canvas ref={canvasRef} className="pointer-events-none fixed inset-0 z-0" aria-hidden="true" />;
+}
+
+/** Per-card 3D tilt with a moving glare highlight — pure CSS transforms. */
+function Tilt3D({ children, className = "", style }: { children: React.ReactNode; className?: string; style?: React.CSSProperties }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const glareRef = useRef<HTMLDivElement>(null);
+
+  return (
+    <div
+      ref={ref}
+      className={`relative will-change-transform ${className}`}
+      style={{ transformStyle: "preserve-3d", transition: "transform .18s ease-out", ...style }}
+      onMouseMove={(event) => {
+        const node = ref.current;
+        if (!node) return;
+        const rect = node.getBoundingClientRect();
+        const px = (event.clientX - rect.left) / rect.width - 0.5;
+        const py = (event.clientY - rect.top) / rect.height - 0.5;
+        node.style.transform = `perspective(800px) rotateY(${(px * 14).toFixed(2)}deg) rotateX(${(-py * 14).toFixed(2)}deg) translateZ(10px)`;
+        const glare = glareRef.current;
+        if (glare) {
+          glare.style.opacity = "1";
+          glare.style.background = `radial-gradient(280px circle at ${((px + 0.5) * 100).toFixed(1)}% ${((py + 0.5) * 100).toFixed(1)}%, rgba(255,255,255,0.16), transparent 60%)`;
+        }
+      }}
+      onMouseLeave={() => {
+        const node = ref.current;
+        if (node) node.style.transform = "perspective(800px) rotateY(0deg) rotateX(0deg) translateZ(0)";
+        if (glareRef.current) glareRef.current.style.opacity = "0";
+      }}
+    >
+      {children}
+      <div ref={glareRef} className="pointer-events-none absolute inset-0 rounded-2xl opacity-0" style={{ transition: "opacity .25s ease" }} aria-hidden="true" />
+    </div>
+  );
+}
+
 export default function MarketingHomePage() {
   const [lang, setLang] = useState<Lang>("pt");
   const [form, setForm] = useState({ name: "", phone: "", email: "", city: "", message: "" });
@@ -302,9 +448,10 @@ export default function MarketingHomePage() {
           "radial-gradient(900px 540px at 12% -6%, rgba(98,54,255,0.32), transparent 55%), radial-gradient(820px 520px at 92% 4%, rgba(13,118,255,0.26), transparent 55%), radial-gradient(700px 500px at 50% 110%, rgba(255,170,40,0.14), transparent 60%), linear-gradient(180deg, #070a14 0%, #0a0e1d 50%, #070a14 100%)",
       }}
     >
+      <ParticleField />
       <style>{`
-        .rv { opacity: 0; transform: translateY(26px); transition: opacity .65s ease, transform .65s cubic-bezier(.16,1,.3,1); transition-delay: var(--d, 0ms); will-change: opacity, transform; }
-        .rv-in { opacity: 1; transform: none; }
+        .rv { opacity: 0; transform: perspective(900px) rotateX(10deg) translateY(34px); transition: opacity .7s ease, transform .7s cubic-bezier(.16,1,.3,1); transition-delay: var(--d, 0ms); will-change: opacity, transform; }
+        .rv-in { opacity: 1; transform: perspective(900px) rotateX(0deg) translateY(0); }
         @keyframes mp-float { 0%,100% { transform: translate3d(0,0,0) scale(1); } 50% { transform: translate3d(-40px,30px,0) scale(1.12); } }
         @keyframes mp-float2 { 0%,100% { transform: translate3d(0,0,0) scale(1); } 50% { transform: translate3d(50px,-24px,0) scale(.92); } }
         .mp-glow { animation: mp-float 14s ease-in-out infinite; }
@@ -340,22 +487,38 @@ export default function MarketingHomePage() {
       </header>
 
       {/* Hero */}
-      <section className="relative overflow-hidden">
+      <section className="relative z-10 overflow-hidden">
         <div className="mp-grid pointer-events-none absolute inset-0" />
         <div className="mp-glow pointer-events-none absolute -top-36 right-[-12%] h-[460px] w-[460px] rounded-full bg-[rgba(120,80,255,0.28)] blur-3xl" />
         <div className="mp-glow2 pointer-events-none absolute bottom-[-30%] left-[-10%] h-96 w-96 rounded-full bg-[rgba(40,180,255,0.22)] blur-3xl" />
-        <div className="relative mx-auto max-w-6xl px-4 py-16 sm:px-6 md:py-28">
+        <div
+          className="relative mx-auto max-w-6xl px-4 py-16 sm:px-6 md:py-28"
+          style={{ perspective: "1400px" }}
+          onMouseMove={(event) => {
+            const target = event.currentTarget.querySelector<HTMLElement>("[data-hero-stage]");
+            if (!target) return;
+            const rect = event.currentTarget.getBoundingClientRect();
+            const px = (event.clientX - rect.left) / rect.width - 0.5;
+            const py = (event.clientY - rect.top) / rect.height - 0.5;
+            target.style.transform = `rotateY(${(px * 5).toFixed(2)}deg) rotateX(${(-py * 5).toFixed(2)}deg)`;
+          }}
+          onMouseLeave={(event) => {
+            const target = event.currentTarget.querySelector<HTMLElement>("[data-hero-stage]");
+            if (target) target.style.transform = "rotateY(0deg) rotateX(0deg)";
+          }}
+        >
+          <div data-hero-stage style={{ transformStyle: "preserve-3d", transition: "transform .25s ease-out" }}>
           <div className="rv inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/5 px-4 py-1.5 text-[11px] font-black uppercase tracking-widest text-[#ffd84d] backdrop-blur">
             <ShieldCheck size={14} /> <span translate="no">{t.hero.eyebrow}</span>
           </div>
-          <h1 className="mp-gtext rv mt-6 max-w-4xl text-4xl font-black leading-tight md:text-6xl" style={{ ["--d" as never]: "90ms" }}>
+          <h1 className="mp-gtext rv mt-6 max-w-4xl text-4xl font-black leading-tight md:text-6xl" style={{ ["--d" as never]: "90ms", transform: "translateZ(70px)" }}>
             {t.hero.title}
           </h1>
-          <p className="rv mt-5 max-w-2xl text-base font-bold leading-7 text-white/70 md:text-lg" style={{ ["--d" as never]: "180ms" }}>
+          <p className="rv mt-5 max-w-2xl text-base font-bold leading-7 text-white/70 md:text-lg" style={{ ["--d" as never]: "180ms", transform: "translateZ(40px)" }}>
             {t.hero.subtitle}
           </p>
 
-          <div className="rv mt-8 flex flex-wrap gap-3" style={{ ["--d" as never]: "260ms" }}>
+          <div className="rv mt-8 flex flex-wrap gap-3" style={{ ["--d" as never]: "260ms", transform: "translateZ(55px)" }}>
             <a href="#contact" className={gradBtn}>
               <Building2 size={18} /> {t.hero.ctaFranchise} <ArrowRight size={16} />
             </a>
@@ -364,19 +527,22 @@ export default function MarketingHomePage() {
             </a>
           </div>
 
-          <div className="mt-14 grid grid-cols-2 gap-3 md:grid-cols-4">
+          <div className="mt-14 grid grid-cols-2 gap-3 md:grid-cols-4" style={{ transform: "translateZ(50px)" }}>
             {t.hero.stats.map((stat, index) => (
-              <div key={stat.label} className={`rv ${glass} p-4 transition-transform hover:-translate-y-1`} style={{ ["--d" as never]: `${320 + index * 90}ms` }}>
-                <div className="text-xl font-black text-[#ffd84d]">{stat.value}</div>
-                <div className="mt-1 text-xs font-bold text-white/50">{stat.label}</div>
-              </div>
+              <Tilt3D key={stat.label} className="rv" style={{ ["--d" as never]: `${320 + index * 90}ms` }}>
+                <div className={`${glass} p-4`}>
+                  <div className="text-xl font-black text-[#ffd84d]">{stat.value}</div>
+                  <div className="mt-1 text-xs font-bold text-white/50">{stat.label}</div>
+                </div>
+              </Tilt3D>
             ))}
+          </div>
           </div>
         </div>
       </section>
 
       {/* Rider recruitment */}
-      <section id="rider" className="relative border-t border-white/10">
+      <section id="rider" className="relative z-10 border-t border-white/10">
         <div className="pointer-events-none absolute left-[-8%] top-1/4 h-72 w-72 rounded-full bg-[rgba(255,170,40,0.12)] blur-3xl" />
         <div className="relative mx-auto grid max-w-6xl gap-10 px-4 py-16 sm:px-6 lg:grid-cols-2 lg:items-center md:py-24">
           <div>
@@ -393,17 +559,19 @@ export default function MarketingHomePage() {
               <Bike size={18} /> {t.rider.cta} <ArrowRight size={16} />
             </a>
           </div>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-2 gap-3" style={{ perspective: "1000px" }}>
             {t.rider.cards.map((card, index) => {
               const Icon = cardIcons[card.icon as keyof typeof cardIcons];
               return (
-                <div key={card.title} className={`rv ${glass} p-5 transition-all hover:-translate-y-1 hover:border-[#4dd9ff]/40`} style={{ ["--d" as never]: `${120 + index * 110}ms` }}>
-                  <div className="grid h-11 w-11 place-items-center rounded-xl bg-gradient-to-br from-[#ffd84d]/25 to-[#4dd9ff]/20 text-[#ffd84d]">
-                    <Icon size={22} />
+                <Tilt3D key={card.title} className="rv" style={{ ["--d" as never]: `${120 + index * 110}ms` }}>
+                  <div className={`${glass} p-5 hover:border-[#4dd9ff]/40`}>
+                    <div className="grid h-11 w-11 place-items-center rounded-xl bg-gradient-to-br from-[#ffd84d]/25 to-[#4dd9ff]/20 text-[#ffd84d]" style={{ transform: "translateZ(30px)" }}>
+                      <Icon size={22} />
+                    </div>
+                    <div className="mt-4 text-base font-black" style={{ transform: "translateZ(20px)" }}>{card.title}</div>
+                    <p className="mt-1 text-xs font-bold leading-5 text-white/55">{card.text}</p>
                   </div>
-                  <div className="mt-4 text-base font-black">{card.title}</div>
-                  <p className="mt-1 text-xs font-bold leading-5 text-white/55">{card.text}</p>
-                </div>
+                </Tilt3D>
               );
             })}
           </div>
@@ -411,7 +579,7 @@ export default function MarketingHomePage() {
       </section>
 
       {/* Franchise recruitment */}
-      <section id="franchise" className="relative border-t border-white/10">
+      <section id="franchise" className="relative z-10 border-t border-white/10">
         <div className="pointer-events-none absolute right-[-8%] top-1/3 h-72 w-72 rounded-full bg-[rgba(120,80,255,0.16)] blur-3xl" />
         <div className="relative mx-auto grid max-w-6xl gap-10 px-4 py-16 sm:px-6 lg:grid-cols-2 lg:items-center md:py-24">
           <div className="order-2 lg:order-1">
@@ -446,7 +614,7 @@ export default function MarketingHomePage() {
       </section>
 
       {/* Franchise lead form */}
-      <section id="contact" className="relative border-t border-white/10">
+      <section id="contact" className="relative z-10 border-t border-white/10">
         <div className="pointer-events-none absolute inset-x-0 top-0 mx-auto h-64 max-w-3xl rounded-full bg-[rgba(255,196,46,0.08)] blur-3xl" />
         <div className="relative mx-auto max-w-3xl px-4 py-16 sm:px-6 md:py-24">
           <h2 className="mp-gtext rv text-3xl font-black md:text-4xl">{t.form.title}</h2>
@@ -479,7 +647,7 @@ export default function MarketingHomePage() {
       </section>
 
       {/* Footer */}
-      <footer className="border-t border-white/10 bg-[rgba(5,7,14,0.6)] backdrop-blur-xl">
+      <footer className="relative z-10 border-t border-white/10 bg-[rgba(5,7,14,0.6)] backdrop-blur-xl">
         <div className="mx-auto grid max-w-6xl gap-10 px-4 py-12 sm:px-6 md:grid-cols-3">
           <div>
             {/* eslint-disable-next-line @next/next/no-img-element */}
