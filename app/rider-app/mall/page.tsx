@@ -18,6 +18,8 @@ type Me = {
   tierLabel: string;
   redeemDiscount: number;
   perks: string[];
+  expiringPoints?: number;
+  badges?: Array<{ at: number; icon: string; label: string; achieved: boolean }>;
 };
 
 type Payload = { config: MallConfig; tiers: TierDefinition[]; products: MarketplaceProduct[]; orders: MarketplaceOrder[]; me: Me | null };
@@ -118,6 +120,20 @@ export default function RiderMallPage() {
               </div>
             </div>
             <div className="mt-2 text-[11px] font-bold text-[var(--muted-strong)]">{me.perks.join("｜")}</div>
+            {(me.expiringPoints ?? 0) > 0 && (
+              <div className="mt-2 inline-flex items-center rounded-[8px] border border-[var(--warning)] bg-[var(--warning-bg)] px-2 py-1 text-[11px] font-black text-[var(--warning-ink)]">
+                ⏳ {me.expiringPoints} pontos expiram em até 30 dias — use antes!
+              </div>
+            )}
+            {me.badges && (
+              <div className="mt-2 flex flex-wrap gap-1.5" data-i18n-skip>
+                {me.badges.map((badge) => (
+                  <span key={badge.label} className={`tag ${badge.achieved ? "border-[var(--accent)] text-[var(--accent)]" : "opacity-35"}`} title={badge.achieved ? "Conquistado" : `Complete ${badge.at} pedidos`}>
+                    {badge.icon} {badge.label}
+                  </span>
+                ))}
+              </div>
+            )}
           </div>
         ) : (
           <div className="panel p-4 text-sm font-bold text-[var(--muted)]">Cadastro não encontrado — registre-se para virar membro e resgatar.</div>
