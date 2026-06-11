@@ -1,5 +1,5 @@
 import { appendServerAudit, jsonResponse, makeServerId, memory } from "../../lib/server/memory";
-import { refreshCollectionsFromDatabase } from "../../lib/server/persistence";
+import { flushPendingToDatabase, refreshCollectionsFromDatabase } from "../../lib/server/persistence";
 import { requirePermission, roleFromRequest } from "../../lib/server/authz";
 import { computeBalance, type RiderWithdrawal } from "../../lib/finance";
 
@@ -83,7 +83,7 @@ type Body =
   | { action: "confirmPayment"; withdrawalId: string; note?: string }
   | { action: "rejectWithdrawal"; withdrawalId: string; note?: string };
 
-export async function POST(request: Request) {
+async function handlePost(request: Request) {
   const peek = (await request.clone().json().catch(() => ({}))) as { action?: string };
   const forbidden =
     peek.action === "requestWithdrawal"
@@ -167,4 +167,11 @@ export async function POST(request: Request) {
     default:
       return jsonResponse({ error: "unknown action" }, { status: 400 });
   }
+}
+
+// Ensure mutations are durably written before the serverless instance can freeze.
+export async function POST(request: Request) {
+  const response = await handlePost(request);
+  await flushPendingToDatabase();
+  return response;
 }
