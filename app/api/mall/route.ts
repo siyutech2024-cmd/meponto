@@ -156,14 +156,27 @@ export async function GET(request: Request) {
   // Persist lazily-created expiry entries before the instance can freeze.
   if (expiredNow > 0) await flushPendingToDatabase();
 
+  // HQ-only economics: supplier payables and supply prices never leave the
+  // building — the public storefront still gets products/orders/me.
+  const { sessionFromRequest } = await import("../../lib/auth-session");
+  const session = await sessionFromRequest(request);
+  const isHq = session?.portal === "pontosys" || session?.portal === "pontomall";
+  // Suppliers still see THEIR OWN quoted prices.
+  const supplierName = session?.portal === "supplier" ? session.organization || "" : "";
+  const products = memory.marketplaceProducts.map((product) => {
+    if (isHq || (supplierName && product.supplierName === supplierName)) return product;
+    const { supplyPrice: _sp, marginPct: _mp, ...rest } = product;
+    return rest;
+  });
+
   return jsonResponse({
     data: {
       config,
       tiers: tierDefinitions,
-      products: memory.marketplaceProducts,
+      products,
       orders,
       me: me ? { ...me, expiringPoints } : null,
-      supplierSettlement,
+      supplierSettlement: isHq ? supplierSettlement : [],
     },
   });
 }
