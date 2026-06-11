@@ -381,6 +381,231 @@ function Tilt3D({ children, className = "", style }: { children: React.ReactNode
   );
 }
 
+
+/* eslint-disable @typescript-eslint/no-explicit-any */
+/**
+ * Full WebGL scene (Active Theory style): an undulating point-cloud "city
+ * grid", glowing delivery arcs with travelling light pulses, and station
+ * beacons. Three.js r128 is loaded from CDN at runtime — zero build deps.
+ * Falls back to the 2D particle field on mobile or when WebGL fails.
+ */
+function Scene3D() {
+  const mountRef = useRef<HTMLDivElement>(null);
+  const [fallback, setFallback] = useState(false);
+
+  useEffect(() => {
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    if (window.innerWidth < 768) {
+      setFallback(true);
+      return;
+    }
+
+    let disposed = false;
+    let cleanup: (() => void) | undefined;
+
+    const boot = (THREE: any) => {
+      const mount = mountRef.current;
+      if (!mount || disposed) return;
+      let renderer: any;
+      try {
+        renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true, powerPreference: "high-performance" });
+      } catch {
+        setFallback(true);
+        return;
+      }
+      const DPR = Math.min(window.devicePixelRatio || 1, 1.75);
+      renderer.setPixelRatio(DPR);
+      renderer.setSize(window.innerWidth, window.innerHeight);
+      renderer.domElement.style.position = "fixed";
+      renderer.domElement.style.inset = "0";
+      renderer.domElement.style.zIndex = "0";
+      renderer.domElement.style.pointerEvents = "none";
+      mount.appendChild(renderer.domElement);
+
+      const scene = new THREE.Scene();
+      scene.fog = new THREE.FogExp2(0x070a14, 0.028);
+      const camera = new THREE.PerspectiveCamera(58, window.innerWidth / window.innerHeight, 0.1, 200);
+      camera.position.set(0, 5.2, 20);
+
+      // --- 1. Undulating point-cloud terrain (the "city grid") ---
+      const COLS = 110;
+      const ROWS = 56;
+      const SPACING = 0.62;
+      const count = COLS * ROWS;
+      const positions = new Float32Array(count * 3);
+      const colors = new Float32Array(count * 3);
+      const gold = new THREE.Color(0xffd84d);
+      const blue = new THREE.Color(0x3f6fff);
+      let k = 0;
+      for (let i = 0; i < COLS; i += 1) {
+        for (let j = 0; j < ROWS; j += 1) {
+          positions[k * 3] = (i - COLS / 2) * SPACING;
+          positions[k * 3 + 1] = 0;
+          positions[k * 3 + 2] = (j - ROWS / 2) * SPACING;
+          const mix = Math.random() * 0.25 + (j / ROWS) * 0.4;
+          const color = blue.clone().lerp(gold, mix);
+          colors[k * 3] = color.r;
+          colors[k * 3 + 1] = color.g;
+          colors[k * 3 + 2] = color.b;
+          k += 1;
+        }
+      }
+      const gridGeo = new THREE.BufferGeometry();
+      gridGeo.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+      gridGeo.setAttribute("color", new THREE.BufferAttribute(colors, 3));
+      const gridMat = new THREE.PointsMaterial({ size: 0.07, vertexColors: true, transparent: true, opacity: 0.85, depthWrite: false });
+      const grid = new THREE.Points(gridGeo, gridMat);
+      grid.position.y = -3.4;
+      scene.add(grid);
+
+      // --- 2. Station beacons (light pillars) ---
+      const beaconGroup = new THREE.Group();
+      const beaconSpots: Array<[number, number]> = [[-12, -6], [-5, -10], [3, -7], [10, -11], [-9, -14], [7, -4], [14, -8], [0, -13]];
+      for (const [x, z] of beaconSpots) {
+        const height = 2.2 + Math.random() * 2.4;
+        const pillar = new THREE.Mesh(
+          new THREE.CylinderGeometry(0.05, 0.16, height, 8, 1, true),
+          new THREE.MeshBasicMaterial({ color: 0xffc62e, transparent: true, opacity: 0.5, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide }),
+        );
+        pillar.position.set(x, -3.4 + height / 2, z);
+        beaconGroup.add(pillar);
+        const base = new THREE.Mesh(
+          new THREE.SphereGeometry(0.16, 12, 12),
+          new THREE.MeshBasicMaterial({ color: 0xffe27a, transparent: true, opacity: 0.95 }),
+        );
+        base.position.set(x, -3.32, z);
+        beaconGroup.add(base);
+      }
+      scene.add(beaconGroup);
+
+      // --- 3. Delivery arcs with travelling pulses ---
+      const arcGroup = new THREE.Group();
+      const pulses: Array<{ sprite: any; curve: any; t: number; speed: number }> = [];
+      const makePulseTexture = () => {
+        const cv = document.createElement("canvas");
+        cv.width = 64;
+        cv.height = 64;
+        const c = cv.getContext("2d")!;
+        const grad = c.createRadialGradient(32, 32, 0, 32, 32, 32);
+        grad.addColorStop(0, "rgba(255,235,160,1)");
+        grad.addColorStop(0.35, "rgba(255,200,60,0.85)");
+        grad.addColorStop(1, "rgba(255,200,60,0)");
+        c.fillStyle = grad;
+        c.fillRect(0, 0, 64, 64);
+        return new THREE.CanvasTexture(cv);
+      };
+      const pulseTexture = makePulseTexture();
+      for (let a = 0; a < 7; a += 1) {
+        const from = beaconSpots[a % beaconSpots.length];
+        const to = beaconSpots[(a + 3) % beaconSpots.length];
+        const start = new THREE.Vector3(from[0], -3.2, from[1]);
+        const end = new THREE.Vector3(to[0], -3.2, to[1]);
+        const mid = start.clone().add(end).multiplyScalar(0.5);
+        mid.y += 2.2 + Math.random() * 2.6;
+        const curve = new THREE.QuadraticBezierCurve3(start, mid, end);
+        const arc = new THREE.Mesh(
+          new THREE.TubeGeometry(curve, 48, 0.015, 6, false),
+          new THREE.MeshBasicMaterial({ color: 0x69a8ff, transparent: true, opacity: 0.32, blending: THREE.AdditiveBlending, depthWrite: false }),
+        );
+        arcGroup.add(arc);
+        for (let pIdx = 0; pIdx < 2; pIdx += 1) {
+          const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: pulseTexture, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false }));
+          sprite.scale.set(0.55, 0.55, 1);
+          arcGroup.add(sprite);
+          pulses.push({ sprite, curve, t: Math.random(), speed: 0.0016 + Math.random() * 0.0022 });
+        }
+      }
+      scene.add(arcGroup);
+
+      // --- 4. Floating dust particles ---
+      const DUST = 260;
+      const dustPos = new Float32Array(DUST * 3);
+      for (let i = 0; i < DUST; i += 1) {
+        dustPos[i * 3] = (Math.random() - 0.5) * 46;
+        dustPos[i * 3 + 1] = Math.random() * 14 - 3;
+        dustPos[i * 3 + 2] = (Math.random() - 0.5) * 30;
+      }
+      const dustGeo = new THREE.BufferGeometry();
+      dustGeo.setAttribute("position", new THREE.BufferAttribute(dustPos, 3));
+      const dust = new THREE.Points(dustGeo, new THREE.PointsMaterial({ color: 0x8fb4ff, size: 0.05, transparent: true, opacity: 0.5, depthWrite: false }));
+      scene.add(dust);
+
+      // --- Interaction & loop ---
+      const mouse = { x: 0, y: 0 };
+      const onMove = (event: MouseEvent) => {
+        mouse.x = (event.clientX / window.innerWidth - 0.5) * 2;
+        mouse.y = (event.clientY / window.innerHeight - 0.5) * 2;
+      };
+      const onResize = () => {
+        camera.aspect = window.innerWidth / window.innerHeight;
+        camera.updateProjectionMatrix();
+        renderer.setSize(window.innerWidth, window.innerHeight);
+      };
+      window.addEventListener("mousemove", onMove);
+      window.addEventListener("resize", onResize);
+
+      let raf = 0;
+      const clock = new THREE.Clock();
+      const pos = gridGeo.attributes.position;
+      const animate = () => {
+        const t = clock.getElapsedTime();
+        // Terrain waves.
+        for (let i = 0; i < count; i += 1) {
+          const x = pos.array[i * 3];
+          const z = pos.array[i * 3 + 2];
+          pos.array[i * 3 + 1] = Math.sin(x * 0.32 + t * 0.9) * 0.45 + Math.cos(z * 0.38 + t * 0.7) * 0.4;
+        }
+        pos.needsUpdate = true;
+        // Travelling pulses.
+        for (const pulse of pulses) {
+          pulse.t = (pulse.t + pulse.speed) % 1;
+          const point = pulse.curve.getPoint(pulse.t);
+          pulse.sprite.position.copy(point);
+        }
+        // Camera drift toward the cursor + slow orbital sway.
+        camera.position.x += (mouse.x * 3.2 - camera.position.x) * 0.04;
+        camera.position.y += (5.2 - mouse.y * 1.6 - camera.position.y) * 0.04;
+        camera.lookAt(0, -0.5, 0);
+        dust.rotation.y = t * 0.012;
+        renderer.render(scene, camera);
+        raf = requestAnimationFrame(animate);
+      };
+      raf = requestAnimationFrame(animate);
+
+      cleanup = () => {
+        cancelAnimationFrame(raf);
+        window.removeEventListener("mousemove", onMove);
+        window.removeEventListener("resize", onResize);
+        renderer.dispose();
+        gridGeo.dispose();
+        dustGeo.dispose();
+        pulseTexture.dispose();
+        if (renderer.domElement.parentNode) renderer.domElement.parentNode.removeChild(renderer.domElement);
+      };
+    };
+
+    const existing = (window as any).THREE;
+    if (existing) {
+      boot(existing);
+    } else {
+      const script = document.createElement("script");
+      script.src = "https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js";
+      script.async = true;
+      script.onload = () => boot((window as any).THREE);
+      script.onerror = () => setFallback(true);
+      document.head.appendChild(script);
+    }
+
+    return () => {
+      disposed = true;
+      cleanup?.();
+    };
+  }, []);
+
+  if (fallback) return <ParticleField />;
+  return <div ref={mountRef} aria-hidden="true" />;
+}
+
 export default function MarketingHomePage() {
   const [lang, setLang] = useState<Lang>("pt");
   const [form, setForm] = useState({ name: "", phone: "", email: "", city: "", message: "" });
@@ -448,7 +673,7 @@ export default function MarketingHomePage() {
           "radial-gradient(900px 540px at 12% -6%, rgba(98,54,255,0.32), transparent 55%), radial-gradient(820px 520px at 92% 4%, rgba(13,118,255,0.26), transparent 55%), radial-gradient(700px 500px at 50% 110%, rgba(255,170,40,0.14), transparent 60%), linear-gradient(180deg, #070a14 0%, #0a0e1d 50%, #070a14 100%)",
       }}
     >
-      <ParticleField />
+      <Scene3D />
       <style>{`
         .rv { opacity: 0; transform: perspective(900px) rotateX(10deg) translateY(34px); transition: opacity .7s ease, transform .7s cubic-bezier(.16,1,.3,1); transition-delay: var(--d, 0ms); will-change: opacity, transform; }
         .rv-in { opacity: 1; transform: perspective(900px) rotateX(0deg) translateY(0); }
