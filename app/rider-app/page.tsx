@@ -314,7 +314,7 @@ export default function RiderAppPage() {
                 Sacar
                 <ChevronRight size={17} />
               </a>
-              <a href="/rider-app/wallet" className="flex h-12 items-center justify-center gap-2 rounded-[8px] bg-white/10 text-sm font-black text-white">
+              <a href="/rider-app/agenda" className="flex h-12 items-center justify-center gap-2 rounded-[8px] bg-white/10 text-sm font-black text-white">
                 Extrato
                 <QrCode size={17} />
               </a>
@@ -615,6 +615,30 @@ function PointsScreen({
       </section>
     </>
   );
+}
+
+function sendSos() {
+  const session = readSession();
+  const fire = (coords?: { latitude: number; longitude: number }) => {
+    void fetch("/api/support", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-vento-role": session?.role ?? "Rider" },
+      body: JSON.stringify({
+        action: "create",
+        channel: "rider",
+        authorName: session?.name ?? "Entregador",
+        contact: "",
+        organization: session?.station ?? "",
+        subject: "🆘 SOS — emergência",
+        message: coords ? `SOS do entregador. Localização: https://maps.google.com/maps?q=${coords.latitude},${coords.longitude}` : "SOS do entregador (sem localização).",
+      }),
+    }).then(() => window.alert("SOS enviado! A central e a estação foram avisadas."));
+  };
+  if (navigator.geolocation) {
+    navigator.geolocation.getCurrentPosition((pos) => fire(pos.coords), () => fire(), { timeout: 5000 });
+  } else {
+    fire();
+  }
 }
 
 function HelpScreen({ openCase, memberPonto }: { openCase: (typeof incidents)[number] | undefined; memberPonto: string }) {

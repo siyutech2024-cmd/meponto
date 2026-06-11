@@ -151,6 +151,7 @@ export const portalConfigs: Record<PortalId, PortalConfig> = {
       { href: "/rider-app", label: "骑手首页", description: "查看个人积分、排班 slots 并提交报名。", permission: "use_rider_app" },
       { href: "/rider-app/shifts", label: "班次报名", description: "查看开放班次并用 99 ID 一键报名。", permission: "use_rider_app" },
       { href: "/rider-app/mall", label: "积分商城", description: "会员等级、积分兑换、到货取货提醒。", permission: "use_rider_app" },
+      { href: "/rider-app/agenda", label: "我的排班 Minha Agenda", description: "已确认班次日历与昨日表现。", permission: "use_rider_app" },
       { href: "/rider-app/wallet", label: "我的钱包", description: "T+1 结算余额、提现申请与记录。", permission: "use_rider_app" },
       { href: "/rider-app/support", label: "联系总部 Fale Conosco", description: "排班/付款/积分问题，工单直达总部。", permission: "use_rider_app" },
       { href: "/marketplace", label: "PontoMall", description: "使用积分兑换骑手权益。", permission: "use_rider_app" },

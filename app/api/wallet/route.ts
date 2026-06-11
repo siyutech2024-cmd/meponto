@@ -1,6 +1,7 @@
 import { appendServerAudit, jsonResponse, makeServerId, memory } from "../../lib/server/memory";
 import { flushPendingToDatabase, refreshCollectionsFromDatabase } from "../../lib/server/persistence";
 import { requirePermission, roleFromRequest } from "../../lib/server/authz";
+import { sendPushToRider } from "../../lib/server/notify";
 import { computeBalance, type RiderWithdrawal } from "../../lib/finance";
 
 const COLLECTIONS = ["riderWithdrawals", "riderDailyEarnings", "riders"];
@@ -148,6 +149,7 @@ async function handlePost(request: Request) {
       const stamp = nowStamp();
       if (body.action === "confirmPayment") {
         memory.riderWithdrawals[index] = { ...current, status: "paid", paidAt: stamp, paidBy: actor, note: String(note).slice(0, 200) };
+        await sendPushToRider(current.riderName, "Pagamento enviado 💰", `Seu saque de R$ ${current.amount.toFixed(2)} foi pago via PIX. Confira seu extrato.`, "/rider-app/wallet");
       } else {
         memory.riderWithdrawals[index] = { ...current, status: "rejected", rejectedAt: stamp, note: String(note).slice(0, 200) };
       }

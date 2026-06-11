@@ -1,6 +1,7 @@
 import { appendServerAudit, jsonResponse, makeServerId, memory } from "../../lib/server/memory";
 import { flushPendingToDatabase, persistDeleteRecord, refreshCollectionsFromDatabase } from "../../lib/server/persistence";
 import { requirePermission, roleFromRequest } from "../../lib/server/authz";
+import { sendPushToRider } from "../../lib/server/notify";
 import { getAvailablePoints, type MarketplaceOrder, type MarketplaceProduct, type PointsLedgerEntry } from "../../lib/points";
 import { defaultMallConfig, resolveTier, tierDefinitions, type MallConfig } from "../../lib/mall";
 
@@ -293,6 +294,9 @@ async function handlePost(request: Request) {
         memory.marketplaceOrders[index] = { ...order, status: "fulfilled", pickedUpAt: stamp };
       }
       appendServerAudit({ actor, action: body.action === "markArrived" ? "MALL_ORDER_ARRIVED" : "MALL_ORDER_PICKED_UP", entity: "MarketplaceOrder", entityId: orderId ?? "", detail: `${order.productName} for ${order.riderName} at ${order.station}.`, risk: "Low" });
+      if (body.action === "markArrived" && order.riderName) {
+        await sendPushToRider(order.riderName, "Seu resgate chegou! 🎁", `「${order.productName}」já está em ${order.station}. Retire quando puder.`, "/rider-app/mall");
+      }
       return jsonResponse({ data: memory.marketplaceOrders[index] });
     }
 
