@@ -112,6 +112,7 @@ export const portalConfigs: Record<PortalId, PortalConfig> = {
       { href: "/support", label: "联系总部", description: "提交工单，总部统一处理回复。", permission: "view_analytics" },
       { href: "/franchise", label: "合作方案", description: "查看加盟模型、SOP、KPI 和月度治理节奏。", permission: "view_analytics" },
       { href: "/pontos", label: "站点列表", description: "查看/维护所属站点基础信息。", permission: "manage_pontos" },
+      { href: "/users", label: "站点账号", description: "为下属站点创建和管理登录账号。", permission: "manage_slots" },
       { href: "/riders", label: "骑手运营", description: "查看所属骑手与状态。", permission: "manage_riders" },
       { href: "/marketplace", label: "PontoMall 兑换", description: "查看加盟商积分权益与兑换订单。", permission: "manage_marketplace" },
       { href: "/reports", label: "经营报表", description: "查看站点与排班结果报表。", permission: "view_analytics" },

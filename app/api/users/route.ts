@@ -1,7 +1,7 @@
 import { createHash, randomBytes } from "node:crypto";
 import { appendServerAudit, jsonResponse, makeServerId, memory } from "../../lib/server/memory";
-import { refreshCollectionsFromDatabase } from "../../lib/server/persistence";
-import { requirePermission, roleFromRequest } from "../../lib/server/authz";
+import { flushPendingToDatabase, refreshCollectionsFromDatabase } from "../../lib/server/persistence";
+import { requirePermission, roleFromRequest, scopeFromRequest } from "../../lib/server/authz";
 import { roles, type Role } from "../../lib/rbac";
 import { portalConfigs, type PortalId } from "../../lib/portals";
 import type { AppUser } from "../../lib/users";
@@ -20,15 +20,23 @@ function nowStamp() {
 }
 
 export async function GET(request: Request) {
-  const forbidden = requirePermission(request, "view_audit");
-  if (forbidden) return forbidden;
+  // Franchises manage their OWN station accounts; everything else needs HQ audit rights.
+  const scope = await scopeFromRequest(request);
+  if (!scope.franchise) {
+    const forbidden = requirePermission(request, "view_audit");
+    if (forbidden) return forbidden;
+  }
 
   await refreshCollectionsFromDatabase(["appUsers"]);
+  const rows = scope.franchise
+    ? memory.appUsers.filter((user) => user.portal === "ponto" && user.franchise === scope.franchise)
+    : memory.appUsers;
   return jsonResponse({
-    data: memory.appUsers.map(sanitize),
+    data: rows.map(sanitize),
+    scoped: Boolean(scope.franchise),
     summary: {
-      total: memory.appUsers.length,
-      active: memory.appUsers.filter((user) => user.status === "active").length,
+      total: rows.length,
+      active: rows.filter((user) => user.status === "active").length,
     },
   });
 }
@@ -62,13 +70,38 @@ type ResetBody = { action: "resetPassword"; userId: string; password: string };
 
 type Body = CreateBody | UpdateBody | ResetBody;
 
-export async function POST(request: Request) {
-  const forbidden = requirePermission(request, "view_audit");
-  if (forbidden) return forbidden;
+async function handlePost(request: Request) {
+  const scope = await scopeFromRequest(request);
+  if (!scope.franchise) {
+    const forbidden = requirePermission(request, "view_audit");
+    if (forbidden) return forbidden;
+  }
 
   await refreshCollectionsFromDatabase(["appUsers"]);
   const body = (await request.json().catch(() => ({}))) as Partial<Body>;
   const actor = roleFromRequest(request);
+
+  // A franchise may only manage station accounts under itself.
+  if (scope.franchise) {
+    if (body.action === "create") {
+      const create = body as CreateBody;
+      create.portal = "ponto";
+      create.role = "Ponto Manager" as Role;
+      create.franchise = scope.franchise;
+      create.organization = create.station || scope.franchise;
+    } else if (body.action === "update" || body.action === "resetPassword") {
+      const target = memory.appUsers.find((user) => user.id === (body as UpdateBody | ResetBody).userId);
+      if (!target || target.portal !== "ponto" || target.franchise !== scope.franchise) {
+        return jsonResponse({ error: "只能管理本加盟商的站点账号" }, { status: 403 });
+      }
+      if (body.action === "update") {
+        const patch = body as UpdateBody;
+        delete patch.role;
+        delete patch.portal;
+        delete patch.franchise;
+      }
+    }
+  }
 
   switch (body.action) {
     case "create": {
@@ -180,4 +213,11 @@ export async function POST(request: Request) {
     default:
       return jsonResponse({ error: "unknown action" }, { status: 400 });
   }
+}
+
+// Durably persist account changes before the serverless instance can freeze.
+export async function POST(request: Request) {
+  const response = await handlePost(request);
+  await flushPendingToDatabase();
+  return response;
 }

@@ -68,6 +68,8 @@ export type Ponto = {
   address?: string;
   /** Pasted Google Maps link (optional, used for the embedded map). */
   mapUrl?: string;
+  /** New stations created by franchises wait for HQ approval. */
+  status?: "pending" | "approved";
 };
 export type Leader = {
   id: string;

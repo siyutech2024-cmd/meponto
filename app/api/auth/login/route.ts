@@ -41,6 +41,8 @@ export async function POST(request: Request) {
     tenantId: account.tenantId,
     organization: account.organization,
     defaultPath: account.defaultPath,
+    franchise: (account as TestAccount & { franchise?: string }).franchise ?? "",
+    station: (account as TestAccount & { station?: string }).station ?? "",
   });
 
   const response = jsonResponse({

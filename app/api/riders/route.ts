@@ -1,7 +1,7 @@
 import { acceptClientId, appendServerAudit, makeServerId, memory, jsonResponse } from "../../lib/server/memory";
 import { flushPendingToDatabase, refreshCollectionsFromDatabase } from "../../lib/server/persistence";
 import { getAvailablePoints } from "../../lib/points";
-import { requirePermission, roleFromRequest } from "../../lib/server/authz";
+import { requirePermission, roleFromRequest, scopeFromRequest } from "../../lib/server/authz";
 import type { Rider, RiderStatus } from "../../lib/data";
 import { getRiderSensitiveRevealDecision, maskRiderSensitive } from "../../lib/masking";
 
@@ -96,6 +96,16 @@ export async function GET(request: Request) {
       source: "report" as const,
     }));
 
+  // Franchise/station portals only see their own riders; report-only riders
+  // (unassigned by definition) belong to HQ.
+  const scope = await scopeFromRequest(request);
+  if (scope.station) {
+    return jsonResponse({ data: data.filter((rider) => rider.ponto === scope.station), scoped: true });
+  }
+  if (scope.franchise) {
+    return jsonResponse({ data: data.filter((rider) => rider.franchise === scope.franchise), scoped: true });
+  }
+
   return jsonResponse({ data: [...data, ...reportOnly] });
 }
 
@@ -157,10 +167,32 @@ async function handlePost(request: Request) {
 
     const index = memory.riders.findIndex((item) => item.id === riderId);
     if (index === -1) return jsonResponse({ error: "rider not found" }, { status: 404 });
+
+    // Enforce station ⇄ franchise consistency server-side.
+    await refreshCollectionsFromDatabase(["pontos"]);
+    let nextPonto = body.ponto !== undefined ? String(body.ponto) || "Unassigned" : memory.riders[index].ponto;
+    let nextFranchise = body.franchise !== undefined ? String(body.franchise) || "Unassigned" : memory.riders[index].franchise ?? "Unassigned";
+    if (nextPonto !== "Unassigned") {
+      const station = memory.pontos.find((p) => p.name === nextPonto);
+      if (!station) return jsonResponse({ error: `站点「${nextPonto}」不存在` }, { status: 400 });
+      if (station.franchise) nextFranchise = station.franchise; // station wins
+    }
+    if (nextFranchise !== "Unassigned" && nextPonto !== "Unassigned") {
+      const station = memory.pontos.find((p) => p.name === nextPonto);
+      if (station?.franchise && station.franchise !== nextFranchise) {
+        return jsonResponse({ error: `站点「${nextPonto}」不属于加盟商「${nextFranchise}」` }, { status: 400 });
+      }
+    }
+    // Franchise changed and current station no longer matches → reset station.
+    if (body.franchise !== undefined && body.ponto === undefined && nextPonto !== "Unassigned") {
+      const station = memory.pontos.find((p) => p.name === nextPonto);
+      if (station?.franchise && station.franchise !== nextFranchise) nextPonto = "Unassigned";
+    }
+
     memory.riders[index] = {
       ...memory.riders[index],
-      ...(body.ponto !== undefined ? { ponto: String(body.ponto) || "Unassigned" } : {}),
-      ...(body.franchise !== undefined ? { franchise: String(body.franchise) || "Unassigned" } : {}),
+      ponto: nextPonto,
+      franchise: nextFranchise,
       ...(body.status !== undefined ? { status: normalizeStatus(String(body.status)) } : {}),
     };
     appendServerAudit({ actor, action: "RIDER_ASSIGNED", entity: "Rider", entityId: riderId, detail: `${memory.riders[index].name} → ponto ${memory.riders[index].ponto} / franchise ${memory.riders[index].franchise} / ${memory.riders[index].status}.`, risk: "Low" });

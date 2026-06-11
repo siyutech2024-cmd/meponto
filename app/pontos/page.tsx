@@ -167,7 +167,12 @@ export default function NetworkPage() {
           onClick={async () => {
             const r = await post({ action: "addStation", ...stationForm });
             if (r) {
-              setMessage({ tone: "ok", text: `站点 ${stationForm.name} 已创建并绑定 ${stationForm.franchise}。` });
+              setMessage({
+                tone: "ok",
+                text: r.pendingApproval
+                  ? `站点 ${stationForm.name} 已提交，等待总部审核后生效。`
+                  : `站点 ${stationForm.name} 已创建并绑定 ${stationForm.franchise}。`,
+              });
               setStationForm({ name: "", franchise: "", address: "", mapUrl: "", leader: "" });
             }
           }}
@@ -194,7 +199,33 @@ export default function NetworkPage() {
                   <span className="text-sm font-black">{station.name}</span>
                   <Badge value={station.franchise || "未绑定"} />
                   <span className="tag">{station.bairro}</span>
+                  {station.status === "pending" && <span className="tag border-[var(--warning)] text-[var(--warning-ink)]">待总部审核</span>}
                 </div>
+                {station.status === "pending" && isHq && (
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      className="inline-flex h-9 items-center rounded-[8px] bg-[var(--accent)] px-4 text-xs font-black uppercase text-[var(--accent-ink)]"
+                      onClick={async () => {
+                        const r = await post({ action: "approveStation", stationId: station.id });
+                        if (r) setMessage({ tone: "ok", text: `站点「${station.name}」已批准。` });
+                      }}
+                    >
+                      批准
+                    </button>
+                    <button
+                      type="button"
+                      className="tag text-[var(--danger-ink)]"
+                      onClick={async () => {
+                        if (!window.confirm(`驳回并删除站点「${station.name}」？`)) return;
+                        const r = await post({ action: "rejectStation", stationId: station.id });
+                        if (r) setMessage({ tone: "ok", text: "已驳回。" });
+                      }}
+                    >
+                      驳回
+                    </button>
+                  </div>
+                )}
                 {station.address && (
                   <a
                     href={station.mapUrl?.trim() || `https://maps.google.com/maps?q=${encodeURIComponent(station.address)}`}
