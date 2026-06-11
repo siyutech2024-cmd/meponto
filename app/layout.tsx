@@ -20,9 +20,16 @@ const outfit = Outfit({
 export const metadata: Metadata = {
   title: "MePonto PontoSys",
   description: "Sistema operacional MePonto PontoSys para riders, pontos e operacoes",
+  manifest: "/manifest.webmanifest",
+  appleWebApp: { capable: true, title: "MePonto", statusBarStyle: "black-translucent" },
   icons: {
     icon: "/meponto-logo-icon.png",
+    apple: "/icon-192.png",
   },
+};
+
+export const viewport = {
+  themeColor: "#0b0e14",
 };
 
 export default function RootLayout({
@@ -36,6 +43,12 @@ export default function RootLayout({
         <I18nRuntime />
         <StoreHydrator />
         {children}
+        <script
+          dangerouslySetInnerHTML={{
+            __html:
+              "if('serviceWorker' in navigator){window.addEventListener('load',function(){navigator.serviceWorker.register('/sw.js').catch(function(){})})}",
+          }}
+        />
       </body>
     </html>
   );
