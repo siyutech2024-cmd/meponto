@@ -87,6 +87,10 @@ export type MarketplaceProduct = {
   description?: string;
   /** Virtual goods skip logistics: redemption issues an instant voucher code. */
   isVirtual?: boolean;
+  /** Product photo shown on the storefront. */
+  imageUrl?: string;
+  /** Storefront category, e.g. Equipamento / Voucher / Serviço. */
+  category?: string;
 };
 
 export type MarketplaceOrderStatus = "created" | "arrived" | "fulfilled" | "cancelled";
