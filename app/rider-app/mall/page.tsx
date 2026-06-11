@@ -27,6 +27,7 @@ type Payload = { config: MallConfig; tiers: TierDefinition[]; products: Marketpl
 const orderStatusLabel: Record<string, string> = { created: "Em trânsito", arrived: "Chegou · retire", fulfilled: "Retirado", cancelled: "Cancelado" };
 
 const tierStars: Record<string, number> = { member: 1, bronze: 2, prata: 3, ouro: 4, diamante: 5 };
+const ptTierLabel: Record<string, string> = { member: "Membro", bronze: "Bronze", prata: "Prata", ouro: "Ouro", diamante: "Diamante" };
 
 export default function RiderMallPage() {
   const session = useMemo(() => readSession(), []);
@@ -129,7 +130,7 @@ export default function RiderMallPage() {
                     <MapPin size={11} /> {me.station} · {me.franchise}
                   </div>
                   <div className="mt-2 inline-flex items-center gap-1.5 rounded-full bg-white/15 px-2.5 py-1 text-[11px] font-black" data-i18n-skip>
-                    {me.tierLabel}
+                    {ptTierLabel[me.tier] ?? me.tierLabel}
                     <span className="flex gap-0.5">
                       {Array.from({ length: 5 }).map((_, index) => (
                         <Star key={index} size={10} fill={index < stars ? "currentColor" : "none"} className={index < stars ? "text-[#ffe2a3]" : "opacity-35"} />
