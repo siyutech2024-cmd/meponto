@@ -29,6 +29,7 @@ import {
   WalletCards,
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
+import { readSession } from "../lib/session";
 import { crmPartners } from "../lib/crm";
 import { incidents, ledgerEntries, riders } from "../lib/data";
 import { getPointsAccount, marketplaceProducts, partnerServiceBenefitRules, pointsLedgerEntries, type PartnerServiceCategory } from "../lib/points";
@@ -148,6 +149,14 @@ const tierPreviews = [
 ];
 
 export default function RiderAppPage() {
+  // Auth guard: the rider app requires a logged-in account (store requirement).
+  useEffect(() => {
+    const session = readSession();
+    if (!session || (session.portal !== "rider" && session.role !== "Super Admin")) {
+      window.location.replace("/rider-login");
+    }
+  }, []);
+
   const member = riders[0];
   const openCase = incidents.find((incident) => incident.rider === member.name && incident.status !== "Closed");
   const benefit = ledgerEntries.find((entry) => entry.recipient === member.name);
@@ -834,6 +843,36 @@ function TierPreviewCard({ tier, metric, detail, threshold, active }: { tier: Re
 }
 
 function NotificationsSection() {
+  const [pushState, setPushState] = useState<"idle" | "on" | "denied" | "unsupported">("idle");
+
+  useEffect(() => {
+    if (typeof Notification === "undefined" || !("serviceWorker" in navigator)) setPushState("unsupported");
+    else if (Notification.permission === "granted") setPushState("on");
+    else if (Notification.permission === "denied") setPushState("denied");
+  }, []);
+
+  async function enablePush() {
+    try {
+      const session = readSession();
+      if (!session) return;
+      const permission = await Notification.requestPermission();
+      if (permission !== "granted") { setPushState("denied"); return; }
+      const registration = await navigator.serviceWorker.ready;
+      const { data } = await fetch("/api/push?publicKey").then((r) => r.json());
+      const raw = atob(data.publicKey.replace(/-/g, "+").replace(/_/g, "/"));
+      const key = new Uint8Array([...raw].map((c) => c.charCodeAt(0)));
+      const subscription = await registration.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: key });
+      await fetch("/api/push", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "subscribe", riderName: session.name, subscription: subscription.toJSON() }),
+      });
+      setPushState("on");
+    } catch {
+      setPushState("denied");
+    }
+  }
+
   return (
     <section className="px-4 pt-4">
       <div className="rounded-[8px] bg-white p-3 shadow-[0_12px_26px_rgba(0,0,0,0.06)]">
@@ -842,7 +881,15 @@ function NotificationsSection() {
             <div className="text-[11px] font-black uppercase tracking-[0.12em] text-[#ff7a00]">Android push</div>
             <h2 className="text-lg font-black">Avisos importantes</h2>
           </div>
-          <MessageCircle size={20} className="text-[#050505]" />
+          {pushState === "on" ? (
+            <span className="rounded-full bg-[#e8f8ee] px-3 py-1 text-[11px] font-black text-[#0a7d3b]">Notificações ativas</span>
+          ) : pushState === "unsupported" ? (
+            <MessageCircle size={20} className="text-[#050505]" />
+          ) : (
+            <button type="button" onClick={() => void enablePush()} className="rounded-full bg-[#ff7a00] px-3 py-1.5 text-[11px] font-black text-white">
+              Ativar notificações
+            </button>
+          )}
         </div>
         <div className="grid gap-2">
           {inbox.map((item) => (

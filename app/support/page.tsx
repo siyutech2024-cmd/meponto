@@ -18,6 +18,8 @@ export default function SupportAdminPage() {
   const [subject, setSubject] = useState("");
   const [message, setMessage] = useState("");
   const [note, setNote] = useState<{ tone: "ok" | "err"; text: string } | null>(null);
+  const [pushTitle, setPushTitle] = useState("");
+  const [pushBody, setPushBody] = useState("");
 
   const load = useCallback(async () => {
     const url = isHq ? "/api/support" : `/api/support?authorName=${encodeURIComponent(session?.name ?? "")}`;
@@ -52,6 +54,32 @@ export default function SupportAdminPage() {
 
       {note && (
         <div className="mb-4 rounded-[8px] border border-[var(--ok)] bg-[var(--ok-bg)] px-4 py-3 text-sm font-black text-[var(--ok-ink)]">{note.text}</div>
+      )}
+
+      {isHq && (
+        <div className="panel mb-4 max-w-xl space-y-3 p-4">
+          <div className="flex items-center gap-2 text-xs font-black uppercase text-[var(--accent)]"><Headset size={14} /> 推送公告（发送到骑手APP）</div>
+          <input value={pushTitle} onChange={(e) => setPushTitle(e.target.value)} placeholder="标题（如：Novos turnos abertos）" className="h-11 w-full rounded-[8px] border border-[var(--line)] bg-[var(--surface)] px-3 text-sm font-bold outline-none focus:border-[var(--accent)]" />
+          <textarea value={pushBody} onChange={(e) => setPushBody(e.target.value)} placeholder="内容（葡语，骑手看到的通知正文）" className="min-h-20 w-full rounded-[8px] border border-[var(--line)] bg-[var(--surface)] p-3 text-sm font-bold outline-none focus:border-[var(--accent)]" />
+          <button
+            type="button"
+            disabled={!pushTitle.trim() || !pushBody.trim()}
+            onClick={async () => {
+              const response = await fetch("/api/push", { method: "POST", headers, body: JSON.stringify({ action: "send", title: pushTitle, body: pushBody }) });
+              const payload = await response.json().catch(() => ({}));
+              if (response.ok) {
+                setNote({ tone: "ok", text: `推送已发送：${payload.data.sent}/${payload.data.targets} 台设备。` });
+                setPushTitle("");
+                setPushBody("");
+              } else {
+                setNote({ tone: "ok", text: payload.error ?? "发送失败" });
+              }
+            }}
+            className="inline-flex h-11 items-center gap-2 rounded-[8px] bg-[var(--accent)] px-5 text-sm font-black uppercase text-[var(--accent-ink)] disabled:opacity-50"
+          >
+            <Send size={15} /> 发送推送
+          </button>
+        </div>
       )}
 
       {!isHq && (

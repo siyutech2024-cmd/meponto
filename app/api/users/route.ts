@@ -6,7 +6,7 @@ import { roles, type Role } from "../../lib/rbac";
 import { portalConfigs, type PortalId } from "../../lib/portals";
 import type { AppUser } from "../../lib/users";
 
-export function hashPassword(salt: string, password: string): string {
+function hashPassword(salt: string, password: string): string {
   return createHash("sha256").update(`${salt}:${password}`).digest("hex");
 }
 
