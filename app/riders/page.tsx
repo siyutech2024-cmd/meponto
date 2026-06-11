@@ -42,6 +42,9 @@ export default function RidersPage() {
   const [message, setMessage] = useState<{ tone: "ok" | "err"; text: string } | null>(null);
   const [busyId, setBusyId] = useState("");
   const [form, setForm] = useState({ name: "", ninetyNineId: "", phone: "", cpf: "", ponto: "", franchise: "" });
+  // Assignment edits are staged here and saved to the DB only after 确认保存.
+  const [pending, setPending] = useState<Record<string, { name: string; ponto?: string; franchise?: string }>>({});
+  const [saving, setSaving] = useState(false);
 
   const load = useCallback(async () => {
     const [ridersResponse, networkResponse] = await Promise.all([
@@ -69,6 +72,45 @@ export default function RidersPage() {
       return;
     }
     setMessage({ tone: "ok", text: `${rider.name} 已更新${fields.ponto ? ` → ${fields.ponto}` : ""}${fields.franchise ? ` / ${fields.franchise}` : ""}` });
+    void load();
+  }
+
+  /** Stage a franchise/station edit (saved only after 确认保存). */
+  function stage(rider: RiderRow, fields: { ponto?: string; franchise?: string }) {
+    setPending((current) => {
+      const entry = { ...current[rider.id], ...fields, name: rider.name };
+      // Cascade: picking a station locks its parent franchise; switching
+      // franchise clears a station that doesn't belong to it.
+      if (fields.ponto) {
+        const station = network.stations.find((s) => s.name === fields.ponto);
+        if (station?.franchise) entry.franchise = station.franchise;
+      }
+      if (fields.franchise !== undefined && fields.ponto === undefined) {
+        const effectivePonto = entry.ponto ?? (isUnassigned(rider.ponto) ? undefined : rider.ponto);
+        const station = effectivePonto ? network.stations.find((s) => s.name === effectivePonto) : undefined;
+        if (station?.franchise && station.franchise !== fields.franchise) entry.ponto = "";
+      }
+      return { ...current, [rider.id]: entry };
+    });
+  }
+
+  async function savePending() {
+    const entries = Object.entries(pending);
+    if (entries.length === 0) return;
+    if (!window.confirm(`确认保存 ${entries.length} 项分配调整？\n\n${entries.map(([, e]) => `· ${e.name} → ${e.franchise ?? "（不变）"} / ${e.ponto || "（待定）"}`).join("\n")}`)) return;
+    setSaving(true);
+    let failed = 0;
+    for (const [riderId, entry] of entries) {
+      const response = await fetch("/api/riders", {
+        method: "POST",
+        headers: HEADERS,
+        body: JSON.stringify({ action: "assign", riderId, ...(entry.ponto !== undefined ? { ponto: entry.ponto } : {}), ...(entry.franchise !== undefined ? { franchise: entry.franchise } : {}) }),
+      });
+      if (!response.ok) failed += 1;
+    }
+    setSaving(false);
+    setPending({});
+    setMessage(failed ? { tone: "err", text: `${entries.length - failed} 项已保存，${failed} 项失败。` } : { tone: "ok", text: `${entries.length} 项分配已保存入库。` });
     void load();
   }
 
@@ -222,19 +264,25 @@ export default function RidersPage() {
             {filtered.map((rider) => {
               const unassigned = isUnassigned(rider.ponto) || isUnassigned(rider.franchise);
               const ar = rider.reportAr ?? rider.ar;
+              const staged = pending[rider.id];
+              const effectiveFranchise = staged?.franchise ?? (isUnassigned(rider.franchise) ? "" : rider.franchise!);
+              const effectivePonto = staged?.ponto ?? (isUnassigned(rider.ponto) ? "" : rider.ponto);
+              // Cascade: station options follow the (staged) franchise.
+              const stationOptions = effectiveFranchise ? network.stations.filter((s) => s.franchise === effectiveFranchise) : network.stations;
               return (
-                <tr key={rider.id} className={`border-t border-[var(--line)] ${unassigned ? "bg-[var(--danger-bg)]" : ""}`}>
+                <tr key={rider.id} className={`border-t border-[var(--line)] ${staged ? "bg-[var(--warning-bg)]" : unassigned ? "bg-[var(--danger-bg)]" : ""}`}>
                   <td className="max-w-[220px] py-2 pr-2">
                     <div className="truncate font-black">{rider.name}</div>
                     {rider.source === "report" && <span className="text-[10px] font-black uppercase text-[var(--warning-ink)]">日报 · 未建档</span>}
+                    {staged && <span className="text-[10px] font-black uppercase text-[var(--warning-ink)]">待保存</span>}
                   </td>
                   <td className="py-2 pr-2 font-bold text-[var(--muted-strong)]">{rider.ninetyNineId || "—"}</td>
                   <td className="py-2 pr-2">
                     <select
-                      disabled={busyId === rider.id}
-                      value={isUnassigned(rider.franchise) ? "" : rider.franchise}
-                      onChange={(e) => void assign(rider, { franchise: e.target.value })}
-                      className={`h-9 max-w-[150px] rounded-[8px] border bg-[var(--surface-raised)] px-2 text-xs font-bold outline-none ${isUnassigned(rider.franchise) ? "border-[var(--danger)] text-[var(--danger-ink)]" : "border-[var(--line)] text-[var(--text)]"}`}
+                      disabled={saving}
+                      value={effectiveFranchise}
+                      onChange={(e) => stage(rider, { franchise: e.target.value })}
+                      className={`h-9 max-w-[150px] rounded-[8px] border bg-[var(--surface-raised)] px-2 text-xs font-bold outline-none ${staged ? "border-[var(--warning)]" : isUnassigned(rider.franchise) ? "border-[var(--danger)] text-[var(--danger-ink)]" : "border-[var(--line)] text-[var(--text)]"}`}
                     >
                       <option value="">未分配</option>
                       {network.franchises.map((f) => <option key={f.id} value={f.name}>{f.name}</option>)}
@@ -242,18 +290,13 @@ export default function RidersPage() {
                   </td>
                   <td className="py-2 pr-2">
                     <select
-                      disabled={busyId === rider.id}
-                      value={isUnassigned(rider.ponto) ? "" : rider.ponto}
-                      onChange={(e) => {
-                        const stationName = e.target.value;
-                        const station = network.stations.find((s) => s.name === stationName);
-                        // Assigning a station auto-fills its parent franchise.
-                        void assign(rider, { ponto: stationName, ...(station?.franchise ? { franchise: station.franchise } : {}) });
-                      }}
-                      className={`h-9 max-w-[170px] rounded-[8px] border bg-[var(--surface-raised)] px-2 text-xs font-bold outline-none ${isUnassigned(rider.ponto) ? "border-[var(--danger)] text-[var(--danger-ink)]" : "border-[var(--line)] text-[var(--text)]"}`}
+                      disabled={saving}
+                      value={effectivePonto}
+                      onChange={(e) => stage(rider, { ponto: e.target.value })}
+                      className={`h-9 max-w-[170px] rounded-[8px] border bg-[var(--surface-raised)] px-2 text-xs font-bold outline-none ${staged ? "border-[var(--warning)]" : isUnassigned(rider.ponto) ? "border-[var(--danger)] text-[var(--danger-ink)]" : "border-[var(--line)] text-[var(--text)]"}`}
                     >
                       <option value="">未分配</option>
-                      {network.stations.map((s) => <option key={s.id} value={s.name}>{s.name}</option>)}
+                      {stationOptions.map((s) => <option key={s.id} value={s.name}>{s.name}</option>)}
                     </select>
                   </td>
                   <td className="py-2 pr-2 text-right font-black">{rider.totalOrders}</td>
@@ -285,6 +328,19 @@ export default function RidersPage() {
           </tbody>
         </table>
       </section>
+
+      {/* Sticky confirm bar: nothing is written until the user confirms. */}
+      {Object.keys(pending).length > 0 && (
+        <div className="sticky bottom-3 z-20 mt-4 flex items-center justify-between gap-3 rounded-[8px] border border-[var(--warning)] bg-[var(--surface)] p-3 shadow-[0_12px_30px_rgba(0,0,0,0.35)]">
+          <div className="text-sm font-black text-[var(--warning-ink)]">{Object.keys(pending).length} 项分配调整待确认（尚未写入数据库）</div>
+          <div className="flex gap-2">
+            <button type="button" disabled={saving} className="tag" onClick={() => setPending({})}>放弃</button>
+            <button type="button" disabled={saving} onClick={() => void savePending()} className="inline-flex h-9 items-center rounded-[8px] bg-[var(--accent)] px-4 text-xs font-black uppercase text-[var(--accent-ink)] disabled:opacity-50">
+              {saving ? "保存中..." : "确认保存"}
+            </button>
+          </div>
+        </div>
+      )}
     </AppShell>
   );
 }
