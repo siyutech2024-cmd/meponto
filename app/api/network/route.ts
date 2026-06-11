@@ -1,5 +1,5 @@
 import { appendServerAudit, jsonResponse, makeServerId, memory } from "../../lib/server/memory";
-import { flushPendingToDatabase, refreshCollectionsFromDatabase } from "../../lib/server/persistence";
+import { flushPendingToDatabase, persistDeleteRecord, refreshCollectionsFromDatabase } from "../../lib/server/persistence";
 import { requirePermission, roleFromRequest } from "../../lib/server/authz";
 import type { Franchise } from "../../lib/network";
 
@@ -65,15 +65,34 @@ async function handlePost(request: Request) {
     }
 
     case "deleteFranchise": {
-      const { franchiseId } = body as { franchiseId?: string };
+      const { franchiseId, force = false } = body as { franchiseId?: string; force?: boolean };
       const index = memory.franchises.findIndex((f) => f.id === franchiseId);
-      if (index === -1) return jsonResponse({ error: "franchise not found" }, { status: 404 });
+      if (index === -1) return jsonResponse({ error: "加盟商不存在（可能已被删除，请刷新页面）" }, { status: 404 });
       const franchise = memory.franchises[index];
-      const bound = memory.pontos.filter((ponto) => ponto.franchise === franchise.name).length;
-      if (bound > 0) return jsonResponse({ error: `该加盟商下还有 ${bound} 个站点，请先迁移站点。` }, { status: 409 });
+      const bound = memory.pontos.filter((ponto) => ponto.franchise === franchise.name);
+      if (bound.length > 0 && !force) {
+        return jsonResponse(
+          {
+            error: `「${franchise.name}」绑定了 ${bound.length} 个站点：${bound.map((p) => p.name).join("、")}`,
+            boundStations: bound.map((p) => p.name),
+            canForce: true,
+          },
+          { status: 409 },
+        );
+      }
+      // Force-delete: unbind its stations first so nothing dangles.
+      for (const station of bound) {
+        const stationIndex = memory.pontos.findIndex((p) => p.id === station.id);
+        if (stationIndex !== -1) memory.pontos[stationIndex] = { ...memory.pontos[stationIndex], franchise: "" };
+      }
+      if (bound.length > 0) {
+        appendServerAudit({ actor, action: "STATIONS_UNBOUND", entity: "Franchise", entityId: franchiseId ?? "", detail: `${bound.length} stations unbound from ${franchise.name}.`, risk: "Medium" });
+      }
       memory.franchises.splice(index, 1);
+      // Without this delete record the franchise would resurrect from the DB.
+      persistDeleteRecord("franchises", franchiseId ?? "");
       appendServerAudit({ actor, action: "FRANCHISE_DELETED", entity: "Franchise", entityId: franchiseId ?? "", detail: franchise.name, risk: "High" });
-      return jsonResponse({ data: { ok: true } });
+      return jsonResponse({ data: { ok: true, unbound: bound.length } });
     }
 
     case "addStation": {

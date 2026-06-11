@@ -39,7 +39,7 @@ async function handlePost(request: Request) {
     birthday: birthday.slice(0, 10),
     ponto: station.trim().slice(0, 60) || "Unassigned",
     franchise: "Autoinscrição",
-    status: "active",
+    status: "Active",
     registeredAt: today(),
     ninetyNineId: "",
     invitedBy: String(body.inviteCode ?? "").slice(0, 40),
@@ -60,7 +60,7 @@ async function handlePost(request: Request) {
     organization: station.trim() || "MePonto",
     tenantId: "rider-self",
     defaultPath: "/rider-app",
-    status: "active" as const,
+    status: "Active" as const,
     createdAt: nowStamp(),
   } as unknown as (typeof memory.appUsers)[number];
   memory.appUsers.unshift(account);
