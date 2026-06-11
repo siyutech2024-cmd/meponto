@@ -57,6 +57,8 @@ export async function POST(request: Request) {
       defaultPath: account.defaultPath,
       portalName: portalConfigs[account.portal].productName,
       region: "Sao Paulo Core Network",
+      franchise: (account as TestAccount & { franchise?: string }).franchise ?? "",
+      station: (account as TestAccount & { station?: string }).station ?? "",
     },
   });
   response.headers.append("Set-Cookie", sessionCookie(token));
@@ -97,7 +99,9 @@ async function findAppUserAccount(identifier: string, password: string): Promise
     organization: user.organization,
     tenantId: user.tenantId,
     defaultPath: user.defaultPath,
-  };
+    franchise: user.franchise,
+    station: user.station,
+  } as TestAccount & { franchise?: string; station?: string };
 }
 
 async function findSupabaseTestAccount(identifier: string, password: string): Promise<TestAccount | undefined> {
