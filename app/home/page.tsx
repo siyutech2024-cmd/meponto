@@ -328,7 +328,7 @@ function ParticleMorph({ lang }: { lang: Lang }) {
       sample((c, w, h) => {
         // State outline as a thick dotted stroke.
         c.strokeStyle = "rgb(80,120,255)";
-        c.lineWidth = 7;
+        c.lineWidth = 11;
         c.lineJoin = "round";
         c.beginPath();
         SP_OUTLINE.forEach(([nx, ny], i) => {
@@ -343,7 +343,7 @@ function ParticleMorph({ lang }: { lang: Lang }) {
         c.save();
         c.clip();
         c.fillStyle = "rgb(80,120,255)";
-        for (let i = 0; i < 320; i += 1) c.fillRect(Math.random() * w, Math.random() * h, 2.4, 2.4);
+        for (let i = 0; i < 150; i += 1) c.fillRect(Math.random() * w, Math.random() * h, 2.4, 2.4);
         c.restore();
         // Capital marker — bright gold cluster (red channel marks gold).
         const cx = SP_CITY[0] * w * 0.92 + w * 0.04;
@@ -382,7 +382,7 @@ function ParticleMorph({ lang }: { lang: Lang }) {
       nx: 0.5,
       ny: 0.5,
       gold: Math.random() < 0.18 ? 1 : 0,
-      size: 2.2 + Math.random() * 3.4,
+      size: 1.5 + Math.random() * 2.6,
       phase: Math.random() * Math.PI * 2,
     }));
 
@@ -394,6 +394,11 @@ function ParticleMorph({ lang }: { lang: Lang }) {
         particles[i].nx = nx;
         particles[i].ny = ny;
         particles[i].gold = isGold ? (Math.random() < 0.6 ? 1 : 0) : Math.random() < 0.12 ? 1 : 0;
+        // Burst outward, then spring into the new formation.
+        const angle = Math.random() * Math.PI * 2;
+        const kick = 4 + Math.random() * 9;
+        particles[i].vx += Math.cos(angle) * kick;
+        particles[i].vy += Math.sin(angle) * kick;
       }
     };
     applyShape(0);
@@ -431,15 +436,15 @@ function ParticleMorph({ lang }: { lang: Lang }) {
       }
       t += 0.016;
       // Formation frame resolved fresh every frame (resize-proof).
-      const fw = width * 0.56;
-      const fh = Math.min(fw * 0.64, height * 0.78);
-      const fx = width * 0.64 - fw / 2;
-      const fy = height * 0.47 - fh / 2;
+      const fw = width * 0.46;
+      const fh = Math.min(fw * 0.66, height * 0.72);
+      const fx = width * 0.71 - fw / 2;
+      const fy = height * 0.45 - fh / 2;
       ctx.clearRect(0, 0, width, height);
       ctx.globalCompositeOperation = "lighter";
       for (const particle of particles) {
         // Spring toward target with a soft breathing wobble.
-        const wob = Math.sin(t * 1.4 + particle.phase) * 1.8;
+        const wob = Math.sin(t * 1.4 + particle.phase) * 1.1;
         const tx = fx + particle.nx * fw + wob;
         const ty = fy + particle.ny * fh - wob;
         const ax = (tx - particle.x) * 0.03;
