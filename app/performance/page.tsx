@@ -75,6 +75,13 @@ const EARNING_HEADERS: Record<string, string> = {
   "金额": "settleAmount",
 };
 
+const WEEKDAYS = ["周日", "周一", "周二", "周三", "周四", "周五", "周六"];
+
+function weekdayOf(date: string): string {
+  const d = new Date(`${date}T12:00:00Z`);
+  return Number.isNaN(d.getTime()) ? "" : WEEKDAYS[d.getUTCDay()];
+}
+
 function normalizeDate(value: string): string {
   const match = value.match(/(\d{4})[.\-/](\d{1,2})[.\-/](\d{1,2})/);
   if (!match) return "";
@@ -182,7 +189,7 @@ export default function PerformancePage() {
             className="h-10 rounded-[8px] border border-[var(--line)] bg-[var(--surface)] px-3 text-sm font-black outline-none"
           >
             {data.dates.map((item) => (
-              <option key={item} value={item}>{item}</option>
+              <option key={item} value={item}>{item} {weekdayOf(item)}</option>
             ))}
           </select>
         )}
@@ -307,7 +314,7 @@ function EarningsTab({ earnings, scopeFranchise, scopeStation }: { earnings: Pay
       ))}
 
       <div className="panel overflow-x-auto p-4">
-        <div className="mb-3 text-xs font-black uppercase text-[var(--accent)]">骑手收入明细（结算金额 = 今日统计 + 完单 × R$2.50）</div>
+        <div className="mb-3 text-xs font-black uppercase text-[var(--accent)]">骑手收入明细（结算金额取自源表「金额」列）</div>
         <table className="w-full min-w-[1150px] text-sm">
           <thead>
             <tr className="text-left text-[10px] font-black uppercase text-[var(--muted)]">
@@ -507,7 +514,7 @@ function ImportTab({ headers, onDone, onError }: { headers: Record<string, strin
         </div>
         <div className="text-sm font-bold leading-6 text-[var(--muted-strong)]">
           支持「Desempenho do entregador parceiro」（绩效 KPI）与「Ganhos do entregador parceiro」（收入）两类 .xlsx，可同时选择两个文件一起上传。
-          业务日期自动读取表内「日期」列；同一天重复上传会按骑手覆盖更新。结算金额按「今日统计 + 完单 × R$2.50」自动计算（表内已有金额列则优先使用）。
+          业务日期自动读取表内「日期」列；同一天重复上传会按骑手覆盖更新。结算金额直接取自表内「金额」列（按源数据显示，不做任何换算）。
         </div>
         <label className="flex h-28 cursor-pointer flex-col items-center justify-center gap-2 rounded-[8px] border-2 border-dashed border-[var(--line)] text-sm font-black text-[var(--muted)] hover:border-[var(--accent)] hover:text-[var(--accent)]">
           <Upload size={20} />
