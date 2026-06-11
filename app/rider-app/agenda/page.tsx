@@ -55,9 +55,10 @@ export default function RiderAgendaPage() {
   const past = signups.filter((s) => (s.shift?.date ?? "") < today).slice(0, 10);
 
   return (
-    <div className="mx-auto min-h-screen max-w-md space-y-4 p-4">
+    <main className="min-h-screen bg-[#101010]">
+      <div className="rider-light mx-auto min-h-screen w-full max-w-[430px] space-y-4 bg-[#f3f2ee] p-4 pb-10">
       <div className="flex items-center gap-3">
-        <Link href="/rider-app" className="tag inline-flex items-center gap-1"><ArrowLeft size={13} /> Voltar</Link>
+        <Link href="/" className="tag inline-flex items-center gap-1"><ArrowLeft size={13} /> Voltar</Link>
         <h1 className="flex items-center gap-2 text-lg font-black"><CalendarDays size={18} className="text-[var(--accent)]" /> Minha Agenda</h1>
       </div>
 
@@ -90,7 +91,7 @@ export default function RiderAgendaPage() {
         <div className="text-xs font-black uppercase text-[var(--muted)]">Próximos turnos（{upcoming.length}）</div>
         {upcoming.length === 0 && (
           <div className="panel p-5 text-center text-sm font-bold text-[var(--muted)]">
-            Nenhum turno confirmado. <Link href="/rider-app/shifts" className="text-[var(--accent)] underline">Inscreva-se aqui</Link>.
+            Nenhum turno confirmado. <Link href="/shifts" className="text-[var(--accent)] underline">Inscreva-se aqui</Link>.
           </div>
         )}
         {upcoming.map((signup) => {
@@ -146,6 +147,7 @@ export default function RiderAgendaPage() {
           })}
         </div>
       )}
-    </div>
+      </div>
+    </main>
   );
 }
