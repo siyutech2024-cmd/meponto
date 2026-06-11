@@ -1,5 +1,5 @@
 import { appendServerAudit, jsonResponse, makeServerId, memory } from "../../lib/server/memory";
-import { refreshCollectionsFromDatabase } from "../../lib/server/persistence";
+import { flushPendingToDatabase, refreshCollectionsFromDatabase } from "../../lib/server/persistence";
 import { requirePermission, roleFromRequest } from "../../lib/server/authz";
 import type { SupportChannel, SupportTicket } from "../../lib/support";
 
@@ -33,7 +33,7 @@ type Body =
   | { action: "reply"; ticketId: string; reply: string }
   | { action: "resolve"; ticketId: string };
 
-export async function POST(request: Request) {
+async function handlePost(request: Request) {
   await refreshCollectionsFromDatabase(COLLECTIONS);
   const body = (await request.json().catch(() => ({}))) as Partial<Body> & Record<string, unknown>;
   const actor = roleFromRequest(request);
@@ -111,4 +111,11 @@ export async function POST(request: Request) {
     default:
       return jsonResponse({ error: "unknown action" }, { status: 400 });
   }
+}
+
+// Ensure mutations are durably written before the serverless instance can freeze.
+export async function POST(request: Request) {
+  const response = await handlePost(request);
+  await flushPendingToDatabase();
+  return response;
 }
