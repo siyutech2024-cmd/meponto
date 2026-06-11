@@ -1,11 +1,12 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { KeyRound, RefreshCcw, ShieldCheck, UserPlus } from "lucide-react";
 import { AppShell, Badge, PageTitle } from "../components/ui";
 import { roles, type Role } from "../lib/rbac";
 import { portalConfigs, type PortalId } from "../lib/portals";
 import type { AppUser } from "../lib/users";
+import { readSession } from "../lib/session";
 
 type SafeUser = Omit<AppUser, "passwordHash" | "salt">;
 
@@ -13,6 +14,10 @@ const headers = { "Content-Type": "application/json", "x-vento-role": "Super Adm
 const portalIds = Object.keys(portalConfigs) as PortalId[];
 
 export default function UsersPage() {
+  // Franchise portal: this page becomes "station accounts" scoped to itself.
+  const session = useMemo(() => readSession(), []);
+  const isFranchise = session?.portal === "franchise";
+  const ownFranchise = session?.franchise || session?.organization || "";
   const [users, setUsers] = useState<SafeUser[]>([]);
   const [message, setMessage] = useState<{ tone: "ok" | "err"; text: string } | null>(null);
   const [form, setForm] = useState({ name: "", identifier: "", phone: "", password: "", role: "Ponto Manager" as Role, portal: "ponto" as PortalId, franchise: "", station: "" });
@@ -45,8 +50,8 @@ export default function UsersPage() {
   return (
     <AppShell>
       <PageTitle
-        title="用户与权限"
-        eyebrow="多用户账号 · 角色 · 系统归属"
+        title={isFranchise ? "站点账号" : "用户与权限"}
+        eyebrow={isFranchise ? `为 ${ownFranchise} 下属站点配置登录账号` : "多用户账号 · 角色 · 系统归属"}
         action={
           <button type="button" onClick={() => void load()} className="tag inline-flex items-center gap-1">
             <RefreshCcw size={13} /> 刷新
@@ -69,7 +74,7 @@ export default function UsersPage() {
           <input className={input} placeholder="登录邮箱或手机号" value={form.identifier} onChange={(e) => setForm({ ...form, identifier: e.target.value })} />
           <input className={input} placeholder="联系电话（选填）" value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} />
           <input className={input} type="password" placeholder="初始密码（至少 6 位）" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} />
-          <div className="grid grid-cols-2 gap-3">
+          <div className={`grid grid-cols-2 gap-3 ${isFranchise ? "hidden" : ""}`}>
             <label className="text-[10px] font-black uppercase text-[var(--muted)]">
               所属系统
               <select
@@ -96,8 +101,12 @@ export default function UsersPage() {
             </label>
           </div>
           <div className="grid grid-cols-2 gap-3">
-            <input className={input} placeholder="所属加盟商（选填）" value={form.franchise} onChange={(e) => setForm({ ...form, franchise: e.target.value })} />
-            <input className={input} placeholder="所属站点（选填）" value={form.station} onChange={(e) => setForm({ ...form, station: e.target.value })} />
+            {isFranchise ? (
+              <input className={input} value={ownFranchise} disabled />
+            ) : (
+              <input className={input} placeholder="所属加盟商（选填）" value={form.franchise} onChange={(e) => setForm({ ...form, franchise: e.target.value })} />
+            )}
+            <input className={input} placeholder={isFranchise ? "站点名称 *" : "所属站点（选填）"} value={form.station} onChange={(e) => setForm({ ...form, station: e.target.value })} />
           </div>
           <button
             type="button"
