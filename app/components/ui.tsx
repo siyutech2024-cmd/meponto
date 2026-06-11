@@ -36,7 +36,6 @@ import {
   X,
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
-import { BrandLockup } from "./brand";
 import { languages, translate, type Language, type TranslationKey } from "../lib/i18n";
 import { getNotificationStatus } from "../lib/notifications";
 import { can, type Permission, type Role } from "../lib/rbac";
@@ -185,15 +184,16 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   return (
     <div className="min-h-screen overflow-x-hidden bg-[var(--background)] text-[var(--text)] lg:grid lg:grid-cols-[260px_1fr]">
       <aside className="border-b border-[var(--line)] bg-[var(--surface)] lg:sticky lg:top-0 lg:h-screen lg:border-b-0 lg:border-r">
-        <div className="flex h-[72px] items-center border-b border-[var(--line)] px-5 py-4">
-          <Link href={portal.homePath} className="min-w-0">
-            <BrandLockup />
-            <span className="mt-1 block truncate text-[10px] font-black uppercase tracking-[0.14em] text-[var(--muted)]">
+        <div className="flex h-[64px] items-center border-b border-[var(--line)] px-4">
+          <Link href={portal.homePath} className="flex min-w-0 items-center gap-2.5">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src="/meponto-logo.png" alt="MePonto" className="h-8 w-auto shrink-0 rounded-[6px] object-contain" />
+            <span className="truncate text-[11px] font-black uppercase tracking-[0.14em] text-[var(--muted)]">
               {portal.productName}
             </span>
           </Link>
         </div>
-        <nav className="flex gap-2 overflow-x-auto px-3 py-3 lg:block lg:h-[calc(100vh-72px)] lg:space-y-4 lg:overflow-y-auto lg:px-3 lg:pb-6">
+        <nav className="flex gap-2 overflow-x-auto px-3 py-3 lg:block lg:h-[calc(100vh-64px)] lg:space-y-4 lg:overflow-y-auto lg:px-3 lg:pb-6">
           {visibleGroups.map((group) => (
             <section key={group.title} className="min-w-max lg:min-w-0">
               <div className="mb-2 px-2 text-[10px] font-black uppercase tracking-[0.16em] text-[var(--muted)]">{group.title}</div>
