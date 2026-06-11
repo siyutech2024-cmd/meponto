@@ -108,8 +108,20 @@ export default function RiderMallPage() {
             </div>
           </div>
           <div className="mt-2 text-[11px] font-bold text-[var(--muted-strong)]">{me.perks.join("｜")}</div>
-          <div className="mt-2 flex items-center gap-1 text-[11px] font-bold text-[var(--muted)]">
-            <QrCode size={12} /> Código de convite: {me.riderId}(+{data?.config.referralPoints ?? 20} pts por indicação)
+          <div className="mt-3 flex items-center gap-3 rounded-[8px] border border-[var(--line)] bg-[var(--surface-raised)] p-3">
+            {/* QR points to the public invite link; reward is only released after the invitee's first completed order (anti-fraud). */}
+            <img
+              src={`https://api.qrserver.com/v1/create-qr-code/?size=96x96&data=${encodeURIComponent(`https://app.meponto.com/scan?ref=${me.riderId}`)}`}
+              alt="QR de convite"
+              width={96}
+              height={96}
+              className="rounded bg-white p-1"
+            />
+            <div className="text-[11px] font-bold text-[var(--muted)]">
+              <div className="flex items-center gap-1 text-[var(--text)]"><QrCode size={12} /> Convide com este QR</div>
+              Código: {me.riderId}
+              <div className="mt-1">+{data?.config.referralPoints ?? 20} pts quando o convidado concluir o primeiro pedido.</div>
+            </div>
           </div>
         </div>
       ) : (
@@ -162,6 +174,11 @@ export default function RiderMallPage() {
                     <MapPin size={10} className="inline" /> {order.station} ｜ {order.pointsSpent} pts
                     {order.status === "created" && order.etaDate && ` ｜ Previsão ${order.etaDate}`}
                   </div>
+                  {order.voucherCode && (
+                    <div className="mt-1 rounded bg-[var(--accent-soft)] px-2 py-1 text-[11px] font-black text-[var(--accent)]">
+                      Voucher: {order.voucherCode}
+                    </div>
+                  )}
                 </div>
                 <span className={`tag ${order.status === "arrived" ? "border-[var(--accent)] text-[var(--accent)]" : ""}`}>{orderStatusLabel[order.status] ?? order.status}</span>
               </div>
