@@ -70,6 +70,7 @@ const navItems: Array<{
   { href: "/partner-points", labelKey: "navPartnerPoints", icon: Handshake, permission: "manage_partner_points" },
   { href: "/finance", labelKey: "navFinance", icon: CircleDollarSign, permission: "view_finance" },
   { href: "/wallet", labelKey: "navWallet", icon: CircleDollarSign, permission: "view_finance" },
+  { href: "/support", labelKey: "navSupport", icon: ShieldCheck, permission: "view_audit" },
   { href: "/crm", labelKey: "navCrm", icon: Handshake, permission: "view_analytics" },
   { href: "/franchise", labelKey: "navFranchise", icon: Store, permission: "view_analytics" },
   { href: "/night-shift", labelKey: "navNightShift", icon: Moon, permission: "view_analytics" },
@@ -89,65 +90,35 @@ const navGroups: Array<{
   items: typeof navItems;
 }> = [
   {
-    title: "PontoSys",
-    items: navItems.filter((item) =>
-      [
-        "/operations-core",
-        "/dashboard",
-        "/riders",
-        "/rider-app",
-        "/pontos",
-        "/territory",
-        "/leaders",
-        "/dispatch",
-        "/performance",
-        "/users",
-        "/franchise",
-      ].includes(item.href),
-    ),
-  },
-  {
+    // Daily operations: scheduling, KPI, network and people.
     title: "Operations",
     items: navItems.filter((item) =>
       [
-        "/chat",
-        "/incidents",
-        "/night-shift",
+        "/dashboard",
+        "/dispatch",
+        "/performance",
         "/ninety-nine-import",
-        "/mobile",
+        "/riders",
+        "/pontos",
+        "/franchise",
         "/sops",
       ].includes(item.href),
     ),
   },
   {
+    // Mall & partner ecosystem.
     title: "PontoMall",
-    items: navItems.filter((item) =>
-      [
-        "/mall",
-        "/marketplace",
-        "/points-economy",
-        "/partner-points",
-        "/rewards",
-        "/crm",
-      ].includes(item.href),
-    ),
+    items: navItems.filter((item) => ["/mall", "/marketplace", "/partner-points"].includes(item.href)),
   },
   {
-    title: "Control",
-    items: navItems.filter((item) =>
-      [
-        "/finance",
-        "/wallet",
-        "/analytics",
-        "/reports",
-        "/realtime",
-        "/tools",
-        "/audit",
-        "/access-control",
-        "/security",
-        "/settings",
-      ].includes(item.href),
-    ),
+    // Money: ledgers, settlement, exports.
+    title: "Finance",
+    items: navItems.filter((item) => ["/finance", "/wallet", "/reports"].includes(item.href)),
+  },
+  {
+    // Accounts, permissions, tickets, audit.
+    title: "System",
+    items: navItems.filter((item) => ["/users", "/support", "/access-control", "/audit", "/settings"].includes(item.href)),
   },
 ];
 
