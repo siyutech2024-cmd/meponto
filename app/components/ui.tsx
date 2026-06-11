@@ -49,39 +49,23 @@ const navItems: Array<{
   permission?: Permission;
 }> = [
   { href: "/dashboard", labelKey: "navDashboard", icon: LayoutDashboard, permission: "view_dashboard" },
-  { href: "/operations-core", labelKey: "navOperationsCore", icon: DatabaseBackup, permission: "view_dashboard" },
   { href: "/riders", labelKey: "navRiders", icon: Bike, permission: "manage_riders" },
   { href: "/rider-app", labelKey: "navRiderApp", icon: Bike, permission: "use_rider_app" },
   { href: "/pontos", labelKey: "navPontos", icon: MapPinned, permission: "manage_pontos" },
-  { href: "/territory", labelKey: "navTerritory", icon: MapPinned, permission: "view_analytics" },
-  { href: "/leaders", labelKey: "navLeaders", icon: Users, permission: "manage_leaders" },
-  { href: "/mobile", labelKey: "navMobile", icon: Smartphone, permission: "view_dashboard" },
-  { href: "/chat", labelKey: "navChat", icon: MessageCircle, permission: "view_dashboard" },
   { href: "/incidents", labelKey: "navIncidents", icon: ShieldAlert, permission: "create_incidents" },
-  { href: "/rewards", labelKey: "navRewards", icon: CircleDollarSign, permission: "manage_rewards" },
   { href: "/points-economy", labelKey: "navPointsEconomy", icon: CircleDollarSign, permission: "manage_points" },
   { href: "/ninety-nine-import", labelKey: "navNinetyNineImport", icon: FileSpreadsheet, permission: "manage_riders" },
   { href: "/dispatch", labelKey: "navDispatch", icon: CalendarDays, permission: "manage_slots" },
   { href: "/performance", labelKey: "navPerformance", icon: BarChart3, permission: "view_analytics" },
   { href: "/users", labelKey: "navUsers", icon: ShieldCheck, permission: "manage_slots" },
-  { href: "/marketplace", labelKey: "navMarketplace", icon: Store, permission: "manage_marketplace" },
   { href: "/mall", labelKey: "navMall", icon: Store, permission: "manage_marketplace" },
   { href: "/partner-points", labelKey: "navPartnerPoints", icon: Handshake, permission: "manage_partner_points" },
-  { href: "/finance", labelKey: "navFinance", icon: CircleDollarSign, permission: "view_finance" },
   { href: "/wallet", labelKey: "navWallet", icon: CircleDollarSign, permission: "view_finance" },
   { href: "/support", labelKey: "navSupport", icon: ShieldCheck, permission: "view_audit" },
   { href: "/crm", labelKey: "navCrm", icon: Handshake, permission: "view_analytics" },
   { href: "/franchise", labelKey: "navFranchise", icon: Store, permission: "view_analytics" },
-  { href: "/night-shift", labelKey: "navNightShift", icon: Moon, permission: "view_analytics" },
-  { href: "/analytics", labelKey: "navAnalytics", icon: BarChart3, permission: "view_analytics" },
   { href: "/reports", labelKey: "navReports", icon: FileBarChart2, permission: "view_analytics" },
-  { href: "/realtime", labelKey: "navRealtime", icon: RadioTower, permission: "view_dashboard" },
-  { href: "/sops", labelKey: "navSops", icon: FileText, permission: "view_dashboard" },
-  { href: "/tools", labelKey: "navTools", icon: DatabaseBackup, permission: "manage_riders" },
-  { href: "/audit", labelKey: "navAudit", icon: ClipboardList, permission: "view_audit" },
   { href: "/access-control", labelKey: "navAccessControl", icon: ShieldCheck, permission: "view_audit" },
-  { href: "/security", labelKey: "navSecurity", icon: ShieldQuestion, permission: "view_audit" },
-  { href: "/settings", labelKey: "navSettings", icon: Settings, permission: "reset_demo" },
 ];
 
 const navGroups: Array<{
@@ -100,24 +84,23 @@ const navGroups: Array<{
         "/riders",
         "/pontos",
         "/franchise",
-        "/sops",
-      ].includes(item.href),
+        ].includes(item.href),
     ),
   },
   {
     // Mall & partner ecosystem.
     title: "PontoMall",
-    items: navItems.filter((item) => ["/mall", "/marketplace", "/partner-points"].includes(item.href)),
+    items: navItems.filter((item) => ["/mall", "/partner-points"].includes(item.href)),
   },
   {
     // Money: ledgers, settlement, exports.
     title: "Finance",
-    items: navItems.filter((item) => ["/finance", "/wallet", "/reports"].includes(item.href)),
+    items: navItems.filter((item) => ["/wallet", "/reports"].includes(item.href)),
   },
   {
     // Accounts, permissions, tickets, audit.
     title: "System",
-    items: navItems.filter((item) => ["/users", "/support", "/access-control", "/audit", "/settings"].includes(item.href)),
+    items: navItems.filter((item) => ["/users", "/support", "/access-control"].includes(item.href)),
   },
 ];
 
