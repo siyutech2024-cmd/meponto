@@ -1,5 +1,5 @@
 import { appendServerAudit, jsonResponse, makeServerId, memory } from "../../lib/server/memory";
-import { persistDeleteRecord, refreshCollectionsFromDatabase } from "../../lib/server/persistence";
+import { flushPendingToDatabase, persistDeleteRecord, refreshCollectionsFromDatabase } from "../../lib/server/persistence";
 import { requirePermission, roleFromRequest } from "../../lib/server/authz";
 import { getAvailablePoints, type MarketplaceOrder, type MarketplaceProduct, type PointsLedgerEntry } from "../../lib/points";
 import { defaultMallConfig, resolveTier, tierDefinitions, type MallConfig } from "../../lib/mall";
@@ -90,7 +90,8 @@ export async function GET(request: Request) {
 
 type Body =
   | { action: "setConfig"; perOrderPoints?: number; referralPoints?: number; partnerServicePoints?: number; partnerServiceCount?: number }
-  | { action: "supplierAddProduct"; name: string; supplierName: string; supplyPrice: number; deliveryCycleDays: number; stock: number; description?: string }
+  | { action: "supplierAddProduct"; name: string; supplierName: string; supplyPrice: number; deliveryCycleDays: number; stock: number; description?: string; imageUrl?: string; category?: string; isVirtual?: boolean }
+  | { action: "updateProduct"; productId: string; name?: string; description?: string; imageUrl?: string; category?: string; stock?: number; deliveryCycleDays?: number }
   | { action: "priceProduct"; productId: string; pointsPrice: number; marginPct?: number; status?: "active" | "paused" }
   | { action: "deleteProduct"; productId: string }
   | { action: "redeem"; productId: string; riderId?: string; riderName?: string }
@@ -100,7 +101,7 @@ type Body =
   | { action: "awardPartnerService"; riderId: string; note?: string }
   | { action: "scanPartner"; riderId: string; partnerId: string };
 
-export async function POST(request: Request) {
+async function handlePost(request: Request) {
   const peek = (await request.clone().json().catch(() => ({}))) as { action?: string };
   // Permission map: redeem = rider app; arrivals = station ops; supplier
   // upload = supplier catalog; config/pricing/awards = HQ points authority
@@ -138,7 +139,7 @@ export async function POST(request: Request) {
     }
 
     case "supplierAddProduct": {
-      const { name, supplierName, description = "", isVirtual = false } = body as { name?: string; supplierName?: string; description?: string; isVirtual?: boolean };
+      const { name, supplierName, description = "", isVirtual = false, imageUrl = "", category = "" } = body as { name?: string; supplierName?: string; description?: string; isVirtual?: boolean; imageUrl?: string; category?: string };
       const supplyPrice = Number(body.supplyPrice);
       const deliveryCycleDays = Math.max(1, Math.floor(Number(body.deliveryCycleDays) || 7));
       const stock = Math.max(0, Math.floor(Number(body.stock) || 0));
@@ -159,6 +160,8 @@ export async function POST(request: Request) {
         deliveryCycleDays,
         description: String(description).slice(0, 200),
         isVirtual: isVirtual === true,
+        imageUrl: String(imageUrl).slice(0, 300),
+        category: String(category).slice(0, 40),
       };
       memory.marketplaceProducts.unshift(product);
       appendServerAudit({ actor, action: "MALL_PRODUCT_SUBMITTED", entity: "MarketplaceProduct", entityId: product.id, detail: `${product.name} by ${supplierName} @ R$${supplyPrice} (cycle ${deliveryCycleDays}d).`, risk: "Low" });
@@ -179,6 +182,25 @@ export async function POST(request: Request) {
         status: pointsPrice > 0 ? status : "pending_pricing",
       };
       appendServerAudit({ actor, action: "MALL_PRODUCT_PRICED", entity: "MarketplaceProduct", entityId: productId ?? "", detail: `pointsPrice=${pointsPrice} margin=${marginPct}% status=${status}.`, risk: "Low" });
+      return jsonResponse({ data: memory.marketplaceProducts[index] });
+    }
+
+    case "updateProduct": {
+      const { productId } = body as { productId?: string };
+      const index = memory.marketplaceProducts.findIndex((item) => item.id === productId);
+      if (index === -1) return jsonResponse({ error: "product not found" }, { status: 404 });
+      const fields = body as Record<string, unknown>;
+      const current = memory.marketplaceProducts[index];
+      memory.marketplaceProducts[index] = {
+        ...current,
+        ...(fields.name !== undefined ? { name: String(fields.name).slice(0, 80) } : {}),
+        ...(fields.description !== undefined ? { description: String(fields.description).slice(0, 200) } : {}),
+        ...(fields.imageUrl !== undefined ? { imageUrl: String(fields.imageUrl).slice(0, 300) } : {}),
+        ...(fields.category !== undefined ? { category: String(fields.category).slice(0, 40) } : {}),
+        ...(fields.stock !== undefined ? { stock: Math.max(0, Number(fields.stock) || 0) } : {}),
+        ...(fields.deliveryCycleDays !== undefined ? { deliveryCycleDays: Math.max(0, Number(fields.deliveryCycleDays) || 0) } : {}),
+      };
+      appendServerAudit({ actor, action: "MALL_PRODUCT_UPDATED", entity: "MarketplaceProduct", entityId: productId ?? "", detail: JSON.stringify(fields).slice(0, 180), risk: "Low" });
       return jsonResponse({ data: memory.marketplaceProducts[index] });
     }
 
@@ -351,4 +373,11 @@ export async function POST(request: Request) {
     default:
       return jsonResponse({ error: "unknown action" }, { status: 400 });
   }
+}
+
+// Ensure mutations are durably written before the serverless instance can freeze.
+export async function POST(request: Request) {
+  const response = await handlePost(request);
+  await flushPendingToDatabase();
+  return response;
 }

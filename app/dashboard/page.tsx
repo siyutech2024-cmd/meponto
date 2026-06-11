@@ -130,7 +130,7 @@ export default function DashboardPage() {
                 汇总站点审核、加盟商确认后的周排班数据，总部只读取汇总模型，不直接修改站点私有审核记录。
               </p>
             </div>
-            <Link href="/slot-enrollment" className="tag">Open slots</Link>
+            <Link href="/dispatch" className="tag">Open slots</Link>
           </div>
           <div className="mt-4 grid grid-cols-2 gap-3 xl:grid-cols-1">
             <Field label="Week" value={slotSummary?.week ?? "-"} />

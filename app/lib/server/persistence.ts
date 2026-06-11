@@ -15,7 +15,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 const TABLE = "app_state_records";
-const FLUSH_DELAY_MS = 300;
+const FLUSH_DELAY_MS = 0; // flush immediately — serverless instances may freeze after response
 
 type AnyRecord = { id: string } & Record<string, unknown>;
 

@@ -1,5 +1,5 @@
 import { acceptClientId, appendServerAudit, jsonResponse, makeServerId, memory } from "../../lib/server/memory";
-import { persistDeleteRecord, refreshCollectionsFromDatabase } from "../../lib/server/persistence";
+import { flushPendingToDatabase, persistDeleteRecord, refreshCollectionsFromDatabase } from "../../lib/server/persistence";
 import { requirePermission, roleFromRequest } from "../../lib/server/authz";
 import { parseEastwindShifts, type DispatchShift, type ShiftQuota, type ShiftSignup, type ShiftSignupStatus } from "../../lib/dispatch";
 
@@ -106,7 +106,7 @@ type DeleteShiftBody = { action: "deleteShift"; shiftId: string };
 
 type Body = ImportBody | QuotaBody | SignupBody | ReviewBody | ReportBody | SetWeekBody | DeleteShiftBody;
 
-export async function POST(request: Request) {
+async function handlePost(request: Request) {
   const peek = (await request.clone().json().catch(() => ({}))) as { action?: string };
   // Riders may submit their own signups from the rider app; everything else
   // stays behind the dispatch permission.
@@ -424,4 +424,11 @@ export async function POST(request: Request) {
     default:
       return jsonResponse({ error: "unknown action" }, { status: 400 });
   }
+}
+
+// Ensure mutations are durably written before the serverless instance can freeze.
+export async function POST(request: Request) {
+  const response = await handlePost(request);
+  await flushPendingToDatabase();
+  return response;
 }

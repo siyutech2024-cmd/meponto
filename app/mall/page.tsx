@@ -24,6 +24,7 @@ export default function MallAdminPage() {
   const [message, setMessage] = useState<{ tone: "ok" | "err"; text: string } | null>(null);
   const [configDraft, setConfigDraft] = useState<Record<string, string>>({});
   const [priceDrafts, setPriceDrafts] = useState<Record<string, { points: string; margin: string }>>({});
+  const [configOpen, setConfigOpen] = useState("");
 
   const load = useCallback(async () => {
     const response = await fetch("/api/mall", { headers, cache: "no-store" });
@@ -131,13 +132,23 @@ export default function MallAdminPage() {
                   return (
                     <div key={product.id} className="rounded-[8px] border border-[var(--line)] bg-[var(--surface-raised)] p-3">
                       <div className="flex flex-wrap items-center justify-between gap-2">
-                        <div>
-                          <div className="flex items-center gap-2 text-sm font-black">
-                            {product.name}
-                            <Badge value={productStatusLabel[product.status] ?? product.status} />
-                          </div>
-                          <div className="text-[11px] font-bold text-[var(--muted)]">
-                            {product.supplierName ?? "平台自营"} ｜ 供应价 {product.supplyPrice ? `R$${product.supplyPrice}` : "-"} ｜ 周期 {product.deliveryCycleDays ?? 7} 天 ｜ 库存 {product.stock}
+                        <div className="flex items-center gap-3">
+                          {product.imageUrl ? (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img src={product.imageUrl} alt="" className="h-12 w-12 rounded-[8px] border border-[var(--line)] object-cover" />
+                          ) : (
+                            <div className="grid h-12 w-12 place-items-center rounded-[8px] border border-[var(--line)] bg-[var(--accent-glow)] text-[var(--accent)]"><Package size={20} /></div>
+                          )}
+                          <div>
+                            <div className="flex items-center gap-2 text-sm font-black">
+                              {product.name}
+                              <Badge value={productStatusLabel[product.status] ?? product.status} />
+                              {product.category && <span className="tag">{product.category}</span>}
+                              {product.isVirtual && <span className="tag border-[var(--accent)] text-[var(--accent)]">虚拟</span>}
+                            </div>
+                            <div className="text-[11px] font-bold text-[var(--muted)]">
+                              {product.supplierName ?? "平台自营"} ｜ 供应价 {product.supplyPrice ? `R$${product.supplyPrice}` : "-"} ｜ 周期 {product.deliveryCycleDays ?? 7} 天 ｜ 库存 {product.stock}
+                            </div>
                           </div>
                         </div>
                         <div className="flex flex-wrap items-center gap-2">
@@ -168,8 +179,21 @@ export default function MallAdminPage() {
                           {product.status === "active" && (
                             <button type="button" className="tag" onClick={async () => { const r = await post({ action: "priceProduct", productId: product.id, pointsPrice: product.pointsPrice, status: "paused" }); if (r) setMessage({ tone: "ok", text: "已下架。" }); }}>下架</button>
                           )}
+                          <button type="button" className="tag" onClick={() => setConfigOpen(configOpen === product.id ? "" : product.id)}>商品配置</button>
                         </div>
                       </div>
+                      {configOpen === product.id && (
+                        <ProductConfigRow
+                          product={product}
+                          onSave={async (fields) => {
+                            const result = await post({ action: "updateProduct", productId: product.id, ...fields });
+                            if (result) {
+                              setMessage({ tone: "ok", text: `${product.name} 配置已保存。` });
+                              setConfigOpen("");
+                            }
+                          }}
+                        />
+                      )}
                     </div>
                   );
                 })}
@@ -200,5 +224,31 @@ export default function MallAdminPage() {
         </div>
       </div>
     </AppShell>
+  );
+}
+
+
+function ProductConfigRow({ product, onSave }: { product: MarketplaceProduct; onSave: (fields: Record<string, unknown>) => Promise<void> }) {
+  const [imageUrl, setImageUrl] = useState(product.imageUrl ?? "");
+  const [category, setCategory] = useState(product.category ?? "");
+  const [stock, setStock] = useState(String(product.stock));
+  const [cycle, setCycle] = useState(String(product.deliveryCycleDays ?? 7));
+  const [description, setDescription] = useState(product.description ?? "");
+  const field = "h-10 rounded-[8px] border border-[var(--line)] bg-[var(--surface)] px-3 text-sm font-bold outline-none focus:border-[var(--accent)]";
+  return (
+    <div className="mt-3 grid gap-2 rounded-[8px] border border-[var(--line)] bg-[var(--surface)] p-3 sm:grid-cols-2">
+      <input className={field} placeholder="商品图片 URL（https://...）" value={imageUrl} onChange={(e) => setImageUrl(e.target.value)} />
+      <input className={field} placeholder="分类（如 Equipamento / Voucher）" value={category} onChange={(e) => setCategory(e.target.value)} />
+      <input className={field} inputMode="numeric" placeholder="库存" value={stock} onChange={(e) => setStock(e.target.value.replace(/\D/g, ""))} />
+      <input className={field} inputMode="numeric" placeholder="派送周期(天)" value={cycle} onChange={(e) => setCycle(e.target.value.replace(/\D/g, ""))} />
+      <input className={`${field} sm:col-span-2`} placeholder="商品说明" value={description} onChange={(e) => setDescription(e.target.value)} />
+      <button
+        type="button"
+        onClick={() => void onSave({ imageUrl, category, stock: Number(stock), deliveryCycleDays: Number(cycle), description })}
+        className="inline-flex h-10 items-center justify-center rounded-[8px] bg-[var(--accent)] px-5 text-xs font-black uppercase text-[var(--accent-ink)] sm:col-span-2"
+      >
+        保存商品配置
+      </button>
+    </div>
   );
 }
