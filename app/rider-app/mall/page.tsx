@@ -159,7 +159,7 @@ export default function RiderMallPage() {
           ) : (
             <div className="rounded-[8px] bg-white p-4 text-sm font-bold text-[#77746f] shadow-[0_12px_26px_rgba(0,0,0,0.06)]">
               Cadastro não encontrado.{" "}
-              <Link href="/rider-login" className="font-black text-[#ff7a00] underline">Crie sua conta</Link>{" "}
+              <Link href="/rider-login" style={{ color: "#ff7a00" }} className="font-black underline">Crie sua conta</Link>{" "}
               para virar membro, acumular pontos e resgatar produtos.
             </div>
           )}
@@ -272,7 +272,7 @@ export default function RiderMallPage() {
 
 function MallTab({ icon, label, href, active = false }: { icon: React.ReactNode; label: string; href: string; active?: boolean }) {
   return (
-    <a href={href} className={`flex flex-col items-center gap-1 rounded-[8px] py-2 text-[10px] font-black ${active ? "bg-[#ff7a00] text-[#050505]" : "text-white/65"}`}>
+    <a href={href} style={{ color: active ? "#050505" : "rgba(255,255,255,0.65)" }} className={`flex flex-col items-center gap-1 rounded-[8px] py-2 text-[10px] font-black ${active ? "bg-[#ff7a00]" : ""}`}>
       {icon}
       {label}
     </a>
