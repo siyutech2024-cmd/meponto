@@ -161,7 +161,7 @@ export default function RiderAppPage() {
               </div>
             </div>
             <div className="flex items-center gap-2">
-              <a href="/rider-app/scan" aria-label="Escanear QR" className="grid h-10 w-10 place-items-center rounded-[8px] bg-[#050505] text-white shadow-[0_8px_20px_rgba(0,0,0,0.18)]">
+              <a href="/rider-app/scan" aria-label="Escanear QR" style={{ color: "#ffffff" }} className="grid h-10 w-10 place-items-center rounded-[8px] bg-[#050505] shadow-[0_8px_20px_rgba(0,0,0,0.18)]">
                 <QrCode size={19} />
               </a>
               <button type="button" aria-label="Abrir avisos" className="relative grid h-10 w-10 place-items-center rounded-[8px] bg-white shadow-[0_8px_20px_rgba(0,0,0,0.08)]">
@@ -682,7 +682,8 @@ function PartnerMapRow({ partner, selected, onSelect }: { partner: (typeof rider
               href={partner.navigationUrl}
               target="_blank"
               rel="noreferrer"
-              className="flex h-10 items-center justify-center gap-1.5 rounded-[8px] bg-[#050505] text-xs font-black text-white"
+              style={{ color: "#ffffff" }}
+              className="flex h-10 items-center justify-center gap-1.5 rounded-[8px] bg-[#050505] text-xs font-black"
             >
               <Navigation size={14} /> Google Maps
             </a>
