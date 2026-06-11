@@ -268,7 +268,10 @@ export default function RiderAppPage() {
             <section className="px-4 pt-4">
               <div className="flex items-center justify-between">
                 <h2 className="text-lg font-black">Agora</h2>
-                <span className="rounded-full bg-[#20a65a] px-3 py-1 text-xs font-black text-white">Online</span>
+                <div className="flex items-center gap-2">
+                  <button type="button" onClick={sendSos} className="rounded-full bg-[#e53935] px-3 py-1 text-xs font-black text-white">🆘 SOS</button>
+                  <span className="rounded-full bg-[#20a65a] px-3 py-1 text-xs font-black text-white">Online</span>
+                </div>
               </div>
               <div className="mt-2 grid gap-2">
                 <StatusRow icon={<MapPin size={20} />} title={member.ponto} detail={`Lider: ${member.leader}`} value={member.bairro} />
@@ -311,44 +314,7 @@ export default function RiderAppPage() {
               </div>
             </section>
 
-            <section className="px-4 pt-4">
-              <div className="mb-2 flex items-center justify-between">
-                <h2 className="text-lg font-black">Missoes e premios</h2>
-                <a href="/rider-app/mall" className="text-sm font-black text-[#ff7a00]">Ver tudo</a>
-              </div>
-              <div className="grid gap-2">
-                {missions.map((mission) => (
-                  <MissionCard key={mission.title} {...mission} />
-                ))}
-              </div>
-            </section>
-
             <NotificationsSection />
-
-            <section className="px-4 pt-4">
-              <div className="grid grid-cols-[1fr_auto] items-center gap-3 rounded-[8px] bg-[#ff7a00] p-4 text-[#050505]">
-                <div>
-                  <div className="flex items-center gap-2 text-sm font-black">
-                    <Sparkles size={17} />
-                    Beneficio MePonto
-                  </div>
-                  <p className="mt-1 text-sm font-bold leading-5 text-black/72">
-                    {benefit ? `${benefit.notes}: R$ ${benefit.amount.toFixed(2).replace(".", ",")}` : "Combustivel, manutencao e suporte para membros."}
-                  </p>
-                </div>
-                <ChevronRight size={22} />
-              </div>
-            </section>
-        </div>
-
-        <div id="wallet" className="scroll-mt-4">
-          <WalletScreen wallet={wallet} cashLedger={cashLedger} />
-        </div>
-        <div id="points" className="scroll-mt-4">
-          <PointsScreen pointsAccount={pointsAccount} ledger={riderLedger} products={riderProducts} activeTierKey={tier.key} />
-        </div>
-        <div id="help" className="scroll-mt-4">
-          <HelpScreen openCase={openCase} memberPonto={member.ponto} />
         </div>
 
         <nav className="fixed bottom-3 left-1/2 z-20 grid w-[calc(100%-24px)] max-w-[406px] -translate-x-1/2 grid-cols-4 rounded-[8px] bg-[#050505] p-1.5 text-white shadow-[0_18px_42px_rgba(0,0,0,0.3)]">
