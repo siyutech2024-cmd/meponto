@@ -371,37 +371,27 @@ function ParticleMorph({ lang }: { lang: Lang }) {
     let shapes = [mapShape(), textShape(spWord()), mapShape(), textShape("MePonto")];
     let currentLang = langRef.current;
 
-    type Particle = { x: number; y: number; vx: number; vy: number; tx: number; ty: number; gold: number; size: number; phase: number };
+    type Particle = { x: number; y: number; vx: number; vy: number; nx: number; ny: number; gold: number; size: number; phase: number };
     const particles: Particle[] = Array.from({ length: COUNT }, () => ({
       x: Math.random() * width,
       y: Math.random() * height,
       vx: 0,
       vy: 0,
-      tx: 0,
-      ty: 0,
+      nx: 0.5,
+      ny: 0.5,
       gold: Math.random() < 0.18 ? 1 : 0,
       size: 2.2 + Math.random() * 3.4,
       phase: Math.random() * Math.PI * 2,
     }));
 
-    // The formation lives slightly right of center so the hero copy stays readable.
-    const frame = () => {
-      const fw = Math.min(width * 0.66, 980);
-      const fh = fw * 0.62;
-      const fx = width * 0.62 - fw / 2;
-      const fy = height * 0.46 - fh / 2;
-      return { fw, fh, fx, fy };
-    };
-
     let shapeIndex = 0;
     const applyShape = (index: number) => {
       const shape = shapes[index % shapes.length];
-      const { fw, fh, fx, fy } = frame();
       for (let i = 0; i < COUNT; i += 1) {
         const [nx, ny, isGold] = shape[i];
-        particles[i].tx = fx + nx * fw;
-        particles[i].ty = fy + ny * fh;
-        particles[i].gold = isGold ? 1 : particles[i].gold && Math.random() < 0.4 ? 1 : Math.random() < 0.1 ? 1 : 0;
+        particles[i].nx = nx;
+        particles[i].ny = ny;
+        particles[i].gold = isGold ? (Math.random() < 0.6 ? 1 : 0) : Math.random() < 0.12 ? 1 : 0;
       }
     };
     applyShape(0);
@@ -424,10 +414,7 @@ function ParticleMorph({ lang }: { lang: Lang }) {
       mouse.x = -9999;
       mouse.y = -9999;
     };
-    const onResize = () => {
-      resize();
-      applyShape(shapeIndex);
-    };
+    const onResize = () => resize();
     window.addEventListener("mousemove", onMove);
     window.addEventListener("mouseleave", onLeave);
     window.addEventListener("resize", onResize);
@@ -441,15 +428,22 @@ function ParticleMorph({ lang }: { lang: Lang }) {
         applyShape(shapeIndex);
       }
       t += 0.016;
+      // Formation frame resolved fresh every frame (resize-proof).
+      const fw = width * 0.56;
+      const fh = Math.min(fw * 0.64, height * 0.78);
+      const fx = width * 0.64 - fw / 2;
+      const fy = height * 0.47 - fh / 2;
       ctx.clearRect(0, 0, width, height);
       ctx.globalCompositeOperation = "lighter";
       for (const particle of particles) {
         // Spring toward target with a soft breathing wobble.
-        const wob = Math.sin(t * 1.4 + particle.phase) * 1.6;
-        const ax = (particle.tx + wob - particle.x) * 0.014;
-        const ay = (particle.ty - wob - particle.y) * 0.014;
-        particle.vx = (particle.vx + ax) * 0.88;
-        particle.vy = (particle.vy + ay) * 0.88;
+        const wob = Math.sin(t * 1.4 + particle.phase) * 1.8;
+        const tx = fx + particle.nx * fw + wob;
+        const ty = fy + particle.ny * fh - wob;
+        const ax = (tx - particle.x) * 0.03;
+        const ay = (ty - particle.y) * 0.03;
+        particle.vx = (particle.vx + ax) * 0.85;
+        particle.vy = (particle.vy + ay) * 0.85;
         // Cursor blast.
         const dx = particle.x - mouse.x;
         const dy = particle.y - mouse.y;
