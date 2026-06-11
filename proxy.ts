@@ -17,12 +17,27 @@ export async function proxy(request: NextRequest) {
     return NextResponse.rewrite(url);
   }
 
-  // mall.meponto.com goes STRAIGHT to the rider storefront (not the back office).
-  if (host === "mall.meponto.com" && pathname === "/") {
-    if (!session) return NextResponse.redirect(new URL("/rider-login", request.url));
-    const url = request.nextUrl.clone();
-    url.pathname = "/rider-app/mall";
-    return NextResponse.rewrite(url);
+  // ---- Host isolation (launch) -------------------------------------------
+  // mall.meponto.com  = PUBLIC storefront. Anyone can browse; login is only
+  //                     required at redeem time. Any other rider-app path on
+  //                     this host belongs to app.meponto.com.
+  // app.meponto.com   = the rider APP. Root goes straight to /rider-app, and
+  //                     unauthenticated users land on /rider-login (no portal picker).
+  if (host === "mall.meponto.com") {
+    if (pathname === "/") {
+      const url = request.nextUrl.clone();
+      url.pathname = "/rider-app/mall";
+      return NextResponse.rewrite(url);
+    }
+    if (pathname === "/rider-app/mall") {
+      return NextResponse.redirect(new URL("https://mall.meponto.com/"));
+    }
+    if (pathname.startsWith("/rider-app")) {
+      return NextResponse.redirect(new URL(`https://app.meponto.com${pathname}`));
+    }
+  }
+  if (host === "app.meponto.com" && pathname === "/" && !session) {
+    return NextResponse.redirect(new URL("/rider-login", request.url));
   }
 
   if (pathname === "/") {
