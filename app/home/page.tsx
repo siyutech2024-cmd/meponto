@@ -237,11 +237,26 @@ const systemIcons = [Bike, Store, Warehouse, Building2];
 
 
 /**
- * Active Theory-style ambient particle field: drifting points connected by
- * lines, gently attracted to the cursor. Plain canvas 2D — zero dependencies.
+ * São Paulo particle morph field.
+ *
+ * ~1800 glowing particles spring between three target formations:
+ * the São Paulo state map outline (with the capital marked in gold),
+ * the word "SÃO PAULO" (localized — follows the page language), and the
+ * "MePonto" wordmark. The cursor blasts particles apart; they spring back.
  */
-function ParticleField() {
+const SP_OUTLINE: Array<[number, number]> = [
+  [0.05, 0.46], [0.1, 0.38], [0.17, 0.32], [0.24, 0.27], [0.31, 0.24], [0.38, 0.2],
+  [0.45, 0.18], [0.52, 0.15], [0.58, 0.12], [0.65, 0.08], [0.72, 0.05], [0.78, 0.07],
+  [0.82, 0.12], [0.86, 0.18], [0.9, 0.24], [0.94, 0.3], [0.9, 0.37], [0.83, 0.44],
+  [0.75, 0.5], [0.67, 0.56], [0.59, 0.62], [0.51, 0.68], [0.44, 0.74], [0.37, 0.8],
+  [0.3, 0.87], [0.24, 0.92], [0.18, 0.86], [0.13, 0.78], [0.09, 0.68], [0.06, 0.57],
+];
+const SP_CITY: [number, number] = [0.7, 0.42];
+
+function ParticleMorph({ lang }: { lang: Lang }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const langRef = useRef(lang);
+  langRef.current = lang;
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -253,8 +268,8 @@ function ParticleField() {
     let width = 0;
     let height = 0;
     let raf = 0;
-    const mouse = { x: -9999, y: -9999 };
     const DPR = Math.min(window.devicePixelRatio || 1, 2);
+    const mouse = { x: -9999, y: -9999 };
 
     const resize = () => {
       width = window.innerWidth;
@@ -265,15 +280,141 @@ function ParticleField() {
     };
     resize();
 
-    const COUNT = Math.min(110, Math.floor((width * height) / 16000));
-    const particles = Array.from({ length: COUNT }, () => ({
+    // Pre-rendered glow sprites (fast additive blending).
+    const makeGlow = (r: number, g: number, b: number) => {
+      const cv = document.createElement("canvas");
+      cv.width = 32;
+      cv.height = 32;
+      const c = cv.getContext("2d")!;
+      const grad = c.createRadialGradient(16, 16, 0, 16, 16, 16);
+      grad.addColorStop(0, `rgba(${r},${g},${b},1)`);
+      grad.addColorStop(0.3, `rgba(${r},${g},${b},0.55)`);
+      grad.addColorStop(1, `rgba(${r},${g},${b},0)`);
+      c.fillStyle = grad;
+      c.fillRect(0, 0, 32, 32);
+      return cv;
+    };
+    const goldGlow = makeGlow(255, 208, 70);
+    const blueGlow = makeGlow(95, 160, 255);
+    const cyanGlow = makeGlow(80, 220, 255);
+
+    const COUNT = window.innerWidth < 900 ? 900 : 1800;
+
+    /** Sample target points from an offscreen drawing. */
+    const sample = (draw: (c: CanvasRenderingContext2D, w: number, h: number) => void) => {
+      const off = document.createElement("canvas");
+      off.width = 640;
+      off.height = 420;
+      const c = off.getContext("2d")!;
+      draw(c, off.width, off.height);
+      const data = c.getImageData(0, 0, off.width, off.height).data;
+      const points: Array<[number, number, number]> = []; // x, y, isGold flag from red channel bias
+      const step = 3;
+      for (let y = 0; y < off.height; y += step) {
+        for (let x = 0; x < off.width; x += step) {
+          const i = (y * off.width + x) * 4;
+          if (data[i + 3] > 120) points.push([x / off.width, y / off.height, data[i] > 200 && data[i + 2] < 120 ? 1 : 0]);
+        }
+      }
+      // Resample to COUNT.
+      const out: Array<[number, number, number]> = [];
+      for (let i = 0; i < COUNT; i += 1) out.push(points[Math.floor(Math.random() * points.length)] ?? [0.5, 0.5, 0]);
+      return out;
+    };
+
+    const mapShape = () =>
+      sample((c, w, h) => {
+        // State outline as a thick dotted stroke.
+        c.strokeStyle = "rgb(80,120,255)";
+        c.lineWidth = 7;
+        c.lineJoin = "round";
+        c.beginPath();
+        SP_OUTLINE.forEach(([nx, ny], i) => {
+          const x = nx * w * 0.92 + w * 0.04;
+          const y = ny * h * 0.92 + h * 0.04;
+          if (i === 0) c.moveTo(x, y);
+          else c.lineTo(x, y);
+        });
+        c.closePath();
+        c.stroke();
+        // Sparse interior fill (light scatter).
+        c.save();
+        c.clip();
+        c.fillStyle = "rgb(80,120,255)";
+        for (let i = 0; i < 320; i += 1) c.fillRect(Math.random() * w, Math.random() * h, 2.4, 2.4);
+        c.restore();
+        // Capital marker — bright gold cluster (red channel marks gold).
+        const cx = SP_CITY[0] * w * 0.92 + w * 0.04;
+        const cy = SP_CITY[1] * h * 0.92 + h * 0.04;
+        c.fillStyle = "rgb(255,90,40)";
+        c.beginPath();
+        c.arc(cx, cy, 16, 0, Math.PI * 2);
+        c.fill();
+      });
+
+    const textShape = (text: string) =>
+      sample((c, w, h) => {
+        c.fillStyle = "rgb(255,90,40)";
+        c.textAlign = "center";
+        c.textBaseline = "middle";
+        let size = 120;
+        c.font = `900 ${size}px Poppins, Inter, system-ui, sans-serif`;
+        while (c.measureText(text).width > w * 0.92 && size > 30) {
+          size -= 6;
+          c.font = `900 ${size}px Poppins, Inter, system-ui, sans-serif`;
+        }
+        c.fillText(text, w / 2, h / 2);
+      });
+
+    const spWord = () => (langRef.current === "zh" ? "圣保罗" : "SÃO PAULO");
+
+    let shapes = [mapShape(), textShape(spWord()), mapShape(), textShape("MePonto")];
+    let currentLang = langRef.current;
+
+    type Particle = { x: number; y: number; vx: number; vy: number; tx: number; ty: number; gold: number; size: number; phase: number };
+    const particles: Particle[] = Array.from({ length: COUNT }, () => ({
       x: Math.random() * width,
       y: Math.random() * height,
-      vx: (Math.random() - 0.5) * 0.35,
-      vy: (Math.random() - 0.5) * 0.35,
-      r: Math.random() * 1.6 + 0.6,
-      gold: Math.random() < 0.35,
+      vx: 0,
+      vy: 0,
+      tx: 0,
+      ty: 0,
+      gold: Math.random() < 0.18 ? 1 : 0,
+      size: 2.2 + Math.random() * 3.4,
+      phase: Math.random() * Math.PI * 2,
     }));
+
+    // The formation lives slightly right of center so the hero copy stays readable.
+    const frame = () => {
+      const fw = Math.min(width * 0.66, 980);
+      const fh = fw * 0.62;
+      const fx = width * 0.62 - fw / 2;
+      const fy = height * 0.46 - fh / 2;
+      return { fw, fh, fx, fy };
+    };
+
+    let shapeIndex = 0;
+    const applyShape = (index: number) => {
+      const shape = shapes[index % shapes.length];
+      const { fw, fh, fx, fy } = frame();
+      for (let i = 0; i < COUNT; i += 1) {
+        const [nx, ny, isGold] = shape[i];
+        particles[i].tx = fx + nx * fw;
+        particles[i].ty = fy + ny * fh;
+        particles[i].gold = isGold ? 1 : particles[i].gold && Math.random() < 0.4 ? 1 : Math.random() < 0.1 ? 1 : 0;
+      }
+    };
+    applyShape(0);
+    const DWELL = [7000, 4600, 7000, 4600];
+    let switchTimer: ReturnType<typeof setTimeout>;
+    const scheduleNext = () => {
+      switchTimer = setTimeout(() => {
+        shapeIndex = (shapeIndex + 1) % shapes.length;
+        applyShape(shapeIndex);
+        scheduleNext();
+      }, DWELL[shapeIndex % DWELL.length]);
+    };
+    scheduleNext();
 
     const onMove = (event: MouseEvent) => {
       mouse.x = event.clientX;
@@ -283,63 +424,60 @@ function ParticleField() {
       mouse.x = -9999;
       mouse.y = -9999;
     };
+    const onResize = () => {
+      resize();
+      applyShape(shapeIndex);
+    };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseleave", onLeave);
+    window.addEventListener("resize", onResize);
 
+    let t = 0;
     const tick = () => {
+      // Language switched → rebuild the localized word shape.
+      if (currentLang !== langRef.current) {
+        currentLang = langRef.current;
+        shapes = [mapShape(), textShape(spWord()), mapShape(), textShape("MePonto")];
+        applyShape(shapeIndex);
+      }
+      t += 0.016;
       ctx.clearRect(0, 0, width, height);
+      ctx.globalCompositeOperation = "lighter";
       for (const particle of particles) {
-        // Gentle cursor attraction, Active Theory style.
-        const dx = mouse.x - particle.x;
-        const dy = mouse.y - particle.y;
-        const dist = Math.hypot(dx, dy);
-        if (dist < 220 && dist > 0.001) {
-          particle.vx += (dx / dist) * 0.012;
-          particle.vy += (dy / dist) * 0.012;
+        // Spring toward target with a soft breathing wobble.
+        const wob = Math.sin(t * 1.4 + particle.phase) * 1.6;
+        const ax = (particle.tx + wob - particle.x) * 0.014;
+        const ay = (particle.ty - wob - particle.y) * 0.014;
+        particle.vx = (particle.vx + ax) * 0.88;
+        particle.vy = (particle.vy + ay) * 0.88;
+        // Cursor blast.
+        const dx = particle.x - mouse.x;
+        const dy = particle.y - mouse.y;
+        const d2 = dx * dx + dy * dy;
+        if (d2 < 140 * 140 && d2 > 0.01) {
+          const d = Math.sqrt(d2);
+          const force = ((140 - d) / 140) * 2.6;
+          particle.vx += (dx / d) * force;
+          particle.vy += (dy / d) * force;
         }
-        particle.vx *= 0.985;
-        particle.vy *= 0.985;
         particle.x += particle.vx;
         particle.y += particle.vy;
-        if (particle.x < -20) particle.x = width + 20;
-        if (particle.x > width + 20) particle.x = -20;
-        if (particle.y < -20) particle.y = height + 20;
-        if (particle.y > height + 20) particle.y = -20;
-
-        ctx.beginPath();
-        ctx.arc(particle.x, particle.y, particle.r, 0, Math.PI * 2);
-        ctx.fillStyle = particle.gold ? "rgba(255,216,77,0.55)" : "rgba(120,170,255,0.45)";
-        ctx.fill();
+        const speed = Math.min(Math.hypot(particle.vx, particle.vy), 8);
+        const sprite = particle.gold ? goldGlow : speed > 2.4 ? cyanGlow : blueGlow;
+        const size = particle.size * (1 + speed * 0.18);
+        ctx.drawImage(sprite, particle.x - size / 2, particle.y - size / 2, size, size);
       }
-      // Constellation lines between close particles.
-      for (let i = 0; i < particles.length; i += 1) {
-        for (let j = i + 1; j < particles.length; j += 1) {
-          const a = particles[i];
-          const b = particles[j];
-          const dx = a.x - b.x;
-          const dy = a.y - b.y;
-          const d2 = dx * dx + dy * dy;
-          if (d2 < 110 * 110) {
-            const alpha = 0.14 * (1 - d2 / (110 * 110));
-            ctx.strokeStyle = `rgba(140,180,255,${alpha.toFixed(3)})`;
-            ctx.lineWidth = 1;
-            ctx.beginPath();
-            ctx.moveTo(a.x, a.y);
-            ctx.lineTo(b.x, b.y);
-            ctx.stroke();
-          }
-        }
-      }
+      ctx.globalCompositeOperation = "source-over";
       raf = requestAnimationFrame(tick);
     };
     raf = requestAnimationFrame(tick);
 
-    window.addEventListener("resize", resize);
-    window.addEventListener("mousemove", onMove);
-    window.addEventListener("mouseleave", onLeave);
     return () => {
       cancelAnimationFrame(raf);
-      window.removeEventListener("resize", resize);
+      clearTimeout(switchTimer);
       window.removeEventListener("mousemove", onMove);
       window.removeEventListener("mouseleave", onLeave);
+      window.removeEventListener("resize", onResize);
     };
   }, []);
 
@@ -381,230 +519,6 @@ function Tilt3D({ children, className = "", style }: { children: React.ReactNode
   );
 }
 
-
-/* eslint-disable @typescript-eslint/no-explicit-any */
-/**
- * Full WebGL scene (Active Theory style): an undulating point-cloud "city
- * grid", glowing delivery arcs with travelling light pulses, and station
- * beacons. Three.js r128 is loaded from CDN at runtime — zero build deps.
- * Falls back to the 2D particle field on mobile or when WebGL fails.
- */
-function Scene3D() {
-  const mountRef = useRef<HTMLDivElement>(null);
-  const [fallback, setFallback] = useState(false);
-
-  useEffect(() => {
-    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
-    if (window.innerWidth < 768) {
-      setFallback(true);
-      return;
-    }
-
-    let disposed = false;
-    let cleanup: (() => void) | undefined;
-
-    const boot = (THREE: any) => {
-      const mount = mountRef.current;
-      if (!mount || disposed) return;
-      let renderer: any;
-      try {
-        renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true, powerPreference: "high-performance" });
-      } catch {
-        setFallback(true);
-        return;
-      }
-      const DPR = Math.min(window.devicePixelRatio || 1, 1.75);
-      renderer.setPixelRatio(DPR);
-      renderer.setSize(window.innerWidth, window.innerHeight);
-      renderer.domElement.style.position = "fixed";
-      renderer.domElement.style.inset = "0";
-      renderer.domElement.style.zIndex = "0";
-      renderer.domElement.style.pointerEvents = "none";
-      mount.appendChild(renderer.domElement);
-
-      const scene = new THREE.Scene();
-      scene.fog = new THREE.FogExp2(0x070a14, 0.028);
-      const camera = new THREE.PerspectiveCamera(58, window.innerWidth / window.innerHeight, 0.1, 200);
-      camera.position.set(0, 5.2, 20);
-
-      // --- 1. Undulating point-cloud terrain (the "city grid") ---
-      const COLS = 110;
-      const ROWS = 56;
-      const SPACING = 0.62;
-      const count = COLS * ROWS;
-      const positions = new Float32Array(count * 3);
-      const colors = new Float32Array(count * 3);
-      const gold = new THREE.Color(0xffd84d);
-      const blue = new THREE.Color(0x3f6fff);
-      let k = 0;
-      for (let i = 0; i < COLS; i += 1) {
-        for (let j = 0; j < ROWS; j += 1) {
-          positions[k * 3] = (i - COLS / 2) * SPACING;
-          positions[k * 3 + 1] = 0;
-          positions[k * 3 + 2] = (j - ROWS / 2) * SPACING;
-          const mix = Math.random() * 0.25 + (j / ROWS) * 0.4;
-          const color = blue.clone().lerp(gold, mix);
-          colors[k * 3] = color.r;
-          colors[k * 3 + 1] = color.g;
-          colors[k * 3 + 2] = color.b;
-          k += 1;
-        }
-      }
-      const gridGeo = new THREE.BufferGeometry();
-      gridGeo.setAttribute("position", new THREE.BufferAttribute(positions, 3));
-      gridGeo.setAttribute("color", new THREE.BufferAttribute(colors, 3));
-      const gridMat = new THREE.PointsMaterial({ size: 0.07, vertexColors: true, transparent: true, opacity: 0.85, depthWrite: false });
-      const grid = new THREE.Points(gridGeo, gridMat);
-      grid.position.y = -3.4;
-      scene.add(grid);
-
-      // --- 2. Station beacons (light pillars) ---
-      const beaconGroup = new THREE.Group();
-      const beaconSpots: Array<[number, number]> = [[-12, -6], [-5, -10], [3, -7], [10, -11], [-9, -14], [7, -4], [14, -8], [0, -13]];
-      for (const [x, z] of beaconSpots) {
-        const height = 2.2 + Math.random() * 2.4;
-        const pillar = new THREE.Mesh(
-          new THREE.CylinderGeometry(0.05, 0.16, height, 8, 1, true),
-          new THREE.MeshBasicMaterial({ color: 0xffc62e, transparent: true, opacity: 0.5, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide }),
-        );
-        pillar.position.set(x, -3.4 + height / 2, z);
-        beaconGroup.add(pillar);
-        const base = new THREE.Mesh(
-          new THREE.SphereGeometry(0.16, 12, 12),
-          new THREE.MeshBasicMaterial({ color: 0xffe27a, transparent: true, opacity: 0.95 }),
-        );
-        base.position.set(x, -3.32, z);
-        beaconGroup.add(base);
-      }
-      scene.add(beaconGroup);
-
-      // --- 3. Delivery arcs with travelling pulses ---
-      const arcGroup = new THREE.Group();
-      const pulses: Array<{ sprite: any; curve: any; t: number; speed: number }> = [];
-      const makePulseTexture = () => {
-        const cv = document.createElement("canvas");
-        cv.width = 64;
-        cv.height = 64;
-        const c = cv.getContext("2d")!;
-        const grad = c.createRadialGradient(32, 32, 0, 32, 32, 32);
-        grad.addColorStop(0, "rgba(255,235,160,1)");
-        grad.addColorStop(0.35, "rgba(255,200,60,0.85)");
-        grad.addColorStop(1, "rgba(255,200,60,0)");
-        c.fillStyle = grad;
-        c.fillRect(0, 0, 64, 64);
-        return new THREE.CanvasTexture(cv);
-      };
-      const pulseTexture = makePulseTexture();
-      for (let a = 0; a < 7; a += 1) {
-        const from = beaconSpots[a % beaconSpots.length];
-        const to = beaconSpots[(a + 3) % beaconSpots.length];
-        const start = new THREE.Vector3(from[0], -3.2, from[1]);
-        const end = new THREE.Vector3(to[0], -3.2, to[1]);
-        const mid = start.clone().add(end).multiplyScalar(0.5);
-        mid.y += 2.2 + Math.random() * 2.6;
-        const curve = new THREE.QuadraticBezierCurve3(start, mid, end);
-        const arc = new THREE.Mesh(
-          new THREE.TubeGeometry(curve, 48, 0.015, 6, false),
-          new THREE.MeshBasicMaterial({ color: 0x69a8ff, transparent: true, opacity: 0.32, blending: THREE.AdditiveBlending, depthWrite: false }),
-        );
-        arcGroup.add(arc);
-        for (let pIdx = 0; pIdx < 2; pIdx += 1) {
-          const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: pulseTexture, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false }));
-          sprite.scale.set(0.55, 0.55, 1);
-          arcGroup.add(sprite);
-          pulses.push({ sprite, curve, t: Math.random(), speed: 0.0016 + Math.random() * 0.0022 });
-        }
-      }
-      scene.add(arcGroup);
-
-      // --- 4. Floating dust particles ---
-      const DUST = 260;
-      const dustPos = new Float32Array(DUST * 3);
-      for (let i = 0; i < DUST; i += 1) {
-        dustPos[i * 3] = (Math.random() - 0.5) * 46;
-        dustPos[i * 3 + 1] = Math.random() * 14 - 3;
-        dustPos[i * 3 + 2] = (Math.random() - 0.5) * 30;
-      }
-      const dustGeo = new THREE.BufferGeometry();
-      dustGeo.setAttribute("position", new THREE.BufferAttribute(dustPos, 3));
-      const dust = new THREE.Points(dustGeo, new THREE.PointsMaterial({ color: 0x8fb4ff, size: 0.05, transparent: true, opacity: 0.5, depthWrite: false }));
-      scene.add(dust);
-
-      // --- Interaction & loop ---
-      const mouse = { x: 0, y: 0 };
-      const onMove = (event: MouseEvent) => {
-        mouse.x = (event.clientX / window.innerWidth - 0.5) * 2;
-        mouse.y = (event.clientY / window.innerHeight - 0.5) * 2;
-      };
-      const onResize = () => {
-        camera.aspect = window.innerWidth / window.innerHeight;
-        camera.updateProjectionMatrix();
-        renderer.setSize(window.innerWidth, window.innerHeight);
-      };
-      window.addEventListener("mousemove", onMove);
-      window.addEventListener("resize", onResize);
-
-      let raf = 0;
-      const clock = new THREE.Clock();
-      const pos = gridGeo.attributes.position;
-      const animate = () => {
-        const t = clock.getElapsedTime();
-        // Terrain waves.
-        for (let i = 0; i < count; i += 1) {
-          const x = pos.array[i * 3];
-          const z = pos.array[i * 3 + 2];
-          pos.array[i * 3 + 1] = Math.sin(x * 0.32 + t * 0.9) * 0.45 + Math.cos(z * 0.38 + t * 0.7) * 0.4;
-        }
-        pos.needsUpdate = true;
-        // Travelling pulses.
-        for (const pulse of pulses) {
-          pulse.t = (pulse.t + pulse.speed) % 1;
-          const point = pulse.curve.getPoint(pulse.t);
-          pulse.sprite.position.copy(point);
-        }
-        // Camera drift toward the cursor + slow orbital sway.
-        camera.position.x += (mouse.x * 3.2 - camera.position.x) * 0.04;
-        camera.position.y += (5.2 - mouse.y * 1.6 - camera.position.y) * 0.04;
-        camera.lookAt(0, -0.5, 0);
-        dust.rotation.y = t * 0.012;
-        renderer.render(scene, camera);
-        raf = requestAnimationFrame(animate);
-      };
-      raf = requestAnimationFrame(animate);
-
-      cleanup = () => {
-        cancelAnimationFrame(raf);
-        window.removeEventListener("mousemove", onMove);
-        window.removeEventListener("resize", onResize);
-        renderer.dispose();
-        gridGeo.dispose();
-        dustGeo.dispose();
-        pulseTexture.dispose();
-        if (renderer.domElement.parentNode) renderer.domElement.parentNode.removeChild(renderer.domElement);
-      };
-    };
-
-    const existing = (window as any).THREE;
-    if (existing) {
-      boot(existing);
-    } else {
-      const script = document.createElement("script");
-      script.src = "https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js";
-      script.async = true;
-      script.onload = () => boot((window as any).THREE);
-      script.onerror = () => setFallback(true);
-      document.head.appendChild(script);
-    }
-
-    return () => {
-      disposed = true;
-      cleanup?.();
-    };
-  }, []);
-
-  if (fallback) return <ParticleField />;
-  return <div ref={mountRef} aria-hidden="true" />;
-}
 
 export default function MarketingHomePage() {
   const [lang, setLang] = useState<Lang>("pt");
@@ -673,7 +587,7 @@ export default function MarketingHomePage() {
           "radial-gradient(900px 540px at 12% -6%, rgba(98,54,255,0.32), transparent 55%), radial-gradient(820px 520px at 92% 4%, rgba(13,118,255,0.26), transparent 55%), radial-gradient(700px 500px at 50% 110%, rgba(255,170,40,0.14), transparent 60%), linear-gradient(180deg, #070a14 0%, #0a0e1d 50%, #070a14 100%)",
       }}
     >
-      <Scene3D />
+      <ParticleMorph lang={lang} />
       <style>{`
         .rv { opacity: 0; transform: perspective(900px) rotateX(10deg) translateY(34px); transition: opacity .7s ease, transform .7s cubic-bezier(.16,1,.3,1); transition-delay: var(--d, 0ms); will-change: opacity, transform; }
         .rv-in { opacity: 1; transform: perspective(900px) rotateX(0deg) translateY(0); }
