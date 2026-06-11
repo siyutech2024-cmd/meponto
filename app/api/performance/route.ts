@@ -49,6 +49,31 @@ function creditOrderPoints(riderId: string, rider99Id: string, date: string, com
   const points = Math.round(completedOrders * config.perOrderPoints * tier.pointsMultiplier);
   if (points <= 0) return;
 
+  // Referral reward (anti-fraud): the inviter is only paid once, and only
+  // after the invited rider has VERIFIED completed orders in Eastwind data.
+  if (lifetime === 0 && completedOrders > 0) {
+    const rider = memory.riders.find((item) => item.id === riderId);
+    const inviter = rider?.invitedBy ? memory.riders.find((item) => item.name === rider.invitedBy && item.id !== riderId) : undefined;
+    const refId = `pts-ref-${riderId}`;
+    if (inviter && !memory.pointsLedgerEntries.some((entry) => entry.id === refId)) {
+      memory.pointsLedgerEntries.unshift({
+        id: refId,
+        riderId: inviter.id,
+        accountId: `pts-${inviter.id}`,
+        type: "earn",
+        points: config.referralPoints,
+        status: "approved",
+        sourceType: "delivery",
+        sourceId: refId,
+        balanceAfter: getAvailablePoints(memory.pointsLedgerEntries, inviter.id) + config.referralPoints,
+        reasonCode: "REFERRAL_REWARD",
+        note: `Indicação confirmada: ${rider?.name ?? riderId} concluiu o primeiro pedido`,
+        createdBy: "T+1 Import",
+        createdAt: new Date().toISOString().slice(0, 16).replace("T", " "),
+      });
+    }
+  }
+
   const id = `pts-ord-${date}-${riderId}`;
   const note = `T+1 ${date} 完单 ${completedOrders} × ${config.perOrderPoints}分${tier.pointsMultiplier > 1 ? ` × ${tier.pointsMultiplier}（${tier.label}）` : ""}`;
   const index = memory.pointsLedgerEntries.findIndex((entry) => entry.id === id);
