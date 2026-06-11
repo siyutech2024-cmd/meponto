@@ -40,9 +40,10 @@ export default function RiderWalletPage() {
   }, [load]);
 
   return (
-    <div className="mx-auto min-h-screen max-w-md space-y-4 p-4">
+    <main className="min-h-screen bg-[#101010]">
+      <div className="rider-light mx-auto min-h-screen w-full max-w-[430px] space-y-4 bg-[#f3f2ee] p-4 pb-10">
       <div className="flex items-center gap-3">
-        <Link href="/rider-app" className="tag inline-flex items-center gap-1"><ArrowLeft size={13} /> Voltar</Link>
+        <Link href="/" className="tag inline-flex items-center gap-1"><ArrowLeft size={13} /> Voltar</Link>
         <h1 className="flex items-center gap-2 text-lg font-black"><Wallet size={18} className="text-[var(--accent)]" /> Minha Carteira</h1>
       </div>
 
@@ -130,6 +131,7 @@ export default function RiderWalletPage() {
           )}
         </>
       )}
-    </div>
+      </div>
+    </main>
   );
 }
