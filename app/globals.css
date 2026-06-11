@@ -223,3 +223,44 @@ textarea:focus {
   background: var(--accent-glow);
   color: var(--text);
 }
+
+/* Rider APP light scope: makes the var()-based pages match the APP look
+   (warm light background, orange accent) without rewriting their markup. */
+.rider-light {
+  color-scheme: light;
+  --background: #f3f2ee;
+  --surface: #f3f2ee;
+  --surface-raised: #f7f6f2;
+  --surface-hover: #ece9e2;
+  --surface-soft: #f3f2ee;
+  --panel: #ffffff;
+  --panel-strong: #f3f2ee;
+  --panel-hover: #ece9e2;
+  --line: #e6e3dc;
+  --line-soft: rgba(230, 227, 220, 0.8);
+  --line-alpha: rgba(255, 122, 0, 0.22);
+  --text: #050505;
+  --text-soft: #2d2b27;
+  --muted: #77746f;
+  --muted-strong: #504e4a;
+  --accent: #ff7a00;
+  --accent-strong: #e96f00;
+  --accent-ink: #050505;
+  --accent-glow: rgba(255, 122, 0, 0.13);
+  --accent-soft: #fff0e4;
+  --danger: #f3b6b2;
+  --warning: #f0d3a6;
+  --ok: #bfe6cd;
+  --danger-ink: #e53935;
+  --warning-ink: #9a6a12;
+  --ok-ink: #20a65a;
+  --danger-bg: #ffe5e3;
+  --warning-bg: #fdf2df;
+  --ok-bg: #e8f6ee;
+  color: var(--text);
+  font-family: 'Poppins', 'Inter', system-ui, sans-serif;
+}
+.rider-light .panel {
+  border: none;
+  box-shadow: 0 12px 26px rgba(0, 0, 0, 0.06);
+}
