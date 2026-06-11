@@ -66,6 +66,7 @@ const navItems: Array<{
   { href: "/performance", labelKey: "navPerformance", icon: BarChart3, permission: "view_analytics" },
   { href: "/users", labelKey: "navUsers", icon: ShieldCheck, permission: "view_audit" },
   { href: "/marketplace", labelKey: "navMarketplace", icon: Store, permission: "manage_marketplace" },
+  { href: "/mall", labelKey: "navMall", icon: Store, permission: "manage_marketplace" },
   { href: "/partner-points", labelKey: "navPartnerPoints", icon: Handshake, permission: "manage_partner_points" },
   { href: "/finance", labelKey: "navFinance", icon: CircleDollarSign, permission: "view_finance" },
   { href: "/crm", labelKey: "navCrm", icon: Handshake, permission: "view_analytics" },
@@ -121,6 +122,7 @@ const navGroups: Array<{
     title: "PontoMall",
     items: navItems.filter((item) =>
       [
+        "/mall",
         "/marketplace",
         "/points-economy",
         "/partner-points",
