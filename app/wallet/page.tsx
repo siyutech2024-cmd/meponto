@@ -111,7 +111,25 @@ export default function WalletAdminPage() {
 
       <div className="grid gap-4 xl:grid-cols-2">
         <div className="panel p-4">
-          <div className="mb-3 flex items-center gap-2 text-xs font-black uppercase text-[var(--accent)]"><Banknote size={14} /> 待付款提现（{pending.length}）</div>
+          <div className="mb-3 flex items-center justify-between">
+            <div className="flex items-center gap-2 text-xs font-black uppercase text-[var(--accent)]"><Banknote size={14} /> 待付款提现（{pending.length}）</div>
+            {pending.length > 1 && (
+              <button
+                type="button"
+                className="tag"
+                onClick={async () => {
+                  if (!window.confirm(`批量确认全部 ${pending.length} 笔提现已付款？`)) return;
+                  for (const w of pending) {
+                    await fetch("/api/wallet", { method: "POST", headers, body: JSON.stringify({ action: "confirmPayment", withdrawalId: w.id, note: "批量确认" }) });
+                  }
+                  setMessage({ tone: "ok", text: `已批量确认 ${pending.length} 笔付款。` });
+                  void load();
+                }}
+              >
+                全部已付款
+              </button>
+            )}
+          </div>
           {pending.length === 0 ? (
             <div className="text-sm font-bold text-[var(--muted)]">暂无待处理提现。</div>
           ) : (
