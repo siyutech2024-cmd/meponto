@@ -65,6 +65,7 @@ export async function POST(request: Request) {
     joinDate: body.joinDate ?? new Date().toISOString().slice(0, 10),
     ninetyNineId: body.ninetyNineId ?? "",
     franchise: body.franchise ?? "Unassigned",
+    birthday: body.birthday ?? "",
   };
 
   memory.riders.unshift(rider);
