@@ -18,8 +18,8 @@ const outfit = Outfit({
 });
 
 export const metadata: Metadata = {
-  title: "MePonto PontoSys",
-  description: "Sistema operacional MePonto PontoSys para riders, pontos e operacoes",
+  title: "MePonto",
+  description: "MePonto — turnos, pontos e operações para entregadores parceiros",
   manifest: "/manifest.webmanifest",
   appleWebApp: { capable: true, title: "MePonto", statusBarStyle: "black-translucent" },
   icons: {
