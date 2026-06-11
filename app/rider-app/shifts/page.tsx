@@ -9,11 +9,11 @@ import type { DispatchShift, ShiftSignup } from "../../lib/dispatch";
 type Board = { shifts: DispatchShift[]; signups: ShiftSignup[] };
 
 const signupLabel: Record<string, string> = {
-  submitted: "待审核",
-  approved: "已通过",
-  rejected: "已驳回",
-  reported: "已填报",
-  cancelled: "已取消",
+  submitted: "Em análise",
+  approved: "Aprovado",
+  rejected: "Recusado",
+  reported: "Reportado",
+  cancelled: "Cancelado",
 };
 
 export default function RiderShiftsPage() {
@@ -77,7 +77,7 @@ export default function RiderShiftsPage() {
 
   async function signup(shift: DispatchShift) {
     if (!name.trim() || !/^\d{6,}$/.test(rider99Id.trim())) {
-      setMessage({ tone: "err", text: "请先填写姓名和有效的 99 骑手 ID。" });
+      setMessage({ tone: "err", text: "Preencha o nome e um ID 99 válido." });
       return;
     }
     setBusyShift(shift.id);
@@ -93,7 +93,7 @@ export default function RiderShiftsPage() {
       body: JSON.stringify({
         action: "signup",
         shiftId: shift.id,
-        franchise: "自报名",
+        franchise: "Autoinscrição",
         station,
         riders: [{ riderName: name.trim(), rider99Id: rider99Id.trim() }],
       }),
@@ -101,11 +101,11 @@ export default function RiderShiftsPage() {
     const payload = await response.json().catch(() => ({}));
     setBusyShift("");
     if (!response.ok) {
-      setMessage({ tone: "err", text: payload.error ?? `报名失败 (${response.status})` });
+      setMessage({ tone: "err", text: payload.error ?? `Falha na inscrição (${response.status})` });
       return;
     }
     const skipped = (payload.data.skipped ?? []) as string[];
-    setMessage(skipped.length > 0 ? { tone: "err", text: `未报名：${skipped.join("、")}` } : { tone: "ok", text: `已报名 ${shift.date} ${shift.timeRange}，等待站点/加盟商审核。` });
+    setMessage(skipped.length > 0 ? { tone: "err", text: `Não inscrito: ${skipped.join(", ")}` } : { tone: "ok", text: `Inscrito em ${shift.date} ${shift.timeRange} — aguardando análise da estação/franquia.` });
     void load();
   }
 
@@ -117,14 +117,14 @@ export default function RiderShiftsPage() {
   return (
     <div className="mx-auto min-h-screen max-w-md space-y-4 p-4">
       <div className="flex items-center gap-3">
-        <Link href="/rider-app" className="tag inline-flex items-center gap-1"><ArrowLeft size={13} /> 返回</Link>
-        <h1 className="flex items-center gap-2 text-lg font-black"><CalendarDays size={18} className="text-[var(--accent)]" /> 班次报名</h1>
+        <Link href="/rider-app" className="tag inline-flex items-center gap-1"><ArrowLeft size={13} /> Voltar</Link>
+        <h1 className="flex items-center gap-2 text-lg font-black"><CalendarDays size={18} className="text-[var(--accent)]" /> Inscrição de Turnos</h1>
       </div>
 
       {profileLocked ? (
         <div className="panel flex items-center justify-between p-4">
           <div>
-            <div className="text-[10px] font-black uppercase text-[var(--muted)]">报名身份（来自注册档案）</div>
+            <div className="text-[10px] font-black uppercase text-[var(--muted)]">Identidade de inscrição (do cadastro)</div>
             <div className="mt-1 text-sm font-black">{name}</div>
             <div className="text-[11px] font-bold text-[var(--muted)]">99 ID {rider99Id} ｜ {station}</div>
           </div>
@@ -132,11 +132,11 @@ export default function RiderShiftsPage() {
         </div>
       ) : (
         <div className="panel space-y-2 p-4">
-          <div className="text-[10px] font-black uppercase text-[var(--muted)]">我的信息（档案未关联，请手动填写）</div>
-          <input value={name} onChange={(e) => setName(e.target.value)} placeholder="姓名" className="h-11 w-full rounded-[8px] border border-[var(--line)] bg-[var(--surface)] px-3 text-sm font-bold outline-none focus:border-[var(--accent)]" />
+          <div className="text-[10px] font-black uppercase text-[var(--muted)]">Meus dados (cadastro não vinculado — preencha)</div>
+          <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Nome" className="h-11 w-full rounded-[8px] border border-[var(--line)] bg-[var(--surface)] px-3 text-sm font-bold outline-none focus:border-[var(--accent)]" />
           <div className="grid grid-cols-2 gap-2">
-            <input value={rider99Id} onChange={(e) => setRider99Id(e.target.value.replace(/\D/g, ""))} placeholder="99 骑手 ID" className="h-11 w-full rounded-[8px] border border-[var(--line)] bg-[var(--surface)] px-3 text-sm font-bold outline-none focus:border-[var(--accent)]" />
-            <input value={station} onChange={(e) => setStation(e.target.value)} placeholder="所属站点" className="h-11 w-full rounded-[8px] border border-[var(--line)] bg-[var(--surface)] px-3 text-sm font-bold outline-none focus:border-[var(--accent)]" />
+            <input value={rider99Id} onChange={(e) => setRider99Id(e.target.value.replace(/\D/g, ""))} placeholder="ID 99 do entregador" className="h-11 w-full rounded-[8px] border border-[var(--line)] bg-[var(--surface)] px-3 text-sm font-bold outline-none focus:border-[var(--accent)]" />
+            <input value={station} onChange={(e) => setStation(e.target.value)} placeholder="Estação" className="h-11 w-full rounded-[8px] border border-[var(--line)] bg-[var(--surface)] px-3 text-sm font-bold outline-none focus:border-[var(--accent)]" />
           </div>
         </div>
       )}
@@ -149,7 +149,7 @@ export default function RiderShiftsPage() {
 
       {mySignups.length > 0 && (
         <div className="panel p-4">
-          <div className="mb-2 text-[10px] font-black uppercase text-[var(--muted)]">我的报名</div>
+          <div className="mb-2 text-[10px] font-black uppercase text-[var(--muted)]">Minhas inscrições</div>
           <div className="space-y-1">
             {mySignups.map((signup) => {
               const shift = board.shifts.find((item) => item.id === signup.shiftId);
@@ -164,7 +164,7 @@ export default function RiderShiftsPage() {
         </div>
       )}
 
-      {grouped.length === 0 && <div className="panel p-6 text-center text-sm font-bold text-[var(--muted)]">当前没有开放报名的班次。</div>}
+      {grouped.length === 0 && <div className="panel p-6 text-center text-sm font-bold text-[var(--muted)]">Nenhum turno aberto no momento.</div>}
 
       {grouped.map(({ date, shifts }) => (
         <div key={date} className="panel p-4">
@@ -179,10 +179,10 @@ export default function RiderShiftsPage() {
                       {shift.isCritical && <Star size={12} className="text-[var(--accent)]" />}
                       {shift.timeRange}
                     </div>
-                    <div className="text-[11px] font-bold text-[var(--muted)]">{shift.hotzone} ｜ 计划 {shift.plannedCount} 人</div>
+                    <div className="text-[11px] font-bold text-[var(--muted)]">{shift.hotzone} ｜ Vagas: {shift.plannedCount}</div>
                   </div>
                   {joined ? (
-                    <span className="inline-flex items-center gap-1 text-xs font-black text-[var(--ok-ink)]"><CheckCircle2 size={14} /> 已报名</span>
+                    <span className="inline-flex items-center gap-1 text-xs font-black text-[var(--ok-ink)]"><CheckCircle2 size={14} /> Inscrito</span>
                   ) : (
                     <button
                       type="button"
@@ -190,7 +190,7 @@ export default function RiderShiftsPage() {
                       onClick={() => void signup(shift)}
                       className="h-9 rounded-[8px] bg-[var(--accent)] px-4 text-xs font-black uppercase text-[var(--accent-ink)] disabled:opacity-50"
                     >
-                      {busyShift === shift.id ? "..." : "报名"}
+                      {busyShift === shift.id ? "..." : "Inscrever"}
                     </button>
                   )}
                 </div>
