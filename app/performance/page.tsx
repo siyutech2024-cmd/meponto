@@ -246,7 +246,7 @@ export default function PerformancePage() {
             </div>
           ))}
           <div className="panel p-3 text-center"><div className="text-[10px] font-black uppercase text-[var(--muted)]">%TSH</div><div className="text-xl">{pct(total.tsh)}</div></div>
-          <div className="panel p-3 text-center"><div className="text-[10px] font-black uppercase text-[var(--muted)]">AR</div><div className="text-xl">{pct(total.ar, "high", 60)}</div></div>
+          <div className="panel p-3 text-center"><div className="text-[10px] font-black uppercase text-[var(--muted)]">AR</div><div className="text-xl">{pct(total.ar, "high", 95)}</div></div>
           <div className="panel p-3 text-center"><div className="text-[10px] font-black uppercase text-[var(--muted)]">CAA / 超时</div><div className="text-sm">{pct(total.caa, "low", 5)} / {pct(total.overtime, "low", 10)}</div></div>
         </div>
       )}
@@ -425,7 +425,7 @@ function GroupTable({ rows, label, showFranchise }: { rows: GroupRow[]; label: s
               <td className="py-2 text-center">{row.signedShiftHours.toFixed(1)}</td>
               <td className="py-2 text-center">{row.inShiftOnlineHours.toFixed(1)}</td>
               <td className="py-2 text-center">{pct(row.tsh)}</td>
-              <td className="py-2 text-center">{pct(row.ar, "high", 60)}</td>
+              <td className="py-2 text-center">{pct(row.ar, "high", 95)}</td>
               <td className="py-2 text-center">{pct(row.caa, "low", 5)}</td>
               <td className="py-2 text-center">{pct(row.overtime, "low", 10)}</td>
             </tr>
@@ -472,7 +472,7 @@ function RiderTable({ rows }: { rows: EnrichedKpi[] }) {
               <td className="py-2 text-center">{row.inShiftOnlineHours.toFixed(1)}</td>
               <td className="py-2 text-center">{pct(row.tsh)}</td>
               <td className="py-2 text-center">{pct(row.tshCritical)}</td>
-              <td className="py-2 text-center">{pct(row.ar, "high", 60)}</td>
+              <td className="py-2 text-center">{pct(row.ar, "high", 95)}</td>
               <td className="py-2 text-center">{pct(row.caa, "low", 5)}</td>
               <td className="py-2 text-center">{pct(row.overtime, "low", 10)}</td>
             </tr>
