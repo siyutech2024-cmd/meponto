@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Banknote, Building2, CheckCircle2, RefreshCcw, XCircle } from "lucide-react";
 import { AppShell, Badge, PageTitle } from "../components/ui";
+import { downloadCsv } from "../lib/csv";
 import { readSession } from "../lib/session";
 import type { RiderWithdrawal } from "../lib/finance";
 
@@ -57,7 +58,25 @@ export default function WalletAdminPage() {
       <PageTitle
         title="结算与提现"
         eyebrow={scopeFranchise ? `加盟商财务 · ${scopeFranchise}` : "总部财务 · 总部只与加盟商结算"}
-        action={<button type="button" onClick={() => void load()} className="tag inline-flex items-center gap-1"><RefreshCcw size={13} /> 刷新</button>}
+        action={
+          <div className="flex gap-2">
+            <button
+              type="button"
+              className="tag"
+              onClick={() => downloadCsv(`balances-${new Date().toISOString().slice(0, 10)}`, ["骑手", "99ID", "PIX", "加盟商", "站点", "累计结算", "已提走", "在途", "可提余额"], balances.map((b) => [b.name, b.rider99Id, b.pix, b.franchise, b.station, b.settled.toFixed(2), b.paid.toFixed(2), b.held.toFixed(2), b.available.toFixed(2)]))}
+            >
+              导出台账
+            </button>
+            <button
+              type="button"
+              className="tag"
+              onClick={() => downloadCsv(`withdrawals-${new Date().toISOString().slice(0, 10)}`, ["骑手", "PIX", "加盟商", "站点", "金额", "状态", "申请时间", "付款时间", "操作人", "备注"], withdrawals.map((w) => [w.riderName, w.pix, w.franchise, w.station, w.amount.toFixed(2), w.status, w.requestedAt, w.paidAt ?? "", w.paidBy ?? "", w.note ?? ""]))}
+            >
+              导出流水
+            </button>
+            <button type="button" onClick={() => void load()} className="tag inline-flex items-center gap-1"><RefreshCcw size={13} /> 刷新</button>
+          </div>
+        }
       />
 
       {message && (
