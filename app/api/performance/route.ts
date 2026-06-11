@@ -99,6 +99,22 @@ function creditOrderPoints(riderId: string, rider99Id: string, date: string, com
 }
 
 export async function GET(request: Request) {
+  {
+    // Rider self-view: latest-day KPI for one rider (rider-app permission).
+    const url = new URL(request.url);
+    const mine = url.searchParams.get("mine");
+    if (mine) {
+      const forbidden = requirePermission(request, "use_rider_app");
+      if (forbidden) return forbidden;
+      await refreshCollectionsFromDatabase(COLLECTIONS);
+      const rider = memory.riders.find((item) => item.name === mine);
+      if (!rider?.ninetyNineId) return jsonResponse({ data: null });
+      const rows = memory.riderDailyKpis.filter((row) => row.rider99Id === rider.ninetyNineId).sort((a, b) => b.date.localeCompare(a.date));
+      const latest = rows[0];
+      if (!latest) return jsonResponse({ data: null });
+      return jsonResponse({ data: { date: latest.date, completedOrders: latest.completedOrders, tsh: latest.tsh, ar: latest.ar } });
+    }
+  }
   const forbidden = requirePermission(request, "view_analytics");
   if (forbidden) return forbidden;
 
