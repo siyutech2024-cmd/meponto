@@ -161,7 +161,7 @@ export default function RiderAppPage() {
               </div>
             </div>
             <div className="flex items-center gap-2">
-              <a href="/rider-app/scan" aria-label="Escanear QR" style={{ color: "#ffffff" }} className="grid h-10 w-10 place-items-center rounded-[8px] bg-[#050505] shadow-[0_8px_20px_rgba(0,0,0,0.18)]">
+              <a href="/scan" aria-label="Escanear QR" style={{ color: "#ffffff" }} className="grid h-10 w-10 place-items-center rounded-[8px] bg-[#050505] shadow-[0_8px_20px_rgba(0,0,0,0.18)]">
                 <QrCode size={19} />
               </a>
               <button type="button" aria-label="Abrir avisos" className="relative grid h-10 w-10 place-items-center rounded-[8px] bg-white shadow-[0_8px_20px_rgba(0,0,0,0.08)]">
@@ -232,11 +232,11 @@ export default function RiderAppPage() {
             </div>
 
             <div className="relative z-10 grid grid-cols-[1fr_1fr] gap-2 p-3">
-              <a href="/rider-app/wallet" className={`flex h-12 items-center justify-center gap-2 rounded-[8px] text-sm font-black ${tier.buttonClass}`}>
+              <a href="/wallet" className={`flex h-12 items-center justify-center gap-2 rounded-[8px] text-sm font-black ${tier.buttonClass}`}>
                 Sacar
                 <ChevronRight size={17} />
               </a>
-              <a href="/rider-app/agenda" className="flex h-12 items-center justify-center gap-2 rounded-[8px] bg-white/10 text-sm font-black text-white">
+              <a href="/agenda" className="flex h-12 items-center justify-center gap-2 rounded-[8px] bg-white/10 text-sm font-black text-white">
                 Agenda
                 <CalendarDays size={17} />
               </a>
@@ -245,9 +245,24 @@ export default function RiderAppPage() {
         </section>
 
         <div id="home" className="scroll-mt-4">
+            {/* First-screen quick entries — Turnos signup is the hero action. */}
+            <section className="grid grid-cols-4 gap-2 px-4 pt-3">
+              {[
+                { href: "/shifts", icon: <CalendarDays size={20} />, label: "Turnos", hot: true },
+                { href: "/agenda", icon: <Clock3 size={20} />, label: "Agenda" },
+                { href: "/mall", icon: <Gift size={20} />, label: "Loja" },
+                { href: "/scan", icon: <QrCode size={20} />, label: "Escanear" },
+              ].map((entry) => (
+                <a key={entry.href} href={entry.href} style={{ color: "#050505" }} className={`flex flex-col items-center gap-1.5 rounded-[8px] py-3 text-[11px] font-black shadow-[0_10px_22px_rgba(0,0,0,0.06)] ${entry.hot ? "bg-[#ff7a00]" : "bg-white"}`}>
+                  <span className={entry.hot ? "" : "text-[#ff7a00]"}>{entry.icon}</span>
+                  {entry.label}
+                </a>
+              ))}
+            </section>
+
             {/* Invite friends — prominent referral hint */}
             <section className="px-4 pt-3">
-              <a href="/rider-app/mall#invite" className="grid grid-cols-[auto_1fr_auto] items-center gap-3 rounded-[8px] bg-[#ff7a00] p-3 text-[#050505] shadow-[0_12px_26px_rgba(255,122,0,0.3)]">
+              <a href="/mall#invite" className="grid grid-cols-[auto_1fr_auto] items-center gap-3 rounded-[8px] bg-[#ff7a00] p-3 text-[#050505] shadow-[0_12px_26px_rgba(255,122,0,0.3)]">
                 <div className="grid h-11 w-11 place-items-center rounded-[8px] bg-[#050505] text-white"><Gift size={20} /></div>
                 <div className="min-w-0">
                   <div className="text-sm font-black">Convide amigos e ganhe pontos!</div>
@@ -289,11 +304,11 @@ export default function RiderAppPage() {
                 </div>
                 <p className="text-sm font-bold leading-5 text-white/62">Inscreva-se dia a dia e acompanhe a aprovação da estação.</p>
                 <div className="grid grid-cols-2 gap-2">
-                  <a href="/rider-app/shifts" className="flex h-12 items-center justify-center gap-2 rounded-[8px] bg-[#ff7a00] text-sm font-black text-[#050505]">
+                  <a href="/shifts" className="flex h-12 items-center justify-center gap-2 rounded-[8px] bg-[#ff7a00] text-sm font-black text-[#050505]">
                     Inscrever-se
                     <ChevronRight size={18} />
                   </a>
-                  <a href="/rider-app/agenda" className="flex h-12 items-center justify-center gap-2 rounded-[8px] bg-white/10 text-sm font-black text-white">
+                  <a href="/agenda" className="flex h-12 items-center justify-center gap-2 rounded-[8px] bg-white/10 text-sm font-black text-white">
                     Minha agenda
                   </a>
                 </div>
@@ -303,7 +318,7 @@ export default function RiderAppPage() {
             <section className="px-4 pt-4">
               <div className="mb-2 flex items-center justify-between">
                 <h2 className="text-lg font-black">PontoMall</h2>
-                <a href="/rider-app/mall" className="text-sm font-black text-[#ff7a00]">Trocar</a>
+                <a href="/mall" className="text-sm font-black text-[#ff7a00]">Trocar</a>
               </div>
               <div className="grid grid-cols-[1fr_auto] items-center gap-3 rounded-[8px] bg-white p-3 shadow-[0_12px_26px_rgba(0,0,0,0.06)]">
                 <div>
@@ -318,10 +333,10 @@ export default function RiderAppPage() {
         </div>
 
         <nav className="fixed bottom-3 left-1/2 z-20 grid w-[calc(100%-24px)] max-w-[406px] -translate-x-1/2 grid-cols-4 rounded-[8px] bg-[#050505] p-1.5 text-white shadow-[0_18px_42px_rgba(0,0,0,0.3)]">
-          <Tab icon={<Home size={18} />} label="Inicio" href="/rider-app" active />
-          <Tab icon={<WalletCards size={18} />} label="Carteira" href="/rider-app/wallet" />
-          <Tab icon={<Gift size={18} />} label="Loja" href="/rider-app/mall" />
-          <Tab icon={<Headphones size={18} />} label="Ajuda" href="/rider-app/support" />
+          <Tab icon={<Home size={18} />} label="Inicio" href="/" active />
+          <Tab icon={<WalletCards size={18} />} label="Carteira" href="/wallet" />
+          <Tab icon={<Gift size={18} />} label="Loja" href="/mall" />
+          <Tab icon={<Headphones size={18} />} label="Ajuda" href="/support" />
         </nav>
       </div>
     </main>
@@ -437,7 +452,7 @@ function PointsScreen({
             <RulePill label="Servico" value="1/dia" />
             <RulePill label="Valor ref." value="R$1=10pts" />
           </div>
-          <a href="/rider-app/mall#invite" className="mt-3 flex h-12 w-full items-center justify-center gap-2 rounded-[8px] bg-[#ff7a00] text-sm font-black text-[#050505]">
+          <a href="/mall#invite" className="mt-3 flex h-12 w-full items-center justify-center gap-2 rounded-[8px] bg-[#ff7a00] text-sm font-black text-[#050505]">
             Mostrar QR do membro
             <QrCode size={18} />
           </a>
@@ -653,7 +668,7 @@ function PartnerMapRow({ partner, selected, onSelect }: { partner: (typeof rider
             >
               <Navigation size={14} /> Google Maps
             </a>
-            <a href="/rider-app/scan" className="flex h-10 items-center justify-center gap-1.5 rounded-[8px] bg-[#ff7a00] text-xs font-black text-[#050505]">
+            <a href="/scan" className="flex h-10 items-center justify-center gap-1.5 rounded-[8px] bg-[#ff7a00] text-xs font-black text-[#050505]">
               <QrCode size={14} /> Validar QR
             </a>
           </div>

@@ -107,7 +107,7 @@ export default function RiderScanPage() {
     <main className="min-h-screen bg-[#101010]" style={{ fontFamily: "Poppins, Inter, system-ui, sans-serif" }}>
       <div className="mx-auto min-h-screen w-full max-w-[430px] bg-[#f3f2ee] pb-10">
         <header className="flex items-center gap-3 px-4 pb-3 pt-4">
-          <Link href="/rider-app" className="grid h-10 w-10 place-items-center rounded-[8px] bg-white text-[#050505] shadow-[0_8px_20px_rgba(0,0,0,0.08)]"><ArrowLeft size={18} /></Link>
+          <Link href="/" className="grid h-10 w-10 place-items-center rounded-[8px] bg-white text-[#050505] shadow-[0_8px_20px_rgba(0,0,0,0.08)]"><ArrowLeft size={18} /></Link>
           <h1 className="flex items-center gap-2 text-lg font-black text-[#050505]"><ScanLine size={18} className="text-[#ff7a00]" /> Escanear QR</h1>
         </header>
 
