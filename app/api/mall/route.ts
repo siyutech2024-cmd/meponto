@@ -4,7 +4,7 @@ import { requirePermission, roleFromRequest } from "../../lib/server/authz";
 import { getAvailablePoints, type MarketplaceOrder, type MarketplaceProduct, type PointsLedgerEntry } from "../../lib/points";
 import { defaultMallConfig, resolveTier, tierDefinitions, type MallConfig } from "../../lib/mall";
 
-const COLLECTIONS = ["mallConfigs", "marketplaceProducts", "marketplaceOrders", "pointsLedgerEntries", "riders", "riderDailyKpis"];
+const COLLECTIONS = ["mallConfigs", "marketplaceProducts", "marketplaceOrders", "pointsLedgerEntries", "partnerPointsLedgerEntries", "riders", "riderDailyKpis"];
 
 function nowStamp() {
   return new Date().toISOString().slice(0, 16).replace("T", " ");
@@ -97,7 +97,8 @@ type Body =
   | { action: "markArrived"; orderId: string }
   | { action: "markPickedUp"; orderId: string }
   | { action: "awardReferral"; inviterRiderId: string; newRiderName: string }
-  | { action: "awardPartnerService"; riderId: string; note?: string };
+  | { action: "awardPartnerService"; riderId: string; note?: string }
+  | { action: "scanPartner"; riderId: string; partnerId: string };
 
 export async function POST(request: Request) {
   const peek = (await request.clone().json().catch(() => ({}))) as { action?: string };
@@ -106,7 +107,7 @@ export async function POST(request: Request) {
   // (note: the plain Rider role intentionally has manage_marketplace for the
   // legacy mall, so admin actions must NOT rely on that permission).
   const forbidden =
-    peek.action === "redeem"
+    peek.action === "redeem" || peek.action === "scanPartner"
       ? requirePermission(request, "use_rider_app") && requirePermission(request, "manage_points")
       : peek.action === "markArrived" || peek.action === "markPickedUp"
         ? requirePermission(request, "manage_slots") && requirePermission(request, "manage_points")
@@ -137,7 +138,7 @@ export async function POST(request: Request) {
     }
 
     case "supplierAddProduct": {
-      const { name, supplierName, description = "" } = body as { name?: string; supplierName?: string; description?: string };
+      const { name, supplierName, description = "", isVirtual = false } = body as { name?: string; supplierName?: string; description?: string; isVirtual?: boolean };
       const supplyPrice = Number(body.supplyPrice);
       const deliveryCycleDays = Math.max(1, Math.floor(Number(body.deliveryCycleDays) || 7));
       const stock = Math.max(0, Math.floor(Number(body.stock) || 0));
@@ -157,6 +158,7 @@ export async function POST(request: Request) {
         supplyPrice,
         deliveryCycleDays,
         description: String(description).slice(0, 200),
+        isVirtual: isVirtual === true,
       };
       memory.marketplaceProducts.unshift(product);
       appendServerAudit({ actor, action: "MALL_PRODUCT_SUBMITTED", entity: "MarketplaceProduct", entityId: product.id, detail: `${product.name} by ${supplierName} @ R$${supplyPrice} (cycle ${deliveryCycleDays}d).`, risk: "Low" });
@@ -207,19 +209,25 @@ export async function POST(request: Request) {
       const createdAt = nowStamp();
       const eta = new Date();
       eta.setDate(eta.getDate() + (product.deliveryCycleDays ?? 7));
+      // Virtual goods: no logistics — issue an instant voucher code instead.
+      const isVirtual = product.isVirtual === true;
+      const voucherCode = isVirtual
+        ? `MP-${Date.now().toString(36).toUpperCase()}-${Math.random().toString(36).slice(2, 6).toUpperCase()}`
+        : undefined;
       const order: MarketplaceOrder = {
         id: makeServerId("mko", memory.marketplaceOrders.length + 1),
         accountType: "rider",
         riderId: rider.id,
         productId: product.id,
         pointsSpent: price,
-        status: "created",
+        status: isVirtual ? "fulfilled" : "created",
         createdAt,
         productName: product.name,
         riderName: rider.name,
         station: rider.ponto ?? "Unassigned",
         franchise: rider.franchise ?? "Unassigned",
-        etaDate: eta.toISOString().slice(0, 10),
+        etaDate: isVirtual ? createdAt.slice(0, 10) : eta.toISOString().slice(0, 10),
+        ...(isVirtual ? { pickedUpAt: createdAt, voucherCode } : {}),
       };
       memory.marketplaceOrders.unshift(order);
 
@@ -273,6 +281,62 @@ export async function POST(request: Request) {
       const config = getConfig();
       const entry = creditPoints(inviter.id, config.referralPoints, "REFERRAL_REWARD", `邀请骑手 ${newRiderName ?? ""} 注册`, `ref-${Date.now()}`, actor);
       return jsonResponse({ data: { entry, balance: entry.balanceAfter } }, { status: 201 });
+    }
+
+    case "scanPartner": {
+      // A rider scans a partner's QR code → the PARTNER earns points.
+      // Anti-fraud: rider must have completed orders (Eastwind-verified),
+      // one scan per rider/partner/day, and a daily cap per partner.
+      const { riderId: scannerId, partnerId } = body as { riderId?: string; partnerId?: string };
+      const rider = memory.riders.find((item) => item.id === scannerId);
+      if (!rider) return jsonResponse({ error: "Cadastro do entregador não encontrado." }, { status: 404 });
+      const partner = memory.crmPartners.find((item) => item.id === partnerId);
+      if (!partner) return jsonResponse({ error: "Parceiro não encontrado." }, { status: 404 });
+
+      const orders = lifetimeOrders(rider.ninetyNineId);
+      if (!orders || orders <= 0) {
+        return jsonResponse({ error: "Apenas entregadores com pedidos concluídos podem validar parceiros (antifraude)." }, { status: 403 });
+      }
+
+      const date = new Date().toISOString().slice(0, 10);
+      const scanId = `ppts-scan-${date}-${partner.id}-${rider.id}`;
+      if (memory.partnerPointsLedgerEntries.some((entry) => entry.id === scanId)) {
+        return jsonResponse({ error: "Você já validou este parceiro hoje." }, { status: 409 });
+      }
+      const todayScans = memory.partnerPointsLedgerEntries.filter(
+        (entry) => entry.partnerId === partner.id && entry.id.startsWith(`ppts-scan-${date}-`),
+      ).length;
+      if (todayScans >= 10) {
+        return jsonResponse({ error: "Limite diário de validações deste parceiro atingido." }, { status: 429 });
+      }
+
+      const config = getConfig();
+      memory.partnerPointsLedgerEntries.unshift({
+        id: scanId,
+        partnerId: partner.id,
+        accountId: `ppts-${partner.id}`,
+        type: "earn",
+        points: config.partnerServicePoints,
+        status: "approved",
+        sourceType: "partner_service_benefit",
+        sourceId: scanId,
+        balanceAfter: 0,
+        reasonCode: "PARTNER_QR_SCAN",
+        note: `Validado pelo entregador ${rider.name}`,
+        createdBy: "QR Scan",
+        createdAt: nowStamp(),
+      });
+
+      appendServerAudit({
+        actor,
+        action: "PARTNER_QR_SCANNED",
+        entity: "PartnerPoints",
+        entityId: partner.id,
+        detail: `${rider.name} scanned ${partner.name}: +${config.partnerServicePoints} pts (scan ${todayScans + 1}/10 today).`,
+        risk: "Low",
+      });
+
+      return jsonResponse({ data: { ok: true, partnerName: partner.name, points: config.partnerServicePoints } }, { status: 201 });
     }
 
     case "awardPartnerService": {

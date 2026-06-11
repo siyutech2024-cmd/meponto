@@ -51,6 +51,7 @@ import { dispatchShifts, shiftQuotas, shiftSignups, type DispatchShift, type Shi
 import { appUsers, type AppUser } from "../users";
 import { riderDailyEarnings, riderDailyKpis, type RiderDailyEarning, type RiderDailyKpi } from "../performance";
 import { mallConfigs, type MallConfig } from "../mall";
+import { riderWithdrawals, type RiderWithdrawal } from "../finance";
 
 type Reward = (typeof rewards)[number];
 type Ponto = (typeof pontos)[number];
@@ -98,6 +99,7 @@ const globalState = globalThis as typeof globalThis & {
     riderDailyKpis: RiderDailyKpi[];
     riderDailyEarnings: RiderDailyEarning[];
     mallConfigs: MallConfig[];
+    riderWithdrawals: RiderWithdrawal[];
   };
 };
 
@@ -131,6 +133,7 @@ export const memory =
     riderDailyKpis: trackCollection("riderDailyKpis", [...riderDailyKpis]),
     riderDailyEarnings: trackCollection("riderDailyEarnings", [...riderDailyEarnings]),
     mallConfigs: trackCollection("mallConfigs", [...mallConfigs]),
+    riderWithdrawals: trackCollection("riderWithdrawals", [...riderWithdrawals]),
   });
 
 // Restore persisted data from the database (no-op when USE_SUPABASE is off).
@@ -188,6 +191,8 @@ memory.riderDailyEarnings ??= [];
 memory.riderDailyEarnings = trackCollection("riderDailyEarnings", memory.riderDailyEarnings);
 memory.mallConfigs ??= [...mallConfigs];
 memory.mallConfigs = trackCollection("mallConfigs", memory.mallConfigs);
+memory.riderWithdrawals ??= [];
+memory.riderWithdrawals = trackCollection("riderWithdrawals", memory.riderWithdrawals);
 
 export function jsonResponse<T>(data: T, init?: ResponseInit) {
   // Make sure pending mutations reach the database even on serverless,

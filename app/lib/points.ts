@@ -85,6 +85,8 @@ export type MarketplaceProduct = {
   /** HQ-defined revenue-share percentage on top of the supply price. */
   marginPct?: number;
   description?: string;
+  /** Virtual goods skip logistics: redemption issues an instant voucher code. */
+  isVirtual?: boolean;
 };
 
 export type MarketplaceOrderStatus = "created" | "arrived" | "fulfilled" | "cancelled";
@@ -109,6 +111,8 @@ export type MarketplaceOrder = {
   pickedUpAt?: string;
   /** Set when the arrival notice is published to the rider app. */
   notifiedAt?: string;
+  /** Voucher code issued instantly for virtual products. */
+  voucherCode?: string;
 };
 
 export type PointsRuleSummary = {

@@ -57,6 +57,7 @@ export const portalConfigs: Record<PortalId, PortalConfig> = {
       { href: "/finance", label: "财务与结算", description: "激励、付款和积分财务审批。", permission: "view_finance" },
       { href: "/marketplace", label: "PontoMall 管理", description: "商城库存、兑换订单和积分规则。", permission: "manage_marketplace" },
       { href: "/mall", label: "积分商城管理", description: "积分规则、供应商商品定价分成、兑换订单。", permission: "manage_marketplace" },
+      { href: "/wallet", label: "结算与提现", description: "加盟商应结对账、全网提现流水与余额台账。", permission: "view_finance" },
       { href: "/users", label: "用户与权限", description: "创建多用户账号、分配角色与系统归属。", permission: "view_audit" },
       { href: "/access-control", label: "权限矩阵", description: "账号、角色和功能权限分离。", permission: "view_audit" },
       { href: "/reports", label: "报表导出", description: "运营、站点、骑手和排班报表。", permission: "view_analytics" },
@@ -106,6 +107,7 @@ export const portalConfigs: Record<PortalId, PortalConfig> = {
     modules: [
       { href: "/dispatch/franchise", label: "排班配额与审核", description: "接收总部配额、拆分给站点并审核骑手报名。", permission: "manage_slots" },
       { href: "/performance", label: "KPI 考核", description: "查看本加盟商站点与骑手的 T+1 KPI。", permission: "view_analytics" },
+      { href: "/wallet", label: "结算与提现", description: "骑手余额台账、提现付款确认（PIX）。", permission: "view_finance" },
       { href: "/franchise", label: "合作方案", description: "查看加盟模型、SOP、KPI 和月度治理节奏。", permission: "view_analytics" },
       { href: "/pontos", label: "站点列表", description: "查看/维护所属站点基础信息。", permission: "manage_pontos" },
       { href: "/riders", label: "骑手运营", description: "查看所属骑手与状态。", permission: "manage_riders" },
@@ -147,6 +149,7 @@ export const portalConfigs: Record<PortalId, PortalConfig> = {
       { href: "/rider-app", label: "骑手首页", description: "查看个人积分、排班 slots 并提交报名。", permission: "use_rider_app" },
       { href: "/rider-app/shifts", label: "班次报名", description: "查看开放班次并用 99 ID 一键报名。", permission: "use_rider_app" },
       { href: "/rider-app/mall", label: "积分商城", description: "会员等级、积分兑换、到货取货提醒。", permission: "use_rider_app" },
+      { href: "/rider-app/wallet", label: "我的钱包", description: "T+1 结算余额、提现申请与记录。", permission: "use_rider_app" },
       { href: "/marketplace", label: "PontoMall", description: "使用积分兑换骑手权益。", permission: "use_rider_app" },
       { href: "/rewards", label: "积分记录", description: "查看奖励、积分和激励记录。", permission: "use_rider_app" },
     ],
