@@ -49,7 +49,6 @@ export const portalConfigs: Record<PortalId, PortalConfig> = {
     modules: [
       { href: "/dispatch", label: "运力调度中心", description: "周排班、99 计划导入、配额分发、报名审核与填报清单（替代旧排班总览）。", permission: "manage_slots" },
       { href: "/performance", label: "T+1 考核看板", description: "导入 Eastwind T+1 报表，骑手/站点/加盟商三级 KPI。", permission: "view_analytics" },
-      { href: "/ninety-nine-import", label: "报表导入", description: "上传 Eastwind T+1 绩效/收入日报。", permission: "manage_riders" },
       { href: "/dashboard", label: "总部仪表盘", description: "全网运营、风险和排班汇总。", permission: "view_dashboard" },
       { href: "/riders", label: "骑手档案", description: "维护骑手、敏感资料和状态。", permission: "manage_riders" },
       { href: "/pontos", label: "站点网络", description: "维护 Ponto 站点、负责人和容量。", permission: "manage_pontos" },

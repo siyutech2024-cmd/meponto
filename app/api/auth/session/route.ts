@@ -17,6 +17,8 @@ export async function GET(request: Request) {
       tenantId: session.tenantId,
       organization: session.organization,
       defaultPath: session.defaultPath,
+      franchise: session.franchise ?? "",
+      station: session.station ?? "",
       portalName: portalConfigs[session.portal].productName,
     },
   });
