@@ -69,6 +69,7 @@ const navItems: Array<{
   { href: "/mall", labelKey: "navMall", icon: Store, permission: "manage_marketplace" },
   { href: "/partner-points", labelKey: "navPartnerPoints", icon: Handshake, permission: "manage_partner_points" },
   { href: "/finance", labelKey: "navFinance", icon: CircleDollarSign, permission: "view_finance" },
+  { href: "/wallet", labelKey: "navWallet", icon: CircleDollarSign, permission: "view_finance" },
   { href: "/crm", labelKey: "navCrm", icon: Handshake, permission: "view_analytics" },
   { href: "/franchise", labelKey: "navFranchise", icon: Store, permission: "view_analytics" },
   { href: "/night-shift", labelKey: "navNightShift", icon: Moon, permission: "view_analytics" },
@@ -136,6 +137,7 @@ const navGroups: Array<{
     items: navItems.filter((item) =>
       [
         "/finance",
+        "/wallet",
         "/analytics",
         "/reports",
         "/realtime",
