@@ -104,7 +104,9 @@ type SetWeekBody = {
 
 type DeleteShiftBody = { action: "deleteShift"; shiftId: string };
 
-type Body = ImportBody | QuotaBody | SignupBody | ReviewBody | ReportBody | SetWeekBody | DeleteShiftBody;
+type NudgeBody = { action: "nudge"; scope: "franchise" | "station"; name: string };
+
+type Body = ImportBody | QuotaBody | SignupBody | ReviewBody | ReportBody | SetWeekBody | DeleteShiftBody | NudgeBody;
 
 async function handlePost(request: Request) {
   const peek = (await request.clone().json().catch(() => ({}))) as { action?: string };
@@ -283,6 +285,29 @@ async function handlePost(request: Request) {
       });
 
       return jsonResponse({ data: { changed } });
+    }
+
+    case "nudge": {
+      // HQ nudges a franchise / a franchise nudges a station to review pending signups.
+      const { scope, name } = body as unknown as { scope?: "franchise" | "station"; name?: string };
+      if (!name?.trim() || (scope !== "franchise" && scope !== "station")) {
+        return jsonResponse({ error: "scope and name required" }, { status: 400 });
+      }
+      const pendingCount = memory.shiftSignups.filter(
+        (signup) => signup.status === "submitted" && (scope === "franchise" ? signup.franchise === name : signup.station === name),
+      ).length;
+      memory.notifications.unshift({
+        id: `ntf-nudge-${Date.now()}`,
+        title: scope === "franchise" ? `催审核：${name}` : `催审核（站点）：${name}`,
+        body: `还有 ${pendingCount} 条排班报名待审核，请尽快处理。`,
+        href: "/dispatch",
+        source: "System",
+        sourceId: name,
+        severity: "Medium",
+        createdAt: new Date().toISOString().slice(0, 16).replace("T", " "),
+      });
+      appendServerAudit({ actor, action: "REVIEW_NUDGED", entity: scope === "franchise" ? "Franchise" : "Ponto", entityId: name, detail: `${pendingCount} pending signups reminder sent.`, risk: "Low" });
+      return jsonResponse({ data: { ok: true, pendingCount } });
     }
 
     case "report": {
