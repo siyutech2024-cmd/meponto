@@ -49,13 +49,11 @@ export const portalConfigs: Record<PortalId, PortalConfig> = {
     modules: [
       { href: "/dispatch", label: "运力调度中心", description: "周排班、99 计划导入、配额分发、报名审核与填报清单（替代旧排班总览）。", permission: "manage_slots" },
       { href: "/performance", label: "T+1 考核看板", description: "导入 Eastwind T+1 报表，骑手/站点/加盟商三级 KPI。", permission: "view_analytics" },
-      { href: "/operations-core", label: "运力运营核心", description: "T+1 报表、KPI、三级名额与白名单导出。", permission: "view_dashboard" },
+      { href: "/ninety-nine-import", label: "报表导入", description: "上传 Eastwind T+1 绩效/收入日报。", permission: "manage_riders" },
       { href: "/dashboard", label: "总部仪表盘", description: "全网运营、风险和排班汇总。", permission: "view_dashboard" },
       { href: "/riders", label: "骑手档案", description: "维护骑手、敏感资料和状态。", permission: "manage_riders" },
       { href: "/pontos", label: "站点网络", description: "维护 Ponto 站点、负责人和容量。", permission: "manage_pontos" },
       { href: "/franchise", label: "加盟治理", description: "合作条款、SOP 和加盟商管理口径。", permission: "view_analytics" },
-      { href: "/finance", label: "财务与结算", description: "激励、付款和积分财务审批。", permission: "view_finance" },
-      { href: "/marketplace", label: "PontoMall 管理", description: "商城库存、兑换订单和积分规则。", permission: "manage_marketplace" },
       { href: "/mall", label: "积分商城管理", description: "积分规则、供应商商品定价分成、兑换订单。", permission: "manage_marketplace" },
       { href: "/wallet", label: "结算与提现", description: "加盟商应结对账、全网提现流水与余额台账。", permission: "view_finance" },
       { href: "/support", label: "客服工单中心", description: "骑手/加盟商/站点/官网工单统一处理。", permission: "view_audit" },
@@ -76,7 +74,7 @@ export const portalConfigs: Record<PortalId, PortalConfig> = {
     futureDomain: "partner.meponto.com",
     modules: [
       { href: "/partner-points", label: "服务与积分", description: "服务确认、核销记录与 Partner 积分。", permission: "manage_partner_services" },
-      { href: "/marketplace", label: "生态消费", description: "Partner 使用积分兑换平台权益。", permission: "manage_partner_points" },
+      { href: "/partner-app", label: "生态消费", description: "Partner 使用积分兑换平台权益。", permission: "manage_partner_points" },
     ],
   },
   supplier: {
@@ -91,7 +89,6 @@ export const portalConfigs: Record<PortalId, PortalConfig> = {
     futureDomain: "supplier.meponto.com",
     modules: [
       { href: "/mall/supplier", label: "商品供货", description: "上传商品、报供应价与派送周期，等待总部定价上架。", permission: "manage_marketplace" },
-      { href: "/marketplace", label: "商品与订单", description: "查看商品状态、库存与站点履约订单。", permission: "manage_supplier_catalog" },
       { href: "/reports", label: "供应商对账", description: "查看供应价应结款和月度流水。", permission: "manage_supplier_catalog" },
     ],
   },
@@ -114,7 +111,6 @@ export const portalConfigs: Record<PortalId, PortalConfig> = {
       { href: "/pontos", label: "站点列表", description: "查看/维护所属站点基础信息。", permission: "manage_pontos" },
       { href: "/users", label: "站点账号", description: "为下属站点创建和管理登录账号。", permission: "manage_slots" },
       { href: "/riders", label: "骑手运营", description: "查看所属骑手与状态。", permission: "manage_riders" },
-      { href: "/marketplace", label: "PontoMall 兑换", description: "查看加盟商积分权益与兑换订单。", permission: "manage_marketplace" },
       { href: "/reports", label: "经营报表", description: "查看站点与排班结果报表。", permission: "view_analytics" },
     ],
   },
@@ -135,7 +131,6 @@ export const portalConfigs: Record<PortalId, PortalConfig> = {
       { href: "/riders", label: "本站骑手", description: "维护站点骑手档案、状态和排班资格。", permission: "manage_riders" },
       { href: "/pontos", label: "站点资料", description: "查看站点位置、容量和负责人。", permission: "manage_pontos" },
       { href: "/incidents", label: "异常上报", description: "创建事故、服务和安全异常。", permission: "create_incidents" },
-      { href: "/chat", label: "站点沟通", description: "站点与骑手的运营沟通。", permission: "view_dashboard" },
     ],
   },
   rider: {
@@ -155,8 +150,7 @@ export const portalConfigs: Record<PortalId, PortalConfig> = {
       { href: "/rider-app/agenda", label: "我的排班 Minha Agenda", description: "已确认班次日历与昨日表现。", permission: "use_rider_app" },
       { href: "/rider-app/wallet", label: "我的钱包", description: "T+1 结算余额、提现申请与记录。", permission: "use_rider_app" },
       { href: "/rider-app/support", label: "联系总部 Fale Conosco", description: "排班/付款/积分问题，工单直达总部。", permission: "use_rider_app" },
-      { href: "/marketplace", label: "PontoMall", description: "使用积分兑换骑手权益。", permission: "use_rider_app" },
-      { href: "/rewards", label: "积分记录", description: "查看奖励、积分和激励记录。", permission: "use_rider_app" },
+      { href: "/rider-app/mall", label: "PontoMall", description: "使用积分兑换骑手权益。", permission: "use_rider_app" },
     ],
   },
   pontomall: {
@@ -170,11 +164,11 @@ export const portalConfigs: Record<PortalId, PortalConfig> = {
     vercelPath: "/pontomall",
     futureDomain: "mall.meponto.com",
     modules: [
-      { href: "/marketplace", label: "商城工作台", description: "商品、库存和兑换订单。", permission: "manage_marketplace" },
+      { href: "/mall", label: "商城工作台", description: "商品定价、库存和兑换订单。", permission: "manage_marketplace" },
       { href: "/points-economy", label: "积分经济", description: "积分规则、发放、扣减和核算模型。", permission: "manage_points" },
       { href: "/partner-points", label: "Partner 积分", description: "合作伙伴积分服务与权益。", permission: "manage_partner_points" },
       { href: "/crm", label: "合作伙伴 CRM", description: "供应商和合作伙伴运营。", permission: "view_analytics" },
-      { href: "/finance", label: "商城财务", description: "兑换、库存和积分结算。", permission: "view_finance" },
+      { href: "/wallet", label: "商城财务", description: "结算台账与提现付款。", permission: "view_finance" },
     ],
   },
 };
