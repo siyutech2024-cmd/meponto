@@ -137,7 +137,7 @@ const seedAuditLog: AuditEntry[] = [
 export const useVentoStore = create<VentoState>()(
   persist(
     (set, get) => ({
-      language: "en",
+      language: "pt",
       theme: "dark",
       currentRole: "Super Admin",
       riders: seedRiders,
