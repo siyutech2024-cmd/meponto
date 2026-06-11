@@ -1,10 +1,8 @@
-[
-  {
-    "relation": ["delegate_permission/common.handle_all_urls"],
-    "target": {
-      "namespace": "android_app",
-      "package_name": "com.meponto.app",
-      "sha256_cert_fingerprints": ["PLACEHOLDER_WILL_BE_REPLACED_AFTER_PWABUILDER_SIGNING"]
-    }
-  }
-]
+[{
+      "relation": ["delegate_permission/common.handle_all_urls"],
+      "target": {
+        "namespace": "android_app",
+        "package_name": "com.meponto.app",
+        "sha256_cert_fingerprints": ["0F:66:36:18:59:D0:18:84:68:5D:49:1E:67:F3:1B:0E:F9:3F:3A:F5:7B:79:A7:13:51:1B:C1:28:BB:80:85:6A"]
+      }
+    }]
