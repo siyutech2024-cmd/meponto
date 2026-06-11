@@ -76,8 +76,22 @@ export default function NetworkPage() {
                     title="删除（需先迁移下属站点）"
                     onClick={async () => {
                       if (!window.confirm(`删除加盟商「${franchise.name}」？`)) return;
-                      const r = await post({ action: "deleteFranchise", franchiseId: franchise.id });
-                      if (r) setMessage({ tone: "ok", text: "已删除。" });
+                      const response = await fetch("/api/network", { method: "POST", headers, body: JSON.stringify({ action: "deleteFranchise", franchiseId: franchise.id }) });
+                      const payload = await response.json().catch(() => ({}));
+                      if (response.ok) {
+                        setMessage({ tone: "ok", text: `「${franchise.name}」已删除。` });
+                        void load();
+                        return;
+                      }
+                      // Bound stations: offer force-delete (stations become unbound).
+                      if (response.status === 409 && payload.canForce) {
+                        if (window.confirm(`${payload.error}\n\n强制删除？其站点将变为「未绑定」，可稍后迁移到其他加盟商。`)) {
+                          const r2 = await post({ action: "deleteFranchise", franchiseId: franchise.id, force: true });
+                          if (r2) setMessage({ tone: "ok", text: `「${franchise.name}」已删除，${r2.data?.unbound ?? 0} 个站点已解除绑定。` });
+                        }
+                        return;
+                      }
+                      setMessage({ tone: "err", text: payload.error ?? `删除失败 (${response.status})` });
                     }}
                     className="text-[var(--muted)] hover:text-[var(--danger-ink)]"
                   >
