@@ -54,6 +54,7 @@ import { mallConfigs, type MallConfig } from "../mall";
 import { riderWithdrawals, type RiderWithdrawal } from "../finance";
 import { supportTickets, type SupportTicket } from "../support";
 import { pushSubscriptions, type PushSubscriptionRecord } from "../push";
+import { franchises, type Franchise } from "../network";
 
 type Reward = (typeof rewards)[number];
 type Ponto = (typeof pontos)[number];
@@ -104,6 +105,7 @@ const globalState = globalThis as typeof globalThis & {
     riderWithdrawals: RiderWithdrawal[];
     supportTickets: SupportTicket[];
     pushSubscriptions: PushSubscriptionRecord[];
+    franchises: Franchise[];
   };
 };
 
@@ -140,6 +142,7 @@ export const memory =
     riderWithdrawals: trackCollection("riderWithdrawals", [...riderWithdrawals]),
     supportTickets: trackCollection("supportTickets", [...supportTickets]),
     pushSubscriptions: trackCollection("pushSubscriptions", [...pushSubscriptions]),
+    franchises: trackCollection("franchises", [...franchises]),
   });
 
 // Restore persisted data from the database (no-op when USE_SUPABASE is off).
@@ -203,6 +206,8 @@ memory.supportTickets ??= [];
 memory.supportTickets = trackCollection("supportTickets", memory.supportTickets);
 memory.pushSubscriptions ??= [];
 memory.pushSubscriptions = trackCollection("pushSubscriptions", memory.pushSubscriptions);
+memory.franchises ??= [];
+memory.franchises = trackCollection("franchises", memory.franchises);
 
 export function jsonResponse<T>(data: T, init?: ResponseInit) {
   // Make sure pending mutations reach the database even on serverless,

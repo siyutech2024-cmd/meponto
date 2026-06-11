@@ -1,0 +1,124 @@
+import { appendServerAudit, jsonResponse, makeServerId, memory } from "../../lib/server/memory";
+import { flushPendingToDatabase, refreshCollectionsFromDatabase } from "../../lib/server/persistence";
+import { requirePermission, roleFromRequest } from "../../lib/server/authz";
+import type { Franchise } from "../../lib/network";
+
+const COLLECTIONS = ["franchises", "pontos"];
+const nowStamp = () => new Date().toISOString().slice(0, 16).replace("T", " ");
+
+export async function GET(request: Request) {
+  const forbidden = requirePermission(request, "view_dashboard");
+  if (forbidden) return forbidden;
+  await refreshCollectionsFromDatabase(COLLECTIONS);
+
+  // Franchise list enriched with its station count.
+  const franchises = memory.franchises.map((franchise) => ({
+    ...franchise,
+    stationCount: memory.pontos.filter((ponto) => ponto.franchise === franchise.name).length,
+  }));
+  return jsonResponse({ data: { franchises, stations: memory.pontos } });
+}
+
+type Body =
+  | { action: "addFranchise"; name: string; owner?: string; phone?: string; city?: string }
+  | { action: "deleteFranchise"; franchiseId: string }
+  | { action: "addStation"; name: string; franchise: string; address?: string; mapUrl?: string; leader?: string; bairro?: string }
+  | { action: "updateStation"; stationId: string; franchise?: string; address?: string; mapUrl?: string; leader?: string; name?: string };
+
+async function handlePost(request: Request) {
+  const forbidden = requirePermission(request, "manage_pontos");
+  if (forbidden) return forbidden;
+  await refreshCollectionsFromDatabase(COLLECTIONS);
+  const body = (await request.json().catch(() => ({}))) as Partial<Body> & Record<string, unknown>;
+  const actor = roleFromRequest(request);
+
+  switch (body.action) {
+    case "addFranchise": {
+      const { name, owner = "", phone = "", city = "São Paulo" } = body as Record<string, string>;
+      if (!name?.trim()) return jsonResponse({ error: "加盟商名称必填" }, { status: 400 });
+      if (memory.franchises.some((f) => f.name === name.trim())) return jsonResponse({ error: "该加盟商已存在" }, { status: 409 });
+      const franchise: Franchise = {
+        id: makeServerId("fr", memory.franchises.length + 1),
+        name: name.trim().slice(0, 60),
+        owner: owner.trim().slice(0, 60),
+        phone: phone.trim().slice(0, 30),
+        city: city.trim().slice(0, 40),
+        createdAt: nowStamp(),
+      };
+      memory.franchises.unshift(franchise);
+      appendServerAudit({ actor, action: "FRANCHISE_CREATED", entity: "Franchise", entityId: franchise.id, detail: `${franchise.name} (${franchise.city})`, risk: "Medium" });
+      return jsonResponse({ data: franchise }, { status: 201 });
+    }
+
+    case "deleteFranchise": {
+      const { franchiseId } = body as { franchiseId?: string };
+      const index = memory.franchises.findIndex((f) => f.id === franchiseId);
+      if (index === -1) return jsonResponse({ error: "franchise not found" }, { status: 404 });
+      const franchise = memory.franchises[index];
+      const bound = memory.pontos.filter((ponto) => ponto.franchise === franchise.name).length;
+      if (bound > 0) return jsonResponse({ error: `该加盟商下还有 ${bound} 个站点，请先迁移站点。` }, { status: 409 });
+      memory.franchises.splice(index, 1);
+      appendServerAudit({ actor, action: "FRANCHISE_DELETED", entity: "Franchise", entityId: franchiseId ?? "", detail: franchise.name, risk: "High" });
+      return jsonResponse({ data: { ok: true } });
+    }
+
+    case "addStation": {
+      const { name, franchise, address = "", mapUrl = "", leader = "", bairro = "" } = body as Record<string, string>;
+      if (!name?.trim()) return jsonResponse({ error: "站点名称必填" }, { status: 400 });
+      if (!franchise?.trim() || !memory.franchises.some((f) => f.name === franchise.trim())) {
+        return jsonResponse({ error: "必须绑定一个已存在的上级加盟商" }, { status: 400 });
+      }
+      if (!address?.trim() && !mapUrl?.trim()) {
+        return jsonResponse({ error: "请填写站点地址或 Google Maps 链接" }, { status: 400 });
+      }
+      if (memory.pontos.some((p) => p.name === name.trim())) return jsonResponse({ error: "该站点已存在" }, { status: 409 });
+      const station = {
+        id: makeServerId("pt", memory.pontos.length + 1),
+        name: name.trim().slice(0, 60),
+        bairro: bairro.trim().slice(0, 60) || address.split(",")[0]?.trim().slice(0, 60) || "São Paulo",
+        ridersCount: 0,
+        nightShiftLevel: "Standard",
+        leader: leader.trim().slice(0, 60),
+        safetyScore: 90,
+        lat: 0,
+        lng: 0,
+        franchise: franchise.trim(),
+        address: address.trim().slice(0, 160),
+        mapUrl: mapUrl.trim().slice(0, 300),
+      } as (typeof memory.pontos)[number];
+      memory.pontos.unshift(station);
+      appendServerAudit({ actor, action: "STATION_CREATED", entity: "Ponto", entityId: station.id, detail: `${station.name} → ${franchise} (${station.address || station.mapUrl})`, risk: "Medium" });
+      return jsonResponse({ data: station }, { status: 201 });
+    }
+
+    case "updateStation": {
+      const { stationId } = body as { stationId?: string };
+      const index = memory.pontos.findIndex((p) => p.id === stationId);
+      if (index === -1) return jsonResponse({ error: "station not found" }, { status: 404 });
+      const fields = body as Record<string, unknown>;
+      if (fields.franchise !== undefined && !memory.franchises.some((f) => f.name === String(fields.franchise))) {
+        return jsonResponse({ error: "目标加盟商不存在" }, { status: 400 });
+      }
+      const current = memory.pontos[index];
+      memory.pontos[index] = {
+        ...current,
+        ...(fields.name !== undefined ? { name: String(fields.name).slice(0, 60) } : {}),
+        ...(fields.franchise !== undefined ? { franchise: String(fields.franchise).slice(0, 60) } : {}),
+        ...(fields.address !== undefined ? { address: String(fields.address).slice(0, 160) } : {}),
+        ...(fields.mapUrl !== undefined ? { mapUrl: String(fields.mapUrl).slice(0, 300) } : {}),
+        ...(fields.leader !== undefined ? { leader: String(fields.leader).slice(0, 60) } : {}),
+      };
+      appendServerAudit({ actor, action: "STATION_UPDATED", entity: "Ponto", entityId: stationId ?? "", detail: JSON.stringify(fields).slice(0, 160), risk: "Low" });
+      return jsonResponse({ data: memory.pontos[index] });
+    }
+
+    default:
+      return jsonResponse({ error: "unknown action" }, { status: 400 });
+  }
+}
+
+export async function POST(request: Request) {
+  const response = await handlePost(request);
+  await flushPendingToDatabase();
+  return response;
+}

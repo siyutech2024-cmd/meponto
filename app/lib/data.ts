@@ -62,6 +62,12 @@ export type Ponto = {
   safetyScore: number;
   lat: number;
   lng: number;
+  /** Parent franchise — every station is bound to one. */
+  franchise?: string;
+  /** Street address shown on the station card. */
+  address?: string;
+  /** Pasted Google Maps link (optional, used for the embedded map). */
+  mapUrl?: string;
 };
 export type Leader = {
   id: string;
