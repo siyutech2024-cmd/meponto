@@ -63,7 +63,7 @@ const navItems: Array<{
   { href: "/ninety-nine-import", labelKey: "navNinetyNineImport", icon: FileSpreadsheet, permission: "manage_riders" },
   { href: "/dispatch", labelKey: "navDispatch", icon: CalendarDays, permission: "manage_slots" },
   { href: "/performance", labelKey: "navPerformance", icon: BarChart3, permission: "view_analytics" },
-  { href: "/users", labelKey: "navUsers", icon: ShieldCheck, permission: "view_audit" },
+  { href: "/users", labelKey: "navUsers", icon: ShieldCheck, permission: "manage_slots" },
   { href: "/marketplace", labelKey: "navMarketplace", icon: Store, permission: "manage_marketplace" },
   { href: "/mall", labelKey: "navMall", icon: Store, permission: "manage_marketplace" },
   { href: "/partner-points", labelKey: "navPartnerPoints", icon: Handshake, permission: "manage_partner_points" },
@@ -256,12 +256,29 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               <div className="truncate text-sm font-black">{sessionUser?.name ?? activeRole}</div>
               <div className="truncate text-[10px] font-bold uppercase text-[var(--muted)]">{sessionUser?.organization ?? portal.productName}</div>
             </div>
-            <div title={activeRole} className="grid h-10 w-10 place-items-center rounded-[8px] border border-[var(--line)] bg-[var(--surface-raised)] text-sm font-black text-[var(--accent)]">
+            <button
+              type="button"
+              title="修改密码"
+              onClick={async () => {
+                const current = window.prompt("当前密码：");
+                if (!current) return;
+                const next = window.prompt("新密码（至少 6 位）：");
+                if (!next) return;
+                const response = await fetch("/api/auth/change-password", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ currentPassword: current, newPassword: next }),
+                });
+                const payload = await response.json().catch(() => ({}));
+                window.alert(response.ok ? "密码已修改，下次登录请使用新密码。" : payload.error ?? "修改失败");
+              }}
+              className="grid h-10 w-10 place-items-center rounded-[8px] border border-[var(--line)] bg-[var(--surface-raised)] text-sm font-black text-[var(--accent)] hover:border-[var(--accent)]"
+            >
               {activeRole
                 .split(" ")
                 .map((word) => word[0])
                 .join("")}
-            </div>
+            </button>
             <button
               type="button"
               onClick={async () => {
