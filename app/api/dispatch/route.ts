@@ -11,23 +11,39 @@ function nowStamp() {
 
 /** Aggregated board: shifts + quotas + signups, optionally filtered by date range. */
 export async function GET(request: Request) {
-  const forbidden = requirePermission(request, "manage_slots");
+  const url = new URL(request.url);
+  const view = url.searchParams.get("view") ?? "";
+  // Rider self-service view only needs the rider-app permission.
+  const forbidden = requirePermission(request, view === "open" ? "use_rider_app" : "manage_slots");
   if (forbidden) return forbidden;
 
   // Serverless instances hydrate once at boot — always read the latest state.
   await refreshCollectionsFromDatabase(DISPATCH_COLLECTIONS);
 
-  const url = new URL(request.url);
   const from = url.searchParams.get("from") ?? "";
   const to = url.searchParams.get("to") ?? "";
+  const franchiseScope = url.searchParams.get("franchise") ?? "";
+  const stationScope = url.searchParams.get("station") ?? "";
 
   const shifts = memory.dispatchShifts
     .filter((shift) => (!from || shift.date >= from) && (!to || shift.date <= to))
+    .filter((shift) => view !== "open" || shift.status === "scheduling")
     .sort((a, b) => (a.date + a.timeRange).localeCompare(b.date + b.timeRange));
 
   const shiftIds = new Set(shifts.map((shift) => shift.id));
-  const quotas = memory.shiftQuotas.filter((quota) => shiftIds.has(quota.shiftId));
-  const signups = memory.shiftSignups.filter((signup) => shiftIds.has(signup.shiftId));
+  let quotas = memory.shiftQuotas.filter((quota) => shiftIds.has(quota.shiftId));
+  let signups = memory.shiftSignups.filter((signup) => shiftIds.has(signup.shiftId));
+
+  // Tenant scoping: franchise sees its own quotas/signups (incl. station-level
+  // rows under it); a station sees only its own.
+  if (franchiseScope) {
+    quotas = quotas.filter((quota) => quota.franchise === franchiseScope);
+    signups = signups.filter((signup) => signup.franchise === franchiseScope);
+  }
+  if (stationScope) {
+    quotas = quotas.filter((quota) => (quota.level === "station" ? quota.station === stationScope : true));
+    signups = signups.filter((signup) => signup.station === stationScope);
+  }
 
   return jsonResponse({
     data: { shifts, quotas, signups },
@@ -91,7 +107,13 @@ type DeleteShiftBody = { action: "deleteShift"; shiftId: string };
 type Body = ImportBody | QuotaBody | SignupBody | ReviewBody | ReportBody | SetWeekBody | DeleteShiftBody;
 
 export async function POST(request: Request) {
-  const forbidden = requirePermission(request, "manage_slots");
+  const peek = (await request.clone().json().catch(() => ({}))) as { action?: string };
+  // Riders may submit their own signups from the rider app; everything else
+  // stays behind the dispatch permission.
+  const forbidden =
+    peek.action === "signup"
+      ? requirePermission(request, "use_rider_app") && requirePermission(request, "manage_slots")
+      : requirePermission(request, "manage_slots");
   if (forbidden) return forbidden;
 
   const body = (await request.json().catch(() => ({}))) as Partial<Body>;

@@ -6,6 +6,7 @@ import { useState } from "react";
 import { BrandLockup } from "./brand";
 import { portalConfigs, testAccounts, type PortalId } from "../lib/portals";
 import type { Role } from "../lib/rbac";
+import { writeSession } from "../lib/session";
 import { useVentoStore } from "../lib/store";
 
 export function PortalLogin({ portalId }: { portalId: PortalId }) {
@@ -69,12 +70,24 @@ export function PortalLogin({ portalId }: { portalId: PortalId }) {
                       headers: { "Content-Type": "application/json" },
                       body: JSON.stringify({ identifier, password, portal: portalId }),
                     });
-                    const payload = (await response.json()) as { error?: string; user?: { role: Role; defaultPath: string } };
+                    const payload = (await response.json()) as {
+                      error?: string;
+                      user?: { name: string; role: Role; portal: string; organization: string; identifier: string; defaultPath: string; franchise?: string; station?: string };
+                    };
                     if (!response.ok || !payload.user) {
                       setError(payload.error ?? "登录失败");
                       return;
                     }
                     setRole(payload.user.role);
+                    writeSession({
+                      name: payload.user.name,
+                      role: payload.user.role,
+                      portal: payload.user.portal,
+                      organization: payload.user.organization,
+                      identifier: payload.user.identifier,
+                      franchise: payload.user.franchise,
+                      station: payload.user.station,
+                    });
                     window.location.href = payload.user.defaultPath;
                   } catch {
                     setError("登录服务暂时不可用");

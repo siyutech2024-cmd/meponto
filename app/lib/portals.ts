@@ -47,10 +47,10 @@ export const portalConfigs: Record<PortalId, PortalConfig> = {
     vercelPath: "/pontosys",
     futureDomain: "sys.meponto.com",
     modules: [
-      { href: "/dispatch", label: "运力调度中心", description: "Eastwind 周计划导入、配额分发、报名审核与填报清单。", permission: "manage_slots" },
+      { href: "/dispatch", label: "运力调度中心", description: "周排班、99 计划导入、配额分发、报名审核与填报清单（替代旧排班总览）。", permission: "manage_slots" },
+      { href: "/performance", label: "T+1 考核看板", description: "导入 Eastwind T+1 报表，骑手/站点/加盟商三级 KPI。", permission: "view_analytics" },
       { href: "/operations-core", label: "运力运营核心", description: "T+1 报表、KPI、三级名额与白名单导出。", permission: "view_dashboard" },
       { href: "/dashboard", label: "总部仪表盘", description: "全网运营、风险和排班汇总。", permission: "view_dashboard" },
-      { href: "/slot-enrollment", label: "排班总览", description: "查看站点、加盟商、总部审核链路并导出清单。", permission: "manage_slots" },
       { href: "/riders", label: "骑手档案", description: "维护骑手、敏感资料和状态。", permission: "manage_riders" },
       { href: "/pontos", label: "站点网络", description: "维护 Ponto 站点、负责人和容量。", permission: "manage_pontos" },
       { href: "/franchise", label: "加盟治理", description: "合作条款、SOP 和加盟商管理口径。", permission: "view_analytics" },
@@ -102,7 +102,8 @@ export const portalConfigs: Record<PortalId, PortalConfig> = {
     vercelPath: "/franchise-admin",
     futureDomain: "franchise.meponto.com",
     modules: [
-      { href: "/slot-enrollment", label: "排班确认", description: "接收站点审核后的报名，进行加盟商确认。", permission: "manage_slots" },
+      { href: "/dispatch/franchise", label: "排班配额与审核", description: "接收总部配额、拆分给站点并审核骑手报名。", permission: "manage_slots" },
+      { href: "/performance", label: "KPI 考核", description: "查看本加盟商站点与骑手的 T+1 KPI。", permission: "view_analytics" },
       { href: "/franchise", label: "合作方案", description: "查看加盟模型、SOP、KPI 和月度治理节奏。", permission: "view_analytics" },
       { href: "/pontos", label: "站点列表", description: "查看/维护所属站点基础信息。", permission: "manage_pontos" },
       { href: "/riders", label: "骑手运营", description: "查看所属骑手与状态。", permission: "manage_riders" },
@@ -121,7 +122,8 @@ export const portalConfigs: Record<PortalId, PortalConfig> = {
     vercelPath: "/ponto-admin",
     futureDomain: "ponto.meponto.com",
     modules: [
-      { href: "/slot-enrollment", label: "排班初审", description: "审核骑手报名并提交给加盟商。", permission: "manage_slots" },
+      { href: "/dispatch/station", label: "排班提报", description: "查看本站配额并提报骑手报名。", permission: "manage_slots" },
+      { href: "/performance", label: "KPI 考核", description: "查看本站骑手的 T+1 KPI。", permission: "view_analytics" },
       { href: "/riders", label: "本站骑手", description: "维护站点骑手档案、状态和排班资格。", permission: "manage_riders" },
       { href: "/pontos", label: "站点资料", description: "查看站点位置、容量和负责人。", permission: "manage_pontos" },
       { href: "/incidents", label: "异常上报", description: "创建事故、服务和安全异常。", permission: "create_incidents" },
@@ -140,6 +142,7 @@ export const portalConfigs: Record<PortalId, PortalConfig> = {
     futureDomain: "app.meponto.com",
     modules: [
       { href: "/rider-app", label: "骑手首页", description: "查看个人积分、排班 slots 并提交报名。", permission: "use_rider_app" },
+      { href: "/rider-app/shifts", label: "班次报名", description: "查看开放班次并用 99 ID 一键报名。", permission: "use_rider_app" },
       { href: "/marketplace", label: "PontoMall", description: "使用积分兑换骑手权益。", permission: "use_rider_app" },
       { href: "/rewards", label: "积分记录", description: "查看奖励、积分和激励记录。", permission: "use_rider_app" },
     ],

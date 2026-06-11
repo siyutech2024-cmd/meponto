@@ -49,6 +49,7 @@ import { riderSlots, slotEnrollments, type RiderSlot, type SlotEnrollment } from
 import { leads, type Lead } from "../leads";
 import { dispatchShifts, shiftQuotas, shiftSignups, type DispatchShift, type ShiftQuota, type ShiftSignup } from "../dispatch";
 import { appUsers, type AppUser } from "../users";
+import { riderDailyKpis, type RiderDailyKpi } from "../performance";
 
 type Reward = (typeof rewards)[number];
 type Ponto = (typeof pontos)[number];
@@ -93,6 +94,7 @@ const globalState = globalThis as typeof globalThis & {
     shiftQuotas: ShiftQuota[];
     shiftSignups: ShiftSignup[];
     appUsers: AppUser[];
+    riderDailyKpis: RiderDailyKpi[];
   };
 };
 
@@ -123,6 +125,7 @@ export const memory =
     shiftQuotas: trackCollection("shiftQuotas", [...shiftQuotas]),
     shiftSignups: trackCollection("shiftSignups", [...shiftSignups]),
     appUsers: trackCollection("appUsers", [...appUsers]),
+    riderDailyKpis: trackCollection("riderDailyKpis", [...riderDailyKpis]),
   });
 
 // Restore persisted data from the database (no-op when USE_SUPABASE is off).
@@ -174,6 +177,8 @@ memory.shiftSignups ??= [];
 memory.shiftSignups = trackCollection("shiftSignups", memory.shiftSignups);
 memory.appUsers ??= [];
 memory.appUsers = trackCollection("appUsers", memory.appUsers);
+memory.riderDailyKpis ??= [];
+memory.riderDailyKpis = trackCollection("riderDailyKpis", memory.riderDailyKpis);
 
 export function jsonResponse<T>(data: T, init?: ResponseInit) {
   // Make sure pending mutations reach the database even on serverless,
