@@ -61,7 +61,7 @@ export async function POST(request: Request) {
       station: (account as TestAccount & { station?: string }).station ?? "",
     },
   });
-  response.headers.append("Set-Cookie", sessionCookie(token));
+  response.headers.append("Set-Cookie", sessionCookie(token, request.headers.get("host")));
   return response;
 }
 
