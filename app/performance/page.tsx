@@ -13,6 +13,7 @@ type EnrichedEarning = RiderDailyEarning & { franchise: string; station: string;
 type GroupRow = KpiAggregate & { franchise?: string };
 type EarningGroupRow = EarningAggregate & { franchise?: string };
 type Payload = {
+  trend?: Array<{ date: string; orders: number; settle: number }>;
   date: string | null;
   dates: string[];
   riders: EnrichedKpi[];
@@ -108,6 +109,39 @@ function pct(value: number | null | undefined, good: "high" | "low" = "high", th
   const ok = good === "high" ? value >= threshold : value <= threshold;
   const cls = ok ? "text-[var(--ok-ink)]" : "text-[var(--danger-ink)]";
   return <span className={`font-black ${cls}`}>{value.toFixed(1)}%</span>;
+}
+
+
+function TrendChart({ trend }: { trend: Array<{ date: string; orders: number; settle: number }> }) {
+  if (!trend || trend.length < 2) return null;
+  const W = 720;
+  const H = 120;
+  const PAD = 6;
+  const maxOrders = Math.max(...trend.map((t) => t.orders), 1);
+  const maxSettle = Math.max(...trend.map((t) => t.settle), 1);
+  const x = (i: number) => PAD + (i / (trend.length - 1)) * (W - PAD * 2);
+  const yo = (v: number) => H - PAD - (v / maxOrders) * (H - PAD * 2);
+  const ys = (v: number) => H - PAD - (v / maxSettle) * (H - PAD * 2);
+  const line = (fn: (v: number) => number, key: "orders" | "settle") => trend.map((t, i) => `${i === 0 ? "M" : "L"}${x(i).toFixed(1)},${fn(t[key]).toFixed(1)}`).join(" ");
+  return (
+    <div className="panel mb-4 p-4">
+      <div className="mb-1 flex items-center justify-between text-[10px] font-black uppercase text-[var(--muted)]">
+        <span>近 {trend.length} 天趋势</span>
+        <span><span className="text-[var(--accent)]">―</span> 完单 ｜ <span className="text-[#4dd9ff]">―</span> 结算 R$</span>
+      </div>
+      <svg viewBox={`0 0 ${W} ${H}`} className="h-28 w-full">
+        <path d={line(yo, "orders")} fill="none" stroke="var(--accent)" strokeWidth="2.5" strokeLinejoin="round" />
+        <path d={line(ys, "settle")} fill="none" stroke="#4dd9ff" strokeWidth="2" strokeDasharray="1 0" opacity="0.85" strokeLinejoin="round" />
+        {trend.map((t, i) => (
+          <circle key={t.date} cx={x(i)} cy={yo(t.orders)} r="3" fill="var(--accent)" />
+        ))}
+      </svg>
+      <div className="flex justify-between text-[10px] font-bold text-[var(--muted)]">
+        <span>{trend[0].date.slice(5)}</span>
+        <span>{trend[trend.length - 1].date.slice(5)}（完单 {trend[trend.length - 1].orders} ｜ R$ {trend[trend.length - 1].settle.toFixed(0)}）</span>
+      </div>
+    </div>
+  );
 }
 
 export default function PerformancePage() {
@@ -225,6 +259,8 @@ export default function PerformancePage() {
           </select>
         )}
       </div>
+
+      {data?.trend && <TrendChart trend={data.trend} />}
 
       {message && (
         <div className={`mb-4 rounded-[8px] border px-4 py-3 text-sm font-black ${message.tone === "ok" ? "border-[var(--ok)] bg-[var(--ok-bg)] text-[var(--ok-ink)]" : "border-[var(--danger)] bg-[var(--danger-bg)] text-[var(--danger-ink)]"}`}>
