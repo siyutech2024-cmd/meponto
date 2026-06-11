@@ -13,6 +13,9 @@ export type AuthSession = {
   tenantId: string;
   organization: string;
   defaultPath: string;
+  /** Data scope: set for franchise/station portal accounts. */
+  franchise?: string;
+  station?: string;
   expiresAt: number;
 };
 
