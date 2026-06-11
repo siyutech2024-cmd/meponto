@@ -1,23 +1,37 @@
 import { appendServerAudit, jsonResponse, memory } from "../../lib/server/memory";
 import { refreshCollectionsFromDatabase } from "../../lib/server/persistence";
 import { requirePermission, roleFromRequest } from "../../lib/server/authz";
-import { aggregateKpis, parseEastwindRiderKpis, type RiderDailyKpi } from "../../lib/performance";
+import {
+  aggregateEarnings,
+  aggregateKpis,
+  parseEastwindRiderKpis,
+  type RiderDailyEarning,
+  type RiderDailyKpi,
+} from "../../lib/performance";
 
-const COLLECTIONS = ["riderDailyKpis", "riders"];
+const COLLECTIONS = ["riderDailyKpis", "riderDailyEarnings", "riders"];
 
-type Enriched = RiderDailyKpi & { franchise: string; station: string; riderId: string | null };
+type Located = { franchise: string; station: string; riderId: string | null };
+type Enriched = RiderDailyKpi & Located;
+type EnrichedEarning = RiderDailyEarning & Located;
+
+function locate(rider99Id: string): Located {
+  const rider = memory.riders.find((item) => item.ninetyNineId && item.ninetyNineId === rider99Id);
+  return {
+    riderId: rider?.id ?? null,
+    franchise: rider?.franchise ?? "未关联",
+    station: rider?.ponto ?? "未关联",
+  };
+}
 
 function enrich(rows: RiderDailyKpi[]): Enriched[] {
-  return rows.map((row) => {
-    const rider = memory.riders.find((item) => item.ninetyNineId && item.ninetyNineId === row.rider99Id);
-    return {
-      ...row,
-      riderId: rider?.id ?? null,
-      franchise: rider?.franchise ?? "未关联",
-      station: rider?.ponto ?? "未关联",
-    };
-  });
+  return rows.map((row) => ({ ...row, ...locate(row.rider99Id) }));
 }
+
+const num = (value: unknown) => {
+  const parsed = Number(String(value ?? "").replace(",", "."));
+  return Number.isFinite(parsed) ? parsed : 0;
+};
 
 export async function GET(request: Request) {
   const forbidden = requirePermission(request, "view_analytics");
@@ -48,19 +62,47 @@ export async function GET(request: Request) {
       .sort((a, b) => b.completedOrders - a.completedOrders);
   };
 
+  // Earnings for the same date + scope.
+  const earningDates = [...new Set(memory.riderDailyEarnings.map((row) => row.date))].sort().reverse();
+  const allDates = [...new Set([...dates, ...earningDates])].sort().reverse();
+  const earningDate = date && allDates.includes(date) ? date : activeDate ?? earningDates[0] ?? null;
+  let earningRows: EnrichedEarning[] = memory.riderDailyEarnings
+    .filter((row) => !earningDate || row.date === earningDate)
+    .map((row) => ({ ...row, ...locate(row.rider99Id) }));
+  if (franchise) earningRows = earningRows.filter((row) => row.franchise === franchise);
+  if (station) earningRows = earningRows.filter((row) => row.station === station);
+
+  const groupEarnings = (field: "station" | "franchise") => {
+    const map = new Map<string, EnrichedEarning[]>();
+    for (const row of earningRows) map.set(row[field], [...(map.get(row[field]) ?? []), row]);
+    return [...map.entries()]
+      .map(([key, group]) => ({ ...aggregateEarnings(group, key), franchise: group[0].franchise }))
+      .sort((a, b) => b.settleAmount - a.settleAmount);
+  };
+
   return jsonResponse({
     data: {
       date: activeDate,
-      dates,
+      dates: allDates,
       riders: rows.sort((a, b) => b.completedOrders - a.completedOrders),
       stations: groupBy("station"),
       franchises: groupBy("franchise"),
       total: aggregateKpis(rows, "total"),
+      earnings: {
+        riders: earningRows.sort((a, b) => b.settleAmount - a.settleAmount),
+        stations: groupEarnings("station"),
+        franchises: groupEarnings("franchise"),
+        total: aggregateEarnings(earningRows, "total"),
+      },
     },
   });
 }
 
-type Body = { action: "import"; raw: string; date: string } | { action: "purgeDate"; date: string };
+type Body =
+  | { action: "import"; raw: string; date: string }
+  | { action: "importKpiRecords"; date: string; records: Array<Record<string, unknown>> }
+  | { action: "importEarnings"; date: string; records: Array<Record<string, unknown>> }
+  | { action: "purgeDate"; date: string };
 
 export async function POST(request: Request) {
   const forbidden = requirePermission(request, "view_analytics");
@@ -108,6 +150,114 @@ export async function POST(request: Request) {
     });
 
     return jsonResponse({ data: { created, updated, parsed: parsed.length } }, { status: 201 });
+  }
+
+  if (body.action === "importKpiRecords" || body.action === "importEarnings") {
+    const date = String(body.date ?? "");
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+      return jsonResponse({ error: "date (YYYY-MM-DD) is required" }, { status: 400 });
+    }
+    const records = Array.isArray(body.records) ? body.records.slice(0, 500) : [];
+    if (records.length === 0) return jsonResponse({ error: "records are required" }, { status: 400 });
+
+    const importedAt = new Date().toISOString().slice(0, 16).replace("T", " ");
+    let created = 0;
+    let updated = 0;
+
+    if (body.action === "importKpiRecords") {
+      for (const raw of records) {
+        const rider99Id = String(raw.rider99Id ?? "").trim();
+        if (!/^\d{6,}$/.test(rider99Id)) continue;
+        const pct = (value: unknown) => {
+          const text = String(value ?? "").replace(",", ".").replace("%", "").trim();
+          if (!text || /^n\/?a$/i.test(text)) return null;
+          const parsed = Number(text);
+          return Number.isFinite(parsed) ? parsed : null;
+        };
+        const record: RiderDailyKpi = {
+          id: `kpi-${date}-${rider99Id}`,
+          date,
+          rider99Id,
+          riderName: String(raw.riderName ?? "").trim() || "Desconhecido",
+          phone: String(raw.phone ?? "").trim(),
+          cpf: String(raw.cpf ?? "").trim(),
+          city: String(raw.city ?? "").trim(),
+          onlineHours: num(raw.onlineHours),
+          completedOrders: num(raw.completedOrders),
+          signedShifts: num(raw.signedShifts),
+          signedShiftHours: num(raw.signedShiftHours),
+          inShiftOnlineHours: num(raw.inShiftOnlineHours),
+          tsh: pct(raw.tsh),
+          tshCritical: pct(raw.tshCritical),
+          ar: pct(raw.ar),
+          caa: pct(raw.caa),
+          overtime: pct(raw.overtime),
+          importedAt,
+        };
+        const index = memory.riderDailyKpis.findIndex((row) => row.id === record.id);
+        if (index === -1) {
+          memory.riderDailyKpis.unshift(record);
+          created += 1;
+        } else {
+          memory.riderDailyKpis[index] = record;
+          updated += 1;
+        }
+        const riderIndex = memory.riders.findIndex((rider) => rider.ninetyNineId === rider99Id);
+        if (riderIndex !== -1 && record.ar !== null) {
+          memory.riders[riderIndex] = { ...memory.riders[riderIndex], ar: Math.round(record.ar) };
+        }
+      }
+    } else {
+      for (const raw of records) {
+        const rider99Id = String(raw.rider99Id ?? "").trim();
+        if (!/^\d{6,}$/.test(rider99Id)) continue;
+        const orders = num(raw.orders);
+        const total = num(raw.total);
+        const settle = num(raw.settleAmount);
+        const record: RiderDailyEarning = {
+          id: `earn-${date}-${rider99Id}`,
+          date,
+          rider99Id,
+          riderName: String(raw.riderName ?? "").trim() || "Desconhecido",
+          phone: String(raw.phone ?? "").trim(),
+          cpf: String(raw.cpf ?? "").trim(),
+          city: String(raw.city ?? "").trim(),
+          total,
+          tripIncome: num(raw.tripIncome),
+          cashDebt: num(raw.cashDebt),
+          mealDeduction: num(raw.mealDeduction),
+          bonus: num(raw.bonus),
+          other: num(raw.other),
+          tips: num(raw.tips),
+          manualAdjust: num(raw.manualAdjust),
+          referralBonus: num(raw.referralBonus),
+          pix: String(raw.pix ?? "").trim(),
+          orders,
+          // Settlement formula from the operator sheet: 金额 = 今日统计 + order × 2.5.
+          settleAmount: settle > 0 ? settle : total + orders * 2.5,
+          importedAt,
+        };
+        const index = memory.riderDailyEarnings.findIndex((row) => row.id === record.id);
+        if (index === -1) {
+          memory.riderDailyEarnings.unshift(record);
+          created += 1;
+        } else {
+          memory.riderDailyEarnings[index] = record;
+          updated += 1;
+        }
+      }
+    }
+
+    appendServerAudit({
+      actor,
+      action: body.action === "importEarnings" ? "EARNINGS_IMPORTED" : "KPI_IMPORTED",
+      entity: body.action === "importEarnings" ? "RiderDailyEarning" : "RiderDailyKpi",
+      entityId: date,
+      detail: `${body.action} for ${date}: ${created} created, ${updated} updated.`,
+      risk: "Low",
+    });
+
+    return jsonResponse({ data: { created, updated, parsed: created + updated } }, { status: 201 });
   }
 
   return jsonResponse({ error: "unknown action" }, { status: 400 });

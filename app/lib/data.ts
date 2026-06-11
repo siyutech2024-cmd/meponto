@@ -27,6 +27,8 @@ export type Rider = {
   ninetyNineId?: string;
   /** Franchise that owns the rider's station. */
   franchise?: string;
+  /** Birth date collected at registration (YYYY-MM-DD). */
+  birthday?: string;
 };
 export type Incident = {
   id: string;

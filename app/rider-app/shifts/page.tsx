@@ -24,6 +24,7 @@ export default function RiderShiftsPage() {
   const [name, setName] = useState(session?.name ?? "");
   const [rider99Id, setRider99Id] = useState("");
   const [station, setStation] = useState("Santo Amaro");
+  const [profileLocked, setProfileLocked] = useState(false);
   const [message, setMessage] = useState<{ tone: "ok" | "err"; text: string } | null>(null);
   const [busyShift, setBusyShift] = useState("");
 
@@ -35,6 +36,31 @@ export default function RiderShiftsPage() {
       /* ignore */
     }
   }, []);
+
+  // Auto-fill from the registered rider profile: name / 99 ID / station come
+  // from registration, so the rider doesn't have to type them every time.
+  useEffect(() => {
+    if (!session?.name) return;
+    let cancelled = false;
+    fetch("/api/riders", { headers: { "x-vento-role": session.role ?? "Rider" }, cache: "no-store" })
+      .then((response) => (response.ok ? response.json() : null))
+      .then((payload) => {
+        if (cancelled || !payload?.data) return;
+        const me = (payload.data as Array<{ name: string; ninetyNineId?: string; ponto?: string }>).find(
+          (rider) => rider.name === session.name,
+        );
+        if (me) {
+          setName(me.name);
+          if (me.ninetyNineId) setRider99Id(me.ninetyNineId);
+          if (me.ponto) setStation(me.ponto);
+          if (me.ninetyNineId) setProfileLocked(true);
+        }
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [session]);
 
   const load = useCallback(async () => {
     const response = await fetch("/api/dispatch?view=open", { headers, cache: "no-store" });
@@ -95,14 +121,25 @@ export default function RiderShiftsPage() {
         <h1 className="flex items-center gap-2 text-lg font-black"><CalendarDays size={18} className="text-[var(--accent)]" /> 班次报名</h1>
       </div>
 
-      <div className="panel space-y-2 p-4">
-        <div className="text-[10px] font-black uppercase text-[var(--muted)]">我的信息（用于报名）</div>
-        <input value={name} onChange={(e) => setName(e.target.value)} placeholder="姓名" className="h-11 w-full rounded-[8px] border border-[var(--line)] bg-[var(--surface)] px-3 text-sm font-bold outline-none focus:border-[var(--accent)]" />
-        <div className="grid grid-cols-2 gap-2">
-          <input value={rider99Id} onChange={(e) => setRider99Id(e.target.value.replace(/\D/g, ""))} placeholder="99 骑手 ID" className="h-11 w-full rounded-[8px] border border-[var(--line)] bg-[var(--surface)] px-3 text-sm font-bold outline-none focus:border-[var(--accent)]" />
-          <input value={station} onChange={(e) => setStation(e.target.value)} placeholder="所属站点" className="h-11 w-full rounded-[8px] border border-[var(--line)] bg-[var(--surface)] px-3 text-sm font-bold outline-none focus:border-[var(--accent)]" />
+      {profileLocked ? (
+        <div className="panel flex items-center justify-between p-4">
+          <div>
+            <div className="text-[10px] font-black uppercase text-[var(--muted)]">报名身份（来自注册档案）</div>
+            <div className="mt-1 text-sm font-black">{name}</div>
+            <div className="text-[11px] font-bold text-[var(--muted)]">99 ID {rider99Id} ｜ {station}</div>
+          </div>
+          <CheckCircle2 size={20} className="text-[var(--ok-ink)]" />
         </div>
-      </div>
+      ) : (
+        <div className="panel space-y-2 p-4">
+          <div className="text-[10px] font-black uppercase text-[var(--muted)]">我的信息（档案未关联，请手动填写）</div>
+          <input value={name} onChange={(e) => setName(e.target.value)} placeholder="姓名" className="h-11 w-full rounded-[8px] border border-[var(--line)] bg-[var(--surface)] px-3 text-sm font-bold outline-none focus:border-[var(--accent)]" />
+          <div className="grid grid-cols-2 gap-2">
+            <input value={rider99Id} onChange={(e) => setRider99Id(e.target.value.replace(/\D/g, ""))} placeholder="99 骑手 ID" className="h-11 w-full rounded-[8px] border border-[var(--line)] bg-[var(--surface)] px-3 text-sm font-bold outline-none focus:border-[var(--accent)]" />
+            <input value={station} onChange={(e) => setStation(e.target.value)} placeholder="所属站点" className="h-11 w-full rounded-[8px] border border-[var(--line)] bg-[var(--surface)] px-3 text-sm font-bold outline-none focus:border-[var(--accent)]" />
+          </div>
+        </div>
+      )}
 
       {message && (
         <div className={`rounded-[8px] border px-4 py-3 text-sm font-black ${message.tone === "ok" ? "border-[var(--ok)] bg-[var(--ok-bg)] text-[var(--ok-ink)]" : "border-[var(--danger)] bg-[var(--danger-bg)] text-[var(--danger-ink)]"}`}>

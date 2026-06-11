@@ -26,7 +26,7 @@ import { syncToServer } from "./sync";
 
 export type ThemeMode = "dark" | "light";
 type RiderInput = Pick<Rider, "name" | "cpf" | "phone" | "pix" | "bairro" | "ponto" | "leader" | "status"> &
-  Partial<Pick<Rider, "franchise" | "ninetyNineId">>;
+  Partial<Pick<Rider, "franchise" | "ninetyNineId" | "birthday">>;
 export type RiderUpdate = Partial<
   Pick<
     Rider,
@@ -180,6 +180,7 @@ export const useVentoStore = create<VentoState>()(
           joinDate: new Date().toISOString().slice(0, 10),
           franchise: input.franchise || "Unassigned",
           ninetyNineId: input.ninetyNineId || "",
+          birthday: input.birthday || "",
         };
 
         set((state) => ({

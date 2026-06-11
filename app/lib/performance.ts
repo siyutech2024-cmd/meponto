@@ -37,6 +37,69 @@ export type RiderDailyKpi = {
 
 export const riderDailyKpis: RiderDailyKpi[] = [];
 
+/**
+ * T+1 rider earnings — Eastwind "Ganhos do entregador parceiro" export plus
+ * the operator's settlement columns (pix / order count / final amount).
+ * Settlement formula observed in the sheet: 金额 = 今日统计 + order × 2.5.
+ */
+export type RiderDailyEarning = {
+  id: string; // earn-<date>-<rider99Id>
+  date: string;
+  rider99Id: string;
+  riderName: string;
+  phone: string;
+  cpf: string;
+  city: string;
+  total: number; // 今日统计(R$)
+  tripIncome: number; // 行程收入(R$)
+  cashDebt: number; // 现金单欠款(R$)
+  mealDeduction: number; // 餐损扣款(R$)
+  bonus: number; // 奖励(R$)
+  other: number; // 其他(R$)
+  tips: number; // 小费(R$)
+  manualAdjust: number; // 人工调整(R$)
+  referralBonus: number; // 推荐奖励(R$)
+  pix: string;
+  orders: number; // 完单（结算口径）
+  settleAmount: number; // 金额(R$) — 最终结算
+  importedAt: string;
+};
+
+export const riderDailyEarnings: RiderDailyEarning[] = [];
+
+export type EarningAggregate = {
+  key: string;
+  riders: number;
+  orders: number;
+  total: number;
+  tripIncome: number;
+  cashDebt: number;
+  mealDeduction: number;
+  bonus: number;
+  tips: number;
+  manualAdjust: number;
+  referralBonus: number;
+  settleAmount: number;
+};
+
+export function aggregateEarnings(rows: RiderDailyEarning[], key: string): EarningAggregate {
+  const sum = (field: keyof RiderDailyEarning) => rows.reduce((total, row) => total + (Number(row[field]) || 0), 0);
+  return {
+    key,
+    riders: rows.length,
+    orders: sum("orders"),
+    total: sum("total"),
+    tripIncome: sum("tripIncome"),
+    cashDebt: sum("cashDebt"),
+    mealDeduction: sum("mealDeduction"),
+    bonus: sum("bonus"),
+    tips: sum("tips"),
+    manualAdjust: sum("manualAdjust"),
+    referralBonus: sum("referralBonus"),
+    settleAmount: sum("settleAmount"),
+  };
+}
+
 const PERCENT_FIELDS = ["tsh", "tshCritical", "ar", "caa", "overtime"] as const;
 const HOUR_FIELDS = ["onlineHours", "completedOrders", "signedShifts", "signedShiftHours", "inShiftOnlineHours"] as const;
 
@@ -99,9 +162,10 @@ export function parseEastwindRiderKpis(raw: string, date: string): RiderDailyKpi
       draft.percents.push(null);
       continue;
     }
-    const percentMatch = token.match(/^(\d+(?:\.\d+)?)%$/);
+    // Accept both 97.1% and Brazilian 97,1% formats.
+    const percentMatch = token.match(/^(\d+(?:[.,]\d+)?)%$/);
     if (percentMatch) {
-      draft.percents.push(Number(percentMatch[1]));
+      draft.percents.push(Number(percentMatch[1].replace(",", ".")));
       continue;
     }
 

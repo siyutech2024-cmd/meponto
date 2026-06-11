@@ -70,6 +70,7 @@ export function AddRiderDrawer({ open, onClose }: { open: boolean; onClose: () =
             status: String(form.get("status")) as RiderStatus,
             franchise: String(form.get("franchise") ?? ""),
             ninetyNineId: String(form.get("ninetyNineId") ?? ""),
+            birthday: String(form.get("birthday") ?? ""),
           });
           event.currentTarget.reset();
           onClose();
@@ -83,6 +84,10 @@ export function AddRiderDrawer({ open, onClose }: { open: boolean; onClose: () =
           <TextInput name="bairro" label="Bairro" />
           <TextInput name="franchise" label="Franchise" />
           <TextInput name="ninetyNineId" label="99 Rider ID" />
+          <label className="block">
+            <span className="mb-2 block text-[10px] font-bold uppercase tracking-wider text-[var(--muted)]">Birthday</span>
+            <input type="date" name="birthday" className="h-11 w-full rounded-xl border border-[var(--line)] bg-[var(--surface-raised)] px-3.5 text-[var(--text)] outline-none transition-all duration-200 focus:border-[var(--accent)]" />
+          </label>
           <label className="block">
             <span className="mb-2 block text-[10px] font-bold uppercase tracking-wider text-[var(--muted)]">Status</span>
             <select name="status" className="h-11 w-full rounded-xl border border-[var(--line)] bg-[var(--surface-raised)] px-3.5 text-[var(--text)] outline-none transition-all duration-200 focus:border-[var(--accent)]">

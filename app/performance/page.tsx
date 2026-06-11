@@ -1,13 +1,16 @@
 "use client";
 
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { BarChart3, Building2, MapPin, RefreshCcw, Upload, Users } from "lucide-react";
+import { BarChart3, Building2, CircleDollarSign, FileSpreadsheet, MapPin, RefreshCcw, Upload, Users } from "lucide-react";
 import { AppShell, Badge, PageTitle } from "../components/ui";
 import { readSession } from "../lib/session";
-import type { KpiAggregate, RiderDailyKpi } from "../lib/performance";
+import { readXlsxRows, rowsToObjects } from "../lib/xlsx-lite";
+import type { EarningAggregate, KpiAggregate, RiderDailyEarning, RiderDailyKpi } from "../lib/performance";
 
 type EnrichedKpi = RiderDailyKpi & { franchise: string; station: string; riderId: string | null };
+type EnrichedEarning = RiderDailyEarning & { franchise: string; station: string; riderId: string | null };
 type GroupRow = KpiAggregate & { franchise?: string };
+type EarningGroupRow = EarningAggregate & { franchise?: string };
 type Payload = {
   date: string | null;
   dates: string[];
@@ -15,14 +18,80 @@ type Payload = {
   stations: GroupRow[];
   franchises: GroupRow[];
   total: KpiAggregate;
+  earnings: {
+    riders: EnrichedEarning[];
+    stations: EarningGroupRow[];
+    franchises: EarningGroupRow[];
+    total: EarningAggregate;
+  };
 };
 
 const tabs = [
   { id: "franchises", label: "按加盟商", icon: Building2 },
   { id: "stations", label: "按站点", icon: MapPin },
   { id: "riders", label: "按骑手", icon: Users },
-  { id: "import", label: "导入 T+1 报表", icon: Upload },
+  { id: "earnings", label: "收入结算", icon: CircleDollarSign },
+  { id: "import", label: "导入报表", icon: Upload },
 ] as const;
+
+/** Header → field mappings for the two Eastwind exports. */
+const KPI_HEADERS: Record<string, string> = {
+  "骑手ID": "rider99Id",
+  "骑手的身份证": "cpf",
+  "骑手姓名": "riderName",
+  "电话号码": "phone",
+  "城市": "city",
+  "在线时长": "onlineHours",
+  "完单数量": "completedOrders",
+  "报名的班次数量": "signedShifts",
+  "报名的班次总时长": "signedShiftHours",
+  "班次内实际在线时长": "inShiftOnlineHours",
+  "%TSH": "tsh",
+  "%TSH in Critical Shifts": "tshCritical",
+  "AR": "ar",
+  "CAA": "caa",
+  "Overtime": "overtime",
+  "日期": "date",
+};
+
+const EARNING_HEADERS: Record<string, string> = {
+  "城市": "city",
+  "骑手ID": "rider99Id",
+  "骑手姓名": "riderName",
+  "骑手电话": "phone",
+  "骑手身份证号": "cpf",
+  "今日统计(R$)": "total",
+  "行程收入(R$)": "tripIncome",
+  "现金单欠款(R$)": "cashDebt",
+  "餐损扣款(R$)": "mealDeduction",
+  "奖励(R$)": "bonus",
+  "其他(R$)": "other",
+  "小费(R$)": "tips",
+  "人工调整(R$)": "manualAdjust",
+  "推荐奖励(R$)": "referralBonus",
+  "日期": "date",
+  "pix": "pix",
+  "order": "orders",
+  "金额": "settleAmount",
+};
+
+function normalizeDate(value: string): string {
+  const match = value.match(/(\d{4})[.\-/](\d{1,2})[.\-/](\d{1,2})/);
+  if (!match) return "";
+  return `${match[1]}-${match[2].padStart(2, "0")}-${match[3].padStart(2, "0")}`;
+}
+
+function mapRecords(rows: Array<Record<string, string>>, mapping: Record<string, string>) {
+  return rows
+    .map((row) => {
+      const record: Record<string, string> = {};
+      for (const [header, field] of Object.entries(mapping)) {
+        if (row[header] !== undefined) record[field] = row[header];
+      }
+      return record;
+    })
+    .filter((record) => /^\d{6,}$/.test(record.rider99Id ?? ""));
+}
 
 type TabId = (typeof tabs)[number]["id"];
 
@@ -156,8 +225,133 @@ export default function PerformancePage() {
 
       {tab === "riders" && data && data.riders.length > 0 && <RiderTable rows={data.riders} />}
 
+      {tab === "earnings" && data && (
+        <EarningsTab earnings={data.earnings} scopeFranchise={scopeFranchise} scopeStation={scopeStation} />
+      )}
+
       {tab === "import" && <ImportTab headers={headers} onDone={(text) => { setMessage({ tone: "ok", text }); void load(); }} onError={(text) => setMessage({ tone: "err", text })} />}
     </AppShell>
+  );
+}
+
+const money = (value: number) => `R$ ${value.toFixed(2)}`;
+
+function EarningsTab({ earnings, scopeFranchise, scopeStation }: { earnings: Payload["earnings"]; scopeFranchise: string; scopeStation: string }) {
+  if (earnings.riders.length === 0) {
+    return <div className="panel p-6 text-sm font-bold text-[var(--muted)]">还没有收入数据。请到「导入报表」上传 Eastwind「Ganhos do entregador parceiro」表。</div>;
+  }
+  const total = earnings.total;
+  const groups: Array<{ title: string; rows: EarningGroupRow[]; showFranchise: boolean }> = [];
+  if (!scopeFranchise && !scopeStation) groups.push({ title: "按加盟商汇总（结算口径）", rows: earnings.franchises, showFranchise: false });
+  if (!scopeStation) groups.push({ title: "按站点汇总", rows: earnings.stations, showFranchise: !scopeFranchise });
+
+  return (
+    <div className="space-y-4">
+      <div className="grid gap-3 md:grid-cols-6">
+        {[
+          ["骑手数", String(total.riders)],
+          ["完单", String(total.orders)],
+          ["今日统计", money(total.total)],
+          ["行程收入", money(total.tripIncome)],
+          ["奖励+小费", money(total.bonus + total.tips)],
+        ].map(([label, value]) => (
+          <div key={label} className="panel p-3 text-center">
+            <div className="text-[10px] font-black uppercase text-[var(--muted)]">{label}</div>
+            <div className="text-lg font-black">{value}</div>
+          </div>
+        ))}
+        <div className="panel border-[var(--accent)] p-3 text-center">
+          <div className="text-[10px] font-black uppercase text-[var(--accent)]">结算合计</div>
+          <div className="text-lg font-black text-[var(--accent)]">{money(total.settleAmount)}</div>
+        </div>
+      </div>
+
+      {groups.map(({ title, rows, showFranchise }) => (
+        <div key={title} className="panel overflow-x-auto p-4">
+          <div className="mb-3 text-xs font-black uppercase text-[var(--accent)]">{title}</div>
+          <table className="w-full min-w-[820px] text-sm">
+            <thead>
+              <tr className="text-left text-[10px] font-black uppercase text-[var(--muted)]">
+                <th className="pb-2">对象</th>
+                {showFranchise && <th className="pb-2">所属加盟商</th>}
+                <th className="pb-2 text-center">骑手数</th>
+                <th className="pb-2 text-center">完单</th>
+                <th className="pb-2 text-right">今日统计</th>
+                <th className="pb-2 text-right">行程收入</th>
+                <th className="pb-2 text-right">现金欠款</th>
+                <th className="pb-2 text-right">扣款</th>
+                <th className="pb-2 text-right">奖励</th>
+                <th className="pb-2 text-right">小费</th>
+                <th className="pb-2 text-right">结算金额</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((row) => (
+                <tr key={row.key} className="border-t border-[var(--line)]">
+                  <td className="py-2 font-black">{row.key}</td>
+                  {showFranchise && <td className="py-2"><span className="tag">{row.franchise}</span></td>}
+                  <td className="py-2 text-center">{row.riders}</td>
+                  <td className="py-2 text-center font-bold">{row.orders}</td>
+                  <td className="py-2 text-right">{money(row.total)}</td>
+                  <td className="py-2 text-right">{money(row.tripIncome)}</td>
+                  <td className="py-2 text-right">{row.cashDebt ? <span className="text-[var(--danger-ink)]">{money(row.cashDebt)}</span> : "-"}</td>
+                  <td className="py-2 text-right">{row.mealDeduction ? money(row.mealDeduction) : "-"}</td>
+                  <td className="py-2 text-right">{row.bonus ? money(row.bonus) : "-"}</td>
+                  <td className="py-2 text-right">{row.tips ? money(row.tips) : "-"}</td>
+                  <td className="py-2 text-right font-black text-[var(--accent)]">{money(row.settleAmount)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ))}
+
+      <div className="panel overflow-x-auto p-4">
+        <div className="mb-3 text-xs font-black uppercase text-[var(--accent)]">骑手收入明细（结算金额 = 今日统计 + 完单 × R$2.50）</div>
+        <table className="w-full min-w-[1150px] text-sm">
+          <thead>
+            <tr className="text-left text-[10px] font-black uppercase text-[var(--muted)]">
+              <th className="pb-2">骑手</th>
+              <th className="pb-2">99 ID</th>
+              <th className="pb-2">PIX</th>
+              <th className="pb-2">加盟商</th>
+              <th className="pb-2">站点</th>
+              <th className="pb-2 text-center">完单</th>
+              <th className="pb-2 text-right">今日统计</th>
+              <th className="pb-2 text-right">行程收入</th>
+              <th className="pb-2 text-right">现金欠款</th>
+              <th className="pb-2 text-right">餐损</th>
+              <th className="pb-2 text-right">奖励</th>
+              <th className="pb-2 text-right">小费</th>
+              <th className="pb-2 text-right">调整</th>
+              <th className="pb-2 text-right">推荐</th>
+              <th className="pb-2 text-right">结算金额</th>
+            </tr>
+          </thead>
+          <tbody>
+            {earnings.riders.map((row) => (
+              <tr key={row.id} className="border-t border-[var(--line)]">
+                <td className="py-2 font-black">{row.riderName}{!row.riderId && <span className="ml-1"><Badge value="未建档" /></span>}</td>
+                <td className="py-2 text-[11px] font-bold text-[var(--muted)]">{row.rider99Id}</td>
+                <td className="py-2 text-[11px] font-bold">{row.pix || "-"}</td>
+                <td className="py-2"><span className="tag">{row.franchise}</span></td>
+                <td className="py-2"><span className="tag">{row.station}</span></td>
+                <td className="py-2 text-center font-bold">{row.orders}</td>
+                <td className="py-2 text-right">{money(row.total)}</td>
+                <td className="py-2 text-right">{money(row.tripIncome)}</td>
+                <td className="py-2 text-right">{row.cashDebt ? <span className="text-[var(--danger-ink)]">{money(row.cashDebt)}</span> : "-"}</td>
+                <td className="py-2 text-right">{row.mealDeduction ? money(row.mealDeduction) : "-"}</td>
+                <td className="py-2 text-right">{row.bonus ? money(row.bonus) : "-"}</td>
+                <td className="py-2 text-right">{row.tips ? money(row.tips) : "-"}</td>
+                <td className="py-2 text-right">{row.manualAdjust ? money(row.manualAdjust) : "-"}</td>
+                <td className="py-2 text-right">{row.referralBonus ? money(row.referralBonus) : "-"}</td>
+                <td className="py-2 text-right font-black text-[var(--accent)]">{money(row.settleAmount)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
   );
 }
 
@@ -259,45 +453,111 @@ function ImportTab({ headers, onDone, onError }: { headers: Record<string, strin
     return d.toISOString().slice(0, 10);
   });
   const [busy, setBusy] = useState(false);
+  const [fileLog, setFileLog] = useState<string[]>([]);
+
+  async function importFiles(files: FileList | null) {
+    if (!files || files.length === 0) return;
+    setBusy(true);
+    const log: string[] = [];
+    try {
+      for (const file of Array.from(files)) {
+        const rows = await readXlsxRows(await file.arrayBuffer());
+        const headerRow = rows[0] ?? [];
+        const objects = rowsToObjects(rows);
+        const isEarnings = headerRow.some((cell) => cell.includes("行程收入"));
+        const isKpi = headerRow.some((cell) => cell.includes("%TSH"));
+        if (!isEarnings && !isKpi) {
+          log.push(`✕ ${file.name}：无法识别表头（需要 Eastwind 骑手报表或收入表）`);
+          continue;
+        }
+        const mapping = isEarnings ? EARNING_HEADERS : KPI_HEADERS;
+        const records = mapRecords(objects, mapping);
+        if (records.length === 0) {
+          log.push(`✕ ${file.name}：没有可导入的骑手行`);
+          continue;
+        }
+        // Business date comes from the sheet's own 日期 column.
+        const date = normalizeDate(records[0].date ?? "") || reportDate;
+        const response = await fetch("/api/performance", {
+          method: "POST",
+          headers,
+          body: JSON.stringify({ action: isEarnings ? "importEarnings" : "importKpiRecords", date, records }),
+        });
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok) {
+          log.push(`✕ ${file.name}：${payload.error ?? response.status}`);
+          continue;
+        }
+        log.push(`✓ ${file.name} → ${isEarnings ? "收入结算" : "KPI 绩效"} ${date}：${payload.data.parsed} 名骑手（新增 ${payload.data.created}，更新 ${payload.data.updated}）`);
+      }
+    } catch (error) {
+      log.push(`✕ 解析失败：${(error as Error).message}`);
+    }
+    setFileLog(log);
+    setBusy(false);
+    if (log.some((line) => line.startsWith("✓"))) onDone(log.filter((line) => line.startsWith("✓")).join("；"));
+    else if (log.length > 0) onError(log.join("；"));
+  }
 
   return (
-    <div className="panel space-y-4 p-5">
-      <div className="flex items-center gap-2 text-xs font-black uppercase text-[var(--accent)]">
-        <BarChart3 size={15} /> 从 Eastwind 导入 T+1 骑手报表
+    <div className="space-y-4">
+      <div className="panel space-y-3 p-5">
+        <div className="flex items-center gap-2 text-xs font-black uppercase text-[var(--accent)]">
+          <FileSpreadsheet size={15} /> 上传 Eastwind 表格（自动识别绩效表 / 收入表，可多选）
+        </div>
+        <div className="text-sm font-bold leading-6 text-[var(--muted-strong)]">
+          支持「Desempenho do entregador parceiro」（绩效 KPI）与「Ganhos do entregador parceiro」（收入）两类 .xlsx，可同时选择两个文件一起上传。
+          业务日期自动读取表内「日期」列；同一天重复上传会按骑手覆盖更新。结算金额按「今日统计 + 完单 × R$2.50」自动计算（表内已有金额列则优先使用）。
+        </div>
+        <label className="flex h-28 cursor-pointer flex-col items-center justify-center gap-2 rounded-[8px] border-2 border-dashed border-[var(--line)] text-sm font-black text-[var(--muted)] hover:border-[var(--accent)] hover:text-[var(--accent)]">
+          <Upload size={20} />
+          {busy ? "解析导入中..." : "点击选择 .xlsx 文件（可多选）"}
+          <input type="file" accept=".xlsx" multiple className="hidden" disabled={busy} onChange={(e) => void importFiles(e.target.files)} />
+        </label>
+        {fileLog.length > 0 && (
+          <div className="space-y-1 text-sm font-bold">
+            {fileLog.map((line) => (
+              <div key={line} className={line.startsWith("✓") ? "text-[var(--ok-ink)]" : "text-[var(--danger-ink)]"}>{line}</div>
+            ))}
+          </div>
+        )}
       </div>
-      <div className="text-sm font-bold leading-6 text-[var(--muted-strong)]">
-        Eastwind → 报表 → 骑手报表 → 按骑手 → 选择日期查询后，全选复制整页内容（或「下载数据」后打开文件全选复制），粘贴到下方。重复导入同一天会按骑手覆盖更新。
+
+      <div className="panel space-y-3 p-5">
+        <div className="flex items-center gap-2 text-xs font-black uppercase text-[var(--accent)]">
+          <BarChart3 size={15} /> 或粘贴 Eastwind 骑手报表（网页整页复制）
+        </div>
+        <label className="block text-xs font-black uppercase text-[var(--muted)]">
+          报表日期
+          <input type="date" value={reportDate} onChange={(e) => setReportDate(e.target.value)} className="mt-1 h-11 rounded-[8px] border border-[var(--line)] bg-[var(--surface)] px-3 text-sm font-bold outline-none focus:border-[var(--accent)]" />
+        </label>
+        <textarea
+          value={raw}
+          onChange={(e) => setRaw(e.target.value)}
+          rows={8}
+          placeholder="粘贴 Eastwind 骑手报表内容..."
+          className="w-full rounded-[8px] border border-[var(--line)] bg-[var(--surface)] p-3 font-mono text-xs outline-none focus:border-[var(--accent)]"
+        />
+        <button
+          type="button"
+          disabled={busy || !raw.trim()}
+          onClick={async () => {
+            setBusy(true);
+            const response = await fetch("/api/performance", { method: "POST", headers, body: JSON.stringify({ action: "import", raw, date: reportDate }) });
+            const payload = await response.json().catch(() => ({}));
+            setBusy(false);
+            if (!response.ok) {
+              onError(payload.error ?? `导入失败 (${response.status})`);
+              return;
+            }
+            setRaw("");
+            onDone(`已导入 ${reportDate}：解析 ${payload.data.parsed} 名骑手（新增 ${payload.data.created}，更新 ${payload.data.updated}）。`);
+          }}
+          className="inline-flex h-11 items-center gap-2 rounded-[8px] bg-[var(--accent)] px-6 text-sm font-black uppercase text-[var(--accent-ink)] hover:bg-[var(--accent-strong)] disabled:opacity-50"
+        >
+          <Upload size={16} /> {busy ? "导入中..." : "解析并导入"}
+        </button>
       </div>
-      <label className="block text-xs font-black uppercase text-[var(--muted)]">
-        报表日期（T+1 报表对应的业务日期）
-        <input type="date" value={reportDate} onChange={(e) => setReportDate(e.target.value)} className="mt-1 h-11 rounded-[8px] border border-[var(--line)] bg-[var(--surface)] px-3 text-sm font-bold outline-none focus:border-[var(--accent)]" />
-      </label>
-      <textarea
-        value={raw}
-        onChange={(e) => setRaw(e.target.value)}
-        rows={12}
-        placeholder="粘贴 Eastwind 骑手报表内容..."
-        className="w-full rounded-[8px] border border-[var(--line)] bg-[var(--surface)] p-3 font-mono text-xs outline-none focus:border-[var(--accent)]"
-      />
-      <button
-        type="button"
-        disabled={busy || !raw.trim()}
-        onClick={async () => {
-          setBusy(true);
-          const response = await fetch("/api/performance", { method: "POST", headers, body: JSON.stringify({ action: "import", raw, date: reportDate }) });
-          const payload = await response.json().catch(() => ({}));
-          setBusy(false);
-          if (!response.ok) {
-            onError(payload.error ?? `导入失败 (${response.status})`);
-            return;
-          }
-          setRaw("");
-          onDone(`已导入 ${reportDate}：解析 ${payload.data.parsed} 名骑手（新增 ${payload.data.created}，更新 ${payload.data.updated}）。`);
-        }}
-        className="inline-flex h-11 items-center gap-2 rounded-[8px] bg-[var(--accent)] px-6 text-sm font-black uppercase text-[var(--accent-ink)] hover:bg-[var(--accent-strong)] disabled:opacity-50"
-      >
-        <Upload size={16} /> {busy ? "导入中..." : "解析并导入"}
-      </button>
     </div>
   );
 }
