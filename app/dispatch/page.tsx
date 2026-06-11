@@ -4,6 +4,9 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { CalendarDays, CheckCircle2, ClipboardCopy, ClipboardList, Download, RefreshCcw, Send, Star, Upload, Users, X } from "lucide-react";
 import { AppShell, Badge, PageTitle } from "../components/ui";
 import type { DispatchShift, ShiftQuota, ShiftSignup } from "../lib/dispatch";
+import { downloadCsv } from "../lib/csv";
+import type { Franchise } from "../lib/network";
+import type { Ponto } from "../lib/data";
 
 type Board = { shifts: DispatchShift[]; quotas: ShiftQuota[]; signups: ShiftSignup[] };
 
@@ -49,6 +52,7 @@ type TabId = (typeof tabs)[number]["id"];
 export default function DispatchPage() {
   const [tab, setTab] = useState<TabId>("board");
   const [board, setBoard] = useState<Board>({ shifts: [], quotas: [], signups: [] });
+  const [network, setNetwork] = useState<{ franchises: Franchise[]; stations: Ponto[] }>({ franchises: [], stations: [] });
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState<{ tone: "ok" | "warn" | "err"; text: string } | null>(null);
 
@@ -66,6 +70,14 @@ export default function DispatchPage() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  useEffect(() => {
+    fetch("/api/network", { headers, cache: "no-store" })
+      .then((response) => (response.ok ? response.json() : null))
+      .then((payload) => payload && setNetwork({ franchises: payload.data.franchises, stations: payload.data.stations }))
+      .catch(() => undefined);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   async function post(body: Record<string, unknown>) {
     const response = await fetch("/api/dispatch", { method: "POST", headers, body: JSON.stringify(body) });
@@ -130,8 +142,8 @@ export default function DispatchPage() {
       {tab === "board" && <BoardTab board={board} byShift={byShift} loading={loading} onAction={post} setMessage={setMessage} />}
       {tab === "setup" && <WeekSetupTab board={board} onSave={post} setMessage={setMessage} />}
       {tab === "import" && <ImportTab onImport={post} setMessage={setMessage} />}
-      {tab === "quota" && <QuotaTab board={board} byShift={byShift} onSave={post} setMessage={setMessage} />}
-      {tab === "review" && <ReviewTab board={board} onAction={post} setMessage={setMessage} />}
+      {tab === "quota" && <QuotaTab board={board} byShift={byShift} onSave={post} setMessage={setMessage} network={network} />}
+      {tab === "review" && <ReviewTab board={board} onAction={post} setMessage={setMessage} network={network} />}
       {tab === "report" && <ReportTab board={board} byShift={byShift} onAction={post} setMessage={setMessage} />}
     </AppShell>
   );
@@ -435,7 +447,7 @@ function ShiftSelect({ shifts, value, onChange }: { shifts: DispatchShift[]; val
   );
 }
 
-function QuotaTab({ board, byShift, onSave, setMessage }: { board: Board; byShift: { quotaMap: Map<string, ShiftQuota[]> }; onSave: (body: Record<string, unknown>) => Promise<Record<string, unknown> | null>; setMessage: (m: { tone: "ok" | "warn" | "err"; text: string } | null) => void }) {
+function QuotaTab({ board, byShift, onSave, setMessage, network }: { board: Board; byShift: { quotaMap: Map<string, ShiftQuota[]> }; onSave: (body: Record<string, unknown>) => Promise<Record<string, unknown> | null>; setMessage: (m: { tone: "ok" | "warn" | "err"; text: string } | null) => void; network: { franchises: Franchise[]; stations: Ponto[] } }) {
   const [shiftId, setShiftId] = useState("");
   const [level, setLevel] = useState<"franchise" | "station">("franchise");
   const [franchise, setFranchise] = useState("");
@@ -460,8 +472,20 @@ function QuotaTab({ board, byShift, onSave, setMessage }: { board: Board; byShif
             </button>
           ))}
         </div>
-        <input className={input} placeholder="加盟商名称" value={franchise} onChange={(e) => setFranchise(e.target.value)} />
-        {level === "station" && <input className={input} placeholder="站点名称" value={station} onChange={(e) => setStation(e.target.value)} />}
+        <select className={input} value={franchise} onChange={(e) => { setFranchise(e.target.value); setStation(""); }}>
+          <option value="">选择加盟商…</option>
+          {network.franchises.map((item) => (
+            <option key={item.id} value={item.name}>{item.name}</option>
+          ))}
+        </select>
+        {level === "station" && (
+          <select className={input} value={station} onChange={(e) => setStation(e.target.value)}>
+            <option value="">选择站点…</option>
+            {network.stations.filter((item) => !franchise || item.franchise === franchise).map((item) => (
+              <option key={item.id} value={item.name}>{item.name}</option>
+            ))}
+          </select>
+        )}
         <input className={input} placeholder="名额数量" inputMode="numeric" value={quota} onChange={(e) => setQuota(e.target.value.replace(/\D/g, ""))} />
         <button
           type="button"
@@ -516,7 +540,7 @@ function QuotaTab({ board, byShift, onSave, setMessage }: { board: Board; byShif
   );
 }
 
-function ReviewTab({ board, onAction, setMessage }: { board: Board; onAction: (body: Record<string, unknown>) => Promise<Record<string, unknown> | null>; setMessage: (m: { tone: "ok" | "warn" | "err"; text: string } | null) => void }) {
+function ReviewTab({ board, onAction, setMessage, network }: { board: Board; onAction: (body: Record<string, unknown>) => Promise<Record<string, unknown> | null>; setMessage: (m: { tone: "ok" | "warn" | "err"; text: string } | null) => void; network: { franchises: Franchise[]; stations: Ponto[] } }) {
   const [shiftId, setShiftId] = useState("");
   const [franchise, setFranchise] = useState("");
   const [station, setStation] = useState("");
@@ -545,8 +569,59 @@ function ReviewTab({ board, onAction, setMessage }: { board: Board; onAction: (b
     }
   }
 
+  // Review progress grouped by franchise (HQ view follows the franchise list).
+  const progress = network.franchises.map((item) => {
+    const mine = board.signups.filter((signup) => signup.franchise === item.name);
+    return { name: item.name, pending: mine.filter((x) => x.status === "submitted").length, approved: mine.filter((x) => x.status === "approved").length, total: mine.length };
+  }).filter((row) => row.total > 0 || true);
+
   return (
-    <div className="grid gap-4 lg:grid-cols-[420px_1fr]">
+    <div className="space-y-4">
+      <div className="panel p-4">
+        <div className="mb-3 flex items-center justify-between">
+          <div className="text-xs font-black uppercase text-[var(--accent)]">审核进度（以加盟商清单为准）</div>
+          <button
+            type="button"
+            className="tag inline-flex items-center gap-1"
+            onClick={() => {
+              downloadCsv(
+                `signups-${new Date().toISOString().slice(0, 10)}`,
+                ["骑手", "99ID", "加盟商", "站点", "班次", "状态", "提交时间"],
+                board.signups.map((x) => [x.riderName, x.rider99Id, x.franchise, x.station, x.shiftId, x.status, x.createdAt]),
+              );
+            }}
+          >
+            <Download size={13} /> 导出报名 CSV
+          </button>
+        </div>
+        <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+          {progress.map((row) => (
+            <div key={row.name} className={`rounded-[8px] border p-3 ${row.pending > 0 ? "border-[var(--warning)] bg-[var(--warning-bg)]" : "border-[var(--line)] bg-[var(--surface-raised)]"}`}>
+              <div className="flex items-center justify-between">
+                <span className="text-sm font-black">{row.name}</span>
+                {row.pending > 0 && (
+                  <button
+                    type="button"
+                    className="rounded-full bg-[var(--accent)] px-2.5 py-1 text-[10px] font-black uppercase text-[var(--accent-ink)]"
+                    onClick={async () => {
+                      const result = await onAction({ action: "nudge", scope: "franchise", name: row.name });
+                      if (result) setMessage({ tone: "ok", text: `已向 ${row.name} 发送催审提醒（${row.pending} 条待审）。` });
+                    }}
+                  >
+                    催审核
+                  </button>
+                )}
+              </div>
+              <div className="mt-1 text-[11px] font-bold text-[var(--muted-strong)]">
+                待审 <span className={row.pending > 0 ? "text-[var(--warning-ink)]" : ""}>{row.pending}</span> ｜ 已通过 {row.approved} ｜ 共 {row.total}
+              </div>
+            </div>
+          ))}
+          {progress.length === 0 && <div className="text-sm font-bold text-[var(--muted)]">还没有加盟商档案——请到「网络架构」创建。</div>}
+        </div>
+      </div>
+
+      <div className="grid gap-4 lg:grid-cols-[420px_1fr]">
       <div className="panel space-y-3 p-5">
         <div className="text-xs font-black uppercase text-[var(--accent)]">代录站点报名</div>
         <ShiftSelect shifts={board.shifts.filter((item) => item.status === "scheduling")} value={shiftId} onChange={setShiftId} />
@@ -623,6 +698,7 @@ function ReviewTab({ board, onAction, setMessage }: { board: Board; onAction: (b
             })}
           </div>
         )}
+      </div>
       </div>
     </div>
   );
