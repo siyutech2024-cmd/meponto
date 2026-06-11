@@ -142,7 +142,7 @@ export const portalConfigs: Record<PortalId, PortalConfig> = {
     productName: "MePonto 骑手APP",
     title: "MePonto 骑手APP",
     description: "骑手查看积分、排班 slots、报名状态、商城兑换和个人运营信息。",
-    homePath: "/app",
+    homePath: "/rider-app",
     loginHint: "骑手账号",
     allowedRoles: ["Rider", "Super Admin"],
     vercelPath: "/app",
