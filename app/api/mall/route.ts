@@ -78,13 +78,38 @@ export async function GET(request: Request) {
     };
   }
 
+  // Supplier settlement: fulfilled orders × supply price = payable.
+  const supplierMap = new Map<string, { qty: number; payable: number }>();
+  for (const order of memory.marketplaceOrders.filter((o) => o.status === "fulfilled" || o.status === "arrived")) {
+    const product = memory.marketplaceProducts.find((item) => item.id === order.productId);
+    if (!product?.supplierName) continue;
+    const entry = supplierMap.get(product.supplierName) ?? { qty: 0, payable: 0 };
+    entry.qty += 1;
+    entry.payable += product.supplyPrice ?? 0;
+    supplierMap.set(product.supplierName, entry);
+  }
+  const supplierSettlement = [...supplierMap.entries()].map(([supplier, value]) => ({ supplier, qty: value.qty, payable: Math.round(value.payable * 100) / 100 }));
+
+  // Points expiring within 30 days (earned 11-12 months ago) for the rider.
+  let expiringPoints = 0;
+  if (me) {
+    const now = Date.now();
+    const MONTH = 30 * 24 * 3600 * 1000;
+    for (const entry of memory.pointsLedgerEntries) {
+      if (entry.riderId !== (me as { riderId: string }).riderId || entry.type !== "earn" || entry.status !== "approved") continue;
+      const age = now - new Date(entry.createdAt.replace(" ", "T")).getTime();
+      if (age > 11 * MONTH && age < 12 * MONTH) expiringPoints += entry.points;
+    }
+  }
+
   return jsonResponse({
     data: {
       config,
       tiers: tierDefinitions,
       products: memory.marketplaceProducts,
       orders,
-      me,
+      me: me ? { ...me, expiringPoints } : null,
+      supplierSettlement,
     },
   });
 }
