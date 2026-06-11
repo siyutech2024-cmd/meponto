@@ -1,6 +1,6 @@
 import { appendServerAudit, jsonResponse, makeServerId, memory } from "../../lib/server/memory";
 import { flushPendingToDatabase, persistDeleteRecord, refreshCollectionsFromDatabase } from "../../lib/server/persistence";
-import { requirePermission, roleFromRequest } from "../../lib/server/authz";
+import { requirePermission, roleFromRequest, scopeFromRequest } from "../../lib/server/authz";
 import type { Franchise } from "../../lib/network";
 
 const COLLECTIONS = ["franchises", "pontos"];
@@ -10,13 +10,25 @@ export async function GET(request: Request) {
   const forbidden = requirePermission(request, "view_dashboard");
   if (forbidden) return forbidden;
   await refreshCollectionsFromDatabase(COLLECTIONS);
+  const scope = await scopeFromRequest(request);
+
+  let stations = memory.pontos;
+  let franchiseRows = memory.franchises;
+  if (scope.station) {
+    stations = stations.filter((ponto) => ponto.name === scope.station);
+    const parent = stations[0]?.franchise;
+    franchiseRows = franchiseRows.filter((f) => f.name === parent);
+  } else if (scope.franchise) {
+    stations = stations.filter((ponto) => ponto.franchise === scope.franchise);
+    franchiseRows = franchiseRows.filter((f) => f.name === scope.franchise);
+  }
 
   // Franchise list enriched with its station count.
-  const franchises = memory.franchises.map((franchise) => ({
+  const franchises = franchiseRows.map((franchise) => ({
     ...franchise,
     stationCount: memory.pontos.filter((ponto) => ponto.franchise === franchise.name).length,
   }));
-  return jsonResponse({ data: { franchises, stations: memory.pontos } });
+  return jsonResponse({ data: { franchises, stations, scoped: Boolean(scope.franchise || scope.station) } });
 }
 
 type Body =
@@ -24,7 +36,9 @@ type Body =
   | { action: "deleteFranchise"; franchiseId: string }
   | { action: "depositFranchise"; franchiseId: string; amount: number; note?: string }
   | { action: "addStation"; name: string; franchise: string; address?: string; mapUrl?: string; leader?: string; bairro?: string }
-  | { action: "updateStation"; stationId: string; franchise?: string; address?: string; mapUrl?: string; leader?: string; name?: string };
+  | { action: "updateStation"; stationId: string; franchise?: string; address?: string; mapUrl?: string; leader?: string; name?: string }
+  | { action: "approveStation"; stationId: string }
+  | { action: "rejectStation"; stationId: string };
 
 async function handlePost(request: Request) {
   const forbidden = requirePermission(request, "manage_pontos");
@@ -105,6 +119,9 @@ async function handlePost(request: Request) {
         return jsonResponse({ error: "请填写站点地址或 Google Maps 链接" }, { status: 400 });
       }
       if (memory.pontos.some((p) => p.name === name.trim())) return jsonResponse({ error: "该站点已存在" }, { status: 409 });
+      // New stations from franchise/station portals wait for HQ approval.
+      const scope = await scopeFromRequest(request);
+      const needsApproval = Boolean(scope.franchise || scope.station);
       const station = {
         id: makeServerId("pt", memory.pontos.length + 1),
         name: name.trim().slice(0, 60),
@@ -118,10 +135,31 @@ async function handlePost(request: Request) {
         franchise: franchise.trim(),
         address: address.trim().slice(0, 160),
         mapUrl: mapUrl.trim().slice(0, 300),
+        status: needsApproval ? "pending" : "approved",
       } as (typeof memory.pontos)[number];
       memory.pontos.unshift(station);
-      appendServerAudit({ actor, action: "STATION_CREATED", entity: "Ponto", entityId: station.id, detail: `${station.name} → ${franchise} (${station.address || station.mapUrl})`, risk: "Medium" });
-      return jsonResponse({ data: station }, { status: 201 });
+      appendServerAudit({ actor, action: needsApproval ? "STATION_SUBMITTED" : "STATION_CREATED", entity: "Ponto", entityId: station.id, detail: `${station.name} → ${franchise} (${station.address || station.mapUrl})${needsApproval ? " [pending HQ approval]" : ""}`, risk: "Medium" });
+      return jsonResponse({ data: station, pendingApproval: needsApproval }, { status: 201 });
+    }
+
+    case "approveStation":
+    case "rejectStation": {
+      // HQ-only review of franchise-submitted stations.
+      const scope = await scopeFromRequest(request);
+      if (scope.franchise || scope.station) return jsonResponse({ error: "仅总部可审核站点" }, { status: 403 });
+      const { stationId } = body as { stationId?: string };
+      const index = memory.pontos.findIndex((p) => p.id === stationId);
+      if (index === -1) return jsonResponse({ error: "站点不存在" }, { status: 404 });
+      const station = memory.pontos[index];
+      if (body.action === "approveStation") {
+        memory.pontos[index] = { ...station, status: "approved" };
+        appendServerAudit({ actor, action: "STATION_APPROVED", entity: "Ponto", entityId: stationId ?? "", detail: station.name, risk: "Medium" });
+        return jsonResponse({ data: memory.pontos[index] });
+      }
+      memory.pontos.splice(index, 1);
+      persistDeleteRecord("pontos", stationId ?? "");
+      appendServerAudit({ actor, action: "STATION_REJECTED", entity: "Ponto", entityId: stationId ?? "", detail: station.name, risk: "Medium" });
+      return jsonResponse({ data: { ok: true } });
     }
 
     case "updateStation": {
