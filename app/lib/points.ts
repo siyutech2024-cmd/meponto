@@ -64,7 +64,7 @@ export type PartnerServiceRecord = {
 };
 
 export type MarketplaceProductType = "equipment" | "fuel_coupon" | "maintenance_coupon" | "phone_data" | "safety_item" | "partner_voucher";
-export type MarketplaceProductStatus = "active" | "paused";
+export type MarketplaceProductStatus = "active" | "paused" | "pending_pricing";
 
 export type MarketplaceProduct = {
   id: string;
@@ -77,9 +77,17 @@ export type MarketplaceProduct = {
   audience: PointsAccountType | "both";
   partnerId?: string;
   supplierId?: string;
+  /** Supplier-quoted cost in R$ (uploaded from the supplier portal). */
+  supplyPrice?: number;
+  supplierName?: string;
+  /** Supplier delivery cycle in days — drives the pickup ETA estimate. */
+  deliveryCycleDays?: number;
+  /** HQ-defined revenue-share percentage on top of the supply price. */
+  marginPct?: number;
+  description?: string;
 };
 
-export type MarketplaceOrderStatus = "created" | "fulfilled" | "cancelled";
+export type MarketplaceOrderStatus = "created" | "arrived" | "fulfilled" | "cancelled";
 
 export type MarketplaceOrder = {
   id: string;
@@ -90,6 +98,17 @@ export type MarketplaceOrder = {
   pointsSpent: number;
   status: MarketplaceOrderStatus;
   createdAt: string;
+  /** Pickup is always at the rider's own station. */
+  productName?: string;
+  riderName?: string;
+  station?: string;
+  franchise?: string;
+  /** Estimated arrival date from the supplier delivery cycle. */
+  etaDate?: string;
+  arrivedAt?: string;
+  pickedUpAt?: string;
+  /** Set when the arrival notice is published to the rider app. */
+  notifiedAt?: string;
 };
 
 export type PointsRuleSummary = {
