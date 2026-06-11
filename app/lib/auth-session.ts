@@ -44,14 +44,20 @@ export async function verifySessionToken(token: string | undefined): Promise<Aut
   }
 }
 
-export function sessionCookie(token: string) {
-  const secure = process.env.NODE_ENV === "production" ? "; Secure" : "";
-  return `${SESSION_COOKIE}=${token}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${SESSION_TTL_SECONDS}${secure}`;
+/** Share the session across all *.meponto.com hosts (app/mall/sys/...). */
+function cookieDomain(host?: string | null) {
+  const clean = (host ?? "").split(":")[0].toLowerCase();
+  return clean === "meponto.com" || clean.endsWith(".meponto.com") ? "; Domain=.meponto.com" : "";
 }
 
-export function clearSessionCookie() {
+export function sessionCookie(token: string, host?: string | null) {
   const secure = process.env.NODE_ENV === "production" ? "; Secure" : "";
-  return `${SESSION_COOKIE}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0${secure}`;
+  return `${SESSION_COOKIE}=${token}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${SESSION_TTL_SECONDS}${secure}${cookieDomain(host)}`;
+}
+
+export function clearSessionCookie(host?: string | null) {
+  const secure = process.env.NODE_ENV === "production" ? "; Secure" : "";
+  return `${SESSION_COOKIE}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0${secure}${cookieDomain(host)}`;
 }
 
 export function cookieValue(cookieHeader: string | null, name: string) {
