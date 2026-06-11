@@ -79,6 +79,26 @@ export async function proxy(request: NextRequest) {
     return NextResponse.next();
   }
 
+  // ---- Strict host ⇄ portal binding ---------------------------------------
+  // Each portal domain only serves ITS OWN pages. Opening another system's
+  // path (e.g. franchise.meponto.com/pontosys) bounces to the owning domain —
+  // regardless of who is logged in.
+  const publicPaths = ["/rider-login", "/scan", "/privacy", "/home"];
+  if (hostPortalId && !publicPaths.some((p) => pathname === p || pathname.startsWith(`${p}/`))) {
+    const hostPortal = portalConfigs[hostPortalId];
+    const belongsTo = (portal: (typeof portalConfigs)[keyof typeof portalConfigs]) =>
+      pathname === portal.homePath ||
+      pathname.startsWith(`${portal.homePath}/`) ||
+      portal.modules.some((module) => pathname === module.href || pathname.startsWith(`${module.href}/`));
+    if (!belongsTo(hostPortal)) {
+      const owner = Object.values(portalConfigs).find((portal) => portal.id !== hostPortalId && belongsTo(portal));
+      if (owner?.futureDomain) {
+        return NextResponse.redirect(new URL(`https://${owner.futureDomain}${pathname}`));
+      }
+      return NextResponse.redirect(new URL("/", request.url));
+    }
+  }
+
   const allowedPortals = Object.values(portalConfigs)
     .filter((portal) =>
       pathname === portal.homePath ||
