@@ -79,6 +79,11 @@ export async function proxy(request: NextRequest) {
     return NextResponse.next();
   }
 
+  // Legacy import URL → the real upload lives on the KPI board.
+  if (pathname === "/ninety-nine-import" || pathname.startsWith("/ninety-nine-import/")) {
+    return NextResponse.redirect(new URL("/performance", request.url));
+  }
+
   // ---- Strict host ⇄ portal binding ---------------------------------------
   // Each portal domain only serves ITS OWN pages. Opening another system's
   // path (e.g. franchise.meponto.com/pontosys) bounces to the owning domain —
