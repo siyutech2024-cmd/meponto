@@ -276,6 +276,8 @@ function ParticleMorph({ lang }: { lang: Lang }) {
       height = window.innerHeight;
       canvas.width = width * DPR;
       canvas.height = height * DPR;
+      canvas.style.width = `${width}px`;
+      canvas.style.height = `${height}px`;
       ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
     };
     resize();
