@@ -91,7 +91,7 @@ export default function RiderMallPage() {
       <div className="mx-auto min-h-screen w-full max-w-[430px] bg-[#f3f2ee] pb-24">
         <header className="flex items-center justify-between px-4 pb-3 pt-4">
           <div className="flex items-center gap-3">
-            <Link href="/rider-app" className="grid h-10 w-10 place-items-center rounded-[8px] bg-white shadow-[0_8px_20px_rgba(0,0,0,0.08)]"><ArrowLeft size={18} /></Link>
+            <Link href="/" className="grid h-10 w-10 place-items-center rounded-[8px] bg-white shadow-[0_8px_20px_rgba(0,0,0,0.08)]"><ArrowLeft size={18} /></Link>
             <div>
               <div className="text-[11px] font-black uppercase tracking-[0.14em] text-[#ff7a00]">PontoMall</div>
               <h1 className="text-lg font-black leading-5">Loja de Pontos</h1>
@@ -264,10 +264,10 @@ export default function RiderMallPage() {
         )}
 
         <nav className="fixed bottom-3 left-1/2 z-20 grid w-[calc(100%-24px)] max-w-[406px] -translate-x-1/2 grid-cols-4 rounded-[8px] bg-[#050505] p-1.5 text-white shadow-[0_18px_42px_rgba(0,0,0,0.3)]">
-          <MallTab icon={<Home size={18} />} label="Inicio" href="/rider-app" />
-          <MallTab icon={<WalletCards size={18} />} label="Carteira" href="/rider-app/wallet" />
-          <MallTab icon={<Gift size={18} />} label="Loja" href="/rider-app/mall" active />
-          <MallTab icon={<Headphones size={18} />} label="Ajuda" href="/rider-app/support" />
+          <MallTab icon={<Home size={18} />} label="Inicio" href="/" />
+          <MallTab icon={<WalletCards size={18} />} label="Carteira" href="/wallet" />
+          <MallTab icon={<Gift size={18} />} label="Loja" href="/mall" active />
+          <MallTab icon={<Headphones size={18} />} label="Ajuda" href="/support" />
         </nav>
       </div>
     </main>
