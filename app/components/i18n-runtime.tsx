@@ -31,6 +31,13 @@ export function I18nRuntime() {
         return;
       }
 
+      // Never touch dynamic numeric/symbol-only nodes (counters, money, dates):
+      // caching them would freeze the value at first render.
+      const raw = node.nodeValue ?? "";
+      if (!/[A-Za-zÀ-ú一-鿿]/.test(raw)) {
+        return;
+      }
+
       const original = originalText.current.get(node) ?? node.nodeValue ?? "";
       if (!originalText.current.has(node)) {
         originalText.current.set(node, original);
