@@ -188,6 +188,7 @@ export default function WalletAdminPage() {
 
         <div className="panel overflow-x-auto p-4">
           <div className="mb-3 text-xs font-black uppercase text-[var(--accent)]">骑手余额台账（{balances.length}）</div>
+          <div className="max-h-[480px] overflow-y-auto pr-1">
           <table className="w-full min-w-[560px] text-sm">
             <thead>
               <tr className="text-left text-[10px] font-black uppercase text-[var(--muted)]">
@@ -207,6 +208,7 @@ export default function WalletAdminPage() {
               ))}
             </tbody>
           </table>
+          </div>
         </div>
       </div>
     </AppShell>

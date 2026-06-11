@@ -45,6 +45,8 @@ export default function RidersPage() {
   // Assignment edits are staged here and saved to the DB only after 确认保存.
   const [pending, setPending] = useState<Record<string, { name: string; ponto?: string; franchise?: string }>>({});
   const [saving, setSaving] = useState(false);
+  const [page, setPage] = useState(1);
+  const PAGE_SIZE = 20;
 
   const load = useCallback(async () => {
     const [ridersResponse, networkResponse] = await Promise.all([
@@ -136,6 +138,14 @@ export default function RidersPage() {
 
   const unassignedCount = riders.filter((rider) => isUnassigned(rider.ponto) || isUnassigned(rider.franchise)).length;
   const reportOnlyCount = riders.filter((rider) => rider.source === "report").length;
+
+  // Pagination keeps the table short even with hundreds of riders.
+  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  const safePage = Math.min(page, totalPages);
+  const pageRows = filtered.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
+  useEffect(() => {
+    setPage(1);
+  }, [query, stationFilter, franchiseFilter, statusFilter, onlyUnassigned]);
 
   const input = "h-11 rounded-[8px] border border-[var(--line)] bg-[var(--surface-raised)] px-3 text-sm font-bold text-[var(--text)] outline-none focus:border-[var(--accent)]";
 
@@ -261,7 +271,7 @@ export default function RidersPage() {
             </tr>
           </thead>
           <tbody>
-            {filtered.map((rider) => {
+            {pageRows.map((rider) => {
               const unassigned = isUnassigned(rider.ponto) || isUnassigned(rider.franchise);
               const ar = rider.reportAr ?? rider.ar;
               const staged = pending[rider.id];
@@ -327,6 +337,21 @@ export default function RidersPage() {
             )}
           </tbody>
         </table>
+
+        {/* Pagination */}
+        {totalPages > 1 && (
+          <div className="mt-3 flex items-center justify-between border-t border-[var(--line)] pt-3" data-i18n-skip>
+            <span className="text-xs font-bold text-[var(--muted)]">{(safePage - 1) * PAGE_SIZE + 1}–{Math.min(safePage * PAGE_SIZE, filtered.length)} / {filtered.length}</span>
+            <div className="flex gap-1.5">
+              <button type="button" disabled={safePage <= 1} onClick={() => setPage(safePage - 1)} className="tag disabled:opacity-40">←</button>
+              {Array.from({ length: totalPages }).slice(0, 8).map((_, index) => (
+                <button key={index} type="button" onClick={() => setPage(index + 1)} className={`tag ${safePage === index + 1 ? "border-[var(--accent)] text-[var(--accent)]" : ""}`}>{index + 1}</button>
+              ))}
+              {totalPages > 8 && <span className="text-xs font-bold text-[var(--muted)]">…{totalPages}</span>}
+              <button type="button" disabled={safePage >= totalPages} onClick={() => setPage(safePage + 1)} className="tag disabled:opacity-40">→</button>
+            </div>
+          </div>
+        )}
       </section>
 
       {/* Sticky confirm bar: nothing is written until the user confirms. */}

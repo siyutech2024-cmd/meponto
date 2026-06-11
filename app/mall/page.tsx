@@ -128,7 +128,7 @@ export default function MallAdminPage() {
             {(data?.products ?? []).length === 0 ? (
               <div className="text-sm font-bold text-[var(--muted)]">还没有商品。供应商可在供应商后台上传。</div>
             ) : (
-              <div className="space-y-2">
+              <div className="max-h-[460px] space-y-2 overflow-y-auto pr-1">
                 {data?.products.map((product) => {
                   const draft = priceDrafts[product.id] ?? { points: String(product.pointsPrice || ""), margin: String(product.marginPct ?? "") };
                   return (
