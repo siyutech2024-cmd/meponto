@@ -33,22 +33,6 @@ import { readSession } from "../lib/session";
 import { crmPartners } from "../lib/crm";
 import { incidents, ledgerEntries, riders } from "../lib/data";
 import { getPointsAccount, marketplaceProducts, partnerServiceBenefitRules, pointsLedgerEntries, type PartnerServiceCategory } from "../lib/points";
-import type { RiderSlot, SlotEnrollment } from "../lib/slots";
-
-type SlotPayload = {
-  data: {
-    slots: RiderSlot[];
-    enrollments: SlotEnrollment[];
-    summary: {
-      week: string;
-      submitted: number;
-      pontoApproved: number;
-      franchiseConfirmed: number;
-      hqReviewed: number;
-    };
-  };
-};
-
 const wallet = {
   available: 438.7,
   pending: 164.2,
@@ -72,13 +56,6 @@ const missions = [
   { title: "Completar 24 entregas", reward: "+320 pts", progress: 75 },
   { title: "Noite segura no Ponto", reward: "R$ 45", progress: 58 },
 ];
-
-const slotSummary = {
-  week: "01-07 Jun",
-  openSlots: 14,
-  pendingReview: 1,
-  confirmed: 1,
-};
 
 const inbox = [
   { title: "Saldo atualizado", detail: "R$ 120,00 liberados no seu extrato.", time: "Agora" },
@@ -157,6 +134,11 @@ export default function RiderAppPage() {
     }
   }, []);
 
+  // Greet the LOGGED-IN rider; seed profile only backs the demo KPI widgets.
+  const [displayName, setDisplayName] = useState("");
+  useEffect(() => {
+    setDisplayName(readSession()?.name ?? "");
+  }, []);
   const member = riders[0];
   const openCase = incidents.find((incident) => incident.rider === member.name && incident.status !== "Closed");
   const benefit = ledgerEntries.find((entry) => entry.recipient === member.name);
@@ -166,71 +148,6 @@ export default function RiderAppPage() {
   const riderProducts = marketplaceProducts.filter((product) => product.audience === "rider" || product.audience === "both").slice(0, 3);
   const tier = getRiderTier(member);
   const tierScore = getRiderTierScore(member);
-  const [slotPayload, setSlotPayload] = useState<SlotPayload["data"] | null>(null);
-  const [selectedSlotId, setSelectedSlotId] = useState("");
-  const [slotMessage, setSlotMessage] = useState("Escolha um horario e envie para revisao do Ponto.");
-
-  useEffect(() => {
-    let active = true;
-    fetch("/api/slots", { cache: "no-store" })
-      .then((response) => response.json())
-      .then((payload: SlotPayload) => {
-        if (!active) return;
-        setSlotPayload(payload.data);
-        setSelectedSlotId((current) => current || payload.data.slots.find((slot) => slot.status === "open" && slot.enrolled < slot.capacity)?.id || "");
-      });
-    return () => {
-      active = false;
-    };
-  }, []);
-
-  const riderEnrollments = useMemo(
-    () => (slotPayload?.enrollments ?? []).filter((item) => item.riderId === member.id),
-    [member.id, slotPayload?.enrollments],
-  );
-  const openSlots = useMemo(
-    () =>
-      (slotPayload?.slots ?? []).filter(
-        (slot) =>
-          slot.status === "open" &&
-          slot.enrolled < slot.capacity &&
-          !riderEnrollments.some((enrollment) => enrollment.slotId === slot.id && enrollment.status !== "cancelled" && enrollment.status !== "rejected"),
-      ),
-    [riderEnrollments, slotPayload?.slots],
-  );
-  const riderSlotSummary = {
-    week: slotPayload?.summary.week.replace("2026-06-01 / 2026-06-07", "01-07 Jun") ?? slotSummary.week,
-    openSlots: slotPayload ? openSlots.length : slotSummary.openSlots,
-    pendingReview: slotPayload ? riderEnrollments.filter((item) => item.status === "submitted" || item.status === "ponto_approved").length : slotSummary.pendingReview,
-    confirmed: slotPayload ? riderEnrollments.filter((item) => item.status === "franchise_confirmed" || item.status === "hq_reviewed").length : slotSummary.confirmed,
-  };
-
-  async function submitRiderSlot() {
-    const slot = openSlots.find((item) => item.id === selectedSlotId);
-    if (!slot) {
-      setSlotMessage("Selecione um slot disponivel.");
-      return;
-    }
-
-    const response = await fetch("/api/slots", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        slotId: slot.id,
-        note: `${member.name} submitted from rider app for ${slot.pontoName}.`,
-      }),
-    });
-    const result = await response.json();
-    if (!response.ok) {
-      setSlotMessage(result.error ?? "Falha ao enviar inscricao.");
-      return;
-    }
-
-    const fresh = await fetch("/api/slots", { cache: "no-store" }).then((item) => item.json() as Promise<SlotPayload>);
-    setSlotPayload(fresh.data);
-    setSlotMessage(`${result.data.id} enviado para ${slot.pontoName}.`);
-  }
-
   return (
     <main className="min-h-screen bg-[#101010] text-[#050505]" style={{ fontFamily: "Poppins, Inter, system-ui, sans-serif" }}>
       <div className="mx-auto min-h-screen w-full max-w-[430px] bg-[#f3f2ee] pb-24">
@@ -240,13 +157,18 @@ export default function RiderAppPage() {
               <img src="/meponto-app-icon.png" alt="MePonto" className="h-10 w-10 rounded-[8px] shadow-[0_10px_18px_rgba(0,0,0,0.14)]" />
               <div className="min-w-0">
                 <div className="text-[11px] font-black uppercase tracking-[0.14em] text-[#ff7a00]">MePonto</div>
-                <h1 className="truncate text-lg font-black leading-5">Oi, {member.name.split(" ")[0]}</h1>
+                <h1 className="truncate text-lg font-black leading-5" data-i18n-skip>Oi, {(displayName || member.name).split(" ")[0]}</h1>
               </div>
             </div>
-            <button type="button" aria-label="Abrir avisos" className="relative grid h-10 w-10 place-items-center rounded-[8px] bg-white shadow-[0_8px_20px_rgba(0,0,0,0.08)]">
-              <Bell size={19} />
-              <span className="absolute right-2 top-2 h-2.5 w-2.5 rounded-full bg-[#ff7a00] ring-2 ring-white" />
-            </button>
+            <div className="flex items-center gap-2">
+              <a href="/rider-app/scan" aria-label="Escanear QR" className="grid h-10 w-10 place-items-center rounded-[8px] bg-[#050505] text-white shadow-[0_8px_20px_rgba(0,0,0,0.18)]">
+                <QrCode size={19} />
+              </a>
+              <button type="button" aria-label="Abrir avisos" className="relative grid h-10 w-10 place-items-center rounded-[8px] bg-white shadow-[0_8px_20px_rgba(0,0,0,0.08)]">
+                <Bell size={19} />
+                <span className="absolute right-2 top-2 h-2.5 w-2.5 rounded-full bg-[#ff7a00] ring-2 ring-white" />
+              </button>
+            </div>
           </div>
         </header>
 
@@ -310,19 +232,31 @@ export default function RiderAppPage() {
             </div>
 
             <div className="relative z-10 grid grid-cols-[1fr_1fr] gap-2 p-3">
-              <a href="/rider-app/shifts" className={`flex h-12 items-center justify-center gap-2 rounded-[8px] text-sm font-black ${tier.buttonClass}`}>
+              <a href="/rider-app/wallet" className={`flex h-12 items-center justify-center gap-2 rounded-[8px] text-sm font-black ${tier.buttonClass}`}>
                 Sacar
                 <ChevronRight size={17} />
               </a>
               <a href="/rider-app/agenda" className="flex h-12 items-center justify-center gap-2 rounded-[8px] bg-white/10 text-sm font-black text-white">
-                Extrato
-                <QrCode size={17} />
+                Agenda
+                <CalendarDays size={17} />
               </a>
             </div>
           </div>
         </section>
 
         <div id="home" className="scroll-mt-4">
+            {/* Invite friends — prominent referral hint */}
+            <section className="px-4 pt-3">
+              <a href="/rider-app/mall#invite" className="grid grid-cols-[auto_1fr_auto] items-center gap-3 rounded-[8px] bg-[#ff7a00] p-3 text-[#050505] shadow-[0_12px_26px_rgba(255,122,0,0.3)]">
+                <div className="grid h-11 w-11 place-items-center rounded-[8px] bg-[#050505] text-white"><Gift size={20} /></div>
+                <div className="min-w-0">
+                  <div className="text-sm font-black">Convide amigos e ganhe pontos!</div>
+                  <div className="truncate text-[11px] font-bold text-black/70">Mostre seu QR — pontos após o 1º pedido do amigo</div>
+                </div>
+                <ChevronRight size={20} />
+              </a>
+            </section>
+
             <section className="grid grid-cols-3 gap-2 px-4 pt-3">
               {todayStats.map((item) => (
                 <MetricCard key={item.label} {...item} />
@@ -345,50 +279,20 @@ export default function RiderAppPage() {
             <PartnerMapSection partners={riderPartnerMap} />
 
             <section className="px-4 pt-4">
-              <div className="grid min-w-0 gap-3 overflow-hidden rounded-[8px] bg-[#050505] p-4 text-white shadow-[0_12px_26px_rgba(0,0,0,0.16)]">
-                <div className="flex min-w-0 items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <div className="flex items-center gap-2 text-sm font-black text-[#ffb238]">
-                      <CalendarDays size={17} />
-                      Inscricao de slots
-                    </div>
-                    <h2 className="mt-2 text-2xl font-black leading-7">Escolha seus horarios da semana</h2>
-                    <p className="mt-2 text-sm font-bold leading-5 text-white/62">Ponto revisa sua inscricao e a franquia confirma antes de entrar no plano oficial.</p>
-                  </div>
-                  <div className="shrink-0 rounded-[8px] bg-white/10 px-3 py-2 text-right">
-                    <div className="text-[10px] font-black uppercase text-white/45">Semana</div>
-                    <div className="text-sm font-black">{riderSlotSummary.week}</div>
-                  </div>
+              <div className="grid gap-3 rounded-[8px] bg-[#050505] p-4 text-white shadow-[0_12px_26px_rgba(0,0,0,0.16)]">
+                <div className="flex items-center gap-2 text-sm font-black text-[#ffb238]">
+                  <CalendarDays size={17} />
+                  Turnos da semana
                 </div>
-                <div className="grid min-w-0 grid-cols-3 gap-2">
-                  <RulePill label="Abertos" value={String(riderSlotSummary.openSlots)} dark />
-                  <RulePill label="Em analise" value={String(riderSlotSummary.pendingReview)} dark />
-                  <RulePill label="Confirmados" value={String(riderSlotSummary.confirmed)} dark />
-                </div>
-                <div className="grid min-w-0 gap-2">
-                  <select value={selectedSlotId} onChange={(event) => setSelectedSlotId(event.target.value)} className="h-12 w-full min-w-0 max-w-full rounded-[8px] border border-white/10 bg-white/10 px-3 text-sm font-black text-white outline-none">
-                    {openSlots.map((slot) => (
-                      <option key={slot.id} value={slot.id} className="text-[#050505]">
-                        {slot.weekday} {slot.startTime}-{slot.endTime} / {slot.pontoName} / {slot.franchiseName} / {slot.enrolled}-{slot.capacity}
-                      </option>
-                    ))}
-                  </select>
-                  <button type="button" onClick={submitRiderSlot} className="flex h-12 items-center justify-center gap-2 rounded-[8px] bg-[#ff7a00] text-sm font-black text-[#050505]">
-                    Enviar inscricao
+                <p className="text-sm font-bold leading-5 text-white/62">Inscreva-se dia a dia e acompanhe a aprovação da estação.</p>
+                <div className="grid grid-cols-2 gap-2">
+                  <a href="/rider-app/shifts" className="flex h-12 items-center justify-center gap-2 rounded-[8px] bg-[#ff7a00] text-sm font-black text-[#050505]">
+                    Inscrever-se
                     <ChevronRight size={18} />
-                  </button>
-                  <div className="rounded-[8px] bg-white/10 p-3 text-xs font-bold leading-5 text-white/70">{slotMessage}</div>
-                </div>
-                <div className="grid min-w-0 gap-2">
-                  {openSlots.slice(0, 3).map((slot) => (
-                    <div key={slot.id} className="rounded-[8px] bg-white/[0.08] p-3">
-                      <div className="flex items-center justify-between gap-2">
-                        <div className="text-sm font-black">{slot.weekday} {slot.startTime}-{slot.endTime}</div>
-                        <span className="rounded-full bg-white/10 px-2 py-1 text-[10px] font-black">{slot.enrolled}/{slot.capacity}</span>
-                      </div>
-                      <div className="mt-1 text-xs font-bold text-white/58">{slot.pontoName} / {slot.franchiseName}</div>
-                    </div>
-                  ))}
+                  </a>
+                  <a href="/rider-app/agenda" className="flex h-12 items-center justify-center gap-2 rounded-[8px] bg-white/10 text-sm font-black text-white">
+                    Minha agenda
+                  </a>
                 </div>
               </div>
             </section>
@@ -567,10 +471,10 @@ function PointsScreen({
             <RulePill label="Servico" value="1/dia" />
             <RulePill label="Valor ref." value="R$1=10pts" />
           </div>
-          <button type="button" className="mt-3 flex h-12 w-full items-center justify-center gap-2 rounded-[8px] bg-[#ff7a00] text-sm font-black text-[#050505]">
+          <a href="/rider-app/mall#invite" className="mt-3 flex h-12 w-full items-center justify-center gap-2 rounded-[8px] bg-[#ff7a00] text-sm font-black text-[#050505]">
             Mostrar QR do membro
             <QrCode size={18} />
-          </button>
+          </a>
         </div>
       </section>
 
@@ -678,45 +582,68 @@ function HelpScreen({ openCase, memberPonto }: { openCase: (typeof incidents)[nu
   );
 }
 
+const partnerCategoryLabels: Record<string, string> = {
+  fuel: "Combustível",
+  maintenance: "Manutenção",
+  phone_data: "Celular",
+  equipment: "Equipamento",
+  vehicle_service: "Veículo",
+};
+
 function PartnerMapSection({ partners, compact = false }: { partners: typeof riderPartnerMap; compact?: boolean }) {
-  const visiblePartners = compact ? partners.filter((partner) => partner.status === "Active").slice(0, 3) : partners.slice(0, 4);
+  // Detail-first UX: tapping a pin or row opens the partner card; Google Maps
+  // is one explicit tap from there. Category chips keep long lists usable.
+  const [filter, setFilter] = useState("all");
+  const [selectedId, setSelectedId] = useState("");
+  const categories = [...new Set(partners.map((partner) => partner.category))];
+  const filtered = filter === "all" ? partners : partners.filter((partner) => partner.category === filter);
+  const visiblePartners = compact ? filtered.filter((partner) => partner.status === "Active").slice(0, 3) : filtered;
 
   return (
     <section className="px-4 pt-4">
       <div className="mb-2 flex items-center justify-between">
-        <h2 className="text-lg font-black">Mapa de partners</h2>
-        <span className="text-xs font-black text-[#ff7a00]">Descontos</span>
+        <h2 className="text-lg font-black">Pontos de serviço</h2>
+        <span className="text-xs font-black text-[#ff7a00]">{visiblePartners.length} locais</span>
       </div>
+
+      {!compact && categories.length > 1 && (
+        <div className="mb-2 flex gap-2 overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+          <button type="button" onClick={() => setFilter("all")} className={`shrink-0 rounded-full px-3 py-1.5 text-xs font-black ${filter === "all" ? "bg-[#050505] text-white" : "bg-white text-[#77746f]"}`}>Todos</button>
+          {categories.map((cat) => (
+            <button key={cat} type="button" onClick={() => setFilter(cat === filter ? "all" : cat)} className={`shrink-0 rounded-full px-3 py-1.5 text-xs font-black ${filter === cat ? "bg-[#050505] text-white" : "bg-white text-[#77746f]"}`}>
+              {partnerCategoryLabels[cat] ?? cat}
+            </button>
+          ))}
+        </div>
+      )}
+
       <div className="overflow-hidden rounded-[8px] bg-white shadow-[0_12px_26px_rgba(0,0,0,0.06)]">
-        <div className="relative h-[210px] bg-[#101010]">
+        <div className="relative h-[180px] bg-[#101010]">
           <div className="absolute inset-0 bg-[linear-gradient(90deg,rgba(255,255,255,0.06)_1px,transparent_1px),linear-gradient(0deg,rgba(255,255,255,0.06)_1px,transparent_1px)] bg-[length:34px_34px]" />
           <div className="absolute left-[42%] top-0 h-full w-[18px] rotate-[18deg] bg-[#2f2f2a]" />
           <div className="absolute left-0 top-[48%] h-[16px] w-full -rotate-[8deg] bg-[#2f2f2a]" />
-          <div className="absolute left-[18%] top-[18%] h-[88px] w-[132px] rounded-[8px] border border-white/10 bg-white/5" />
-          <div className="absolute right-[10%] top-[22%] h-[96px] w-[104px] rounded-[8px] border border-white/10 bg-white/5" />
-          <div className="absolute bottom-3 left-3 rounded-[8px] bg-white/92 px-3 py-2 text-xs font-black text-[#050505]">
-            Sao Paulo Centro
-          </div>
-          {visiblePartners.map((partner) => {
+          <div className="absolute bottom-3 left-3 rounded-[8px] bg-white/92 px-3 py-2 text-xs font-black text-[#050505]">São Paulo</div>
+          {visiblePartners.slice(0, 8).map((partner) => {
             const active = partner.status === "Active";
+            const selected = partner.id === selectedId;
             return (
-              <a
+              <button
                 key={partner.id}
-                href={partner.navigationUrl}
-                target="_blank"
-                rel="noreferrer"
-                aria-label={`Navegar para ${partner.name}`}
-                className={`absolute grid h-10 w-10 -translate-x-1/2 -translate-y-1/2 place-items-center rounded-full shadow-[0_10px_22px_rgba(0,0,0,0.25)] ring-4 ring-white/24 ${active ? "bg-[#ff7a00] text-[#050505]" : "bg-white text-[#77746f]"}`}
+                type="button"
+                aria-label={`Ver detalhes de ${partner.name}`}
+                onClick={() => setSelectedId(selected ? "" : partner.id)}
+                className={`absolute grid h-10 w-10 -translate-x-1/2 -translate-y-1/2 place-items-center rounded-full shadow-[0_10px_22px_rgba(0,0,0,0.25)] ring-4 ${selected ? "scale-110 ring-[#ff7a00]/70" : "ring-white/24"} ${active ? "bg-[#ff7a00] text-[#050505]" : "bg-white text-[#77746f]"}`}
                 style={{ left: `${partner.x}%`, top: `${partner.y}%` }}
               >
                 <MapPin size={20} fill="currentColor" />
-              </a>
+              </button>
             );
           })}
         </div>
-        <div className="grid gap-2 p-3">
+        <div className="grid max-h-[360px] gap-2 overflow-y-auto p-3">
+          {visiblePartners.length === 0 && <div className="py-4 text-center text-sm font-bold text-[#77746f]">Nenhum ponto nesta categoria.</div>}
           {visiblePartners.map((partner) => (
-            <PartnerMapRow key={partner.id} partner={partner} />
+            <PartnerMapRow key={partner.id} partner={partner} selected={partner.id === selectedId} onSelect={() => setSelectedId(partner.id === selectedId ? "" : partner.id)} />
           ))}
         </div>
       </div>
@@ -724,32 +651,47 @@ function PartnerMapSection({ partners, compact = false }: { partners: typeof rid
   );
 }
 
-function PartnerMapRow({ partner }: { partner: (typeof riderPartnerMap)[number] }) {
+function PartnerMapRow({ partner, selected, onSelect }: { partner: (typeof riderPartnerMap)[number]; selected: boolean; onSelect: () => void }) {
   const active = partner.status === "Active";
 
   return (
-    <div className="grid grid-cols-[1fr_auto] items-center gap-3 rounded-[8px] bg-[#f3f2ee] p-3">
-      <div className="min-w-0">
-        <div className="flex items-center gap-2">
-          <div className="truncate text-sm font-black">{partner.name}</div>
-          <span className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-black ${active ? "bg-[#e8f6ee] text-[#20a65a]" : "bg-white text-[#77746f]"}`}>{active ? "Ativo" : "Em breve"}</span>
+    <div className={`rounded-[8px] bg-[#f3f2ee] ${selected ? "ring-2 ring-[#ff7a00]" : ""}`}>
+      {/* Tap 1: open details. Tap 2 (button below): open Google Maps. */}
+      <button type="button" onClick={onSelect} className="grid w-full grid-cols-[1fr_auto] items-center gap-3 p-3 text-left">
+        <div className="min-w-0">
+          <div className="flex items-center gap-2">
+            <div className="truncate text-sm font-black">{partner.name}</div>
+            <span className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-black ${active ? "bg-[#e8f6ee] text-[#20a65a]" : "bg-white text-[#77746f]"}`}>{active ? "Ativo" : "Em breve"}</span>
+          </div>
+          <div className="mt-0.5 truncate text-xs font-bold text-[#77746f]">
+            {partnerCategoryLabels[partner.category] ?? partner.category} · {partner.bairro} · {partner.distance}
+          </div>
         </div>
-        <div className="mt-1 truncate text-xs font-bold text-[#77746f]">{partner.bairro} · {partner.services}</div>
-        <div className="mt-2 flex flex-wrap gap-1.5">
-          <span className="rounded-full bg-white px-2 py-1 text-[10px] font-black text-[#050505]">Desconto {partner.discount}</span>
-          <span className="rounded-full bg-white px-2 py-1 text-[10px] font-black text-[#77746f]">Partner +{partner.partnerPoints} pts</span>
-          <span className="rounded-full bg-white px-2 py-1 text-[10px] font-black text-[#77746f]">{partner.distance}</span>
+        <ChevronRight size={17} className={`text-[#77746f] transition-transform ${selected ? "rotate-90" : ""}`} />
+      </button>
+
+      {selected && (
+        <div className="border-t border-white px-3 pb-3 pt-2.5">
+          <div className="text-xs font-bold text-[#504e4a]">{partner.services}</div>
+          <div className="mt-2 flex flex-wrap gap-1.5">
+            <span className="rounded-full bg-white px-2 py-1 text-[10px] font-black text-[#050505]">Seu desconto: {partner.discount}</span>
+            <span className="rounded-full bg-white px-2 py-1 text-[10px] font-black text-[#77746f]">Partner +{partner.partnerPoints} pts</span>
+          </div>
+          <div className="mt-2.5 grid grid-cols-2 gap-2">
+            <a
+              href={partner.navigationUrl}
+              target="_blank"
+              rel="noreferrer"
+              className="flex h-10 items-center justify-center gap-1.5 rounded-[8px] bg-[#050505] text-xs font-black text-white"
+            >
+              <Navigation size={14} /> Google Maps
+            </a>
+            <a href="/rider-app/scan" className="flex h-10 items-center justify-center gap-1.5 rounded-[8px] bg-[#ff7a00] text-xs font-black text-[#050505]">
+              <QrCode size={14} /> Validar QR
+            </a>
+          </div>
         </div>
-      </div>
-      <a
-        href={partner.navigationUrl}
-        target="_blank"
-        rel="noreferrer"
-        aria-label={`Navegar para ${partner.name}`}
-        className="grid h-11 w-11 place-items-center rounded-[8px] bg-[#050505] text-white"
-      >
-        <Navigation size={18} />
-      </a>
+      )}
     </div>
   );
 }
