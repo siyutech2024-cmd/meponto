@@ -109,10 +109,13 @@ export default function RiderShiftsPage() {
     void load();
   }
 
-  const grouped = [...new Set(board.shifts.map((shift) => shift.date))].sort().map((date) => ({
-    date,
-    shifts: board.shifts.filter((shift) => shift.date === date).sort((a, b) => a.timeRange.localeCompare(b.timeRange)),
-  }));
+  const dates = [...new Set(board.shifts.map((shift) => shift.date))].sort();
+  const todayStr = new Date().toISOString().slice(0, 10);
+  const [selectedDate, setSelectedDate] = useState("");
+  // Default to today (or the first upcoming day with open shifts).
+  const activeDate = selectedDate || dates.find((date) => date >= todayStr) || dates[0] || "";
+  const dayShifts = board.shifts.filter((shift) => shift.date === activeDate).sort((a, b) => a.timeRange.localeCompare(b.timeRange));
+  const weekdayShort = (date: string) => ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"][new Date(`${date}T12:00:00Z`).getUTCDay()] ?? "";
 
   return (
     <div className="mx-auto min-h-screen max-w-md space-y-4 p-4">
@@ -151,7 +154,7 @@ export default function RiderShiftsPage() {
         <div className="panel p-4">
           <div className="mb-2 text-[10px] font-black uppercase text-[var(--muted)]">Minhas inscrições</div>
           <div className="space-y-1">
-            {mySignups.map((signup) => {
+            {mySignups.slice(0, 6).map((signup) => {
               const shift = board.shifts.find((item) => item.id === signup.shiftId);
               return (
                 <div key={signup.id} className="flex items-center justify-between text-sm font-bold">
@@ -164,13 +167,36 @@ export default function RiderShiftsPage() {
         </div>
       )}
 
-      {grouped.length === 0 && <div className="panel p-6 text-center text-sm font-bold text-[var(--muted)]">Nenhum turno aberto no momento.</div>}
+      {dates.length === 0 && <div className="panel p-6 text-center text-sm font-bold text-[var(--muted)]">Nenhum turno aberto no momento.</div>}
 
-      {grouped.map(({ date, shifts }) => (
-        <div key={date} className="panel p-4">
-          <div className="mb-2 text-sm font-black">{date}</div>
+      {/* Day selector: one day per screen instead of one long list. */}
+      {dates.length > 0 && (
+        <div className="flex gap-2 overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden" data-i18n-skip>
+          {dates.map((date) => {
+            const count = board.shifts.filter((shift) => shift.date === date).length;
+            const active = date === activeDate;
+            return (
+              <button
+                key={date}
+                type="button"
+                onClick={() => setSelectedDate(date)}
+                className={`flex shrink-0 flex-col items-center rounded-[10px] px-3.5 py-2 ${active ? "bg-[var(--accent)] text-[var(--accent-ink)]" : "border border-[var(--line)] bg-[var(--surface-raised)]"}`}
+              >
+                <span className="text-[10px] font-black uppercase opacity-75">{date === todayStr ? "Hoje" : weekdayShort(date)}</span>
+                <span className="text-base font-black leading-5">{date.slice(8)}/{date.slice(5, 7)}</span>
+                <span className="text-[9px] font-bold opacity-70">{count} turnos</span>
+              </button>
+            );
+          })}
+        </div>
+      )}
+
+      {activeDate && (
+        <div className="panel p-4">
+          <div className="mb-2 text-sm font-black">{activeDate === todayStr ? `Hoje · ${activeDate}` : `${weekdayShort(activeDate)} · ${activeDate}`}</div>
           <div className="space-y-2">
-            {shifts.map((shift) => {
+            {dayShifts.length === 0 && <div className="text-sm font-bold text-[var(--muted)]">Nenhum turno neste dia.</div>}
+            {dayShifts.map((shift) => {
               const joined = myShiftIds.has(shift.id);
               return (
                 <div key={shift.id} className="flex items-center justify-between gap-2 rounded-[8px] border border-[var(--line)] bg-[var(--surface-raised)] p-3">
@@ -198,7 +224,7 @@ export default function RiderShiftsPage() {
             })}
           </div>
         </div>
-      ))}
+      )}
     </div>
   );
 }
