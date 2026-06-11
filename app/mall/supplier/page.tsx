@@ -14,7 +14,7 @@ export default function MallSupplierPage() {
   const headers = useMemo(() => ({ "Content-Type": "application/json", "x-vento-role": session?.role ?? "Supplier Admin" }), [session]);
 
   const [products, setProducts] = useState<MarketplaceProduct[]>([]);
-  const [form, setForm] = useState({ name: "", supplyPrice: "", deliveryCycleDays: "7", stock: "", description: "" });
+  const [form, setForm] = useState({ name: "", supplyPrice: "", deliveryCycleDays: "7", stock: "", description: "", imageUrl: "", category: "" });
   const [message, setMessage] = useState<{ tone: "ok" | "err"; text: string } | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -53,6 +53,10 @@ export default function MallSupplierPage() {
             <input className={input} inputMode="numeric" placeholder="周期(天)" value={form.deliveryCycleDays} onChange={(e) => setForm({ ...form, deliveryCycleDays: e.target.value.replace(/\D/g, "") })} />
             <input className={input} inputMode="numeric" placeholder="库存" value={form.stock} onChange={(e) => setForm({ ...form, stock: e.target.value.replace(/\D/g, "") })} />
           </div>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <input className={input} placeholder="商品图片 URL（选填）" value={form.imageUrl} onChange={(e) => setForm({ ...form, imageUrl: e.target.value })} />
+            <input className={input} placeholder="分类（如 Equipamento）" value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })} />
+          </div>
           <textarea className="w-full rounded-[8px] border border-[var(--line)] bg-[var(--surface)] p-3 text-sm font-bold outline-none focus:border-[var(--accent)]" rows={3} placeholder="商品说明（选填）" value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} />
           <button
             type="button"
@@ -63,7 +67,7 @@ export default function MallSupplierPage() {
               const response = await fetch("/api/mall", {
                 method: "POST",
                 headers,
-                body: JSON.stringify({ action: "supplierAddProduct", name: form.name, supplierName, supplyPrice: Number(form.supplyPrice), deliveryCycleDays: Number(form.deliveryCycleDays || 7), stock: Number(form.stock || 0), description: form.description }),
+                body: JSON.stringify({ action: "supplierAddProduct", name: form.name, supplierName, supplyPrice: Number(form.supplyPrice), deliveryCycleDays: Number(form.deliveryCycleDays || 7), stock: Number(form.stock || 0), description: form.description, imageUrl: form.imageUrl, category: form.category }),
               });
               const payload = await response.json().catch(() => ({}));
               setBusy(false);
@@ -71,7 +75,7 @@ export default function MallSupplierPage() {
                 setMessage({ tone: "err", text: payload.error ?? `提交失败 (${response.status})` });
                 return;
               }
-              setForm({ name: "", supplyPrice: "", deliveryCycleDays: "7", stock: "", description: "" });
+              setForm({ name: "", supplyPrice: "", deliveryCycleDays: "7", stock: "", description: "", imageUrl: "", category: "" });
               setMessage({ tone: "ok", text: "商品已提交，等待总部定价上架。" });
               void load();
             }}
