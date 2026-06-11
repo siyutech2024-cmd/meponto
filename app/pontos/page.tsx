@@ -46,7 +46,10 @@ export default function NetworkPage() {
     return payload;
   }
 
-  const shownStations = franchiseScope ? stations.filter((s) => s.franchise === franchiseScope) : stations;
+  const [stationQuery, setStationQuery] = useState("");
+  const shownStations = (franchiseScope ? stations.filter((s) => s.franchise === franchiseScope) : stations).filter(
+    (s) => !stationQuery.trim() || s.name.toLowerCase().includes(stationQuery.trim().toLowerCase()) || (s.franchise ?? "").toLowerCase().includes(stationQuery.trim().toLowerCase()),
+  );
   const isHq = !franchiseScope;
 
   return (
@@ -182,6 +185,15 @@ export default function NetworkPage() {
         </button>
       </div>
 
+      <div className="mb-3 flex items-center justify-between gap-3">
+        <input
+          value={stationQuery}
+          onChange={(e) => setStationQuery(e.target.value)}
+          placeholder="搜索站点 / 加盟商..."
+          className="h-11 w-full max-w-sm rounded-[8px] border border-[var(--line)] bg-[var(--surface-raised)] px-3 text-sm font-bold outline-none focus:border-[var(--accent)]"
+        />
+        <span className="shrink-0 text-xs font-bold text-[var(--muted)]" data-i18n-skip>{shownStations.length}</span>
+      </div>
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
         {shownStations.map((station) => {
           const embed = mapsEmbedUrl(station.address, station.mapUrl);
