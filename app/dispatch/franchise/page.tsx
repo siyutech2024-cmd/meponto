@@ -125,7 +125,39 @@ export default function FranchiseDispatchPage() {
         </div>
 
         <div className="panel p-4">
-          <div className="mb-3 text-xs font-black uppercase text-[var(--accent)]">待审核报名（{pending.length}）</div>
+          <div className="mb-3 text-xs font-black uppercase text-[var(--accent)]">待审核报名（{pending.length}）· 以站点为准</div>
+          {(() => {
+            const stations = [...new Set(board.signups.map((x) => x.station))];
+            const rows = stations.map((name) => ({
+              name,
+              pending: board.signups.filter((x) => x.station === name && x.status === "submitted").length,
+              total: board.signups.filter((x) => x.station === name).length,
+            }));
+            return rows.length > 0 ? (
+              <div className="mb-3 grid gap-2 sm:grid-cols-2">
+                {rows.map((row) => (
+                  <div key={row.name} className={`flex items-center justify-between rounded-[8px] border px-3 py-2 text-[12px] font-bold ${row.pending > 0 ? "border-[var(--warning)] bg-[var(--warning-bg)]" : "border-[var(--line)] bg-[var(--surface-raised)]"}`}>
+                    <span className="font-black">{row.name}</span>
+                    <span className="flex items-center gap-2">
+                      待审 {row.pending} / {row.total}
+                      {row.pending > 0 && (
+                        <button
+                          type="button"
+                          className="rounded-full bg-[var(--accent)] px-2 py-0.5 text-[10px] font-black uppercase text-[var(--accent-ink)]"
+                          onClick={async () => {
+                            const result = await post({ action: "nudge", scope: "station", name: row.name });
+                            if (result) setMessage({ tone: "ok", text: `已催办站点 ${row.name}。` });
+                          }}
+                        >
+                          催审核
+                        </button>
+                      )}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            ) : null;
+          })()}
           {pending.length === 0 ? (
             <div className="text-sm font-bold text-[var(--muted)]">暂无待审核报名。</div>
           ) : (
