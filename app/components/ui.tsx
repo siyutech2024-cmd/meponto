@@ -54,7 +54,6 @@ const navItems: Array<{
   { href: "/pontos", labelKey: "navPontos", icon: MapPinned, permission: "manage_pontos" },
   { href: "/incidents", labelKey: "navIncidents", icon: ShieldAlert, permission: "create_incidents" },
   { href: "/points-economy", labelKey: "navPointsEconomy", icon: CircleDollarSign, permission: "manage_points" },
-  { href: "/ninety-nine-import", labelKey: "navNinetyNineImport", icon: FileSpreadsheet, permission: "manage_riders" },
   { href: "/dispatch", labelKey: "navDispatch", icon: CalendarDays, permission: "manage_slots" },
   { href: "/performance", labelKey: "navPerformance", icon: BarChart3, permission: "view_analytics" },
   { href: "/users", labelKey: "navUsers", icon: ShieldCheck, permission: "manage_slots" },
@@ -80,7 +79,6 @@ const navGroups: Array<{
         "/dashboard",
         "/dispatch",
         "/performance",
-        "/ninety-nine-import",
         "/riders",
         "/pontos",
         "/franchise",
@@ -158,6 +156,17 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         if (!active || !payload?.user) return;
         setSessionUser(payload.user);
         setRole(payload.user.role);
+        // Keep the client-side scope marker aligned with the SERVER identity —
+        // a stale localStorage session must never flip the page perspective.
+        try {
+          const u = payload.user as SessionUser & { franchise?: string; station?: string; identifier?: string };
+          window.localStorage.setItem(
+            "mePontoSession",
+            JSON.stringify({ name: u.name, role: u.role, portal: u.portal, organization: u.organization, franchise: u.franchise ?? "", station: u.station ?? "", identifier: u.identifier ?? "" }),
+          );
+        } catch {
+          /* storage unavailable */
+        }
       });
     return () => {
       active = false;
