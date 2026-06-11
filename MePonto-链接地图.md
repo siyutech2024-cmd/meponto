@@ -1,46 +1,38 @@
-# MePonto 链接地图（唯一权威清单）
-更新：2026-06-11 ｜ 本表为全系统页面归属唯一参考，标注「主线」的是业务正在使用的页面。
+# MePonto 链接地图（整合后）
 
-## 一、四端入口（给用户的链接）
+> 2026-06-11 链接整合：删除 12 个无入口的演示页，4 个旧页改为重定向，各后台菜单去重。
 
-| 端 | 域名 | 登录后首页 |
-|---|---|---|
-| 官网 | meponto.com | 招募落地页（底栏含四端入口）|
-| 总部 PontoSys | sys.meponto.com | 模块导航页 /pontosys |
-| 加盟商后台 | franchise.meponto.com | 模块导航页 /franchise-admin |
-| 站点后台 | ponto.meponto.com | 模块导航页 /ponto-admin |
-| 骑手 APP | app.meponto.com | 骑手首页 /rider-app |
-| 供应商后台 | （经总部 portal 进入）| /supplier-admin |
-| Partner 端 | （经总部 portal 进入）| /partner-app |
+## 对外域名
+| 域名 | 用途 |
+|---|---|
+| meponto.com | 品牌官网（底栏含各系统入口） |
+| app.meponto.com | 骑手APP：/ 首页 · /shifts 报名 · /agenda 日程 · /wallet 钱包 · /mall 商城 · /scan 扫码 · /support 客服 · /rider-login 注册登录 |
+| mall.meponto.com | 积分商城（公开浏览，兑换需登录） |
+| sys.meponto.com | 总部后台 |
+| franchise.meponto.com | 加盟商后台（仅见本加盟商数据） |
+| ponto.meponto.com | 站点后台（仅见本站数据） |
+| supplier.meponto.com | 供应商后台 |
 
-> /pontosys、/franchise-admin、/ponto-admin、/app 等是各域名的「模块导航首页」（卡片菜单），不是废页面——每个域名登录后落在这里。
+## 总部后台（sys.）
+- 运营：/dashboard 仪表盘 · /dispatch 排班调度 · /performance KPI（含 /ninety-nine-import 报表导入）· /riders 骑手管理 · /pontos 网络架构（加盟商/站点+审核）· /franchise 合作方案
+- 商城：/mall 商城管理（定价/对账/订单）· /partner-points Partner积分 · /points-economy 积分规则 · /crm 合作伙伴
+- 财务：/wallet 结算与提现（台账/批量付款/周账单）· /reports 报表
+- 系统：/users 用户与权限 · /support 工单中心 · /access-control 权限矩阵
 
-## 二、主线业务页面
+## 加盟商后台（franchise.）
+/dispatch/franchise 配额与审核 · /performance KPI · /wallet 结算提现 · /pontos 站点列表 · /riders 骑手运营 · /users 站点账号 · /mall 兑换订单 · /reports 报表 · /support 联系总部 · /franchise 合作方案
 
-**排班链路**：/dispatch（总部周排班+配额+审核+填报）→ /dispatch/franchise（加盟商拆分+审核）→ /dispatch/station（站点提报）→ /rider-app/shifts（骑手自助报名）
+## 站点后台（ponto.）
+/dispatch/station 排班提报 · /performance KPI · /mall/station 商城到货 · /riders 本站骑手 · /pontos 站点资料 · /incidents 异常上报
 
-**数据链路**：/performance（T+1 KPI + 收入结算，三端按权限过滤）｜ /ninety-nine-import（99 报表导入）
+## 供应商后台（supplier.）
+/mall/supplier 商品供货
 
-**资金链路**：/wallet（总部对账/加盟商付款确认）→ /rider-app/wallet（骑手余额+提现）
+## 公共页
+/scan QR验证（邀请/Partner）· /privacy 隐私政策 · /login 登录 · /reset-password 重置密码
 
-**商城链路**：/mall（总部：规则/定价/商品配置/订单）→ /mall/supplier（供应商上传）→ /mall/station（站点到货/领取确认）→ /rider-app/mall（骑手商城，PC/手机自适应）
+## 旧链接重定向（自动跳转）
+/marketplace → /mall ｜ /finance → /wallet ｜ /rewards → /rider-app ｜ /chat → /support ｜ app.meponto.com/rider-app/* → 去前缀
 
-**客服链路**：/rider-app/support（骑手工单）/ /support（加盟商站点提交、总部处理队列）
-
-**其他主线**：/riders（骑手档案）/pontos（站点）/users（多用户权限）/franchise（加盟方案）/sops（5 个正式 SOP）/finance/model（站点利润模拟器）/scan（二维码邀请/Partner 验证落地页）/privacy（隐私政策）
-
-## 三、辅助/演示页面（保留但非主线）
-
-/dashboard、/operations-core、/finance（旧账本演示）、/marketplace（旧 PontoMall，Partner 兑换仍用）、/points-economy、/rewards、/partner-points、/crm、/analytics、/reports、/realtime、/audit、/access-control、/chat、/incidents、/night-shift、/mobile、/leaders、/territory、/tools、/security、/settings
-
-这些是早期搭建的展示模块，菜单可见但数据多为演示。**后续若确认不用，可整组删除**；本次先保留避免误删业务。
-
-## 四、已删除
-
-- ~~/slot-enrollment~~（被 /dispatch 完全替代，已删除）
-
-## 五、本次修复
-
-1. 骑手首页底部 Tab 此前是装饰锚点，现已接通：Carteira→钱包、Loja→商城、Ajuda→工单、报名按钮→班次报名。
-2. "两套代码"的由来：早期演示模块（第三节）与新业务模块并存。主线以第二节为准；演示模块不再迭代。
-3. 数据库写入：所有关键写接口（排班/商城/钱包/工单/绩效导入）现在**响应前同步落库**（此前为 300ms 延迟异步，serverless 实例休眠可能丢失），跨实例读取也即时一致。
+## 已删除（无入口演示页）
+analytics · territory · realtime · night-shift · mobile · leaders · tools · security · audit · settings · sops · operations-core
