@@ -56,6 +56,7 @@ export const portalConfigs: Record<PortalId, PortalConfig> = {
       { href: "/franchise", label: "加盟治理", description: "合作条款、SOP 和加盟商管理口径。", permission: "view_analytics" },
       { href: "/finance", label: "财务与结算", description: "激励、付款和积分财务审批。", permission: "view_finance" },
       { href: "/marketplace", label: "PontoMall 管理", description: "商城库存、兑换订单和积分规则。", permission: "manage_marketplace" },
+      { href: "/mall", label: "积分商城管理", description: "积分规则、供应商商品定价分成、兑换订单。", permission: "manage_marketplace" },
       { href: "/users", label: "用户与权限", description: "创建多用户账号、分配角色与系统归属。", permission: "view_audit" },
       { href: "/access-control", label: "权限矩阵", description: "账号、角色和功能权限分离。", permission: "view_audit" },
       { href: "/reports", label: "报表导出", description: "运营、站点、骑手和排班报表。", permission: "view_analytics" },
@@ -87,6 +88,7 @@ export const portalConfigs: Record<PortalId, PortalConfig> = {
     vercelPath: "/supplier-admin",
     futureDomain: "supplier.meponto.com",
     modules: [
+      { href: "/mall/supplier", label: "商品供货", description: "上传商品、报供应价与派送周期，等待总部定价上架。", permission: "manage_marketplace" },
       { href: "/marketplace", label: "商品与订单", description: "查看商品状态、库存与站点履约订单。", permission: "manage_supplier_catalog" },
       { href: "/reports", label: "供应商对账", description: "查看供应价应结款和月度流水。", permission: "manage_supplier_catalog" },
     ],
@@ -124,6 +126,7 @@ export const portalConfigs: Record<PortalId, PortalConfig> = {
     modules: [
       { href: "/dispatch/station", label: "排班提报", description: "查看本站配额并提报骑手报名。", permission: "manage_slots" },
       { href: "/performance", label: "KPI 考核", description: "查看本站骑手的 T+1 KPI。", permission: "view_analytics" },
+      { href: "/mall/station", label: "商城到货", description: "确认兑换商品到站与骑手领取。", permission: "manage_slots" },
       { href: "/riders", label: "本站骑手", description: "维护站点骑手档案、状态和排班资格。", permission: "manage_riders" },
       { href: "/pontos", label: "站点资料", description: "查看站点位置、容量和负责人。", permission: "manage_pontos" },
       { href: "/incidents", label: "异常上报", description: "创建事故、服务和安全异常。", permission: "create_incidents" },
@@ -143,6 +146,7 @@ export const portalConfigs: Record<PortalId, PortalConfig> = {
     modules: [
       { href: "/rider-app", label: "骑手首页", description: "查看个人积分、排班 slots 并提交报名。", permission: "use_rider_app" },
       { href: "/rider-app/shifts", label: "班次报名", description: "查看开放班次并用 99 ID 一键报名。", permission: "use_rider_app" },
+      { href: "/rider-app/mall", label: "积分商城", description: "会员等级、积分兑换、到货取货提醒。", permission: "use_rider_app" },
       { href: "/marketplace", label: "PontoMall", description: "使用积分兑换骑手权益。", permission: "use_rider_app" },
       { href: "/rewards", label: "积分记录", description: "查看奖励、积分和激励记录。", permission: "use_rider_app" },
     ],

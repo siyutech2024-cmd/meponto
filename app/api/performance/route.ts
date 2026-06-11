@@ -8,8 +8,10 @@ import {
   type RiderDailyEarning,
   type RiderDailyKpi,
 } from "../../lib/performance";
+import { defaultMallConfig, resolveTier } from "../../lib/mall";
+import { getAvailablePoints } from "../../lib/points";
 
-const COLLECTIONS = ["riderDailyKpis", "riderDailyEarnings", "riders"];
+const COLLECTIONS = ["riderDailyKpis", "riderDailyEarnings", "riders", "mallConfigs", "pointsLedgerEntries"];
 
 type Located = { franchise: string; station: string; riderId: string | null };
 type Enriched = RiderDailyKpi & Located;
@@ -32,6 +34,44 @@ const num = (value: unknown) => {
   const parsed = Number(String(value ?? "").replace(",", "."));
   return Number.isFinite(parsed) ? parsed : 0;
 };
+
+/**
+ * Auto-credit mall points for completed orders on T+1 import.
+ * Idempotent per rider per day (fixed ledger id), so re-importing the same
+ * report updates instead of double-crediting. Tier multiplier applies.
+ */
+function creditOrderPoints(riderId: string, rider99Id: string, date: string, completedOrders: number) {
+  const config = memory.mallConfigs.find((item) => item.id === "mall-config") ?? defaultMallConfig;
+  const lifetime = memory.riderDailyKpis
+    .filter((row) => row.rider99Id === rider99Id)
+    .reduce((sum, row) => sum + (row.completedOrders ?? 0), 0);
+  const tier = resolveTier(lifetime > 0 ? lifetime : null);
+  const points = Math.round(completedOrders * config.perOrderPoints * tier.pointsMultiplier);
+  if (points <= 0) return;
+
+  const id = `pts-ord-${date}-${riderId}`;
+  const note = `T+1 ${date} 完单 ${completedOrders} × ${config.perOrderPoints}分${tier.pointsMultiplier > 1 ? ` × ${tier.pointsMultiplier}（${tier.label}）` : ""}`;
+  const index = memory.pointsLedgerEntries.findIndex((entry) => entry.id === id);
+  if (index !== -1) {
+    memory.pointsLedgerEntries[index] = { ...memory.pointsLedgerEntries[index], points, note };
+    return;
+  }
+  memory.pointsLedgerEntries.unshift({
+    id,
+    riderId,
+    accountId: `pts-${riderId}`,
+    type: "earn",
+    points,
+    status: "approved",
+    sourceType: "delivery",
+    sourceId: `kpi-${date}`,
+    balanceAfter: getAvailablePoints(memory.pointsLedgerEntries, riderId) + points,
+    reasonCode: "ORDER_POINTS",
+    note,
+    createdBy: "T+1 Import",
+    createdAt: new Date().toISOString().slice(0, 16).replace("T", " "),
+  });
+}
 
 export async function GET(request: Request) {
   const forbidden = requirePermission(request, "view_analytics");
@@ -135,8 +175,11 @@ export async function POST(request: Request) {
       }
       // Backfill rider profile KPI snapshot when the rider is linked.
       const riderIndex = memory.riders.findIndex((rider) => rider.ninetyNineId === record.rider99Id);
-      if (riderIndex !== -1 && record.ar !== null) {
-        memory.riders[riderIndex] = { ...memory.riders[riderIndex], ar: Math.round(record.ar) };
+      if (riderIndex !== -1) {
+        if (record.ar !== null) {
+          memory.riders[riderIndex] = { ...memory.riders[riderIndex], ar: Math.round(record.ar) };
+        }
+        creditOrderPoints(memory.riders[riderIndex].id, record.rider99Id, date, record.completedOrders);
       }
     }
 
@@ -203,8 +246,11 @@ export async function POST(request: Request) {
           updated += 1;
         }
         const riderIndex = memory.riders.findIndex((rider) => rider.ninetyNineId === rider99Id);
-        if (riderIndex !== -1 && record.ar !== null) {
-          memory.riders[riderIndex] = { ...memory.riders[riderIndex], ar: Math.round(record.ar) };
+        if (riderIndex !== -1) {
+          if (record.ar !== null) {
+            memory.riders[riderIndex] = { ...memory.riders[riderIndex], ar: Math.round(record.ar) };
+          }
+          creditOrderPoints(memory.riders[riderIndex].id, rider99Id, date, record.completedOrders);
         }
       }
     } else {
@@ -213,7 +259,6 @@ export async function POST(request: Request) {
         if (!/^\d{6,}$/.test(rider99Id)) continue;
         const orders = num(raw.orders);
         const total = num(raw.total);
-        const settle = num(raw.settleAmount);
         const record: RiderDailyEarning = {
           id: `earn-${date}-${rider99Id}`,
           date,
@@ -233,8 +278,9 @@ export async function POST(request: Request) {
           referralBonus: num(raw.referralBonus),
           pix: String(raw.pix ?? "").trim(),
           orders,
-          // Settlement formula from the operator sheet: 金额 = 今日统计 + order × 2.5.
-          settleAmount: settle > 0 ? settle : total + orders * 2.5,
+          // Settlement comes straight from the source sheet's 金额 column —
+          // no formula is applied on our side (rates can change per week).
+          settleAmount: num(raw.settleAmount),
           importedAt,
         };
         const index = memory.riderDailyEarnings.findIndex((row) => row.id === record.id);
