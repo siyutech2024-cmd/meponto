@@ -100,6 +100,24 @@ function creditOrderPoints(riderId: string, rider99Id: string, date: string, com
 
 export async function GET(request: Request) {
   {
+    const url0 = new URL(request.url);
+    if (url0.searchParams.get("ranking") !== null) {
+      // Lifetime completed-orders leaderboard (visible to riders).
+      const forbidden = requirePermission(request, "use_rider_app");
+      if (forbidden) return forbidden;
+      await refreshCollectionsFromDatabase(COLLECTIONS);
+      const byRider = new Map<string, number>();
+      for (const row of memory.riderDailyKpis) {
+        byRider.set(row.riderName, (byRider.get(row.riderName) ?? 0) + (row.completedOrders ?? 0));
+      }
+      const top = [...byRider.entries()]
+        .map(([name, orders]) => ({ name, orders }))
+        .sort((a, b) => b.orders - a.orders)
+        .slice(0, 10);
+      return jsonResponse({ data: { top } });
+    }
+  }
+  {
     // Rider self-view: latest-day KPI for one rider (rider-app permission).
     const url = new URL(request.url);
     const mine = url.searchParams.get("mine");
@@ -161,10 +179,19 @@ export async function GET(request: Request) {
       .sort((a, b) => b.settleAmount - a.settleAmount);
   };
 
+  // 30-day network trend (orders + settlement) for the chart.
+  const trendDates = [...allDates].sort().slice(-30);
+  const trend = trendDates.map((d) => ({
+    date: d,
+    orders: memory.riderDailyKpis.filter((row) => row.date === d).reduce((sum, row) => sum + (row.completedOrders ?? 0), 0),
+    settle: Math.round(memory.riderDailyEarnings.filter((row) => row.date === d).reduce((sum, row) => sum + (row.settleAmount ?? 0), 0) * 100) / 100,
+  }));
+
   return jsonResponse({
     data: {
       date: activeDate,
       dates: allDates,
+      trend,
       riders: rows.sort((a, b) => b.completedOrders - a.completedOrders),
       stations: groupBy("station"),
       franchises: groupBy("franchise"),

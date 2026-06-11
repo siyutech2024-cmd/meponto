@@ -22,6 +22,7 @@ export async function GET(request: Request) {
 type Body =
   | { action: "addFranchise"; name: string; owner?: string; phone?: string; city?: string }
   | { action: "deleteFranchise"; franchiseId: string }
+  | { action: "depositFranchise"; franchiseId: string; amount: number; note?: string }
   | { action: "addStation"; name: string; franchise: string; address?: string; mapUrl?: string; leader?: string; bairro?: string }
   | { action: "updateStation"; stationId: string; franchise?: string; address?: string; mapUrl?: string; leader?: string; name?: string };
 
@@ -48,6 +49,19 @@ async function handlePost(request: Request) {
       memory.franchises.unshift(franchise);
       appendServerAudit({ actor, action: "FRANCHISE_CREATED", entity: "Franchise", entityId: franchise.id, detail: `${franchise.name} (${franchise.city})`, risk: "Medium" });
       return jsonResponse({ data: franchise }, { status: 201 });
+    }
+
+    case "depositFranchise": {
+      const { franchiseId, note = "" } = body as { franchiseId?: string; note?: string };
+      const amount = Math.round(Number(body.amount) * 100) / 100;
+      const index = memory.franchises.findIndex((f) => f.id === franchiseId);
+      if (index === -1) return jsonResponse({ error: "franchise not found" }, { status: 404 });
+      if (!Number.isFinite(amount) || amount === 0) return jsonResponse({ error: "金额无效" }, { status: 400 });
+      const next = Math.round(((memory.franchises[index].depositBalance ?? 0) + amount) * 100) / 100;
+      if (next < 0) return jsonResponse({ error: "预存余额不足" }, { status: 409 });
+      memory.franchises[index] = { ...memory.franchises[index], depositBalance: next };
+      appendServerAudit({ actor, action: amount > 0 ? "FRANCHISE_DEPOSIT" : "FRANCHISE_DEPOSIT_DEDUCT", entity: "Franchise", entityId: franchiseId ?? "", detail: `R$${amount.toFixed(2)} → balance R$${next.toFixed(2)}${note ? ` (${note})` : ""}`, risk: "Medium" });
+      return jsonResponse({ data: memory.franchises[index] });
     }
 
     case "deleteFranchise": {

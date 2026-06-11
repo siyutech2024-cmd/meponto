@@ -5,12 +5,14 @@ import { Award, CircleDollarSign, Package, RefreshCcw, Settings2, Truck } from "
 import { AppShell, Badge, PageTitle } from "../components/ui";
 import { readSession } from "../lib/session";
 import type { MarketplaceOrder, MarketplaceProduct } from "../lib/points";
+import { downloadCsv } from "../lib/csv";
 import type { MallConfig, TierDefinition } from "../lib/mall";
 
 type Payload = {
   config: MallConfig;
   tiers: TierDefinition[];
   products: MarketplaceProduct[];
+  supplierSettlement?: Array<{ supplier: string; qty: number; payable: number }>;
   orders: MarketplaceOrder[];
 };
 
@@ -197,6 +199,34 @@ export default function MallAdminPage() {
                     </div>
                   );
                 })}
+              </div>
+            )}
+          </div>
+
+          <div className="panel p-4">
+            <div className="mb-3 flex items-center justify-between">
+              <div className="text-xs font-black uppercase text-[var(--accent)]">供应商对账（应付货款 = 已履约数量 × 供应价）</div>
+              <button
+                type="button"
+                className="tag"
+                onClick={() => {
+                  const rows = data?.supplierSettlement ?? [];
+                  downloadCsv(`supplier-settlement-${new Date().toISOString().slice(0, 10)}`, ["供应商", "已履约数量", "应付货款R$"], rows.map((r) => [r.supplier, r.qty, r.payable.toFixed(2)]));
+                }}
+              >
+                导出对账单
+              </button>
+            </div>
+            {(data?.supplierSettlement ?? []).length === 0 ? (
+              <div className="text-sm font-bold text-[var(--muted)]">暂无履约订单。</div>
+            ) : (
+              <div className="space-y-1">
+                {(data?.supplierSettlement ?? []).map((row) => (
+                  <div key={row.supplier} className="flex items-center justify-between border-t border-[var(--line)] py-2 text-sm font-bold">
+                    <span className="font-black">{row.supplier}</span>
+                    <span>{row.qty} 件 ｜ 应付 <span className="text-[var(--accent)]">R$ {row.payable.toFixed(2)}</span></span>
+                  </div>
+                ))}
               </div>
             )}
           </div>

@@ -10,6 +10,8 @@ export type Franchise = {
   phone: string;
   city: string;
   createdAt: string;
+  /** Prepaid balance the franchise holds with HQ (R$). */
+  depositBalance?: number;
 };
 
 export const franchises: Franchise[] = [];
