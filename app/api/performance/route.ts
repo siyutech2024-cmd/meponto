@@ -1,5 +1,5 @@
 import { appendServerAudit, jsonResponse, memory } from "../../lib/server/memory";
-import { refreshCollectionsFromDatabase } from "../../lib/server/persistence";
+import { flushPendingToDatabase, refreshCollectionsFromDatabase } from "../../lib/server/persistence";
 import { requirePermission, roleFromRequest } from "../../lib/server/authz";
 import {
   aggregateEarnings,
@@ -169,7 +169,7 @@ type Body =
   | { action: "importEarnings"; date: string; records: Array<Record<string, unknown>> }
   | { action: "purgeDate"; date: string };
 
-export async function POST(request: Request) {
+async function handlePost(request: Request) {
   const forbidden = requirePermission(request, "view_analytics");
   if (forbidden) return forbidden;
 
@@ -332,4 +332,11 @@ export async function POST(request: Request) {
   }
 
   return jsonResponse({ error: "unknown action" }, { status: 400 });
+}
+
+// Ensure mutations are durably written before the serverless instance can freeze.
+export async function POST(request: Request) {
+  const response = await handlePost(request);
+  await flushPendingToDatabase();
+  return response;
 }
