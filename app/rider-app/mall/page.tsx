@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { ArrowLeft, Award, Bell, CircleDollarSign, Gift, MapPin, Package, QrCode, Zap } from "lucide-react";
+import { ArrowLeft, Bell, Gift, Headphones, Home, MapPin, Package, Star, WalletCards, Zap } from "lucide-react";
 import { readSession } from "../../lib/session";
 import type { MarketplaceOrder, MarketplaceProduct } from "../../lib/points";
 import type { MallConfig, TierDefinition } from "../../lib/mall";
@@ -25,6 +25,8 @@ type Me = {
 type Payload = { config: MallConfig; tiers: TierDefinition[]; products: MarketplaceProduct[]; orders: MarketplaceOrder[]; me: Me | null };
 
 const orderStatusLabel: Record<string, string> = { created: "Em trânsito", arrived: "Chegou · retire", fulfilled: "Retirado", cancelled: "Cancelado" };
+
+const tierStars: Record<string, number> = { member: 1, bronze: 2, prata: 3, ouro: 4, diamante: 5 };
 
 export default function RiderMallPage() {
   const session = useMemo(() => readSession(), []);
@@ -53,6 +55,7 @@ export default function RiderMallPage() {
   const activeProducts = (data?.products ?? []).filter((product) => product.status === "active");
   const categories = useMemo(() => [...new Set(activeProducts.map((p) => p.category || "Outros"))].sort(), [activeProducts]);
   const shownProducts = category ? activeProducts.filter((p) => (p.category || "Outros") === category) : activeProducts;
+  const stars = tierStars[me?.tier ?? "member"] ?? 1;
 
   async function redeem(product: MarketplaceProduct) {
     if (!me) {
@@ -60,7 +63,7 @@ export default function RiderMallPage() {
       return;
     }
     const price = Math.ceil(product.pointsPrice * (me.redeemDiscount ?? 1));
-    const where = product.isVirtual ? "Voucher digital instantâneo" : `Retirada na estação: ${me.station} (apenas na sua estação)`;
+    const where = product.isVirtual ? "Voucher digital instantâneo" : `Retirada na estação: ${me.station}`;
     if (!window.confirm(`Resgatar por ${price} pts: 「${product.name}」?\n${where}`)) return;
     setBusyProduct(product.id);
     const response = await fetch("/api/mall", { method: "POST", headers, body: JSON.stringify({ action: "redeem", productId: product.id, riderId: me.riderId }) });
@@ -80,168 +83,198 @@ export default function RiderMallPage() {
   }
 
   return (
-    <div className="mx-auto min-h-screen max-w-6xl space-y-4 p-4 md:p-6">
-      <div className="flex items-center gap-3">
-        <Link href="/rider-app" className="tag inline-flex items-center gap-1"><ArrowLeft size={13} /> Voltar</Link>
-        <h1 className="flex items-center gap-2 text-lg font-black md:text-2xl"><Gift size={20} className="text-[var(--accent)]" /> Loja de Pontos</h1>
-      </div>
-
-      {message && (
-        <div className={`rounded-[8px] border px-4 py-3 text-sm font-black ${message.tone === "ok" ? "border-[var(--ok)] bg-[var(--ok-bg)] text-[var(--ok-ink)]" : "border-[var(--danger)] bg-[var(--danger-bg)] text-[var(--danger-ink)]"}`}>
-          {message.text}
-        </div>
-      )}
-
-      {arrivals.length > 0 && (
-        <div className="panel border-[var(--accent)] p-4">
-          <div className="flex items-center gap-2 text-xs font-black uppercase text-[var(--accent)]"><Bell size={14} /> Aviso de retirada</div>
-          {arrivals.map((order) => (
-            <div key={order.id} className="mt-2 text-sm font-black">
-              「{order.productName}」chegou em {order.station} — retire o quanto antes!
+    <main className="min-h-screen bg-[#101010] text-[#050505]" style={{ fontFamily: "Poppins, Inter, system-ui, sans-serif" }}>
+      <div className="mx-auto min-h-screen w-full max-w-[430px] bg-[#f3f2ee] pb-24">
+        <header className="flex items-center justify-between px-4 pb-3 pt-4">
+          <div className="flex items-center gap-3">
+            <Link href="/rider-app" className="grid h-10 w-10 place-items-center rounded-[8px] bg-white shadow-[0_8px_20px_rgba(0,0,0,0.08)]"><ArrowLeft size={18} /></Link>
+            <div>
+              <div className="text-[11px] font-black uppercase tracking-[0.14em] text-[#ff7a00]">PontoMall</div>
+              <h1 className="text-lg font-black leading-5">Loja de Pontos</h1>
             </div>
-          ))}
-        </div>
-      )}
-
-      <div className="grid gap-4 lg:grid-cols-[1.1fr_1fr]">
-        {me ? (
-          <div className="panel p-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <div className="flex items-center gap-2 text-sm font-black"><Award size={15} className="text-[var(--accent)]" /> {me.tierLabel}</div>
-                <div className="mt-1 text-[11px] font-bold text-[var(--muted)]">
-                  {me.lifetimeOrders === null ? "Complete pedidos (Eastwind) para subir de nível" : `Pedidos acumulados: ${me.lifetimeOrders}`}
-                  ｜ Retirada: {me.station}
-                </div>
-              </div>
-              <div className="text-right">
-                <div className="text-[10px] font-black uppercase text-[var(--muted)]">Saldo de pontos</div>
-                <div className="text-3xl font-black text-[var(--accent)]">{me.balance}</div>
-              </div>
-            </div>
-            <div className="mt-2 text-[11px] font-bold text-[var(--muted-strong)]">{me.perks.join("｜")}</div>
-            {(me.expiringPoints ?? 0) > 0 && (
-              <div className="mt-2 inline-flex items-center rounded-[8px] border border-[var(--warning)] bg-[var(--warning-bg)] px-2 py-1 text-[11px] font-black text-[var(--warning-ink)]">
-                ⏳ {me.expiringPoints} pontos expiram em até 30 dias — use antes!
-              </div>
-            )}
-            {me.badges && (
-              <div className="mt-2 flex flex-wrap gap-1.5" data-i18n-skip>
-                {me.badges.map((badge) => (
-                  <span key={badge.label} className={`tag ${badge.achieved ? "border-[var(--accent)] text-[var(--accent)]" : "opacity-35"}`} title={badge.achieved ? "Conquistado" : `Complete ${badge.at} pedidos`}>
-                    {badge.icon} {badge.label}
-                  </span>
-                ))}
-              </div>
-            )}
           </div>
-        ) : (
-          <div className="panel p-4 text-sm font-bold text-[var(--muted)]">Cadastro não encontrado — registre-se para virar membro e resgatar.</div>
+          {me && (
+            <div className="rounded-[8px] bg-[#050505] px-3 py-2 text-right text-white">
+              <div className="text-[9px] font-black uppercase text-white/50">Saldo</div>
+              <div className="text-base font-black leading-5 text-[#ffb238]">{me.balance.toLocaleString("pt-BR")} pts</div>
+            </div>
+          )}
+        </header>
+
+        {message && (
+          <div className={`mx-4 mb-2 rounded-[8px] px-3 py-2.5 text-sm font-black ${message.tone === "ok" ? "bg-[#e8f6ee] text-[#20a65a]" : "bg-[#ffe5e3] text-[#e53935]"}`}>
+            {message.text}
+          </div>
         )}
 
+        {arrivals.length > 0 && (
+          <section className="px-4 pb-2">
+            <div className="rounded-[8px] bg-[#ff7a00] p-3 text-[#050505]">
+              <div className="flex items-center gap-2 text-xs font-black uppercase"><Bell size={14} /> Retirada disponível</div>
+              {arrivals.map((order) => (
+                <div key={order.id} className="mt-1 text-sm font-black">「{order.productName}」chegou em {order.station}!</div>
+              ))}
+            </div>
+          </section>
+        )}
+
+        {/* Personal membership card */}
+        <section className="px-4">
+          {me ? (
+            <div className="relative overflow-hidden rounded-[8px] bg-[linear-gradient(135deg,#1d1202_0%,#9a5b08_58%,#ffb238_100%)] p-4 text-white shadow-[0_18px_42px_rgba(0,0,0,0.22)]">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="truncate text-base font-black">{me.name}</div>
+                  <div className="mt-0.5 flex items-center gap-1 text-[11px] font-bold text-white/70">
+                    <MapPin size={11} /> {me.station} · {me.franchise}
+                  </div>
+                  <div className="mt-2 inline-flex items-center gap-1.5 rounded-full bg-white/15 px-2.5 py-1 text-[11px] font-black" data-i18n-skip>
+                    {me.tierLabel}
+                    <span className="flex gap-0.5">
+                      {Array.from({ length: 5 }).map((_, index) => (
+                        <Star key={index} size={10} fill={index < stars ? "currentColor" : "none"} className={index < stars ? "text-[#ffe2a3]" : "opacity-35"} />
+                      ))}
+                    </span>
+                  </div>
+                </div>
+                <div className="shrink-0 text-right">
+                  <div className="text-[10px] font-black uppercase text-white/55">Pontos</div>
+                  <div className="text-3xl font-black text-[#ffe2a3]">{me.balance.toLocaleString("pt-BR")}</div>
+                  <div className="text-[10px] font-bold text-white/55">{me.lifetimeOrders === null ? "Sem pedidos ainda" : `${me.lifetimeOrders} pedidos`}</div>
+                </div>
+              </div>
+              {(me.expiringPoints ?? 0) > 0 && (
+                <div className="mt-2 rounded-[8px] bg-black/30 px-2.5 py-1.5 text-[11px] font-black text-[#ffe2a3]">⏳ {me.expiringPoints} pontos expiram em até 30 dias — use antes!</div>
+              )}
+              {me.badges && (
+                <div className="mt-2 flex flex-wrap gap-1.5" data-i18n-skip>
+                  {me.badges.map((badge) => (
+                    <span key={badge.label} className={`rounded-full px-2 py-0.5 text-[10px] font-black ${badge.achieved ? "bg-white/90 text-[#1d1202]" : "bg-white/10 text-white/40"}`}>
+                      {badge.icon} {badge.label}
+                    </span>
+                  ))}
+                </div>
+              )}
+            </div>
+          ) : (
+            <div className="rounded-[8px] bg-white p-4 text-sm font-bold text-[#77746f] shadow-[0_12px_26px_rgba(0,0,0,0.06)]">
+              Cadastro não encontrado.{" "}
+              <Link href="/rider-login" className="font-black text-[#ff7a00] underline">Crie sua conta</Link>{" "}
+              para virar membro, acumular pontos e resgatar produtos.
+            </div>
+          )}
+        </section>
+
+        {/* Invite friends — prominent */}
         {me && (
-          <div className="panel flex items-center gap-3 p-4">
-            {/* QR points to the public invite link; reward released after invitee's first completed order. */}
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src={`https://api.qrserver.com/v1/create-qr-code/?size=96x96&data=${encodeURIComponent(`https://app.meponto.com/scan?ref=${me.riderId}`)}`}
-              alt="QR de convite"
-              width={96}
-              height={96}
-              className="rounded bg-white p-1"
-            />
-            <div className="text-[11px] font-bold text-[var(--muted)]">
-              <div className="flex items-center gap-1 text-[var(--text)]"><QrCode size={12} /> Convide com este QR</div>
-              Código: {me.riderId}
-              <div className="mt-1">+{data?.config.referralPoints ?? 20} pts quando o convidado concluir o primeiro pedido.</div>
+          <section id="invite" className="px-4 pt-3">
+            <div className="grid grid-cols-[auto_1fr] items-center gap-3 rounded-[8px] bg-[#ff7a00] p-3 text-[#050505] shadow-[0_12px_26px_rgba(255,122,0,0.3)]">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={`https://api.qrserver.com/v1/create-qr-code/?size=88x88&data=${encodeURIComponent(`https://app.meponto.com/scan?ref=${me.riderId}`)}`}
+                alt="QR de convite"
+                width={88}
+                height={88}
+                className="rounded-[8px] bg-white p-1"
+              />
+              <div className="min-w-0">
+                <div className="flex items-center gap-1.5 text-sm font-black"><Gift size={15} /> Convide amigos = +{data?.config.referralPoints ?? 20} pts</div>
+                <p className="mt-1 text-[11px] font-bold leading-4 text-black/70">
+                  Seu amigo escaneia este QR, cria a conta, e você ganha os pontos após o primeiro pedido dele. Código: {me.riderId}
+                </p>
+              </div>
             </div>
-          </div>
+          </section>
         )}
-      </div>
 
-      <div className="space-y-3">
-        <div className="flex flex-wrap items-center gap-2">
-          <div className="text-xs font-black uppercase text-[var(--muted)]">Produtos disponíveis</div>
-          <div className="flex flex-wrap gap-1.5">
-            <button type="button" onClick={() => setCategory("")} className={`tag ${!category ? "border-[var(--accent)] text-[var(--accent)]" : ""}`}>Tudo</button>
+        {/* Category filter + products */}
+        <section className="px-4 pt-4">
+          <div className="mb-2 flex items-center justify-between">
+            <h2 className="text-lg font-black">Produtos</h2>
+            <span className="text-xs font-black text-[#77746f]">{shownProducts.length} itens</span>
+          </div>
+          <div className="flex gap-2 overflow-x-auto pb-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+            <button type="button" onClick={() => setCategory("")} className={`shrink-0 rounded-full px-3 py-1.5 text-xs font-black ${!category ? "bg-[#050505] text-white" : "bg-white text-[#77746f]"}`}>Tudo</button>
             {categories.map((cat) => (
-              <button key={cat} type="button" onClick={() => setCategory(cat === category ? "" : cat)} className={`tag ${category === cat ? "border-[var(--accent)] text-[var(--accent)]" : ""}`}>{cat}</button>
+              <button key={cat} type="button" onClick={() => setCategory(cat === category ? "" : cat)} className={`shrink-0 rounded-full px-3 py-1.5 text-xs font-black ${category === cat ? "bg-[#050505] text-white" : "bg-white text-[#77746f]"}`}>{cat}</button>
             ))}
           </div>
-        </div>
 
-        {shownProducts.length === 0 && <div className="panel p-6 text-center text-sm font-bold text-[var(--muted)]">Produtos em breve. Aguarde!</div>}
+          {shownProducts.length === 0 && <div className="rounded-[8px] bg-white p-6 text-center text-sm font-bold text-[#77746f]">Produtos em breve. Aguarde!</div>}
 
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-          {shownProducts.map((product) => {
-            const price = me ? Math.ceil(product.pointsPrice * (me.redeemDiscount ?? 1)) : product.pointsPrice;
-            return (
-              <div key={product.id} className="panel flex flex-col overflow-hidden p-0">
-                <div className="relative h-36 w-full bg-gradient-to-br from-[var(--accent-glow)] to-[var(--surface-raised)]">
-                  {product.imageUrl ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img src={product.imageUrl} alt={product.name} className="h-full w-full object-cover" />
-                  ) : (
-                    <div className="grid h-full w-full place-items-center text-[var(--accent)]">
-                      {product.isVirtual ? <Zap size={40} /> : <Package size={40} />}
-                    </div>
-                  )}
-                  {product.category && <span className="absolute left-2 top-2 rounded bg-black/55 px-2 py-0.5 text-[10px] font-black uppercase text-white">{product.category}</span>}
-                  {product.isVirtual && <span className="absolute right-2 top-2 rounded bg-[var(--accent)] px-2 py-0.5 text-[10px] font-black uppercase text-[var(--accent-ink)]">Instantâneo</span>}
-                </div>
-                <div className="flex flex-1 flex-col gap-1 p-4">
-                  <div className="text-sm font-black leading-5">{product.name}</div>
-                  {product.description && <p className="text-[11px] font-bold leading-4 text-[var(--muted-strong)]">{product.description}</p>}
-                  <div className="text-[11px] font-bold text-[var(--muted)]">
-                    {product.supplierName && `${product.supplierName} ｜ `}
-                    {product.isVirtual ? "Entrega imediata" : `≈ ${product.deliveryCycleDays ?? 7} dias até a estação`} ｜ Estoque {product.stock}
-                  </div>
-                  <button
-                    type="button"
-                    disabled={busyProduct === product.id || product.stock <= 0}
-                    onClick={() => void redeem(product)}
-                    className="mt-auto inline-flex h-10 items-center justify-center gap-1 rounded-[8px] bg-[var(--accent)] px-4 text-xs font-black uppercase text-[var(--accent-ink)] disabled:opacity-50"
-                  >
-                    <CircleDollarSign size={13} />
-                    {price !== product.pointsPrice ? (
-                      <>
-                        <s className="opacity-60">{product.pointsPrice}</s> {price} pts
-                      </>
+          <div className="grid grid-cols-2 gap-2.5">
+            {shownProducts.map((product) => {
+              const price = me ? Math.ceil(product.pointsPrice * (me.redeemDiscount ?? 1)) : product.pointsPrice;
+              return (
+                <div key={product.id} className="flex flex-col overflow-hidden rounded-[8px] bg-white shadow-[0_12px_26px_rgba(0,0,0,0.06)]">
+                  <div className="relative h-28 w-full bg-[#f3f2ee]">
+                    {product.imageUrl ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img src={product.imageUrl} alt={product.name} className="h-full w-full object-cover" />
                     ) : (
-                      `${product.pointsPrice} pts`
+                      <div className="grid h-full w-full place-items-center text-[#ff7a00]">{product.isVirtual ? <Zap size={32} /> : <Package size={32} />}</div>
                     )}
-                  </button>
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      </div>
-
-      {myOrders.length > 0 && (
-        <div className="panel p-4">
-          <div className="mb-2 text-xs font-black uppercase text-[var(--muted)]">Meus resgates</div>
-          <div className="grid gap-2 md:grid-cols-2">
-            {myOrders.map((order) => (
-              <div key={order.id} className="flex items-center justify-between gap-2 rounded-[8px] border border-[var(--line)] bg-[var(--surface-raised)] p-3 text-sm font-bold">
-                <div>
-                  {order.productName}
-                  <div className="text-[11px] text-[var(--muted)]">
-                    <MapPin size={10} className="inline" /> {order.station} ｜ {order.pointsSpent} pts
-                    {order.status === "created" && order.etaDate && ` ｜ Previsão ${order.etaDate}`}
+                    {product.isVirtual && <span className="absolute right-1.5 top-1.5 rounded-full bg-[#ff7a00] px-2 py-0.5 text-[9px] font-black uppercase text-[#050505]">Instantâneo</span>}
                   </div>
-                  {order.voucherCode && (
-                    <div className="mt-1 rounded bg-[var(--accent-soft)] px-2 py-1 text-[11px] font-black text-[var(--accent)]">
-                      Voucher: {order.voucherCode}
+                  <div className="flex flex-1 flex-col gap-1 p-2.5">
+                    <div className="text-[13px] font-black leading-4">{product.name}</div>
+                    <div className="text-[10px] font-bold text-[#77746f]">
+                      {product.isVirtual ? "Entrega imediata" : `≈ ${product.deliveryCycleDays ?? 7} dias`} · Estoque {product.stock}
                     </div>
-                  )}
+                    <button
+                      type="button"
+                      disabled={busyProduct === product.id || product.stock <= 0}
+                      onClick={() => void redeem(product)}
+                      className="mt-auto h-9 rounded-[8px] bg-[#050505] text-xs font-black text-white disabled:opacity-40"
+                    >
+                      {price !== product.pointsPrice ? <><s className="opacity-55">{product.pointsPrice}</s> {price} pts</> : `${product.pointsPrice} pts`}
+                    </button>
+                  </div>
                 </div>
-                <span className={`tag ${order.status === "arrived" ? "border-[var(--accent)] text-[var(--accent)]" : ""}`}>{orderStatusLabel[order.status] ?? order.status}</span>
-              </div>
-            ))}
+              );
+            })}
           </div>
-        </div>
-      )}
-    </div>
+        </section>
+
+        {/* My redemptions */}
+        {myOrders.length > 0 && (
+          <section className="px-4 pt-4">
+            <h2 className="mb-2 text-lg font-black">Meus resgates</h2>
+            <div className="grid gap-2">
+              {myOrders.map((order) => (
+                <div key={order.id} className="grid grid-cols-[1fr_auto] items-center gap-2 rounded-[8px] bg-white p-3 shadow-[0_12px_26px_rgba(0,0,0,0.06)]">
+                  <div className="min-w-0">
+                    <div className="truncate text-sm font-black">{order.productName}</div>
+                    <div className="text-[11px] font-bold text-[#77746f]">
+                      {order.pointsSpent} pts{order.status === "created" && order.etaDate && ` · previsão ${order.etaDate}`}{!order.voucherCode && ` · ${order.station}`}
+                    </div>
+                    {order.voucherCode && <div className="mt-1 inline-block rounded bg-[#fff1e0] px-2 py-0.5 text-[11px] font-black text-[#ff7a00]" data-i18n-skip>Voucher: {order.voucherCode}</div>}
+                  </div>
+                  <span className={`shrink-0 rounded-full px-2.5 py-1 text-[10px] font-black ${order.status === "arrived" ? "bg-[#ff7a00] text-[#050505]" : order.status === "fulfilled" ? "bg-[#e8f6ee] text-[#20a65a]" : "bg-[#f3f2ee] text-[#77746f]"}`}>
+                    {orderStatusLabel[order.status] ?? order.status}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </section>
+        )}
+
+        <nav className="fixed bottom-3 left-1/2 z-20 grid w-[calc(100%-24px)] max-w-[406px] -translate-x-1/2 grid-cols-4 rounded-[8px] bg-[#050505] p-1.5 text-white shadow-[0_18px_42px_rgba(0,0,0,0.3)]">
+          <MallTab icon={<Home size={18} />} label="Inicio" href="/rider-app" />
+          <MallTab icon={<WalletCards size={18} />} label="Carteira" href="/rider-app/wallet" />
+          <MallTab icon={<Gift size={18} />} label="Loja" href="/rider-app/mall" active />
+          <MallTab icon={<Headphones size={18} />} label="Ajuda" href="/rider-app/support" />
+        </nav>
+      </div>
+    </main>
+  );
+}
+
+function MallTab({ icon, label, href, active = false }: { icon: React.ReactNode; label: string; href: string; active?: boolean }) {
+  return (
+    <a href={href} className={`flex flex-col items-center gap-1 rounded-[8px] py-2 text-[10px] font-black ${active ? "bg-[#ff7a00] text-[#050505]" : "text-white/65"}`}>
+      {icon}
+      {label}
+    </a>
   );
 }
