@@ -10,11 +10,11 @@ const COLLECTIONS = ["riderWithdrawals", "riderDailyEarnings", "riderDailyKpis",
 const today = () => new Date().toISOString().slice(0, 10);
 const nowStamp = () => new Date().toISOString().slice(0, 16).replace("T", " ");
 
-/** Saturday-anchored natural week containing `date` → [start..start+6]. */
+/** Monday-anchored natural week containing `date` → [start..start+6]. */
 function weekWindow(date: string): { from: string; to: string } {
   const d = new Date(`${date}T12:00:00Z`);
   const day = d.getUTCDay(); // 0=Sun..6=Sat
-  const back = (day - 6 + 7) % 7; // days since the most recent Saturday
+  const back = (day - 1 + 7) % 7; // days since the most recent Monday
   const start = new Date(d);
   start.setUTCDate(d.getUTCDate() - back);
   const end = new Date(start);
@@ -74,6 +74,13 @@ export async function GET(request: Request) {
     return jsonResponse({ data: { franchise: statementFranchise, from, to, rows, total } });
   }
 
+  // Raw payment records in a window (paid-status lookup for T+1 board).
+  if (url.searchParams.get("payments") === "1") {
+    const from = url.searchParams.get("from") || today();
+    const to = url.searchParams.get("to") || today();
+    return jsonResponse({ data: memory.walletPayments.filter((p) => p.weekFrom >= from && p.weekTo <= to) });
+  }
+
   // Weekly settlement, folded franchise → rider (the main HQ wallet view).
   if (url.searchParams.get("view") === "weekly") {
     const anchor = url.searchParams.get("week") || today();
@@ -97,8 +104,9 @@ export async function GET(request: Request) {
       riderAgg.set(key, cur);
     }
 
-    // Payments already recorded for this window.
-    const paymentsInWindow = memory.walletPayments.filter((p) => p.weekFrom === win.from && p.weekTo === win.to);
+    // Payments recorded for this window (weekly entries match the window
+    // exactly; daily entries fall inside it).
+    const paymentsInWindow = memory.walletPayments.filter((p) => p.weekFrom >= win.from && p.weekTo <= win.to);
     const paidToRider = new Map<string, number>();
     const paidToFranchise = new Map<string, number>();
     for (const p of paymentsInWindow) {
