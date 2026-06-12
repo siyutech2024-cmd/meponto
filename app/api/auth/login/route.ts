@@ -107,6 +107,11 @@ async function findAppUserAccount(identifier: string, password: string): Promise
 }
 
 async function findSupabaseTestAccount(identifier: string, password: string): Promise<TestAccount | undefined> {
+  // Same kill switch as findTestAccount: demo seeds (including the Supabase
+  // app_test_accounts mirror) are disabled once real accounts exist.
+  if (process.env.MEPONTO_DISABLE_DEMO_LOGIN === "1") {
+    return undefined;
+  }
   if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
     return undefined;
   }
