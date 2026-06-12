@@ -86,8 +86,7 @@ export const portalConfigs: Record<PortalId, PortalConfig> = {
     vercelPath: "/supplier-admin",
     futureDomain: "supplier.meponto.com",
     modules: [
-      { href: "/mall/supplier", label: "商品供货", description: "上传商品、报供应价与派送周期，等待总部定价上架。", permission: "manage_marketplace" },
-      { href: "/reports", label: "供应商对账", description: "查看供应价应结款和月度流水。", permission: "manage_supplier_catalog" },
+      { href: "/mall/supplier", label: "商品供货", description: "上传商品、报供应价与派送周期，等待总部定价上架；含月度对账。", permission: "manage_marketplace" },
     ],
   },
   franchise: {

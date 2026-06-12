@@ -36,37 +36,56 @@ export async function GET(request: Request) {
   const stationScope = url.searchParams.get("station") ?? "";
 
   // Periodic billing statement: per-rider daily settle rows for one franchise.
-  const statementFranchise = url.searchParams.get("statement") ?? "";
+  let statementFranchise = url.searchParams.get("statement") ?? "";
   if (statementFranchise) {
+    // A franchise session can only ever query ITS OWN statement.
+    const scope = await scopeFromRequest(request);
+    if (scope.franchise) statementFranchise = scope.franchise;
     const to = url.searchParams.get("to") || today();
     const from = url.searchParams.get("from") || new Date(Date.now() - 6 * 86400000).toISOString().slice(0, 10);
     const byNinetyNine = new Map(memory.riders.filter((r) => r.ninetyNineId).map((r) => [r.ninetyNineId!, r]));
-    const kpiByKey = new Map(memory.riderDailyKpis.map((k) => [`${k.date}|${k.rider99Id}`, k]));
+    const kpiByKey = new Map(memory.riderDailyKpis.filter((k) => k.date >= from && k.date <= to).map((k) => [`${k.date}|${k.rider99Id}`, k]));
+    const earnByKey = new Map(memory.riderDailyEarnings.filter((e) => e.date >= from && e.date <= to).map((e) => [`${e.date}|${e.rider99Id}`, e]));
+    // Union of both T+1 tables so KPI-only days still appear (data completeness).
+    const keys = [...new Set([...kpiByKey.keys(), ...earnByKey.keys()])];
+    // Daily rider payments inside the window → per-day paid status.
+    const paidDay = new Set(
+      memory.walletPayments.filter((p) => p.target === "rider" && p.weekFrom === p.weekTo && p.weekFrom >= from && p.weekTo <= to).map((p) => `${p.weekFrom}|${p.refName}`),
+    );
     const r2 = (n: number) => Math.round((n ?? 0) * 100) / 100;
-    const rows = memory.riderDailyEarnings
-      .filter((row) => row.date >= from && row.date <= to)
-      .map((row) => ({ row, rider: byNinetyNine.get(row.rider99Id) }))
+    const rows = keys
+      .map((key) => {
+        const [date, rider99Id] = key.split("|");
+        return { date, rider99Id, earning: earnByKey.get(key), kpi: kpiByKey.get(key), rider: byNinetyNine.get(rider99Id) };
+      })
       .filter(({ rider }) => statementFranchise === "all" || (rider?.franchise ?? "Unassigned") === statementFranchise)
-      .map(({ row, rider }) => {
-        const kpi = kpiByKey.get(`${row.date}|${row.rider99Id}`);
+      .map(({ date, rider99Id, earning, kpi, rider }) => {
+        const riderName = rider?.name ?? earning?.riderName ?? kpi?.riderName ?? rider99Id;
         return {
-          date: row.date,
-          riderName: rider?.name ?? row.riderName ?? row.rider99Id,
-          rider99Id: row.rider99Id,
-          cpf: rider?.cpf ?? row.cpf ?? "",
-          pix: rider?.pix ?? row.pix ?? "",
+          date,
+          riderName,
+          rider99Id,
+          cpf: rider?.cpf || earning?.cpf || kpi?.cpf || "",
+          pix: rider?.pix || earning?.pix || "",
+          phone: rider?.phone || earning?.phone || kpi?.phone || "",
           franchise: rider?.franchise ?? "Unassigned",
           station: rider?.ponto ?? "Unassigned",
-          orders: row.orders ?? 0,
+          orders: earning?.orders ?? 0,
+          kpiOrders: kpi?.completedOrders ?? null,
           onlineHours: kpi?.onlineHours ?? null,
           ar: kpi?.ar ?? null,
-          tripIncome: r2(row.tripIncome),
-          bonus: r2(row.bonus),
-          tips: r2(row.tips),
-          cashDebt: r2(row.cashDebt),
-          mealDeduction: r2(row.mealDeduction),
-          other: r2(row.other),
-          settleAmount: r2(row.settleAmount),
+          tsh: kpi?.tsh ?? null,
+          total: r2(earning?.total ?? 0),
+          tripIncome: r2(earning?.tripIncome ?? 0),
+          bonus: r2(earning?.bonus ?? 0),
+          tips: r2(earning?.tips ?? 0),
+          cashDebt: r2(earning?.cashDebt ?? 0),
+          mealDeduction: r2(earning?.mealDeduction ?? 0),
+          other: r2(earning?.other ?? 0),
+          manualAdjust: r2(earning?.manualAdjust ?? 0),
+          referralBonus: r2(earning?.referralBonus ?? 0),
+          settleAmount: r2(earning?.settleAmount ?? 0),
+          paid: paidDay.has(`${date}|${riderName}`),
         };
       })
       .sort((a, b) => a.date.localeCompare(b.date) || a.riderName.localeCompare(b.riderName));
@@ -78,7 +97,9 @@ export async function GET(request: Request) {
   if (url.searchParams.get("payments") === "1") {
     const from = url.searchParams.get("from") || today();
     const to = url.searchParams.get("to") || today();
-    return jsonResponse({ data: memory.walletPayments.filter((p) => p.weekFrom >= from && p.weekTo <= to) });
+    const scope = await scopeFromRequest(request);
+    const inWindow = memory.walletPayments.filter((p) => p.weekFrom >= from && p.weekTo <= to);
+    return jsonResponse({ data: scope.franchise ? inWindow.filter((p) => p.franchise === scope.franchise) : inWindow });
   }
 
   // Weekly settlement, folded franchise → rider (the main HQ wallet view).
@@ -228,12 +249,47 @@ async function handlePost(request: Request) {
         paidAt: nowStamp(),
       };
       memory.walletPayments.unshift(payment);
-      // HQ→franchise payment also draws down the franchise prepaid balance.
+      // HQ→franchise payment also draws down the franchise prepaid balance,
+      // and CASCADES: every rider of that franchise with unpaid settle in the
+      // window is marked paid for the remaining amount (单笔覆盖整周).
+      let cascaded = 0;
       if (target === "franchise") {
         const fIndex = memory.franchises.findIndex((f) => f.name === refName.trim());
         if (fIndex !== -1) {
           const next = Math.round(((memory.franchises[fIndex].depositBalance ?? 0) - amount) * 100) / 100;
           memory.franchises[fIndex] = { ...memory.franchises[fIndex], depositBalance: next };
+        }
+        const byNinetyNine = new Map(memory.riders.filter((r) => r.ninetyNineId).map((r) => [r.ninetyNineId!, r]));
+        const settleByRider = new Map<string, number>();
+        for (const row of memory.riderDailyEarnings) {
+          if (row.date < payment.weekFrom || row.date > payment.weekTo) continue;
+          const rider = byNinetyNine.get(row.rider99Id);
+          if ((rider?.franchise ?? "Unassigned") !== refName.trim()) continue;
+          const name = rider?.name ?? row.riderName ?? row.rider99Id;
+          settleByRider.set(name, Math.round(((settleByRider.get(name) ?? 0) + (row.settleAmount ?? 0)) * 100) / 100);
+        }
+        const paidByRider = new Map<string, number>();
+        for (const p of memory.walletPayments) {
+          if (p.target !== "rider" || p.weekFrom < payment.weekFrom || p.weekTo > payment.weekTo) continue;
+          paidByRider.set(p.refName, (paidByRider.get(p.refName) ?? 0) + p.amount);
+        }
+        for (const [name, settle] of settleByRider) {
+          const remaining = Math.round((settle - (paidByRider.get(name) ?? 0)) * 100) / 100;
+          if (remaining <= 0) continue;
+          cascaded += 1;
+          memory.walletPayments.unshift({
+            id: makeServerId("pay", memory.walletPayments.length + 1),
+            target: "rider",
+            refName: name,
+            franchise: refName.trim(),
+            amount: remaining,
+            period: payment.period,
+            weekFrom: payment.weekFrom,
+            weekTo: payment.weekTo,
+            note: `随加盟商付款 ${payment.id}`,
+            paidBy: actor,
+            paidAt: payment.paidAt,
+          });
         }
       }
       appendServerAudit({ actor, action: "WALLET_PAYMENT_RECORDED", entity: "WalletPayment", entityId: payment.id, detail: `${target} ${refName} R$${amount.toFixed(2)} (${payment.period}, ${weekFrom}~${weekTo})${note ? ` — ${note}` : ""}.`, risk: "Medium" });

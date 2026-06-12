@@ -202,8 +202,8 @@ export default function PerformancePage() {
                 if (!data) return;
                 downloadCsv(
                   `kpi-${data.date ?? "all"}`,
-                  ["骑手", "99ID", "加盟商", "站点", "完单", "TSH", "AR%", "CAA", "超时", "报名时长"],
-                  data.riders.map((r) => [r.riderName, r.rider99Id, r.franchise, r.station, r.completedOrders, r.tsh, r.ar, r.caa, r.overtime, r.signedShiftHours]),
+                  ["日期", "骑手", "99ID", "CPF", "电话", "城市", "加盟商", "站点", "完单", "在线时长", "报名班次", "报名时长", "班次内在线", "%TSH", "TSH关键", "AR%", "CAA", "超时"],
+                  data.riders.map((r) => [r.date, r.riderName, r.rider99Id, r.cpf ?? "", r.phone ?? "", r.city ?? "", r.franchise, r.station, r.completedOrders, r.onlineHours, r.signedShifts, r.signedShiftHours, r.inShiftOnlineHours, r.tsh, r.tshCritical, r.ar, r.caa, r.overtime]),
                 );
               }}
             >
@@ -216,8 +216,8 @@ export default function PerformancePage() {
                 if (!data) return;
                 downloadCsv(
                   `settlement-${data.date ?? "all"}`,
-                  ["骑手", "99ID", "加盟商", "站点", "今日统计R$", "行程收入", "奖励", "小费", "完单", "结算金额R$"],
-                  data.earnings.riders.map((r) => [r.riderName, r.rider99Id, r.franchise, r.station, r.total, r.tripIncome, r.bonus, r.tips, r.orders, r.settleAmount]),
+                  ["日期", "骑手", "99ID", "CPF", "PIX", "电话", "加盟商", "站点", "完单", "今日统计R$", "行程收入", "现金欠款", "餐损", "奖励", "小费", "人工调整", "推荐奖励", "其他", "结算金额R$"],
+                  data.earnings.riders.map((r) => [r.date, r.riderName, r.rider99Id, r.cpf ?? "", r.pix ?? "", r.phone ?? "", r.franchise, r.station, r.orders, r.total, r.tripIncome, r.cashDebt, r.mealDeduction, r.bonus, r.tips, r.manualAdjust, r.referralBonus, r.other, r.settleAmount]),
                 );
               }}
             >

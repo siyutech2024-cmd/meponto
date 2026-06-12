@@ -14,7 +14,7 @@ function normalizeStatus(status: string | undefined): RiderStatus {
 }
 
 export async function GET(request: Request) {
-  const reveal = getRiderSensitiveRevealDecision(request);
+  const reveal = getRiderSensitiveRevealDecision(request, roleFromRequest(request));
 
   if (reveal.requested) {
     appendServerAudit({
@@ -30,6 +30,17 @@ export async function GET(request: Request) {
   }
 
   await refreshCollectionsFromDatabase(COLLECTIONS);
+
+  // Points ledger for one rider (detail page 积分明细).
+  const pointsFor = new URL(request.url).searchParams.get("pointsFor");
+  if (pointsFor) {
+    const entries = memory.pointsLedgerEntries
+      .filter((entry) => entry.riderId === pointsFor)
+      .sort((a, b) => (b.id > a.id ? 1 : -1))
+      .slice(0, 100)
+      .map((entry) => ({ id: entry.id, type: entry.type, points: entry.points, status: entry.status, sourceType: entry.sourceType, note: entry.note, reasonCode: entry.reasonCode, expiresAt: entry.expiresAt ?? null, balanceAfter: entry.balanceAfter }));
+    return jsonResponse({ data: { entries, balance: getAvailablePoints(memory.pointsLedgerEntries, pointsFor) } });
+  }
 
   // Lifetime orders + last report date per Eastwind id (daily report data).
   const reportStats = new Map<string, { name: string; orders: number; lastDate: string; ar: number | null }>();
