@@ -9,6 +9,21 @@ import { ShiftRiderPicker } from "../../components/shift-rider-picker";
 
 type Board = { shifts: DispatchShift[]; quotas: ShiftQuota[]; signups: ShiftSignup[] };
 
+const WEEKDAYS = ["周一", "周二", "周三", "周四", "周五", "周六", "周日"];
+
+function addDays(iso: string, delta: number): string {
+  const d = new Date(`${iso}T12:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + delta);
+  return d.toISOString().slice(0, 10);
+}
+
+function mondayOf(): string {
+  const d = new Date();
+  const back = (d.getDay() - 1 + 7) % 7;
+  d.setDate(d.getDate() - back);
+  return d.toISOString().slice(0, 10);
+}
+
 const signupLabel: Record<string, string> = {
   submitted: "待审核",
   approved: "已通过",
@@ -55,6 +70,7 @@ export default function StationDispatchPage() {
   const [board, setBoard] = useState<Board>({ shifts: [], quotas: [], signups: [] });
   const [message, setMessage] = useState<{ tone: "ok" | "err" | "warn"; text: string } | null>(null);
   const [shiftId, setShiftId] = useState("");
+  const [weekStart, setWeekStart] = useState(() => mondayOf());
 
   const load = useCallback(async () => {
     const response = await fetch(`/api/dispatch?station=${encodeURIComponent(station)}&franchise=${encodeURIComponent(franchise)}`, { headers, cache: "no-store" });
@@ -107,42 +123,67 @@ export default function StationDispatchPage() {
         </div>
       )}
 
-      <div className="grid gap-4 xl:grid-cols-[1fr_420px]">
+      <div className="grid gap-4 xl:grid-cols-[1fr_380px]">
         <div className="panel p-4">
-          <div className="mb-3 flex items-center gap-2 text-xs font-black uppercase text-[var(--accent)]">
-            <ClipboardList size={14} /> 本站班次与报名状态
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-2" data-i18n-skip>
+            <div className="flex items-center gap-2 text-xs font-black uppercase text-[var(--accent)]">
+              <ClipboardList size={14} /> 本站班次与报名状态
+            </div>
+            <div className="flex items-center gap-2">
+              <button type="button" className="tag" onClick={() => setWeekStart(addDays(weekStart, -7))}>← 上一周</button>
+              <span className="text-sm font-black">{weekStart} ~ {addDays(weekStart, 6)}</span>
+              <button type="button" className="tag" onClick={() => setWeekStart(addDays(weekStart, 7))}>下一周 →</button>
+              <button type="button" className="tag" onClick={() => setWeekStart(mondayOf())}>本周</button>
+            </div>
           </div>
           {myRows.length === 0 ? (
             <div className="text-sm font-bold text-[var(--muted)]">加盟商还没有给 {station} 分配班次配额。</div>
           ) : (
-            <div className="space-y-3">
-              {myRows.map(({ shift, quota, signups }) => {
-                const approved = signups.filter((item) => item.status === "approved" || item.status === "reported").length;
-                const active = shiftId === shift.id;
+            <div className="grid grid-cols-2 gap-2 md:grid-cols-4 2xl:grid-cols-7">
+              {Array.from({ length: 7 }, (_, index) => addDays(weekStart, index)).map((day, index) => {
+                const dayRows = myRows.filter(({ shift }) => shift.date === day).sort((a, b) => a.shift.timeRange.localeCompare(b.shift.timeRange));
                 return (
-                  <div
-                    key={shift.id}
-                    onClick={() => shift.status === "scheduling" && setShiftId(shift.id)}
-                    className={`rounded-[8px] border p-3 transition-colors ${shift.status === "scheduling" ? "cursor-pointer" : ""} ${active ? "border-[var(--accent)] bg-[var(--accent-soft)]" : "border-[var(--line)] bg-[var(--surface-raised)] hover:border-[var(--muted)]"}`}
-                  >
-                    <div className="flex flex-wrap items-center justify-between gap-2">
-                      <div className="flex items-center gap-2 text-sm font-black">
-                        {shift.isCritical && <Star size={13} className="text-[var(--accent)]" />}
-                        {shift.date} {shift.timeRange}
-                      </div>
-                      <div className="text-xs font-black">
-                        配额 <span className="text-[var(--accent)]">{quota?.quota}</span> ｜ 已通过 {approved} ｜ 已提报 {signups.length}
-                      </div>
+                  <div key={day} className="min-w-0 space-y-2">
+                    <div className="rounded-[8px] bg-[var(--surface-raised)] py-1.5 text-center">
+                      <div className="text-[10px] font-black text-[var(--muted)]">{WEEKDAYS[index]}</div>
+                      <div className="text-sm font-black">{day.slice(5)}</div>
                     </div>
-                    {signups.length > 0 && (
-                      <div className="mt-2 flex flex-wrap gap-1">
-                        {signups.map((signup) => (
-                          <span key={signup.id} className="tag">
-                            {signup.riderName || signup.rider99Id} <Badge value={signupLabel[signup.status] ?? signup.status} />
-                          </span>
-                        ))}
-                      </div>
-                    )}
+                    {dayRows.length === 0 && <div className="rounded-[8px] border border-dashed border-[var(--line)] py-4 text-center text-[10px] font-bold text-[var(--muted)]">—</div>}
+                    {dayRows.map(({ shift, quota, signups }) => {
+                      const approved = signups.filter((item) => item.status === "approved" || item.status === "reported").length;
+                      const waiting = signups.filter((item) => item.status === "submitted").length;
+                      const active = shiftId === shift.id;
+                      return (
+                        <div
+                          key={shift.id}
+                          onClick={() => shift.status === "scheduling" && setShiftId(active ? "" : shift.id)}
+                          className={`rounded-[8px] border p-2.5 transition-colors ${shift.status === "scheduling" ? "cursor-pointer" : "opacity-75"} ${active ? "border-[var(--accent)] bg-[var(--accent-soft)]" : "border-[var(--line)] bg-[var(--surface-raised)] hover:border-[var(--muted)]"}`}
+                        >
+                          <div className="flex items-center gap-1 text-[13px] font-black">
+                            {shift.isCritical && <Star size={11} className="shrink-0 text-[var(--accent)]" />}
+                            <span className="truncate">{shift.timeRange}</span>
+                          </div>
+                          <div className="mt-0.5 truncate text-[10px] font-bold text-[var(--muted)]">{shift.hotzone}</div>
+                          <div className="mt-2 grid grid-cols-2 gap-x-2 gap-y-1 text-center">
+                            {[["本站配额", quota?.quota ?? 0, "text-[var(--accent)]"], ["已提报", signups.length, ""], ["已通过", approved, "text-[var(--ok-ink)]"], ["待审核", waiting, waiting > 0 ? "text-[var(--warning-ink)]" : ""]].map(([label, value, cls]) => (
+                              <div key={String(label)}>
+                                <div className="text-[9px] font-black text-[var(--muted)]">{label}</div>
+                                <div className={`text-sm font-black ${cls}`}>{value}</div>
+                              </div>
+                            ))}
+                          </div>
+                          {active && signups.length > 0 && (
+                            <div className="mt-2 flex flex-wrap gap-1 border-t border-[var(--line)] pt-2" onClick={(e) => e.stopPropagation()}>
+                              {signups.map((signup) => (
+                                <span key={signup.id} className="tag text-[9px]">
+                                  {signup.riderName || signup.rider99Id}·{signupLabel[signup.status] ?? signup.status}
+                                </span>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
                   </div>
                 );
               })}
