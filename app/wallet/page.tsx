@@ -69,6 +69,41 @@ export default function WalletAdminPage() {
     setMessage({ tone: "ok", text: `已导出「${franchise}」${from} ~ ${to} 周期账单（${rows.length - 1} 行，合计 R$ ${Number(payload.data.total).toFixed(2)}）。` });
   }
 
+  // Printable PDF statement: opens a clean, branded layout and triggers print
+  // (the browser's "Save as PDF" produces the document — no extra dependency).
+  async function printStatement(franchise: string) {
+    const to = new Date().toISOString().slice(0, 10);
+    const from = new Date(Date.now() - 6 * 86400000).toISOString().slice(0, 10);
+    const response = await fetch(`/api/wallet?statement=${encodeURIComponent(franchise)}&from=${from}&to=${to}`, { headers, cache: "no-store" });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      setMessage({ tone: "err", text: payload.error ?? "账单生成失败" });
+      return;
+    }
+    const esc = (v: string) => String(v).replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c] ?? c));
+    const body = (payload.data.rows as Array<{ date: string; riderName: string; rider99Id: string; station: string; settleAmount: number }>)
+      .map((r) => `<tr><td>${esc(r.date)}</td><td>${esc(r.riderName)}</td><td>${esc(r.rider99Id)}</td><td>${esc(r.station)}</td><td style="text-align:right">R$ ${r.settleAmount.toFixed(2)}</td></tr>`)
+      .join("");
+    const html = `<!doctype html><html><head><meta charset="utf-8"><title>Extrato ${esc(franchise)} ${from}_${to}</title>
+      <style>body{font-family:Inter,Arial,sans-serif;color:#111;padding:32px}h1{font-size:20px;margin:0}.sub{color:#666;font-size:12px;margin:4px 0 18px}
+      table{width:100%;border-collapse:collapse;font-size:12px}th,td{border-bottom:1px solid #ddd;padding:8px;text-align:left}
+      th{background:#faf7e6;font-size:10px;text-transform:uppercase;letter-spacing:.05em}tfoot td{font-weight:800;border-top:2px solid #111}
+      .brand{display:flex;align-items:center;gap:10px;margin-bottom:14px}.brand b{font-size:15px}</style></head>
+      <body><div class="brand"><b>MePonto</b> · Extrato de repasse</div>
+      <h1>${esc(franchise)}</h1><div class="sub">Período ${from} a ${to} · gerado em ${new Date().toLocaleString("pt-BR")}</div>
+      <table><thead><tr><th>Data</th><th>Entregador</th><th>99 ID</th><th>Ponto</th><th style="text-align:right">Valor</th></tr></thead>
+      <tbody>${body}</tbody>
+      <tfoot><tr><td colspan="4">Total</td><td style="text-align:right">R$ ${Number(payload.data.total).toFixed(2)}</td></tr></tfoot></table>
+      <script>window.onload=function(){window.print()}</script></body></html>`;
+    const win = window.open("", "_blank");
+    if (!win) {
+      setMessage({ tone: "err", text: "浏览器拦截了打印窗口，请允许弹出窗口后重试。" });
+      return;
+    }
+    win.document.write(html);
+    win.document.close();
+  }
+
   return (
     <AppShell>
       <PageTitle
@@ -91,7 +126,10 @@ export default function WalletAdminPage() {
               导出流水
             </button>
             {scopeFranchise && (
-              <button type="button" className="tag" onClick={() => void exportStatement(scopeFranchise)}>导出周账单</button>
+              <>
+                <button type="button" className="tag" onClick={() => void exportStatement(scopeFranchise)}>周账单 CSV</button>
+                <button type="button" className="tag" onClick={() => void printStatement(scopeFranchise)}>周账单 PDF</button>
+              </>
             )}
             <button type="button" onClick={() => void load()} className="tag inline-flex items-center gap-1"><RefreshCcw size={13} /> 刷新</button>
           </div>
@@ -121,7 +159,12 @@ export default function WalletAdminPage() {
                   <td className="py-2 text-right text-[var(--ok-ink)]">{money(f.paidOut)}</td>
                   <td className="py-2 text-right text-[var(--warning-ink)]">{money(f.pendingRequests)}</td>
                   <td className="py-2 text-right font-black text-[var(--accent)]">{money(f.payable)}</td>
-                  <td className="py-2 text-right"><button type="button" className="tag" onClick={() => void exportStatement(f.franchise)}>周账单</button></td>
+                  <td className="py-2 text-right">
+                    <div className="flex justify-end gap-1.5">
+                      <button type="button" className="tag" onClick={() => void exportStatement(f.franchise)}>CSV</button>
+                      <button type="button" className="tag" onClick={() => void printStatement(f.franchise)}>PDF</button>
+                    </div>
+                  </td>
                 </tr>
               ))}
             </tbody>

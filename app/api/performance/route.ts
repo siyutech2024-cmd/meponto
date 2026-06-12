@@ -10,6 +10,16 @@ import {
 } from "../../lib/performance";
 import { defaultMallConfig, resolveTier } from "../../lib/mall";
 import { getAvailablePoints } from "../../lib/points";
+import { sendPushToRider } from "../../lib/server/notify";
+
+/** Lifetime-orders milestones that trigger an achievement push. */
+const BADGE_MILESTONES: Array<{ at: number; label: string }> = [
+  { at: 1, label: "Primeira entrega 🚀" },
+  { at: 50, label: "50 pedidos 🔥" },
+  { at: 100, label: "100 pedidos 💪" },
+  { at: 300, label: "300 pedidos 🏅" },
+  { at: 600, label: "600 pedidos 👑" },
+];
 
 const COLLECTIONS = ["riderDailyKpis", "riderDailyEarnings", "riders", "mallConfigs", "pointsLedgerEntries"];
 
@@ -275,6 +285,7 @@ async function handlePost(request: Request) {
     let created = 0;
     let updated = 0;
 
+    const achievements: Array<{ riderName: string; label: string }> = [];
     if (body.action === "importKpiRecords") {
       for (const raw of records) {
         const rider99Id = String(raw.rider99Id ?? "").trim();
@@ -306,6 +317,12 @@ async function handlePost(request: Request) {
           importedAt,
         };
         const index = memory.riderDailyKpis.findIndex((row) => row.id === record.id);
+        // Lifetime orders excluding this day's record (so re-imports are idempotent).
+        const otherSum = memory.riderDailyKpis
+          .filter((row) => row.rider99Id === rider99Id && row.id !== record.id)
+          .reduce((sum, row) => sum + (row.completedOrders ?? 0), 0);
+        const before = otherSum + (index === -1 ? 0 : memory.riderDailyKpis[index].completedOrders ?? 0);
+        const after = otherSum + record.completedOrders;
         if (index === -1) {
           memory.riderDailyKpis.unshift(record);
           created += 1;
@@ -319,6 +336,12 @@ async function handlePost(request: Request) {
             memory.riders[riderIndex] = { ...memory.riders[riderIndex], ar: Math.round(record.ar) };
           }
           creditOrderPoints(memory.riders[riderIndex].id, rider99Id, date, record.completedOrders);
+          // Achievement crossed during this import → notify the rider.
+          for (const milestone of BADGE_MILESTONES) {
+            if (before < milestone.at && after >= milestone.at) {
+              achievements.push({ riderName: memory.riders[riderIndex].name, label: milestone.label });
+            }
+          }
         }
       }
     } else {
@@ -371,7 +394,16 @@ async function handlePost(request: Request) {
       risk: "Low",
     });
 
-    return jsonResponse({ data: { created, updated, parsed: created + updated } }, { status: 201 });
+    // Best-effort achievement pushes (deduped per rider+milestone this import).
+    const seen = new Set<string>();
+    for (const a of achievements) {
+      const key = `${a.riderName}|${a.label}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      await sendPushToRider(a.riderName, "Conquista desbloqueada! 🏆", `Você alcançou: ${a.label}. Confira seus selos na MePonto.`, "/mall");
+    }
+
+    return jsonResponse({ data: { created, updated, parsed: created + updated, achievements: achievements.length } }, { status: 201 });
   }
 
   return jsonResponse({ error: "unknown action" }, { status: 400 });
