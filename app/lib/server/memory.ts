@@ -51,7 +51,7 @@ import { dispatchShifts, shiftQuotas, shiftSignups, type DispatchShift, type Shi
 import { appUsers, type AppUser } from "../users";
 import { riderDailyEarnings, riderDailyKpis, type RiderDailyEarning, type RiderDailyKpi } from "../performance";
 import { mallConfigs, type MallConfig } from "../mall";
-import { riderWithdrawals, type RiderWithdrawal } from "../finance";
+import { riderWithdrawals, walletPayments, type RiderWithdrawal, type WalletPayment } from "../finance";
 import { supportTickets, type SupportTicket } from "../support";
 import { pushSubscriptions, type PushSubscriptionRecord } from "../push";
 import { franchises, type Franchise } from "../network";
@@ -103,6 +103,7 @@ const globalState = globalThis as typeof globalThis & {
     riderDailyEarnings: RiderDailyEarning[];
     mallConfigs: MallConfig[];
     riderWithdrawals: RiderWithdrawal[];
+    walletPayments: WalletPayment[];
     supportTickets: SupportTicket[];
     pushSubscriptions: PushSubscriptionRecord[];
     franchises: Franchise[];
@@ -140,6 +141,7 @@ export const memory =
     riderDailyEarnings: trackCollection("riderDailyEarnings", [...riderDailyEarnings]),
     mallConfigs: trackCollection("mallConfigs", [...mallConfigs]),
     riderWithdrawals: trackCollection("riderWithdrawals", [...riderWithdrawals]),
+    walletPayments: trackCollection("walletPayments", [...walletPayments]),
     supportTickets: trackCollection("supportTickets", [...supportTickets]),
     pushSubscriptions: trackCollection("pushSubscriptions", [...pushSubscriptions]),
     franchises: trackCollection("franchises", [...franchises]),

@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Inter, Outfit } from "next/font/google";
 import { I18nRuntime } from "./components/i18n-runtime";
 import { StoreHydrator } from "./components/store-hydrator";
+import { DialogProvider } from "./components/dialog";
 import "./globals.css";
 
 const inter = Inter({
@@ -42,7 +43,7 @@ export default function RootLayout({
       <body className="font-[family-name:var(--font-inter)]">
         <I18nRuntime />
         <StoreHydrator />
-        {children}
+        <DialogProvider>{children}</DialogProvider>
         <script
           dangerouslySetInnerHTML={{
             __html:

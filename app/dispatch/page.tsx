@@ -5,6 +5,7 @@ import { CalendarDays, CheckCircle2, ClipboardCopy, ClipboardList, Download, Ref
 import { AppShell, Badge, PageTitle } from "../components/ui";
 import type { DispatchShift, ShiftQuota, ShiftSignup } from "../lib/dispatch";
 import { downloadCsv } from "../lib/csv";
+import { useDialog } from "../components/dialog";
 import type { Franchise } from "../lib/network";
 import type { Ponto } from "../lib/data";
 
@@ -157,6 +158,7 @@ function statBadge(value: number, target: number) {
 }
 
 function BoardTab({ board, byShift, loading, onAction, setMessage }: { board: Board; byShift: { quotaMap: Map<string, ShiftQuota[]>; signupMap: Map<string, ShiftSignup[]> }; loading: boolean; onAction: (body: Record<string, unknown>) => Promise<Record<string, unknown> | null>; setMessage: (m: { tone: "ok" | "warn" | "err"; text: string } | null) => void }) {
+  const dialog = useDialog();
   const [weekStart, setWeekStart] = useState(() => mondayOf(0));
   const weekdayName = ["周一", "周二", "周三", "周四", "周五", "周六", "周日"];
   const days = useMemo(() => Array.from({ length: 7 }, (_, index) => addDays(weekStart, index)), [weekStart]);
@@ -167,7 +169,7 @@ function BoardTab({ board, byShift, loading, onAction, setMessage }: { board: Bo
   }
 
   async function quickAdd(date: string, timeRange: string) {
-    const value = window.prompt(`${date} ${timeRange} 计划人数：`);
+    const value = await dialog.prompt("排班人数", { message: `${date} ${timeRange} 计划人数`, placeholder: "如 12" });
     if (!value) return;
     const plannedCount = Number(value.replace(/\D/g, ""));
     if (!Number.isFinite(plannedCount) || plannedCount <= 0) {
@@ -179,7 +181,7 @@ function BoardTab({ board, byShift, loading, onAction, setMessage }: { board: Bo
   }
 
   async function removeShift(shift: DispatchShift) {
-    if (!window.confirm(`删除班次 ${shift.date} ${shift.timeRange} ${shift.hotzone}（计划 ${shift.plannedCount} 人）？关联的配额与报名也会一并删除。`)) return;
+    if (!(await dialog.confirm("删除班次", { message: `删除 ${shift.date} ${shift.timeRange} ${shift.hotzone}（计划 ${shift.plannedCount} 人）？关联的配额与报名也会一并删除。`, tone: "danger", confirmText: "删除" }))) return;
     const result = await onAction({ action: "deleteShift", shiftId: shift.id });
     if (result) setMessage({ tone: "ok", text: "班次已删除。" });
   }
@@ -570,10 +572,17 @@ function ReviewTab({ board, onAction, setMessage, network }: { board: Board; onA
   }
 
   // Review progress grouped by franchise (HQ view follows the franchise list).
+  const franchiseNames = new Set(network.franchises.map((f) => f.name));
   const progress = network.franchises.map((item) => {
     const mine = board.signups.filter((signup) => signup.franchise === item.name);
-    return { name: item.name, pending: mine.filter((x) => x.status === "submitted").length, approved: mine.filter((x) => x.status === "approved").length, total: mine.length };
-  }).filter((row) => row.total > 0 || true);
+    return { name: item.name, pending: mine.filter((x) => x.status === "submitted").length, approved: mine.filter((x) => x.status === "approved").length, total: mine.length, unbound: false };
+  });
+  // Signups whose franchise isn't in the network → one "unbound" bucket.
+  const orphan = board.signups.filter((s) => !s.franchise || !franchiseNames.has(s.franchise));
+  if (orphan.length > 0) {
+    progress.push({ name: "未绑定加盟商", pending: orphan.filter((x) => x.status === "submitted").length, approved: orphan.filter((x) => x.status === "approved").length, total: orphan.length, unbound: true });
+  }
+  const allPendingSelected = pending.length > 0 && pending.every((s) => selected.has(s.id));
 
   return (
     <div className="space-y-4">
@@ -596,10 +605,10 @@ function ReviewTab({ board, onAction, setMessage, network }: { board: Board; onA
         </div>
         <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
           {progress.map((row) => (
-            <div key={row.name} className={`rounded-[8px] border p-3 ${row.pending > 0 ? "border-[var(--warning)] bg-[var(--warning-bg)]" : "border-[var(--line)] bg-[var(--surface-raised)]"}`}>
+            <div key={row.name} className={`rounded-[8px] border p-3 ${row.unbound ? "border-[var(--danger)] bg-[var(--danger-bg)]" : row.pending > 0 ? "border-[var(--warning)] bg-[var(--warning-bg)]" : "border-[var(--line)] bg-[var(--surface-raised)]"}`}>
               <div className="flex items-center justify-between">
-                <span className="text-sm font-black">{row.name}</span>
-                {row.pending > 0 && (
+                <span className={`text-sm font-black ${row.unbound ? "text-[var(--danger-ink)]" : ""}`}>{row.name}</span>
+                {row.pending > 0 && !row.unbound && (
                   <button
                     type="button"
                     className="rounded-full bg-[var(--accent)] px-2.5 py-1 text-[10px] font-black uppercase text-[var(--accent-ink)]"
@@ -625,8 +634,14 @@ function ReviewTab({ board, onAction, setMessage, network }: { board: Board; onA
       <div className="panel space-y-3 p-5">
         <div className="text-xs font-black uppercase text-[var(--accent)]">代录站点报名</div>
         <ShiftSelect shifts={board.shifts.filter((item) => item.status === "scheduling")} value={shiftId} onChange={setShiftId} />
-        <input className={input} placeholder="加盟商名称" value={franchise} onChange={(e) => setFranchise(e.target.value)} />
-        <input className={input} placeholder="站点名称" value={station} onChange={(e) => setStation(e.target.value)} />
+        <select className={input} value={franchise} onChange={(e) => { setFranchise(e.target.value); setStation(""); }}>
+          <option value="">选择加盟商</option>
+          {network.franchises.map((f) => <option key={f.id} value={f.name}>{f.name}</option>)}
+        </select>
+        <select className={input} value={station} onChange={(e) => setStation(e.target.value)}>
+          <option value="">选择站点</option>
+          {network.stations.filter((st) => !franchise || st.franchise === franchise).map((st) => <option key={st.id} value={st.name}>{st.name}</option>)}
+        </select>
         <textarea
           className="min-h-40 w-full rounded-[8px] border border-[var(--line)] bg-[var(--surface)] p-3 font-mono text-xs leading-5 outline-none focus:border-[var(--accent)]"
           placeholder={"一行一个骑手：姓名,99骑手ID[,CPF]\n例如：\nCARLOS SILVA,650911813042436,24445328804"}
@@ -664,7 +679,15 @@ function ReviewTab({ board, onAction, setMessage, network }: { board: Board; onA
 
       <div className="panel p-5">
         <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-          <div className="text-xs font-black uppercase text-[var(--accent)]">待审核队列（{pending.length}）</div>
+          <label className="flex items-center gap-2 text-xs font-black uppercase text-[var(--accent)]">
+            <input
+              type="checkbox"
+              className="h-4 w-4 accent-[var(--accent)]"
+              checked={allPendingSelected}
+              onChange={(e) => setSelected(e.target.checked ? new Set(pending.map((s) => s.id)) : new Set())}
+            />
+            待审核队列（{pending.length}）· 全选
+          </label>
           <div className="flex gap-2">
             <button type="button" onClick={() => void review("approved")} disabled={selected.size === 0} className="inline-flex h-9 items-center gap-1 rounded-[8px] bg-[var(--accent)] px-4 text-xs font-black uppercase text-[var(--accent-ink)] disabled:opacity-40">
               <CheckCircle2 size={14} /> 通过（{selected.size}）

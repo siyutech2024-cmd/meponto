@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Building2, MapPin, Plus, RefreshCcw, Store, Trash2, UserRound } from "lucide-react";
 import { AppShell, Badge, PageTitle } from "../components/ui";
 import { readSession } from "../lib/session";
+import { useDialog } from "../components/dialog";
 import { mapsEmbedUrl, type Franchise } from "../lib/network";
 import type { Ponto } from "../lib/data";
 
@@ -12,6 +13,7 @@ type FranchiseRow = Franchise & { stationCount: number };
 const input = "h-11 w-full rounded-[8px] border border-[var(--line)] bg-[var(--surface)] px-3 text-sm font-bold outline-none focus:border-[var(--accent)]";
 
 export default function NetworkPage() {
+  const dialog = useDialog();
   const session = useMemo(() => readSession(), []);
   const headers = useMemo(() => ({ "Content-Type": "application/json", "x-vento-role": session?.role ?? "Super Admin" }), [session]);
   const franchiseScope = session?.portal === "franchise" ? session.franchise || session.organization : "";
@@ -78,7 +80,7 @@ export default function NetworkPage() {
                     type="button"
                     title="删除（需先迁移下属站点）"
                     onClick={async () => {
-                      if (!window.confirm(`删除加盟商「${franchise.name}」？`)) return;
+                      if (!(await dialog.confirm(`删除加盟商「${franchise.name}」？`, { tone: "danger", confirmText: "删除" }))) return;
                       const response = await fetch("/api/network", { method: "POST", headers, body: JSON.stringify({ action: "deleteFranchise", franchiseId: franchise.id }) });
                       const payload = await response.json().catch(() => ({}));
                       if (response.ok) {
@@ -88,7 +90,7 @@ export default function NetworkPage() {
                       }
                       // Bound stations: offer force-delete (stations become unbound).
                       if (response.status === 409 && payload.canForce) {
-                        if (window.confirm(`${payload.error}\n\n强制删除？其站点将变为「未绑定」，可稍后迁移到其他加盟商。`)) {
+                        if (await dialog.confirm("强制删除加盟商？", { message: `${payload.error}\n\n强制删除后其站点将变为「未绑定」，可稍后迁移到其他加盟商。`, tone: "danger", confirmText: "强制删除" })) {
                           const r2 = await post({ action: "deleteFranchise", franchiseId: franchise.id, force: true });
                           if (r2) setMessage({ tone: "ok", text: `「${franchise.name}」已删除，${r2.data?.unbound ?? 0} 个站点已解除绑定。` });
                         }
@@ -113,7 +115,7 @@ export default function NetworkPage() {
                     type="button"
                     className="tag"
                     onClick={async () => {
-                      const raw = window.prompt(`为「${franchise.name}」充值预存金额（负数=扣减）：`, "");
+                      const raw = await dialog.prompt("充值预存", { message: `为「${franchise.name}」充值预存金额（负数=扣减）`, placeholder: "如 500 或 -200" });
                       const amount = Number(raw);
                       if (!raw || !Number.isFinite(amount) || amount === 0) return;
                       const r = await post({ action: "depositFranchise", franchiseId: franchise.id, amount, note: "后台手工调整" });
@@ -229,7 +231,7 @@ export default function NetworkPage() {
                       type="button"
                       className="tag text-[var(--danger-ink)]"
                       onClick={async () => {
-                        if (!window.confirm(`驳回并删除站点「${station.name}」？`)) return;
+                        if (!(await dialog.confirm(`驳回并删除站点「${station.name}」？`, { tone: "danger", confirmText: "驳回" }))) return;
                         const r = await post({ action: "rejectStation", stationId: station.id });
                         if (r) setMessage({ tone: "ok", text: "已驳回。" });
                       }}
@@ -259,9 +261,9 @@ export default function NetworkPage() {
                       type="button"
                       className="tag"
                       onClick={async () => {
-                        const address = window.prompt("站点地址：", station.address ?? "");
+                        const address = await dialog.prompt("编辑站点地址", { defaultValue: station.address ?? "", placeholder: "Rua ... , São Paulo" });
                         if (address === null) return;
-                        const mapUrl = window.prompt("Google Maps 链接（可留空）:", station.mapUrl ?? "") ?? "";
+                        const mapUrl = (await dialog.prompt("Google Maps 链接（可留空）", { defaultValue: station.mapUrl ?? "" })) ?? "";
                         const r = await post({ action: "updateStation", stationId: station.id, address, mapUrl });
                         if (r) setMessage({ tone: "ok", text: "站点位置已更新。" });
                       }}
@@ -272,7 +274,7 @@ export default function NetworkPage() {
                       type="button"
                       className="tag"
                       onClick={async () => {
-                        const next = window.prompt(`迁移「${station.name}」到加盟商（现有：${franchises.map((f) => f.name).join(" / ")}）:`, station.franchise ?? "");
+                        const next = await dialog.prompt("迁移站点", { message: `迁移「${station.name}」到加盟商（现有：${franchises.map((f) => f.name).join(" / ")}）`, defaultValue: station.franchise ?? "" });
                         if (!next?.trim()) return;
                         const r = await post({ action: "updateStation", stationId: station.id, franchise: next.trim() });
                         if (r) setMessage({ tone: "ok", text: `已绑定到 ${next.trim()}。` });
