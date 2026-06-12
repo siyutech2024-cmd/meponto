@@ -31,6 +31,26 @@ export type RiderWithdrawal = {
 
 export const riderWithdrawals: RiderWithdrawal[] = [];
 
+/** A recorded settlement payment (HQ→franchise or franchise/HQ→rider). */
+export type WalletPayment = {
+  id: string;
+  target: "franchise" | "rider";
+  /** Franchise name, or rider name when target=rider. */
+  refName: string;
+  /** Owning franchise (used for grouping rider payments). */
+  franchise: string;
+  amount: number; // R$
+  period: "weekly" | "daily";
+  /** Settlement window this payment covers (YYYY-MM-DD). */
+  weekFrom: string;
+  weekTo: string;
+  note: string;
+  paidBy: string;
+  paidAt: string;
+};
+
+export const walletPayments: WalletPayment[] = [];
+
 /** Withdrawable = settled earnings up to YESTERDAY (T+1) minus holds/paid. */
 export function computeBalance(
   earnings: Array<{ rider99Id: string; settleAmount: number; date: string }>,
