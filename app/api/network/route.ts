@@ -7,6 +7,18 @@ const COLLECTIONS = ["franchises", "pontos"];
 const nowStamp = () => new Date().toISOString().slice(0, 16).replace("T", " ");
 
 export async function GET(request: Request) {
+  // Public marketing summary: franchise names + station counts only.
+  if (new URL(request.url).searchParams.get("public") === "1") {
+    await refreshCollectionsFromDatabase(COLLECTIONS);
+    const counts = new Map<string, number>();
+    for (const ponto of memory.pontos) {
+      if (ponto.status === "pending") continue;
+      counts.set(ponto.franchise ?? "São Paulo", (counts.get(ponto.franchise ?? "São Paulo") ?? 0) + 1);
+    }
+    const markers = [...counts.entries()].map(([name, count]) => ({ name, count })).sort((a, b) => b.count - a.count).slice(0, 6);
+    return jsonResponse({ data: { markers, totalStations: memory.pontos.length, totalFranchises: memory.franchises.length } });
+  }
+
   const forbidden = requirePermission(request, "view_dashboard");
   if (forbidden) return forbidden;
   await refreshCollectionsFromDatabase(COLLECTIONS);
