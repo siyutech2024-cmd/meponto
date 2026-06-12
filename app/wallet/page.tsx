@@ -159,7 +159,7 @@ export default function WalletAdminPage() {
         <button type="button" className="tag" onClick={() => shiftWeek(-7)}>← 上一周</button>
         <div className="text-sm font-black">
           {weekly ? `${md(weekly.week.from)} – ${md(weekly.week.to)}` : "—"}
-          <span className="ml-2 text-[11px] font-bold text-[var(--muted)]">自然周（周六起）</span>
+          <span className="ml-2 text-[11px] font-bold text-[var(--muted)]">自然周（周一至周日）</span>
         </div>
         <button type="button" className="tag" onClick={() => shiftWeek(7)}>下一周 →</button>
         <div className="ml-auto text-sm font-black text-[var(--accent)]">本周应结 {weekly ? money(weekly.grandTotal) : "—"}</div>
