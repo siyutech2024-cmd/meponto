@@ -7,10 +7,10 @@
 const LASTMOD = new Date().toISOString().slice(0, 10);
 
 const URLS: Array<{ loc: string; priority: string; changefreq: string }> = [
-  { loc: "https://meponto.com/", priority: "1.0", changefreq: "weekly" },
+  { loc: "https://www.meponto.com/", priority: "1.0", changefreq: "weekly" },
   { loc: "https://mall.meponto.com/", priority: "0.8", changefreq: "daily" },
   { loc: "https://app.meponto.com/rider-login", priority: "0.6", changefreq: "monthly" },
-  { loc: "https://meponto.com/privacy", priority: "0.3", changefreq: "yearly" },
+  { loc: "https://www.meponto.com/privacy", priority: "0.3", changefreq: "yearly" },
 ];
 
 export function GET() {
