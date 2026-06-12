@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { CheckCircle2, RefreshCcw, Send, Star, XCircle } from "lucide-react";
+import { RefreshCcw, Send, Star } from "lucide-react";
 import { AppShell, Badge, PageTitle } from "../../components/ui";
 import { readSession } from "../../lib/session";
 import type { DispatchShift, ShiftQuota, ShiftSignup } from "../../lib/dispatch";
@@ -54,7 +54,6 @@ export default function FranchiseDispatchPage() {
   const [myStations, setMyStations] = useState<string[]>([]);
   const [message, setMessage] = useState<{ tone: "ok" | "err" | "warn"; text: string } | null>(null);
   const [stationInputs, setStationInputs] = useState<Record<string, string>>({}); // `${shiftId}|${station}` -> quota
-  const [selected, setSelected] = useState<Set<string>>(new Set());
   const [activeShiftId, setActiveShiftId] = useState("");
   const [weekStart, setWeekStart] = useState(() => mondayOf());
 
@@ -236,7 +235,7 @@ export default function FranchiseDispatchPage() {
           onError={(text) => { setMessage({ tone: "err", text }); void load(); }}
         />
         <div className="panel p-4">
-          <div className="mb-3 text-xs font-black uppercase text-[var(--accent)]">待审核报名（{pending.length}）· 以站点为准</div>
+          <div className="mb-3 text-xs font-black uppercase text-[var(--accent)]">已提报 · 待总部审核（{pending.length}）</div>
           {(() => {
             const stations = [...new Set(board.signups.map((x) => x.station))];
             const rows = stations.map((name) => ({
@@ -250,19 +249,7 @@ export default function FranchiseDispatchPage() {
                   <div key={row.name} className={`flex items-center justify-between rounded-[8px] border px-3 py-2 text-[12px] font-bold ${row.pending > 0 ? "border-[var(--warning)] bg-[var(--warning-bg)]" : "border-[var(--line)] bg-[var(--surface-raised)]"}`}>
                     <span className="font-black">{row.name}</span>
                     <span className="flex items-center gap-2">
-                      待审 {row.pending} / {row.total}
-                      {row.pending > 0 && (
-                        <button
-                          type="button"
-                          className="rounded-full bg-[var(--accent)] px-2 py-0.5 text-[10px] font-black uppercase text-[var(--accent-ink)]"
-                          onClick={async () => {
-                            const result = await post({ action: "nudge", scope: "station", name: row.name });
-                            if (result) setMessage({ tone: "ok", text: `已催办站点 ${row.name}。` });
-                          }}
-                        >
-                          催审核
-                        </button>
-                      )}
+                      待总部审核 {row.pending} / {row.total}
                     </span>
                   </div>
                 ))}
@@ -277,59 +264,20 @@ export default function FranchiseDispatchPage() {
                 {pending.map((signup) => {
                   const shift = board.shifts.find((item) => item.id === signup.shiftId);
                   return (
-                    <label key={signup.id} className="flex cursor-pointer items-center gap-2 rounded-[8px] border border-[var(--line)] bg-[var(--surface-raised)] p-2">
-                      <input
-                        type="checkbox"
-                        checked={selected.has(signup.id)}
-                        onChange={(e) => {
-                          const next = new Set(selected);
-                          if (e.target.checked) next.add(signup.id);
-                          else next.delete(signup.id);
-                          setSelected(next);
-                        }}
-                      />
+                    <div key={signup.id} className="flex items-center gap-2 rounded-[8px] border border-[var(--line)] bg-[var(--surface-raised)] p-2">
                       <div className="min-w-0 flex-1">
                         <div className="truncate text-sm font-black">{signup.riderName || signup.rider99Id}</div>
                         <div className="truncate text-[11px] font-bold text-[var(--muted)]">
                           {signup.station} ｜ {shift ? `${shift.date} ${shift.timeRange}` : signup.shiftId} ｜ 99ID {signup.rider99Id}
                         </div>
                       </div>
-                    </label>
+                      <Badge value="待总部审核" />
+                    </div>
                   );
                 })}
               </div>
-              <div className="mt-3 flex gap-2">
-                <button
-                  type="button"
-                  disabled={selected.size === 0}
-                  onClick={async () => {
-                    const result = await post({ action: "review", signupIds: [...selected], status: "approved" });
-                    if (result) {
-                      setMessage({ tone: "ok", text: `已通过 ${selected.size} 条报名。` });
-                      setSelected(new Set());
-                    }
-                  }}
-                  className="inline-flex h-10 flex-1 items-center justify-center gap-1 rounded-[8px] bg-[var(--accent)] text-xs font-black uppercase text-[var(--accent-ink)] disabled:opacity-40"
-                >
-                  <CheckCircle2 size={14} /> 批量通过
-                </button>
-                <button
-                  type="button"
-                  disabled={selected.size === 0}
-                  onClick={async () => {
-                    const result = await post({ action: "review", signupIds: [...selected], status: "rejected" });
-                    if (result) {
-                      setMessage({ tone: "ok", text: `已驳回 ${selected.size} 条报名。` });
-                      setSelected(new Set());
-                    }
-                  }}
-                  className="inline-flex h-10 flex-1 items-center justify-center gap-1 rounded-[8px] border border-[var(--line)] text-xs font-black uppercase text-[var(--danger-ink)] disabled:opacity-40"
-                >
-                  <XCircle size={14} /> 批量驳回
-                </button>
-              </div>
               <div className="mt-2 flex items-center gap-1 text-[11px] font-bold text-[var(--muted)]">
-                <Send size={12} /> 审核通过后由总部运营统一填报 Eastwind。
+                <Send size={12} /> 提报后直达总部，由总部统一审核并填报 Eastwind。
               </div>
             </>
           )}
