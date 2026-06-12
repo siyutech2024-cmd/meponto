@@ -472,12 +472,18 @@ async function handlePost(request: Request) {
     const records = Array.isArray((body as { records?: Array<Record<string, unknown>> }).records) ? (body as { records: Array<Record<string, unknown>> }).records.slice(0, 1000) : [];
     if (records.length === 0) return jsonResponse({ error: "records are required" }, { status: 400 });
     const digits = (value: unknown) => String(value ?? "").replace(/\D/g, "");
+    // CPF → 99ID bridge from both T+1 tables (covers riders whose profile CPF is empty).
+    const cpfTo99 = new Map<string, string>();
+    for (const row of [...memory.riderDailyKpis, ...memory.riderDailyEarnings]) {
+      const c = digits(row.cpf);
+      if (c && row.rider99Id) cpfTo99.set(c, row.rider99Id);
+    }
     let matched = 0;
     const unmatched: string[] = [];
     for (const raw of records) {
       const pix = String(raw.pix ?? "").trim();
       if (!pix) continue;
-      const id99 = digits(raw.rider99Id);
+      const id99 = digits(raw.rider99Id) || cpfTo99.get(digits(raw.cpf)) || "";
       const cpf = digits(raw.cpf);
       const name = String(raw.riderName ?? "").trim().toLowerCase();
       const index = memory.riders.findIndex(
@@ -490,7 +496,9 @@ async function handlePost(request: Request) {
         unmatched.push(String(raw.riderName ?? raw.rider99Id ?? raw.cpf ?? "?"));
         continue;
       }
-      memory.riders[index] = { ...memory.riders[index], pix };
+      const patch: Record<string, string> = { pix };
+      if (cpf && !digits(memory.riders[index].cpf)) patch.cpf = String(raw.cpf ?? "").trim();
+      memory.riders[index] = { ...memory.riders[index], ...patch };
       matched += 1;
     }
     appendServerAudit({ actor, action: "RIDER_PIX_IMPORTED", entity: "Rider", entityId: "all", detail: `PIX import: ${matched} matched, ${unmatched.length} unmatched.`, risk: "Low" });

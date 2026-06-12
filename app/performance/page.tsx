@@ -408,12 +408,19 @@ function EarningsTab({ earnings, scopeFranchise, scopeStation, date, headers }: 
     return <div className="panel p-6 text-sm font-bold text-[var(--muted)]">还没有收入数据。请到「导入报表」上传 Eastwind「Ganhos do entregador parceiro」表。</div>;
   }
   const total = earnings.total;
+  const brokenSettle = total.settleAmount === 0 && total.total > 0;
   const groups: Array<{ title: string; rows: EarningGroupRow[]; showFranchise: boolean }> = [];
   if (!scopeFranchise && !scopeStation) groups.push({ title: "按加盟商汇总（结算口径）", rows: earnings.franchises, showFranchise: false });
   if (!scopeStation) groups.push({ title: "按站点汇总", rows: earnings.stations, showFranchise: !scopeFranchise });
 
   return (
     <div className="space-y-4">
+      {brokenSettle && (
+        <div className="rounded-[8px] border border-[var(--warning)] bg-[var(--warning-bg)] px-4 py-3 text-sm font-black text-[var(--warning-ink)]">
+          该日「金额 / 完单」两列在导入时未被识别（早期表头匹配缺陷），结算金额与完单入账为 0。
+          修复：到「导入报表」→ 选择该日期 → 点「清除该日数据」→ 重新上传当天的收入表（新版已兼容表头变体，金额列若仍无法识别会直接报出实际表头）。
+        </div>
+      )}
       <div className="grid gap-3 md:grid-cols-6">
         {[
           ["骑手数", String(total.riders)],
@@ -659,6 +666,7 @@ function ImportTab({ headers, onDone, onError }: { headers: Record<string, strin
     return d.toISOString().slice(0, 10);
   });
   const [busy, setBusy] = useState(false);
+  const [pixText, setPixText] = useState("");
   const [fileLog, setFileLog] = useState<string[]>([]);
 
   async function importFiles(files: FileList | null) {
@@ -758,6 +766,47 @@ function ImportTab({ headers, onDone, onError }: { headers: Record<string, strin
           {busy ? "解析导入中..." : "点击选择 .xlsx 文件（可多选）"}
           <input type="file" accept=".xlsx" multiple className="hidden" disabled={busy} onChange={(e) => void importFiles(e.target.files)} />
         </label>
+        <div className="space-y-2 border-t border-[var(--line)] pt-3">
+          <div className="text-xs font-black uppercase text-[var(--accent)]">粘贴 CPF + PIX（每行一条，自动匹配骑手并更新）</div>
+          <textarea
+            value={pixText}
+            onChange={(e) => setPixText(e.target.value)}
+            placeholder={"格式：CPF PIX（空格/逗号/Tab 分隔均可）\n例如：\n244.453.288-04 claylton589@gmail.com\n16335625490,11947517910"}
+            className="min-h-28 w-full rounded-[8px] border border-[var(--line)] bg-[var(--surface)] p-3 font-mono text-xs leading-5 outline-none focus:border-[var(--accent)]"
+          />
+          <button
+            type="button"
+            disabled={busy || !pixText.trim()}
+            className="inline-flex h-10 items-center rounded-[8px] bg-[var(--accent)] px-4 text-xs font-black uppercase text-[var(--accent-ink)] disabled:opacity-50"
+            onClick={async () => {
+              const lines = pixText.split("\n").map((line) => line.trim()).filter(Boolean);
+              const records = lines
+                .map((line) => {
+                  const match = line.match(/(\d{3}[.\s]?\d{3}[.\s]?\d{3}[-.\s]?\d{2})/);
+                  const cpf = match ? match[1] : "";
+                  const pix = line.replace(match?.[0] ?? "", "").replace(/^[\s,;|\t-]+|[\s,;|\t]+$/g, "").trim();
+                  return { cpf, pix };
+                })
+                .filter((record) => record.cpf && record.pix);
+              if (records.length === 0) {
+                onError("没有可解析的行——每行需要一个 CPF（11位）和一个 PIX，用空格或逗号隔开。");
+                return;
+              }
+              setBusy(true);
+              const response = await fetch("/api/performance", { method: "POST", headers, body: JSON.stringify({ action: "importPixRecords", records }) });
+              const payload = await response.json().catch(() => ({}));
+              setBusy(false);
+              if (!response.ok) {
+                onError(payload.error ?? "PIX 更新失败");
+                return;
+              }
+              setPixText("");
+              onDone(`PIX 已更新 ${payload.data.matched} 名骑手${payload.data.unmatched.length > 0 ? `；未匹配 ${payload.data.unmatched.length} 条：${payload.data.unmatched.slice(0, 5).join("、")}` : ""}。`);
+            }}
+          >
+            解析并更新 PIX
+          </button>
+        </div>
         <div className="flex flex-wrap items-center gap-2 border-t border-[var(--line)] pt-3">
           <button
             type="button"
