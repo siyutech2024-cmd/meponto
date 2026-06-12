@@ -14,14 +14,22 @@ export default function FranchiseDispatchPage() {
   const session = useMemo(() => readSession(), []);
   // SERVER session is the source of truth for identity — localStorage can be
   // stale after account switches and would query the wrong franchise.
-  const [franchise, setFranchise] = useState(session?.franchise || session?.organization || "");
+  const [franchise, setFranchise] = useState(session?.franchise || "");
+  // HQ sessions have no franchise binding → supervisor mode with a picker.
+  const [hqMode, setHqMode] = useState(false);
+  const [allFranchises, setAllFranchises] = useState<string[]>([]);
   useEffect(() => {
     void fetch("/api/auth/session", { cache: "no-store" })
       .then((response) => (response.ok ? response.json() : null))
       .then((payload) => {
         const user = payload?.data?.user ?? payload?.user;
-        const serverFranchise = user?.franchise || user?.organization;
-        if (serverFranchise) setFranchise(serverFranchise);
+        if (user?.franchise) {
+          setFranchise(user.franchise);
+        } else if (user?.portal === "franchise" && user?.organization) {
+          setFranchise(user.organization);
+        } else {
+          setHqMode(true);
+        }
       })
       .catch(() => undefined);
   }, []);
@@ -44,14 +52,16 @@ export default function FranchiseDispatchPage() {
     void load();
   }, [load]);
 
-  // Real station list of this franchise (quota split targets).
+  // Network: franchise list (HQ picker default) + this franchise's stations.
   useEffect(() => {
-    if (!franchise) return;
     void fetch("/api/network", { headers, cache: "no-store" })
       .then((response) => (response.ok ? response.json() : null))
       .then((payload) => {
+        const franchises = (payload?.data?.franchises ?? []) as Array<{ name: string }>;
         const stations = (payload?.data?.stations ?? []) as Array<{ name: string; franchise?: string }>;
-        setMyStations(stations.filter((item) => item.franchise === franchise).map((item) => item.name));
+        setAllFranchises(franchises.map((item) => item.name));
+        setFranchise((current) => current || franchises[0]?.name || "");
+        if (franchise) setMyStations(stations.filter((item) => item.franchise === franchise).map((item) => item.name));
       })
       .catch(() => undefined);
   }, [franchise, headers]);
@@ -83,8 +93,21 @@ export default function FranchiseDispatchPage() {
     <AppShell>
       <PageTitle
         title="排班配额与审核"
-        eyebrow={`加盟商工作台 · ${franchise}`}
-        action={<button type="button" onClick={() => void load()} className="tag inline-flex items-center gap-1"><RefreshCcw size={13} /> 刷新</button>}
+        eyebrow={hqMode ? `总部督导视角 · ${franchise || "选择加盟商"}` : `加盟商工作台 · ${franchise}`}
+        action={
+          <div className="flex items-center gap-2">
+            {hqMode && (
+              <select
+                className="h-9 rounded-[8px] border border-[var(--line)] bg-[var(--surface-raised)] px-2 text-xs font-black text-[var(--text)] outline-none focus:border-[var(--accent)]"
+                value={franchise}
+                onChange={(e) => setFranchise(e.target.value)}
+              >
+                {allFranchises.map((name) => <option key={name} value={name}>{name}</option>)}
+              </select>
+            )}
+            <button type="button" onClick={() => void load()} className="tag inline-flex items-center gap-1"><RefreshCcw size={13} /> 刷新</button>
+          </div>
+        }
       />
 
       {message && (
