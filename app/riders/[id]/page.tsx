@@ -2,273 +2,293 @@
 
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { Eye, EyeOff } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
-import { AppShell, Badge, Button, DataTable, Field, GuardedButton, PageTitle } from "../../components/ui";
-import { type RiderStatus } from "../../lib/data";
-import { maskCpf, maskPix } from "../../lib/masking";
-import { can } from "../../lib/rbac";
-import { useVentoStore, type RiderUpdate } from "../../lib/store";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { ArrowLeft, Eye, EyeOff, Pencil, RefreshCcw } from "lucide-react";
+import { AppShell, Badge, PageTitle } from "../../components/ui";
+import { downloadCsv } from "../../lib/csv";
 
-type ActionKey = "profile" | "vehicle" | "leader" | "ponto";
+type RiderRow = {
+  id: string;
+  name: string;
+  cpf: string;
+  phone: string;
+  pix: string;
+  bairro: string;
+  ponto: string;
+  franchise?: string;
+  status: string;
+  ar: number;
+  joinDate: string;
+  ninetyNineId?: string;
+  pointsBalance: number;
+  totalOrders: number;
+  lastReportDate: string;
+  reportAr: number | null;
+  source: "profile" | "report";
+};
 
-const riderStatuses: RiderStatus[] = ["Active", "Night Shift", "Risk", "Inactive"];
+type DailyRow = { date: string; orders: number; onlineHours: number | null; ar: number | null; settleAmount: number };
+type Network = { franchises: Array<{ id: string; name: string }>; stations: Array<{ id: string; name: string; franchise?: string }> };
 
-function TextInput({ name, label, defaultValue }: { name: string; label: string; defaultValue: string }) {
+const HEADERS = { "Content-Type": "application/json" };
+const money = (v: number) => `R$ ${v.toFixed(2)}`;
+const input = "h-11 w-full rounded-[8px] border border-[var(--line)] bg-[var(--surface-raised)] px-3 text-sm font-bold text-[var(--text)] outline-none focus:border-[var(--accent)]";
+
+function Field({ label, value, mono }: { label: string; value: string | number; mono?: boolean }) {
   return (
-    <label className="block">
-      <span className="mb-2 block text-xs font-black uppercase text-[var(--muted)]">{label}</span>
-      <input name={name} required defaultValue={defaultValue} className="h-11 w-full rounded border border-[var(--line)] bg-[var(--surface-raised)] px-3 outline-none" />
-    </label>
-  );
-}
-
-function SelectInput({ name, label, defaultValue, options }: { name: string; label: string; defaultValue: string; options: string[] }) {
-  const values = options.includes(defaultValue) ? options : [defaultValue, ...options];
-
-  return (
-    <label className="block">
-      <span className="mb-2 block text-xs font-black uppercase text-[var(--muted)]">{label}</span>
-      <select name={name} defaultValue={defaultValue} className="h-11 w-full rounded border border-[var(--line)] bg-[var(--surface-raised)] px-3 outline-none">
-        {values.map((value) => (
-          <option key={value} value={value}>{value}</option>
-        ))}
-      </select>
-    </label>
-  );
-}
-
-function SensitiveField({
-  label,
-  value,
-  maskedValue,
-  revealed,
-}: {
-  label: string;
-  value: string;
-  maskedValue: string;
-  revealed: boolean;
-}) {
-  return (
-    <Field
-      label={label}
-      value={
-        <span className="font-mono tracking-normal">
-          {revealed ? value : maskedValue}
-        </span>
-      }
-    />
+    <div className="rounded-[8px] border border-[var(--line)] bg-[var(--surface-raised)] p-3">
+      <div className="text-[10px] font-black uppercase text-[var(--muted)]">{label}</div>
+      <div className={`mt-1 text-sm font-black ${mono ? "font-mono" : ""}`}>{value === "" || value === undefined ? "—" : value}</div>
+    </div>
   );
 }
 
 export default function RiderDetailPage() {
   const params = useParams<{ id: string }>();
   const id = Array.isArray(params.id) ? params.id[0] : params.id;
-  const riders = useVentoStore((state) => state.riders);
-  const incidents = useVentoStore((state) => state.incidents);
-  const pontos = useVentoStore((state) => state.pontos);
-  const leaders = useVentoStore((state) => state.leaders);
-  const updateRider = useVentoStore((state) => state.updateRider);
-  const currentRole = useVentoStore((state) => state.currentRole);
-  const rider = riders.find((item) => item.id === id);
-  const [activeAction, setActiveAction] = useState<ActionKey | null>(null);
-  const [sensitiveRevealed, setSensitiveRevealed] = useState(false);
-  const actionFormRef = useRef<HTMLFormElement>(null);
-  const canRevealSensitive = can(currentRole, "manage_riders") || can(currentRole, "view_finance");
-  const showSensitive = canRevealSensitive && sensitiveRevealed;
 
-  const history = useMemo(() => (rider ? incidents.filter((incident) => incident.rider === rider.name) : []), [incidents, rider]);
-  const leaderNames = leaders.map((leader) => leader.name);
-  const pontoNames = pontos.map((ponto) => ponto.name);
+  const [rider, setRider] = useState<RiderRow | null>(null);
+  const [daily, setDaily] = useState<DailyRow[]>([]);
+  const [network, setNetwork] = useState<Network>({ franchises: [], stations: [] });
+  const [revealed, setRevealed] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const [form, setForm] = useState({ name: "", cpf: "", phone: "", pix: "", bairro: "", status: "Active" });
+  const [assign, setAssign] = useState({ franchise: "", ponto: "" });
+  const [message, setMessage] = useState<{ tone: "ok" | "err"; text: string } | null>(null);
+  const [loaded, setLoaded] = useState(false);
+
+  const load = useCallback(async () => {
+    const reveal = revealed ? "&reveal=1" : "";
+    const [ridersResponse, networkResponse] = await Promise.all([
+      fetch(`/api/riders?detail=1${reveal}`, { headers: revealed ? { ...HEADERS, "x-vento-reveal": "1" } : HEADERS, cache: "no-store" }),
+      fetch("/api/network", { headers: HEADERS, cache: "no-store" }),
+    ]);
+    if (ridersResponse.ok) {
+      const all = (await ridersResponse.json()).data as RiderRow[];
+      const found = all.find((item) => item.id === id) ?? null;
+      setRider(found);
+      if (found) {
+        setForm({ name: found.name, cpf: found.cpf, phone: found.phone, pix: found.pix, bairro: found.bairro ?? "", status: found.status });
+        setAssign({ franchise: found.franchise && found.franchise !== "Unassigned" ? found.franchise : "", ponto: found.ponto !== "Unassigned" ? found.ponto : "" });
+      }
+    }
+    if (networkResponse.ok) {
+      const payload = (await networkResponse.json()).data;
+      setNetwork({ franchises: payload.franchises, stations: payload.stations });
+    }
+    setLoaded(true);
+  }, [id, revealed]);
 
   useEffect(() => {
-    setSensitiveRevealed(false);
-  }, [canRevealSensitive, id]);
+    void load();
+  }, [load]);
 
-  function submitUpdate(patchFromForm: (form: FormData) => RiderUpdate, action: string) {
-    if (!rider || !actionFormRef.current) return;
+  // Last 14 days of settle rows for this rider (from the statement endpoint).
+  useEffect(() => {
+    if (!rider?.ninetyNineId) return;
+    const to = new Date().toISOString().slice(0, 10);
+    const from = new Date(Date.now() - 13 * 86400000).toISOString().slice(0, 10);
+    void fetch(`/api/wallet?statement=all&from=${from}&to=${to}`, { headers: HEADERS, cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((payload) => {
+        if (!payload) return;
+        const rows = (payload.data.rows as Array<DailyRow & { rider99Id: string }>).filter((row) => row.rider99Id === rider.ninetyNineId);
+        setDaily(rows.sort((a, b) => b.date.localeCompare(a.date)));
+      });
+  }, [rider?.ninetyNineId]);
 
-    updateRider(rider.id, patchFromForm(new FormData(actionFormRef.current)), action);
-    setActiveAction(null);
+  async function post(body: Record<string, unknown>, okText: string) {
+    const response = await fetch("/api/riders", { method: "POST", headers: HEADERS, body: JSON.stringify(body) });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      setMessage({ tone: "err", text: payload.error ?? `操作失败 (${response.status})` });
+      return false;
+    }
+    setMessage({ tone: "ok", text: okText });
+    void load();
+    return true;
   }
 
+  const stationOptions = useMemo(
+    () => network.stations.filter((s) => !assign.franchise || s.franchise === assign.franchise),
+    [network.stations, assign.franchise],
+  );
+
+  if (loaded && !rider) {
+    return (
+      <AppShell>
+        <PageTitle title="骑手不存在" eyebrow="骑手详情" action={<Link className="tag" href="/riders">返回骑手列表</Link>} />
+        <div className="panel p-4 text-sm font-bold text-[var(--muted)]">找不到该骑手档案，可能已被删除。</div>
+      </AppShell>
+    );
+  }
   if (!rider) {
     return (
       <AppShell>
-        <PageTitle title="Rider not found" eyebrow="Rider detail" action={<Link className="tag" href="/riders">Back to Riders</Link>} />
-        <div className="panel p-4 text-sm text-[var(--muted)]">This rider is not available in the current workspace data.</div>
+        <div className="panel p-6 text-sm font-bold text-[var(--muted)]">加载中...</div>
       </AppShell>
     );
   }
 
+  const totalSettle = daily.reduce((sum, row) => sum + row.settleAmount, 0);
+
   return (
     <AppShell>
-      <PageTitle title={rider.name} eyebrow="Rider detail" action={<Link className="tag" href="/riders">Back to Riders</Link>} />
-      <section className="mb-4 flex flex-wrap gap-2">
-        <GuardedButton permission="manage_riders" onClick={() => setActiveAction(activeAction === "profile" ? null : "profile")}>Edit Profile</GuardedButton>
-        <GuardedButton permission="manage_riders" onClick={() => setActiveAction(activeAction === "vehicle" ? null : "vehicle")}>Update Vehicle</GuardedButton>
-        <GuardedButton permission="manage_riders" onClick={() => setActiveAction(activeAction === "leader" ? null : "leader")}>Change Leader</GuardedButton>
-        <GuardedButton permission="manage_riders" onClick={() => setActiveAction(activeAction === "ponto" ? null : "ponto")}>Move Ponto</GuardedButton>
-      </section>
+      <PageTitle
+        title={rider.name}
+        eyebrow={`骑手详情 · 99ID ${rider.ninetyNineId ?? "—"}`}
+        action={
+          <div className="flex gap-2">
+            <Link className="tag inline-flex items-center gap-1" href="/riders"><ArrowLeft size={13} /> 返回列表</Link>
+            <button type="button" className="tag inline-flex items-center gap-1" onClick={() => void load()}><RefreshCcw size={13} /> 刷新</button>
+          </div>
+        }
+      />
 
-      {activeAction ? (
-        <section className="panel mb-4 p-4">
-          <h2 className="mb-3 text-lg font-black">
-            {activeAction === "profile" ? "Edit Profile" : activeAction === "vehicle" ? "Update Vehicle" : activeAction === "leader" ? "Change Leader" : "Move Ponto"}
-          </h2>
-          <form ref={actionFormRef} className="grid gap-4" onSubmit={(event) => event.preventDefault()}>
-            {activeAction === "profile" ? (
-              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                <TextInput name="name" label="Name" defaultValue={rider.name} />
-                <TextInput name="cpf" label="CPF" defaultValue={rider.cpf} />
-                <TextInput name="phone" label="Phone" defaultValue={rider.phone} />
-                <TextInput name="pix" label="PIX" defaultValue={rider.pix} />
-                <TextInput name="bairro" label="Bairro" defaultValue={rider.bairro} />
-                <SelectInput name="status" label="Status" defaultValue={rider.status} options={riderStatuses} />
-              </div>
-            ) : null}
-
-            {activeAction === "vehicle" ? (
-              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-                <TextInput name="vehicleType" label="Vehicle Type" defaultValue={rider.vehicleType} />
-                <TextInput name="brand" label="Brand" defaultValue={rider.brand} />
-                <TextInput name="model" label="Model" defaultValue={rider.model} />
-                <SelectInput name="rentalStatus" label="Rental Status" defaultValue={rider.rentalStatus} options={["Owned", "Rental", "Unknown"]} />
-                <label className="flex min-h-11 items-center gap-3 rounded border border-[var(--line)] bg-[var(--surface-raised)] px-3 sm:col-span-2 lg:col-span-4">
-                  <input name="isMottu" type="checkbox" defaultChecked={rider.isMottu} className="h-4 w-4 accent-[var(--accent)]" />
-                  <span className="text-sm font-black">Mottu vehicle</span>
-                </label>
-              </div>
-            ) : null}
-
-            {activeAction === "leader" ? (
-              <div className="max-w-md">
-                <SelectInput name="leader" label="Leader" defaultValue={rider.leader} options={leaderNames} />
-              </div>
-            ) : null}
-
-            {activeAction === "ponto" ? (
-              <div className="grid gap-4 sm:grid-cols-2">
-                <SelectInput name="ponto" label="Ponto" defaultValue={rider.ponto} options={pontoNames} />
-                <SelectInput name="leader" label="Leader" defaultValue={rider.leader} options={leaderNames} />
-              </div>
-            ) : null}
-
-            <div className="flex flex-wrap gap-2">
-              <Button
-                type="button"
-                onClick={() => {
-                  if (activeAction === "profile") {
-                    submitUpdate(
-                      (form) => ({
-                        name: String(form.get("name")),
-                        cpf: String(form.get("cpf")),
-                        phone: String(form.get("phone")),
-                        pix: String(form.get("pix")),
-                        bairro: String(form.get("bairro")),
-                        status: String(form.get("status")) as RiderStatus,
-                      }),
-                      "UPDATE_RIDER_PROFILE",
-                    );
-                  } else if (activeAction === "vehicle") {
-                    submitUpdate(
-                      (form) => ({
-                        vehicleType: String(form.get("vehicleType")),
-                        brand: String(form.get("brand")),
-                        model: String(form.get("model")),
-                        rentalStatus: String(form.get("rentalStatus")),
-                        isMottu: form.get("isMottu") === "on",
-                      }),
-                      "UPDATE_RIDER_VEHICLE",
-                    );
-                  } else if (activeAction === "leader") {
-                    submitUpdate((form) => ({ leader: String(form.get("leader")) }), "CHANGE_RIDER_LEADER");
-                  } else {
-                    submitUpdate(
-                      (form) => {
-                        const pontoName = String(form.get("ponto"));
-                        const ponto = pontos.find((item) => item.name === pontoName);
-                        return {
-                          ponto: pontoName,
-                          bairro: ponto?.bairro ?? rider.bairro,
-                          leader: String(form.get("leader")),
-                          chatRoom: ponto ? `MePonto ${ponto.bairro}` : rider.chatRoom,
-                        };
-                      },
-                      "MOVE_RIDER_PONTO",
-                    );
-                  }
-                }}
-              >
-                {activeAction === "profile" ? "Save Profile" : activeAction === "vehicle" ? "Save Vehicle" : activeAction === "leader" ? "Save Leader" : "Save Move"}
-              </Button>
-              <Button type="button" onClick={() => setActiveAction(null)}>Cancel</Button>
-            </div>
-          </form>
-        </section>
-      ) : null}
+      {message && (
+        <div className={`mb-4 rounded-[8px] border px-4 py-3 text-sm font-black ${message.tone === "ok" ? "border-[var(--ok)] bg-[var(--ok-bg)] text-[var(--ok-ink)]" : "border-[var(--danger)] bg-[var(--danger-bg)] text-[var(--danger-ink)]"}`}>
+          {message.text}
+        </div>
+      )}
 
       <section className="grid gap-4 lg:grid-cols-2">
+        {/* 基本信息 + 编辑 */}
         <div className="panel p-4">
-          <div className="mb-3 flex items-center justify-between gap-3">
-            <h2 className="text-lg font-black">Basic Info</h2>
-            <button
-              type="button"
-              className="tag inline-flex items-center gap-2 disabled:cursor-not-allowed disabled:opacity-40"
-              disabled={!canRevealSensitive}
-              title={canRevealSensitive ? undefined : `${currentRole} cannot reveal CPF or PIX`}
-              onClick={() => setSensitiveRevealed((revealed) => !revealed)}
-            >
-              {showSensitive ? <EyeOff size={15} /> : <Eye size={15} />}
-              {showSensitive ? "Hide" : "Reveal"}
-            </button>
+          <div className="mb-3 flex items-center justify-between gap-2">
+            <h2 className="text-lg font-black">基本信息</h2>
+            <div className="flex gap-2">
+              <button type="button" className="tag inline-flex items-center gap-1" onClick={() => setRevealed((v) => !v)}>
+                {revealed ? <EyeOff size={14} /> : <Eye size={14} />} {revealed ? "隐藏" : "显示敏感"}
+              </button>
+              <button type="button" className="tag inline-flex items-center gap-1" onClick={() => setEditing((v) => !v)}>
+                <Pencil size={13} /> {editing ? "取消编辑" : "编辑资料"}
+              </button>
+            </div>
           </div>
-          <div className="grid gap-3 sm:grid-cols-2">
-            <SensitiveField label="CPF" value={rider.cpf} maskedValue={maskCpf(rider.cpf)} revealed={showSensitive} />
-            <SensitiveField label="PIX" value={rider.pix} maskedValue={maskPix(rider.pix)} revealed={showSensitive} />
-            <Field label="Phone" value={rider.phone} />
-            <Field label="Bairro" value={rider.bairro} />
+          {editing ? (
+            <div className="grid gap-2 sm:grid-cols-2">
+              <input className={input} placeholder="姓名" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
+              <input className={input} placeholder="CPF" value={form.cpf} onChange={(e) => setForm({ ...form, cpf: e.target.value })} />
+              <input className={input} placeholder="电话" value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} />
+              <input className={input} placeholder="PIX" value={form.pix} onChange={(e) => setForm({ ...form, pix: e.target.value })} />
+              <input className={input} placeholder="街区" value={form.bairro} onChange={(e) => setForm({ ...form, bairro: e.target.value })} />
+              <select className={input} value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value })}>
+                {["Active", "Night Shift", "Risk", "Inactive"].map((s) => <option key={s} value={s}>{s}</option>)}
+              </select>
+              <button
+                type="button"
+                className="inline-flex h-11 items-center justify-center rounded-[8px] bg-[var(--accent)] px-4 text-sm font-black uppercase text-[var(--accent-ink)] sm:col-span-2"
+                onClick={async () => {
+                  const ok = await post({ action: "updateProfile", riderId: rider.id, ...form }, "资料已保存。");
+                  if (ok) setEditing(false);
+                }}
+              >
+                保存资料
+              </button>
+            </div>
+          ) : (
+            <div className="grid gap-3 sm:grid-cols-2">
+              <Field label="CPF" value={rider.cpf || "—"} mono />
+              <Field label="PIX" value={rider.pix || "—"} mono />
+              <Field label="电话" value={rider.phone || "—"} mono />
+              <Field label="街区" value={rider.bairro || "—"} />
+              <Field label="注册日期" value={rider.joinDate || "—"} />
+              <div className="rounded-[8px] border border-[var(--line)] bg-[var(--surface-raised)] p-3">
+                <div className="text-[10px] font-black uppercase text-[var(--muted)]">状态</div>
+                <div className="mt-1"><Badge value={rider.status} /></div>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* 归属与调整 */}
+        <div className="panel p-4">
+          <h2 className="mb-3 text-lg font-black">归属</h2>
+          <div className="grid gap-2 sm:grid-cols-2">
+            <label className="block">
+              <span className="mb-1 block text-[10px] font-black uppercase text-[var(--muted)]">加盟商</span>
+              <select className={input} value={assign.franchise} onChange={(e) => setAssign({ franchise: e.target.value, ponto: "" })}>
+                <option value="">未绑定</option>
+                {network.franchises.map((f) => <option key={f.id} value={f.name}>{f.name}</option>)}
+              </select>
+            </label>
+            <label className="block">
+              <span className="mb-1 block text-[10px] font-black uppercase text-[var(--muted)]">站点</span>
+              <select className={input} value={assign.ponto} onChange={(e) => setAssign({ ...assign, ponto: e.target.value })}>
+                <option value="">未绑定</option>
+                {stationOptions.map((s) => <option key={s.id} value={s.name}>{s.name}</option>)}
+              </select>
+            </label>
+          </div>
+          <button
+            type="button"
+            className="mt-3 inline-flex h-11 w-full items-center justify-center rounded-[8px] bg-[var(--accent)] px-4 text-sm font-black uppercase text-[var(--accent-ink)]"
+            onClick={() => void post({ action: "assign", riderId: rider.id, franchise: assign.franchise, ponto: assign.ponto }, "归属已更新。")}
+          >
+            保存归属
+          </button>
+          <div className="mt-4 grid gap-3 sm:grid-cols-2">
+            <Field label="积分余额" value={`${rider.pointsBalance} pts`} />
+            <Field label="邀请人" value={rider.source === "report" ? "Eastwind 日报" : "—"} />
           </div>
         </div>
-        <div className="panel p-4">
-          <h2 className="mb-3 text-lg font-black">Vehicle</h2>
-          <div className="grid gap-3 sm:grid-cols-2">
-            <Field label="Vehicle Type" value={rider.vehicleType} />
-            <Field label="Brand / Model" value={`${rider.brand} ${rider.model}`} />
-            <Field label="Rental Status" value={rider.rentalStatus} />
-            <Field label="Is Mottu" value={rider.isMottu ? "Yes" : "No"} />
-          </div>
-        </div>
-        <div className="panel p-4">
-          <h2 className="mb-3 text-lg font-black">Performance</h2>
-          <div className="grid gap-3 sm:grid-cols-2">
-            <Field label="AR" value={`${rider.ar}%`} />
-            <Field label="Online Hours" value={rider.onlineHours} />
-            <Field label="Night Shift Count" value={rider.nightShiftCount} />
-            <Field label="Incidents" value={rider.incidentCount} />
-          </div>
-        </div>
-        <div className="panel p-4">
-          <h2 className="mb-3 text-lg font-black">Social Network</h2>
-          <div className="grid gap-3 sm:grid-cols-2">
-            <Field label="Current Ponto" value={rider.ponto} />
-            <Field label="Current Leader" value={rider.leader} />
-            <Field label="Invited By" value={rider.invitedBy} />
-            <Field label="In-App Chat Room" value={rider.chatRoom} />
+
+        {/* 表现 */}
+        <div className="panel p-4 lg:col-span-2">
+          <h2 className="mb-3 text-lg font-black">表现</h2>
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            <Field label="AR（最近上报）" value={rider.reportAr !== null ? `${rider.reportAr}%` : "—"} />
+            <Field label="累计完单" value={rider.totalOrders} />
+            <Field label="最近上报日期" value={rider.lastReportDate || "—"} />
+            <Field label="近14天结算" value={money(totalSettle)} />
           </div>
         </div>
       </section>
-      <section className="mt-4">
-        <DataTable
-          headers={["Date", "Type", "Severity", "Status", "Action"]}
-          rows={history.map((incident) => [
-            incident.createdAt,
-            "Accident / Support",
-            <Badge key="severity" value={incident.severity} />,
-            <Badge key="status" value={incident.status} />,
-            <Link key="action" className="tag" href={`/incidents/${incident.id}`}>View Incident</Link>,
-          ])}
-        />
+
+      {/* 近14天逐日明细 */}
+      <section className="panel mt-4 p-4">
+        <div className="mb-3 flex items-center justify-between gap-2">
+          <h2 className="text-lg font-black">近 14 天逐日明细</h2>
+          {daily.length > 0 && (
+            <button
+              type="button"
+              className="tag"
+              onClick={() =>
+                downloadCsv(
+                  `rider-${rider.ninetyNineId}-daily`,
+                  ["日期", "完单", "在线时长", "AR%", "结算金额"],
+                  daily.map((row) => [row.date, String(row.orders), row.onlineHours ?? "", row.ar ?? "", row.settleAmount.toFixed(2)]),
+                )
+              }
+            >
+              导出 CSV
+            </button>
+          )}
+        </div>
+        {daily.length === 0 ? (
+          <div className="text-sm font-bold text-[var(--muted)]">近 14 天没有日报数据{rider.ninetyNineId ? "" : "（该骑手未绑定 99ID）"}。</div>
+        ) : (
+          <div className="max-h-[420px] overflow-auto">
+            <table className="w-full text-left text-sm">
+              <thead>
+                <tr className="text-[10px] font-black uppercase text-[var(--muted)]">
+                  <th className="pb-2">日期</th><th className="pb-2 text-right">完单</th><th className="pb-2 text-right">在线时长</th><th className="pb-2 text-right">AR</th><th className="pb-2 text-right">结算金额</th>
+                </tr>
+              </thead>
+              <tbody>
+                {daily.map((row) => (
+                  <tr key={row.date} className="border-t border-[var(--line)]">
+                    <td className="py-2 font-mono font-bold">{row.date}</td>
+                    <td className="py-2 text-right font-black">{row.orders}</td>
+                    <td className="py-2 text-right">{row.onlineHours ?? "—"}</td>
+                    <td className="py-2 text-right">{row.ar !== null ? `${row.ar}%` : "—"}</td>
+                    <td className="py-2 text-right font-black">{money(row.settleAmount)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </section>
     </AppShell>
   );
