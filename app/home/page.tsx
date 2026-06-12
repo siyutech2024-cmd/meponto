@@ -225,9 +225,9 @@ export default function HomePage() {
   const railNames = [...t.chapters.map((section) => section.tag), "MePonto"];
 
   return (
-    <main className="hometown" data-i18n-skip style={{ background: "#140a05", color: "#fff7ef", fontFamily: "Outfit, Inter, system-ui, sans-serif" }}>
+    <main className="hometown" data-i18n-skip style={{ background: "#0b0e14", color: "#fff7ef", fontFamily: "Outfit, Inter, system-ui, sans-serif" }}>
       <style>{`
-        .hometown ::selection { background:#ff7a00; color:#140a05; }
+        .hometown ::selection { background:#f5b301; color:#0b0e14; }
         @keyframes mpPulse { 0%{transform:scale(.6);opacity:.9} 70%{transform:scale(2.4);opacity:0} 100%{opacity:0} }
         @keyframes mpFlow { to { stroke-dashoffset: -640; } }
         @keyframes mpDrift { 0%{transform:translate3d(0,0,0)} 50%{transform:translate3d(-12px,8px,0)} 100%{transform:translate3d(0,0,0)} }
@@ -242,14 +242,14 @@ export default function HomePage() {
       {/* ---- Loader -------------------------------------------------------- */}
       <div
         className="fixed inset-0 z-[60] flex flex-col items-center justify-center gap-5 transition-opacity duration-700"
-        style={{ background: "#140a05", opacity: ready ? 0 : 1, pointerEvents: ready ? "none" : "auto" }}
+        style={{ background: "#0b0e14", opacity: ready ? 0 : 1, pointerEvents: ready ? "none" : "auto" }}
       >
         {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src="/meponto-logo.png" alt="MePonto" className="h-12 w-auto" style={{ animation: "mpGlow 1.6s ease-in-out infinite" }} />
-        <div className="text-6xl font-black tabular-nums" style={{ color: "#ff7a00" }}>{progress}%</div>
+        <img src="/meponto-logo.png" alt="MePonto" className="h-20 w-auto" style={{ animation: "mpGlow 1.6s ease-in-out infinite", filter: "drop-shadow(0 0 22px rgba(245,179,1,.45))" }} />
+        <div className="text-6xl font-black tabular-nums" style={{ color: "#f5b301" }}>{progress}%</div>
         <div className="text-[11px] font-bold uppercase tracking-[0.3em]" style={{ color: "rgba(255,255,255,.4)" }}>{t.loading}</div>
         <div className="h-[2px] w-48 overflow-hidden rounded" style={{ background: "rgba(255,255,255,.1)" }}>
-          <div className="h-full rounded" style={{ width: `${progress}%`, background: "#ff7a00", transition: "width .1s linear" }} />
+          <div className="h-full rounded" style={{ width: `${progress}%`, background: "#f5b301", transition: "width .1s linear" }} />
         </div>
       </div>
 
@@ -262,39 +262,39 @@ export default function HomePage() {
           <div style={{ animation: "mpDrift 26s ease-in-out infinite", height: "100%", width: "100%" }}>
             <svg viewBox="0 0 1200 800" className="h-full w-full" preserveAspectRatio="xMidYMid slice">
               {/* rio Pinheiros / Tietê */}
-              <path d="M-20,540 C180,470 260,560 420,520 C600,475 640,330 830,300 C980,277 1080,160 1240,140" fill="none" stroke="#080403" strokeWidth="46" opacity="0.9" />
-              <path d="M-20,540 C180,470 260,560 420,520 C600,475 640,330 830,300 C980,277 1080,160 1240,140" fill="none" stroke="#21100a" strokeWidth="40" opacity="0.9" />
+              <path d="M-20,540 C180,470 260,560 420,520 C600,475 640,330 830,300 C980,277 1080,160 1240,140" fill="none" stroke="#05070c" strokeWidth="46" opacity="0.9" />
+              <path d="M-20,540 C180,470 260,560 420,520 C600,475 640,330 830,300 C980,277 1080,160 1240,140" fill="none" stroke="#141b29" strokeWidth="40" opacity="0.9" />
               {/* street grid */}
               {map.streets.map((s, i) => (
-                <line key={i} x1={s.x1} y1={s.y1} x2={s.x2} y2={s.y2} stroke="#ff7a00" strokeWidth={s.w} opacity={s.o} strokeLinecap="round" />
+                <line key={i} x1={s.x1} y1={s.y1} x2={s.x2} y2={s.y2} stroke="#f5b301" strokeWidth={s.w} opacity={s.o} strokeLinecap="round" />
               ))}
               {/* arterial avenues */}
-              <path d={ROUTES[0]} fill="none" stroke="#ff7a00" strokeWidth="2.6" opacity="0.32" />
-              <path d={ROUTES[1]} fill="none" stroke="#ff7a00" strokeWidth="2.2" opacity="0.26" />
-              <path d={ROUTES[2]} fill="none" stroke="#ff7a00" strokeWidth="2" opacity="0.22" />
+              <path d={ROUTES[0]} fill="none" stroke="#f5b301" strokeWidth="2.6" opacity="0.32" />
+              <path d={ROUTES[1]} fill="none" stroke="#f5b301" strokeWidth="2.2" opacity="0.26" />
+              <path d={ROUTES[2]} fill="none" stroke="#f5b301" strokeWidth="2" opacity="0.22" />
               {/* flowing delivery routes */}
               {ROUTES.map((d, i) => (
                 <path
                   key={d}
                   d={d}
                   fill="none"
-                  stroke={i === 1 ? "#ffd9b0" : "#ff7a00"}
+                  stroke={i === 1 ? "#ffe9a8" : "#f5b301"}
                   strokeWidth="3"
                   strokeLinecap="round"
                   strokeDasharray="14 70 4 552"
-                  style={{ animation: `mpFlow ${9 + i * 3.5}s linear infinite`, opacity: 0.9, filter: "drop-shadow(0 0 6px rgba(255,122,0,.8))" }}
+                  style={{ animation: `mpFlow ${9 + i * 3.5}s linear infinite`, opacity: 0.9, filter: "drop-shadow(0 0 6px rgba(245,179,1,.8))" }}
                 />
               ))}
               {/* station dots */}
               {map.dots.map((p, i) => (
                 <g key={i}>
-                  <circle cx={p.x} cy={p.y} r={p.r} fill="#ffb866" opacity="0.95" />
+                  <circle cx={p.x} cy={p.y} r={p.r} fill="#ffd966" opacity="0.95" />
                   <circle
                     cx={p.x}
                     cy={p.y}
                     r={p.r * 3.4}
                     fill="none"
-                    stroke="#ff7a00"
+                    stroke="#f5b301"
                     strokeWidth="1"
                     style={{ transformOrigin: `${p.x}px ${p.y}px`, animation: `mpPulse 4.6s ${p.d}s ease-out infinite` }}
                   />
@@ -303,7 +303,7 @@ export default function HomePage() {
             </svg>
           </div>
         </div>
-        <div className="absolute inset-0" style={{ background: "radial-gradient(ellipse at 50% 42%, transparent 0%, rgba(20,10,5,.62) 72%, rgba(20,10,5,.94) 100%)" }} />
+        <div className="absolute inset-0" style={{ background: "radial-gradient(ellipse at 50% 42%, transparent 0%, rgba(11,14,20,.62) 72%, rgba(11,14,20,.94) 100%)" }} />
 
         {/* franchise marker plates (live data) */}
         {(markers.length > 0 ? markers : [{ name: "São Paulo", count: 0 }]).slice(0, 4).map((marker, i) => (
@@ -313,11 +313,11 @@ export default function HomePage() {
             style={{ ...MARKER_POS[i], opacity: ready && chapter === 0 ? 1 : 0, transition: "opacity .8s ease", transitionDelay: `${0.3 + i * 0.18}s` }}
           >
             <div className="flex flex-col items-center gap-1.5">
-              <div className="rounded-[10px] border px-3.5 py-2 text-center backdrop-blur-sm" style={{ borderColor: "rgba(255,122,0,.4)", background: "rgba(20,10,5,.72)" }}>
-                <div className="text-xl font-black leading-none" style={{ color: "#ff7a00" }}>{marker.count > 0 ? String(marker.count).padStart(2, "0") : "··"}</div>
+              <div className="rounded-[10px] border px-3.5 py-2 text-center backdrop-blur-sm" style={{ borderColor: "rgba(245,179,1,.4)", background: "rgba(11,14,20,.72)" }}>
+                <div className="text-xl font-black leading-none" style={{ color: "#f5b301" }}>{marker.count > 0 ? String(marker.count).padStart(2, "0") : "··"}</div>
                 <div className="mt-1 text-[9px] font-black uppercase tracking-[0.22em]" style={{ color: "rgba(255,255,255,.75)" }}>{t.pontos}</div>
               </div>
-              <div className="h-7 w-px" style={{ background: "linear-gradient(to bottom, rgba(255,122,0,.7), transparent)" }} />
+              <div className="h-7 w-px" style={{ background: "linear-gradient(to bottom, rgba(245,179,1,.7), transparent)" }} />
               <div className="text-[11px] font-black uppercase tracking-[0.18em]" style={{ color: "rgba(255,255,255,.85)" }}>{marker.name}</div>
             </div>
           </div>
@@ -327,7 +327,7 @@ export default function HomePage() {
       {/* ---- Top bar -------------------------------------------------------- */}
       <header className="fixed inset-x-0 top-0 z-40 flex items-center justify-between px-5 py-4 md:px-10">
         {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src="/meponto-logo.png" alt="MePonto" className="h-9 w-auto" />
+        <img src="/meponto-logo.png" alt="MePonto" className="h-14 w-auto" style={{ filter: "drop-shadow(0 0 14px rgba(245,179,1,.35))" }} />
         <div className="flex items-center gap-2">
           {(["pt", "zh", "en"] as Lang[]).map((code) => (
             <button
@@ -335,12 +335,12 @@ export default function HomePage() {
               type="button"
               onClick={() => setLang(code)}
               className="rounded-full border px-3 py-1 text-[11px] font-black uppercase tracking-wider transition-colors"
-              style={{ borderColor: lang === code ? "#ff7a00" : "rgba(255,255,255,.18)", color: lang === code ? "#ff7a00" : "rgba(255,255,255,.6)" }}
+              style={{ borderColor: lang === code ? "#f5b301" : "rgba(255,255,255,.18)", color: lang === code ? "#f5b301" : "rgba(255,255,255,.6)" }}
             >
               {code === "zh" ? "中" : code}
             </button>
           ))}
-          <a href="https://app.meponto.com" className="ml-2 rounded-full px-4 py-1.5 text-[12px] font-black uppercase tracking-wider" style={{ background: "#ff7a00", color: "#140a05" }}>
+          <a href="https://app.meponto.com" className="ml-2 rounded-full px-4 py-1.5 text-[12px] font-black uppercase tracking-wider" style={{ background: "#f5b301", color: "#0b0e14" }}>
             App
           </a>
         </div>
@@ -350,8 +350,8 @@ export default function HomePage() {
       <nav className="fixed left-5 top-1/2 z-40 hidden -translate-y-1/2 flex-col gap-4 lg:flex">
         {railNames.map((name, index) => (
           <button key={name} type="button" onClick={() => sectionsRef.current[index]?.scrollIntoView({ behavior: "smooth" })} className="group flex items-center gap-2.5 text-left">
-            <span className="h-px transition-all duration-500" style={{ width: chapter === index ? 34 : 14, background: chapter === index ? "#ff7a00" : "rgba(255,255,255,.25)" }} />
-            <span className="text-[10px] font-black uppercase tracking-[0.22em] transition-colors duration-500" style={{ color: chapter === index ? "#ff7a00" : "rgba(255,255,255,.35)" }}>
+            <span className="h-px transition-all duration-500" style={{ width: chapter === index ? 34 : 14, background: chapter === index ? "#f5b301" : "rgba(255,255,255,.25)" }} />
+            <span className="text-[10px] font-black uppercase tracking-[0.22em] transition-colors duration-500" style={{ color: chapter === index ? "#f5b301" : "rgba(255,255,255,.35)" }}>
               {name}
             </span>
           </button>
@@ -365,10 +365,10 @@ export default function HomePage() {
             {chapter === index && ready && (
               <div className="max-w-3xl" key={`${lang}-${index}`}>
                 <div className="mp-rise mb-5 flex items-center gap-3">
-                  <span className="text-[11px] font-black uppercase tracking-[0.3em]" style={{ color: "#ff7a00" }}>
+                  <span className="text-[11px] font-black uppercase tracking-[0.3em]" style={{ color: "#f5b301" }}>
                     {String(index + 1).padStart(2, "0")} · {section.tag}
                   </span>
-                  <span className="h-px w-16" style={{ background: "rgba(255,122,0,.5)" }} />
+                  <span className="h-px w-16" style={{ background: "rgba(245,179,1,.5)" }} />
                 </div>
                 <h2 className="mp-rise text-5xl font-black leading-[1.02] md:text-7xl lg:text-8xl">
                   {section.title.map((line) => (
@@ -377,8 +377,8 @@ export default function HomePage() {
                 </h2>
                 <p className="mp-rise-2 mt-7 max-w-xl text-base font-medium leading-7 md:text-lg" style={{ color: "rgba(255,255,255,.65)" }}>{section.text}</p>
                 {section.cta && (
-                  <a href={section.cta.href} className="mp-rise-3 group mt-9 inline-flex items-center gap-3 text-[13px] font-black uppercase tracking-[0.2em]" style={{ color: "#ff7a00" }}>
-                    <span className="grid h-10 w-10 place-items-center rounded-full border transition-transform group-hover:scale-110" style={{ borderColor: "#ff7a00" }}>→</span>
+                  <a href={section.cta.href} className="mp-rise-3 group mt-9 inline-flex items-center gap-3 text-[13px] font-black uppercase tracking-[0.2em]" style={{ color: "#f5b301" }}>
+                    <span className="grid h-10 w-10 place-items-center rounded-full border transition-transform group-hover:scale-110" style={{ borderColor: "#f5b301" }}>→</span>
                     {section.cta.label}
                   </a>
                 )}
@@ -398,22 +398,22 @@ export default function HomePage() {
               </h2>
               <p className="mp-rise-2 mx-auto mt-6 max-w-xl text-base font-medium leading-7 md:text-lg" style={{ color: "rgba(255,255,255,.65)" }}>{t.finale.text}</p>
               <div className="mp-rise-3 mt-10 flex flex-wrap items-center justify-center gap-4">
-                <a href="https://app.meponto.com/rider-login" className="rounded-full px-8 py-4 text-sm font-black uppercase tracking-wider transition-transform hover:scale-105" style={{ background: "#ff7a00", color: "#140a05" }}>
+                <a href="https://app.meponto.com/rider-login" className="rounded-full px-8 py-4 text-sm font-black uppercase tracking-wider transition-transform hover:scale-105" style={{ background: "#f5b301", color: "#0b0e14" }}>
                   {t.finale.rider}
                 </a>
-                <a href="https://franchise.meponto.com" className="rounded-full border px-8 py-4 text-sm font-black uppercase tracking-wider transition-transform hover:scale-105" style={{ borderColor: "rgba(255,122,0,.65)", color: "#ff7a00" }}>
+                <a href="https://franchise.meponto.com" className="rounded-full border px-8 py-4 text-sm font-black uppercase tracking-wider transition-transform hover:scale-105" style={{ borderColor: "rgba(245,179,1,.65)", color: "#f5b301" }}>
                   {t.finale.franchise}
                 </a>
               </div>
             </div>
           )}
 
-          <footer className="absolute inset-x-0 bottom-0 border-t px-6 py-5" style={{ borderColor: "rgba(255,255,255,.08)", background: "rgba(20,10,5,.6)", backdropFilter: "blur(6px)" }}>
+          <footer className="absolute inset-x-0 bottom-0 border-t px-6 py-5" style={{ borderColor: "rgba(255,255,255,.08)", background: "rgba(11,14,20,.6)", backdropFilter: "blur(6px)" }}>
             <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-3">
               <div className="text-[11px] font-black uppercase tracking-[0.25em]" style={{ color: "rgba(255,255,255,.45)" }}>MePonto · {t.footer.tagline}</div>
               <div className="flex flex-wrap items-center gap-x-5 gap-y-1.5">
                 {t.footer.systems.map((system) => (
-                  <a key={system.href} href={system.href} className="text-[11px] font-bold transition-colors hover:text-[#ff7a00]" style={{ color: "rgba(255,255,255,.55)" }}>
+                  <a key={system.href} href={system.href} className="text-[11px] font-bold transition-colors hover:text-[#f5b301]" style={{ color: "rgba(255,255,255,.55)" }}>
                     {system.label}
                   </a>
                 ))}
@@ -433,8 +433,8 @@ export default function HomePage() {
             key={button.label}
             type="button"
             onClick={() => sectionsRef.current[button.target]?.scrollIntoView({ behavior: "smooth" })}
-            className="grid h-11 w-11 place-items-center rounded-full border text-lg font-black transition-colors hover:border-[#ff7a00] hover:text-[#ff7a00]"
-            style={{ borderColor: "rgba(255,255,255,.2)", color: "rgba(255,255,255,.7)", background: "rgba(20,10,5,.5)", backdropFilter: "blur(4px)" }}
+            className="grid h-11 w-11 place-items-center rounded-full border text-lg font-black transition-colors hover:border-[#f5b301] hover:text-[#f5b301]"
+            style={{ borderColor: "rgba(255,255,255,.2)", color: "rgba(255,255,255,.7)", background: "rgba(11,14,20,.5)", backdropFilter: "blur(4px)" }}
           >
             {button.label}
           </button>
