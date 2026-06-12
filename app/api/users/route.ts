@@ -1,6 +1,6 @@
 import { createHash, randomBytes } from "node:crypto";
 import { appendServerAudit, jsonResponse, makeServerId, memory } from "../../lib/server/memory";
-import { flushPendingToDatabase, refreshCollectionsFromDatabase } from "../../lib/server/persistence";
+import { flushPendingToDatabase, persistDeleteRecord, refreshCollectionsFromDatabase } from "../../lib/server/persistence";
 import { requirePermission, roleFromRequest, scopeFromRequest } from "../../lib/server/authz";
 import { roles, type Role } from "../../lib/rbac";
 import { portalConfigs, type PortalId } from "../../lib/portals";
@@ -67,8 +67,9 @@ type UpdateBody = {
 };
 
 type ResetBody = { action: "resetPassword"; userId: string; password: string };
+type DeleteBody = { action: "delete"; userId: string };
 
-type Body = CreateBody | UpdateBody | ResetBody;
+type Body = CreateBody | UpdateBody | ResetBody | DeleteBody;
 
 async function handlePost(request: Request) {
   const scope = await scopeFromRequest(request);
@@ -89,8 +90,8 @@ async function handlePost(request: Request) {
       create.role = "Ponto Manager" as Role;
       create.franchise = scope.franchise;
       create.organization = create.station || scope.franchise;
-    } else if (body.action === "update" || body.action === "resetPassword") {
-      const target = memory.appUsers.find((user) => user.id === (body as UpdateBody | ResetBody).userId);
+    } else if (body.action === "update" || body.action === "resetPassword" || body.action === "delete") {
+      const target = memory.appUsers.find((user) => user.id === (body as UpdateBody | ResetBody | DeleteBody).userId);
       if (!target || target.portal !== "ponto" || target.franchise !== scope.franchise) {
         return jsonResponse({ error: "只能管理本加盟商的站点账号" }, { status: 403 });
       }
@@ -208,6 +209,22 @@ async function handlePost(request: Request) {
       });
 
       return jsonResponse({ data: { ok: true } });
+    }
+
+    case "delete": {
+      const { userId } = body as DeleteBody;
+      const index = memory.appUsers.findIndex((user) => user.id === userId);
+      if (index === -1) return jsonResponse({ error: "user not found" }, { status: 404 });
+      const victim = memory.appUsers[index];
+      // Never delete the last active HQ admin — that would lock everyone out.
+      if (victim.portal === "pontosys") {
+        const otherHqAdmins = memory.appUsers.filter((user) => user.id !== userId && user.portal === "pontosys" && user.status === "active").length;
+        if (otherHqAdmins === 0) return jsonResponse({ error: "不能删除最后一个总部管理员账号" }, { status: 409 });
+      }
+      memory.appUsers.splice(index, 1);
+      persistDeleteRecord("appUsers", userId);
+      appendServerAudit({ actor, action: "USER_DELETED", entity: "AppUser", entityId: userId, detail: `${victim.name} (${victim.identifier}, ${victim.role}@${victim.portal}) deleted.`, risk: "High" });
+      return jsonResponse({ data: { deleted: userId } });
     }
 
     default:
