@@ -77,6 +77,47 @@ const EARNING_HEADERS: Record<string, string> = {
   "金额": "settleAmount",
 };
 
+/** Fallback header matching — tolerates variants like 完单/order数/金额(R$)/Pedidos. */
+const EARNING_PATTERNS: Array<[string, RegExp]> = [
+  ["referralBonus", /推荐奖励/],
+  ["bonus", /奖励/],
+  ["tripIncome", /行程收入/],
+  ["total", /今日统计/],
+  ["cashDebt", /现金/],
+  ["mealDeduction", /餐损/],
+  ["tips", /小费|gorjeta/i],
+  ["manualAdjust", /人工调整/],
+  ["other", /其他/],
+  ["orders", /order|完单|pedido/i],
+  ["settleAmount", /^金额|结算金额|^valor/i],
+  ["pix", /pix/i],
+  ["date", /日期|^data/i],
+  ["rider99Id", /骑手ID|司机ID/i],
+  ["riderName", /骑手姓名|^nome/i],
+  ["phone", /电话|telefone/i],
+  ["cpf", /身份证|cpf/i],
+  ["city", /城市|cidade/i],
+];
+
+const KPI_PATTERNS: Array<[string, RegExp]> = [
+  ["inShiftOnlineHours", /实际在线/],
+  ["signedShiftHours", /班次总时长/],
+  ["signedShifts", /班次数量/],
+  ["onlineHours", /在线时长/],
+  ["completedOrders", /完单/],
+  ["tshCritical", /critical/i],
+  ["tsh", /tsh/i],
+  ["ar", /^\s*ar\s*$/i],
+  ["caa", /caa/i],
+  ["overtime", /overtime|超时/i],
+  ["date", /日期|^data/i],
+  ["rider99Id", /骑手ID/i],
+  ["riderName", /骑手姓名/i],
+  ["phone", /电话/],
+  ["cpf", /身份证/],
+  ["city", /城市/],
+];
+
 const WEEKDAYS = ["周日", "周一", "周二", "周三", "周四", "周五", "周六"];
 
 function weekdayOf(date: string): string {
@@ -90,12 +131,17 @@ function normalizeDate(value: string): string {
   return `${match[1]}-${match[2].padStart(2, "0")}-${match[3].padStart(2, "0")}`;
 }
 
-function mapRecords(rows: Array<Record<string, string>>, mapping: Record<string, string>) {
+function mapRecords(rows: Array<Record<string, string>>, mapping: Record<string, string>, patterns: Array<[string, RegExp]>) {
   return rows
     .map((row) => {
       const record: Record<string, string> = {};
-      for (const [header, field] of Object.entries(mapping)) {
-        if (row[header] !== undefined) record[field] = row[header];
+      for (const [header, value] of Object.entries(row)) {
+        const trimmed = header.trim();
+        let field = mapping[trimmed];
+        if (!field) {
+          field = patterns.find(([target, re]) => record[target] === undefined && re.test(trimmed))?.[0] ?? "";
+        }
+        if (field && record[field] === undefined) record[field] = value;
       }
       return record;
     })
@@ -436,8 +482,8 @@ function EarningsTab({ earnings, scopeFranchise, scopeStation, date, headers }: 
               onClick={() =>
                 downloadCsv(
                   `pagamento-${date || "all"}`,
-                  ["日期", "骑手", "99ID", "PIX", "加盟商", "站点", "完单", "结算金额", "付款状态"],
-                  earnings.riders.map((r) => [date, r.riderName, r.rider99Id, r.pix, r.franchise, r.station, String(r.orders), r.settleAmount.toFixed(2), paidNames.has(r.riderName) ? "已付" : "待付"]),
+                  ["日期", "骑手", "99ID", "CPF", "电话", "PIX", "加盟商", "站点", "完单", "今日统计", "行程收入", "现金欠款", "餐损", "奖励", "小费", "人工调整", "推荐奖励", "其他", "结算金额", "付款状态"],
+                  earnings.riders.map((r) => [date, r.riderName, r.rider99Id, r.cpf ?? "", r.phone ?? "", r.pix, r.franchise, r.station, String(r.orders), r.total.toFixed(2), r.tripIncome.toFixed(2), r.cashDebt.toFixed(2), r.mealDeduction.toFixed(2), r.bonus.toFixed(2), r.tips.toFixed(2), r.manualAdjust.toFixed(2), r.referralBonus.toFixed(2), r.other.toFixed(2), r.settleAmount.toFixed(2), paidNames.has(r.riderName) ? "已付" : "待付"]),
                 )
               }
             >
@@ -629,10 +675,19 @@ function ImportTab({ headers, onDone, onError }: { headers: Record<string, strin
           continue;
         }
         const mapping = isEarnings ? EARNING_HEADERS : KPI_HEADERS;
-        const records = mapRecords(objects, mapping);
+        const records = mapRecords(objects, mapping, isEarnings ? EARNING_PATTERNS : KPI_PATTERNS);
         if (records.length === 0) {
           log.push(`✕ ${file.name}：没有可导入的骑手行`);
           continue;
+        }
+        // Data-accuracy guard: refuse an earnings import whose 金额/完单 column was not recognized.
+        if (isEarnings) {
+          const noSettle = records.every((r) => r.settleAmount === undefined);
+          const noOrders = records.every((r) => r.orders === undefined);
+          if (noSettle || noOrders) {
+            log.push(`✕ ${file.name}：未识别${noSettle ? "「金额」" : ""}${noSettle && noOrders ? "和" : ""}${noOrders ? "「完单/order」" : ""}列，表头为：${headerRow.join(" | ").slice(0, 160)}`);
+            continue;
+          }
         }
         // Business date comes from the sheet's own 日期 column.
         const date = normalizeDate(records[0].date ?? "") || reportDate;
