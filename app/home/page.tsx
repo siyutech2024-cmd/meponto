@@ -4,11 +4,12 @@ import { useEffect, useMemo, useRef, useState } from "react";
 
 /**
  * MePonto marketing homepage — scroll-driven narrative over a code-drawn
- * São Paulo night map (no images, no animation libraries).
+ * Brazil network map (no images, no animation libraries).
  *
- * Loader counter → fixed SVG map background (street grid, pulsing station
- * dots, flowing delivery routes, live franchise marker plates) → full-screen
- * chapters that re-frame the map while you scroll → CTA finale + footer.
+ * Fixed SVG Brazil map background (glowing country outline, capital hubs,
+ * flowing delivery corridors radiating from São Paulo, live marker plates)
+ * → full-screen chapters that dive the camera into the Southeast as you
+ * scroll → CTA finale + footer. No loader: the map is visible instantly.
  */
 
 type Lang = "pt" | "zh" | "en";
@@ -122,50 +123,63 @@ function mulberry32(seed: number) {
   };
 }
 
-/** Map camera framing per chapter — drifts and zooms while you scroll. */
+/**
+ * Map camera framing per chapter. transform-origin sits on São Paulo, so
+ * every zoom dives toward the Southeast — big scale jumps for drama.
+ */
 const CAMERA = [
   "translate(0%, 0%) scale(1)",
-  "translate(-6%, -4%) scale(1.25)",
-  "translate(7%, 2%) scale(1.35)",
-  "translate(-3%, 6%) scale(1.2)",
-  "translate(0%, 0%) scale(1.05)",
+  "translate(3%, -3%) scale(2.1)",
+  "translate(-5%, 1%) scale(2.7)",
+  "translate(6%, 5%) scale(1.75)",
+  "translate(0%, 1%) scale(1.2)",
 ];
 
 const MARKER_POS = [
-  { left: "16%", top: "28%" },
-  { left: "63%", top: "21%" },
-  { left: "71%", top: "63%" },
-  { left: "23%", top: "67%" },
+  { left: "64%", top: "63%" },
+  { left: "75%", top: "57%" },
+  { left: "57%", top: "76%" },
+  { left: "49%", top: "57%" },
 ];
 
+/** Brazil country outline (simplified, viewBox 1200×800). */
+const BRAZIL =
+  "M450,20 L488,39 L550,82 L600,73 L675,39 L700,117 L738,145 L843,166 L913,174 L988,190 L1020,209 L1070,224 L1080,254 L1078,273 L1063,302 L1025,332 L988,371 L973,410 L975,458 L943,513 L903,554 L870,566 L793,585 L738,628 L738,653 L670,743 L615,774 L555,721 L510,706 L558,663 L610,630 L585,614 L560,585 L510,548 L495,503 L438,435 L318,330 L188,332 L150,312 L105,260 L125,203 L215,137 L200,121 L203,84 L275,84 L363,41 Z";
+
+/** Capital hubs of the delivery network (x, y in the same viewBox). */
+const CITIES: Array<{ name: string; x: number; y: number; r: number }> = [
+  { name: "São Paulo", x: 785, y: 577, r: 6 },
+  { name: "Rio de Janeiro", x: 870, y: 566, r: 3.4 },
+  { name: "Belo Horizonte", x: 853, y: 506, r: 3 },
+  { name: "Brasília", x: 753, y: 425, r: 3 },
+  { name: "Salvador", x: 988, y: 371, r: 2.6 },
+  { name: "Recife", x: 1078, y: 273, r: 2.4 },
+  { name: "Fortaleza", x: 988, y: 190, r: 2.4 },
+  { name: "Belém", x: 738, y: 145, r: 2.2 },
+  { name: "Manaus", x: 450, y: 178, r: 2.4 },
+  { name: "Curitiba", x: 718, y: 612, r: 2.8 },
+  { name: "Porto Alegre", x: 670, y: 702, r: 2.6 },
+  { name: "Goiânia", x: 718, y: 443, r: 2.2 },
+  { name: "Cuiabá", x: 548, y: 421, r: 2 },
+  { name: "Campo Grande", x: 585, y: 515, r: 2 },
+  { name: "Vitória", x: 943, y: 513, r: 2.2 },
+];
+
+/** Flowing delivery corridors, all radiating from São Paulo. */
 const ROUTES = [
-  "M60,760 C260,600 420,640 560,460 C690,295 900,330 1150,150",
-  "M120,40 C300,210 280,420 520,560 C720,675 950,640 1180,720",
-  "M-10,300 C240,330 520,250 760,360 C950,447 1060,420 1230,470",
+  "M785,577 C820,540 840,525 853,506 C900,460 955,420 988,371 C1030,310 1010,240 988,190",
+  "M785,577 C775,520 765,470 753,425 C690,330 540,240 450,178",
+  "M785,577 C765,592 735,600 718,612 C700,645 682,675 670,702",
+  "M785,577 C815,575 845,572 870,566 C900,550 925,532 943,513",
 ];
 
 export default function HomePage() {
   const [lang, setLang] = useState<Lang>("pt");
-  const [progress, setProgress] = useState(0);
-  const [ready, setReady] = useState(false);
   const [chapter, setChapter] = useState(0);
   const [markers, setMarkers] = useState<Array<{ name: string; count: number }>>([]);
   const sectionsRef = useRef<Array<HTMLElement | null>>([]);
   const t = copy[lang];
-
-  // Loader counter, then reveal the world.
-  useEffect(() => {
-    let frame = 0;
-    const start = performance.now();
-    const tick = (now: number) => {
-      const pct = Math.min(100, Math.round(((now - start) / 1400) * 100));
-      setProgress(pct);
-      if (pct < 100) frame = requestAnimationFrame(tick);
-      else setTimeout(() => setReady(true), 350);
-    };
-    frame = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(frame);
-  }, []);
+  const ready = true; // no loader — the map is visible immediately
 
   // Live network numbers for the marker plates (public summary endpoint).
   useEffect(() => {
@@ -192,7 +206,7 @@ export default function HomePage() {
     return () => observer.disconnect();
   }, [ready]);
 
-  // ---- Code-drawn São Paulo night map -------------------------------------
+  // ---- Interior texture for the country body ------------------------------
   const map = useMemo(() => {
     const rand = mulberry32(20260612);
     const streets: Array<{ x1: number; y1: number; x2: number; y2: number; w: number; o: number }> = [];
@@ -211,11 +225,7 @@ export default function HomePage() {
         o: 0.06 + rand() * 0.16,
       });
     }
-    const dots: Array<{ x: number; y: number; r: number; d: number }> = [];
-    for (let i = 0; i < 36; i += 1) {
-      dots.push({ x: 80 + rand() * 1040, y: 70 + rand() * 660, r: 1.6 + rand() * 2.6, d: rand() * 6 });
-    }
-    return { streets, dots };
+    return { streets };
   }, []);
 
   const setSection = (index: number) => (el: HTMLElement | null) => {
@@ -239,64 +249,66 @@ export default function HomePage() {
         @media (prefers-reduced-motion: reduce) { .hometown * { animation: none !important; transition: none !important; } }
       `}</style>
 
-      {/* ---- Loader -------------------------------------------------------- */}
-      <div
-        className="fixed inset-0 z-[60] flex flex-col items-center justify-center gap-5 transition-opacity duration-700"
-        style={{ background: "#0b0e14", opacity: ready ? 0 : 1, pointerEvents: ready ? "none" : "auto" }}
-      >
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src="/meponto-logo.png" alt="MePonto" className="h-20 w-auto" style={{ animation: "mpGlow 1.6s ease-in-out infinite", filter: "drop-shadow(0 0 22px rgba(245,179,1,.45))" }} />
-        <div className="text-6xl font-black tabular-nums" style={{ color: "#f5b301" }}>{progress}%</div>
-        <div className="text-[11px] font-bold uppercase tracking-[0.3em]" style={{ color: "rgba(255,255,255,.4)" }}>{t.loading}</div>
-        <div className="h-[2px] w-48 overflow-hidden rounded" style={{ background: "rgba(255,255,255,.1)" }}>
-          <div className="h-full rounded" style={{ width: `${progress}%`, background: "#f5b301", transition: "width .1s linear" }} />
-        </div>
-      </div>
-
-      {/* ---- Fixed map background ------------------------------------------ */}
+      {/* ---- Fixed map background (code-drawn Brazil) ----------------------- */}
       <div className="fixed inset-0 z-0 overflow-hidden" aria-hidden>
         <div
-          className="absolute inset-[-12%] transition-transform duration-[1400ms]"
-          style={{ transform: CAMERA[Math.min(chapter, CAMERA.length - 1)], transitionTimingFunction: "cubic-bezier(.3,.8,.3,1)" }}
+          className="absolute inset-[-12%] transition-transform duration-[1800ms]"
+          style={{
+            transform: CAMERA[Math.min(chapter, CAMERA.length - 1)],
+            transformOrigin: "65% 70%",
+            transitionTimingFunction: "cubic-bezier(.22,.9,.24,1)",
+          }}
         >
           <div style={{ animation: "mpDrift 26s ease-in-out infinite", height: "100%", width: "100%" }}>
             <svg viewBox="0 0 1200 800" className="h-full w-full" preserveAspectRatio="xMidYMid slice">
-              {/* rio Pinheiros / Tietê */}
-              <path d="M-20,540 C180,470 260,560 420,520 C600,475 640,330 830,300 C980,277 1080,160 1240,140" fill="none" stroke="#05070c" strokeWidth="46" opacity="0.9" />
-              <path d="M-20,540 C180,470 260,560 420,520 C600,475 640,330 830,300 C980,277 1080,160 1240,140" fill="none" stroke="#141b29" strokeWidth="40" opacity="0.9" />
-              {/* street grid */}
-              {map.streets.map((s, i) => (
-                <line key={i} x1={s.x1} y1={s.y1} x2={s.x2} y2={s.y2} stroke="#f5b301" strokeWidth={s.w} opacity={s.o} strokeLinecap="round" />
+              <defs>
+                <clipPath id="mpBrazil">
+                  <path d={BRAZIL} />
+                </clipPath>
+              </defs>
+              {/* country body + glowing border */}
+              <path d={BRAZIL} fill="rgba(245,179,1,.045)" stroke="none" />
+              <path d={BRAZIL} fill="none" stroke="#f5b301" strokeWidth="6" opacity="0.10" strokeLinejoin="round" />
+              <path d={BRAZIL} fill="none" stroke="#f5b301" strokeWidth="2" opacity="0.55" strokeLinejoin="round" style={{ filter: "drop-shadow(0 0 8px rgba(245,179,1,.5))" }} />
+              {/* interior texture — clipped to the country */}
+              <g clipPath="url(#mpBrazil)">
+                {/* rio Amazonas */}
+                <path d="M150,150 C260,160 360,172 450,178 C560,170 660,160 720,128" fill="none" stroke="#05070c" strokeWidth="22" opacity="0.9" />
+                <path d="M150,150 C260,160 360,172 450,178 C560,170 660,160 720,128" fill="none" stroke="#141b29" strokeWidth="16" opacity="0.95" />
+                {map.streets.map((s, i) => (
+                  <line key={i} x1={s.x1} y1={s.y1} x2={s.x2} y2={s.y2} stroke="#f5b301" strokeWidth={s.w} opacity={s.o} strokeLinecap="round" />
+                ))}
+              </g>
+              {/* static corridor traces */}
+              {ROUTES.map((d, i) => (
+                <path key={`trace-${i}`} d={d} fill="none" stroke="#f5b301" strokeWidth="1.6" opacity="0.22" />
               ))}
-              {/* arterial avenues */}
-              <path d={ROUTES[0]} fill="none" stroke="#f5b301" strokeWidth="2.6" opacity="0.32" />
-              <path d={ROUTES[1]} fill="none" stroke="#f5b301" strokeWidth="2.2" opacity="0.26" />
-              <path d={ROUTES[2]} fill="none" stroke="#f5b301" strokeWidth="2" opacity="0.22" />
-              {/* flowing delivery routes */}
+              {/* flowing delivery corridors */}
               {ROUTES.map((d, i) => (
                 <path
                   key={d}
                   d={d}
                   fill="none"
-                  stroke={i === 1 ? "#ffe9a8" : "#f5b301"}
+                  stroke={i % 2 === 1 ? "#ffe9a8" : "#f5b301"}
                   strokeWidth="3"
                   strokeLinecap="round"
                   strokeDasharray="14 70 4 552"
-                  style={{ animation: `mpFlow ${9 + i * 3.5}s linear infinite`, opacity: 0.9, filter: "drop-shadow(0 0 6px rgba(245,179,1,.8))" }}
+                  style={{ animation: `mpFlow ${8 + i * 3}s linear infinite`, opacity: 0.9, filter: "drop-shadow(0 0 6px rgba(245,179,1,.8))" }}
                 />
               ))}
-              {/* station dots */}
-              {map.dots.map((p, i) => (
-                <g key={i}>
-                  <circle cx={p.x} cy={p.y} r={p.r} fill="#ffd966" opacity="0.95" />
+              {/* capital hubs */}
+              {CITIES.map((c) => (
+                <g key={c.name}>
+                  {c.name === "São Paulo" && <circle cx={c.x} cy={c.y} r={16} fill="rgba(245,179,1,.18)" />}
+                  <circle cx={c.x} cy={c.y} r={c.r} fill="#ffd966" opacity="0.95" />
                   <circle
-                    cx={p.x}
-                    cy={p.y}
-                    r={p.r * 3.4}
+                    cx={c.x}
+                    cy={c.y}
+                    r={c.r * 3.2}
                     fill="none"
                     stroke="#f5b301"
                     strokeWidth="1"
-                    style={{ transformOrigin: `${p.x}px ${p.y}px`, animation: `mpPulse 4.6s ${p.d}s ease-out infinite` }}
+                    style={{ transformOrigin: `${c.x}px ${c.y}px`, animation: `mpPulse 4.6s ${(c.x + c.y) % 5}s ease-out infinite` }}
                   />
                 </g>
               ))}
