@@ -25,6 +25,8 @@ export default function UsersPage() {
   const [message, setMessage] = useState<{ tone: "ok" | "err"; text: string } | null>(null);
   const [form, setForm] = useState({ name: "", identifier: "", phone: "", password: "", role: "Ponto Manager" as Role, portal: "ponto" as PortalId, franchise: "", station: "" });
   const [busy, setBusy] = useState(false);
+  // Inline edit modal for an existing account.
+  const [edit, setEdit] = useState<{ id: string; name: string; phone: string; role: Role; portal: PortalId; franchise: string; station: string } | null>(null);
 
   const load = useCallback(async () => {
     const [usersResponse, networkResponse] = await Promise.all([
@@ -194,6 +196,24 @@ export default function UsersPage() {
                       >
                         {user.status === "active" ? "停用" : "启用"}
                       </button>
+                      <button
+                        type="button"
+                        className="tag"
+                        onClick={() => setEdit({ id: user.id, name: user.name, phone: user.phone ?? "", role: user.role, portal: user.portal, franchise: user.franchise ?? "", station: user.station ?? "" })}
+                      >
+                        编辑
+                      </button>
+                      <button
+                        type="button"
+                        className="tag text-[var(--danger-ink)]"
+                        onClick={async () => {
+                          if (!(await dialog.confirm(`删除账号「${user.identifier}」？`, { message: "删除后将无法登录，且不可恢复。", tone: "danger", confirmText: "删除" }))) return;
+                          const result = await post({ action: "delete", userId: user.id });
+                          if (result) setMessage({ tone: "ok", text: `账号 ${user.identifier} 已删除。` });
+                        }}
+                      >
+                        删除
+                      </button>
                     </div>
                   </div>
                 </div>
@@ -202,6 +222,68 @@ export default function UsersPage() {
           )}
         </div>
       </div>
+
+      {/* 编辑账号弹窗 */}
+      {edit && (
+        <div className="fixed inset-0 z-[100] grid place-items-center bg-[var(--overlay)] p-4 backdrop-blur-sm" onMouseDown={() => setEdit(null)}>
+          <div className="panel w-full max-w-lg space-y-3 p-5 shadow-2xl" onMouseDown={(e) => e.stopPropagation()}>
+            <h2 className="text-lg font-black">编辑账号</h2>
+            <div className="grid gap-2 sm:grid-cols-2">
+              <input className={input} placeholder="姓名" value={edit.name} onChange={(e) => setEdit({ ...edit, name: e.target.value })} />
+              <input className={input} placeholder="电话" value={edit.phone} onChange={(e) => setEdit({ ...edit, phone: e.target.value })} />
+              {!isFranchise && (
+                <select
+                  className={input}
+                  value={edit.portal}
+                  onChange={(e) => {
+                    const portal = e.target.value as PortalId;
+                    const allowed = portalConfigs[portal].allowedRoles;
+                    setEdit({ ...edit, portal, role: allowed.includes(edit.role) ? edit.role : (allowed[0] as Role) });
+                  }}
+                >
+                  {portalIds.map((portalId) => <option key={portalId} value={portalId}>{portalConfigs[portalId].productName}</option>)}
+                </select>
+              )}
+              {!isFranchise && (
+                <select className={input} value={edit.role} onChange={(e) => setEdit({ ...edit, role: e.target.value as Role })}>
+                  {roles.filter((role) => portalConfigs[edit.portal].allowedRoles.includes(role)).map((role) => <option key={role} value={role}>{role}</option>)}
+                </select>
+              )}
+              {!isFranchise && (
+                <select className={input} value={edit.franchise} onChange={(e) => setEdit({ ...edit, franchise: e.target.value, station: "" })}>
+                  <option value="">所属加盟商（无）</option>
+                  {network.franchises.map((f) => <option key={f.id} value={f.name}>{f.name}</option>)}
+                </select>
+              )}
+              <select className={input} value={edit.station} onChange={(e) => setEdit({ ...edit, station: e.target.value })}>
+                <option value="">所属站点（无）</option>
+                {network.stations
+                  .filter((s) => {
+                    const fr = isFranchise ? ownFranchise : edit.franchise;
+                    return !fr || s.franchise === fr;
+                  })
+                  .map((s) => <option key={s.id} value={s.name}>{s.name}</option>)}
+              </select>
+            </div>
+            <div className="flex justify-end gap-2">
+              <button type="button" onClick={() => setEdit(null)} className="h-10 rounded-[8px] border border-[var(--line)] px-4 text-sm font-black text-[var(--muted-strong)]">取消</button>
+              <button
+                type="button"
+                className="h-10 rounded-[8px] bg-[var(--accent)] px-5 text-sm font-black text-[var(--accent-ink)]"
+                onClick={async () => {
+                  const result = await post({ action: "update", userId: edit.id, name: edit.name, phone: edit.phone, role: edit.role, portal: edit.portal, franchise: edit.franchise, station: edit.station });
+                  if (result) {
+                    setMessage({ tone: "ok", text: "账号信息已更新。" });
+                    setEdit(null);
+                  }
+                }}
+              >
+                保存修改
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </AppShell>
   );
 }
