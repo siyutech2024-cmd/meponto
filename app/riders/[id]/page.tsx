@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { ArrowLeft, Eye, EyeOff, Pencil, RefreshCcw } from "lucide-react";
+import { ArrowLeft, Pencil, RefreshCcw } from "lucide-react";
 import { AppShell, Badge, PageTitle } from "../../components/ui";
 import { downloadCsv } from "../../lib/csv";
 
@@ -27,7 +27,8 @@ type RiderRow = {
   source: "profile" | "report";
 };
 
-type DailyRow = { date: string; orders: number; onlineHours: number | null; ar: number | null; settleAmount: number };
+type DailyRow = { date: string; orders: number; kpiOrders: number | null; onlineHours: number | null; ar: number | null; settleAmount: number; paid: boolean };
+type PointEntry = { id: string; type: string; points: number; status: string; sourceType: string; note: string; reasonCode: string; expiresAt: string | null; balanceAfter: number };
 type Network = { franchises: Array<{ id: string; name: string }>; stations: Array<{ id: string; name: string; franchise?: string }> };
 
 const HEADERS = { "Content-Type": "application/json" };
@@ -49,8 +50,8 @@ export default function RiderDetailPage() {
 
   const [rider, setRider] = useState<RiderRow | null>(null);
   const [daily, setDaily] = useState<DailyRow[]>([]);
+  const [points, setPoints] = useState<{ entries: PointEntry[]; balance: number } | null>(null);
   const [network, setNetwork] = useState<Network>({ franchises: [], stations: [] });
-  const [revealed, setRevealed] = useState(false);
   const [editing, setEditing] = useState(false);
   const [form, setForm] = useState({ name: "", cpf: "", phone: "", pix: "", bairro: "", status: "Active" });
   const [assign, setAssign] = useState({ franchise: "", ponto: "" });
@@ -58,9 +59,8 @@ export default function RiderDetailPage() {
   const [loaded, setLoaded] = useState(false);
 
   const load = useCallback(async () => {
-    const reveal = revealed ? "&reveal=1" : "";
     const [ridersResponse, networkResponse] = await Promise.all([
-      fetch(`/api/riders?detail=1${reveal}`, { headers: revealed ? { ...HEADERS, "x-vento-reveal": "1" } : HEADERS, cache: "no-store" }),
+      fetch("/api/riders?detail=1", { headers: HEADERS, cache: "no-store" }),
       fetch("/api/network", { headers: HEADERS, cache: "no-store" }),
     ]);
     if (ridersResponse.ok) {
@@ -77,11 +77,19 @@ export default function RiderDetailPage() {
       setNetwork({ franchises: payload.franchises, stations: payload.stations });
     }
     setLoaded(true);
-  }, [id, revealed]);
+  }, [id]);
 
   useEffect(() => {
     void load();
   }, [load]);
+
+  // Points ledger (积分累计明细).
+  useEffect(() => {
+    if (!rider?.id || rider.id.startsWith("import-")) return;
+    void fetch(`/api/riders?pointsFor=${encodeURIComponent(rider.id)}`, { headers: HEADERS, cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((payload) => payload && setPoints(payload.data));
+  }, [rider?.id]);
 
   // Last 14 days of settle rows for this rider (from the statement endpoint).
   useEffect(() => {
@@ -157,9 +165,6 @@ export default function RiderDetailPage() {
           <div className="mb-3 flex items-center justify-between gap-2">
             <h2 className="text-lg font-black">基本信息</h2>
             <div className="flex gap-2">
-              <button type="button" className="tag inline-flex items-center gap-1" onClick={() => setRevealed((v) => !v)}>
-                {revealed ? <EyeOff size={14} /> : <Eye size={14} />} {revealed ? "隐藏" : "显示敏感"}
-              </button>
               <button type="button" className="tag inline-flex items-center gap-1" onClick={() => setEditing((v) => !v)}>
                 <Pencil size={13} /> {editing ? "取消编辑" : "编辑资料"}
               </button>
@@ -256,8 +261,8 @@ export default function RiderDetailPage() {
               onClick={() =>
                 downloadCsv(
                   `rider-${rider.ninetyNineId}-daily`,
-                  ["日期", "完单", "在线时长", "AR%", "结算金额"],
-                  daily.map((row) => [row.date, String(row.orders), row.onlineHours ?? "", row.ar ?? "", row.settleAmount.toFixed(2)]),
+                  ["日期", "完单(结算)", "完单(考核)", "在线时长", "AR%", "结算金额", "付款状态"],
+                  daily.map((row) => [row.date, String(row.orders), row.kpiOrders ?? "", row.onlineHours ?? "", row.ar ?? "", row.settleAmount.toFixed(2), row.paid ? "已付" : "待付"]),
                 )
               }
             >
@@ -272,7 +277,7 @@ export default function RiderDetailPage() {
             <table className="w-full text-left text-sm">
               <thead>
                 <tr className="text-[10px] font-black uppercase text-[var(--muted)]">
-                  <th className="pb-2">日期</th><th className="pb-2 text-right">完单</th><th className="pb-2 text-right">在线时长</th><th className="pb-2 text-right">AR</th><th className="pb-2 text-right">结算金额</th>
+                  <th className="pb-2">日期</th><th className="pb-2 text-right">完单(结算)</th><th className="pb-2 text-right">完单(考核)</th><th className="pb-2 text-right">在线时长</th><th className="pb-2 text-right">AR</th><th className="pb-2 text-right">结算金额</th><th className="pb-2 text-right">付款</th>
                 </tr>
               </thead>
               <tbody>
@@ -280,9 +285,43 @@ export default function RiderDetailPage() {
                   <tr key={row.date} className="border-t border-[var(--line)]">
                     <td className="py-2 font-mono font-bold">{row.date}</td>
                     <td className="py-2 text-right font-black">{row.orders}</td>
+                    <td className="py-2 text-right">{row.kpiOrders ?? "—"}</td>
                     <td className="py-2 text-right">{row.onlineHours ?? "—"}</td>
                     <td className="py-2 text-right">{row.ar !== null ? `${row.ar}%` : "—"}</td>
                     <td className="py-2 text-right font-black">{money(row.settleAmount)}</td>
+                    <td className="py-2 text-right">{row.paid ? <span className="text-[10px] font-black uppercase text-[var(--ok-ink)]">已付</span> : <span className="text-[10px] font-black uppercase text-[var(--muted)]">待付</span>}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
+      {/* 积分累计明细 */}
+      <section className="panel mt-4 p-4">
+        <div className="mb-3 flex items-center justify-between gap-2">
+          <h2 className="text-lg font-black">积分累计明细</h2>
+          <span className="tag">当前可用 {points ? points.balance : rider.pointsBalance} pts</span>
+        </div>
+        {!points || points.entries.length === 0 ? (
+          <div className="text-sm font-bold text-[var(--muted)]">还没有积分记录。完单、邀请好友、合作伙伴扫码都会产生积分。</div>
+        ) : (
+          <div className="max-h-[380px] overflow-auto">
+            <table className="w-full text-left text-sm">
+              <thead>
+                <tr className="text-[10px] font-black uppercase text-[var(--muted)]">
+                  <th className="pb-2">类型</th><th className="pb-2">来源</th><th className="pb-2">说明</th><th className="pb-2 text-right">积分</th><th className="pb-2 text-right">变动后余额</th><th className="pb-2 text-right">到期</th>
+                </tr>
+              </thead>
+              <tbody>
+                {points.entries.map((entry) => (
+                  <tr key={entry.id} className="border-t border-[var(--line)]">
+                    <td className="py-2"><Badge value={entry.type} /></td>
+                    <td className="py-2 text-[11px] font-bold text-[var(--muted)]">{entry.sourceType}</td>
+                    <td className="py-2 text-[12px] font-bold">{entry.note || entry.reasonCode}</td>
+                    <td className={`py-2 text-right font-black ${entry.points >= 0 ? "text-[var(--ok-ink)]" : "text-[var(--danger-ink)]"}`}>{entry.points >= 0 ? `+${entry.points}` : entry.points}</td>
+                    <td className="py-2 text-right font-bold">{entry.balanceAfter}</td>
+                    <td className="py-2 text-right text-[11px] font-bold text-[var(--muted)]">{entry.expiresAt ?? "—"}</td>
                   </tr>
                 ))}
               </tbody>
