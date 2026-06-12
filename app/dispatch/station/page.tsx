@@ -19,14 +19,30 @@ const signupLabel: Record<string, string> = {
 export default function StationDispatchPage() {
   const session = useMemo(() => readSession(), []);
   // SERVER session wins — stale localStorage must not point at another station.
-  const [identity, setIdentity] = useState({ station: session?.station || session?.organization || "", franchise: session?.franchise || "" });
+  const [identity, setIdentity] = useState({ station: session?.station || "", franchise: session?.franchise || "" });
+  // HQ / franchise sessions without a station binding → supervisor picker.
+  const [pickerMode, setPickerMode] = useState(false);
+  const [stationOptions, setStationOptions] = useState<Array<{ name: string; franchise?: string }>>([]);
   useEffect(() => {
     void fetch("/api/auth/session", { cache: "no-store" })
       .then((response) => (response.ok ? response.json() : null))
       .then((payload) => {
         const user = payload?.data?.user ?? payload?.user;
-        if (user?.station || user?.franchise || user?.organization) {
-          setIdentity({ station: user.station || user.organization || "", franchise: user.franchise || "" });
+        if (user?.station) {
+          setIdentity({ station: user.station, franchise: user.franchise || "" });
+        } else if (user?.portal === "ponto" && user?.organization) {
+          setIdentity({ station: user.organization, franchise: user.franchise || "" });
+        } else {
+          setPickerMode(true);
+          void fetch("/api/network", { cache: "no-store" })
+            .then((r) => (r.ok ? r.json() : null))
+            .then((net) => {
+              const all = (net?.data?.stations ?? []) as Array<{ name: string; franchise?: string }>;
+              const mine = user?.franchise ? all.filter((item) => item.franchise === user.franchise) : all;
+              setStationOptions(mine);
+              setIdentity((current) => current.station ? current : { station: mine[0]?.name ?? "", franchise: mine[0]?.franchise ?? user?.franchise ?? "" });
+            })
+            .catch(() => undefined);
         }
       })
       .catch(() => undefined);
@@ -67,7 +83,23 @@ export default function StationDispatchPage() {
       <PageTitle
         title="排班提报"
         eyebrow={`站点工作台 · ${station}（${franchise}）`}
-        action={<button type="button" onClick={() => void load()} className="tag inline-flex items-center gap-1"><RefreshCcw size={13} /> 刷新</button>}
+        action={
+          <div className="flex items-center gap-2">
+            {pickerMode && (
+              <select
+                className="h-9 rounded-[8px] border border-[var(--line)] bg-[var(--surface-raised)] px-2 text-xs font-black text-[var(--text)] outline-none focus:border-[var(--accent)]"
+                value={station}
+                onChange={(e) => {
+                  const next = stationOptions.find((item) => item.name === e.target.value);
+                  setIdentity({ station: e.target.value, franchise: next?.franchise ?? "" });
+                }}
+              >
+                {stationOptions.map((item) => <option key={item.name} value={item.name}>{item.name}</option>)}
+              </select>
+            )}
+            <button type="button" onClick={() => void load()} className="tag inline-flex items-center gap-1"><RefreshCcw size={13} /> 刷新</button>
+          </div>
+        }
       />
 
       {message && (
