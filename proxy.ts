@@ -11,6 +11,10 @@ export async function proxy(request: NextRequest) {
   const pathname = request.nextUrl.pathname;
   const session = await verifySessionToken(request.cookies.get(SESSION_COOKIE)?.value);
 
+  // SEO endpoints answer on every host (host-aware content lives in /api/seo).
+  if (pathname === "/robots.txt") return NextResponse.rewrite(new URL("/api/seo/robots", request.url));
+  if (pathname === "/sitemap.xml") return NextResponse.rewrite(new URL("/api/seo/sitemap", request.url));
+
   if (marketingHosts.has(host) && pathname === "/") {
     const url = request.nextUrl.clone();
     url.pathname = "/home";
@@ -107,7 +111,7 @@ export async function proxy(request: NextRequest) {
   // Each portal domain only serves ITS OWN pages. Opening another system's
   // path (e.g. franchise.meponto.com/pontosys) bounces to the owning domain —
   // regardless of who is logged in.
-  const publicPaths = ["/rider-login", "/scan", "/privacy", "/home"];
+  const publicPaths = ["/rider-login", "/scan", "/privacy", "/home", "/llms.txt", "/og.png", "/480d2d55480284b1ce870c54bf62e21a.txt"];
   if (hostPortalId && !publicPaths.some((p) => pathname === p || pathname.startsWith(`${p}/`))) {
     const hostPortal = portalConfigs[hostPortalId];
     const belongsTo = (portal: (typeof portalConfigs)[keyof typeof portalConfigs]) =>
