@@ -18,8 +18,21 @@ const signupLabel: Record<string, string> = {
 
 export default function StationDispatchPage() {
   const session = useMemo(() => readSession(), []);
-  const station = session?.station || session?.organization || "Santo Amaro";
-  const franchise = session?.franchise || "Franquia Sul";
+  // SERVER session wins — stale localStorage must not point at another station.
+  const [identity, setIdentity] = useState({ station: session?.station || session?.organization || "", franchise: session?.franchise || "" });
+  useEffect(() => {
+    void fetch("/api/auth/session", { cache: "no-store" })
+      .then((response) => (response.ok ? response.json() : null))
+      .then((payload) => {
+        const user = payload?.data?.user ?? payload?.user;
+        if (user?.station || user?.franchise || user?.organization) {
+          setIdentity({ station: user.station || user.organization || "", franchise: user.franchise || "" });
+        }
+      })
+      .catch(() => undefined);
+  }, []);
+  const station = identity.station;
+  const franchise = identity.franchise;
   const headers = useMemo(() => ({ "Content-Type": "application/json", "x-vento-role": session?.role ?? "Ponto Manager" }), [session]);
 
   const [board, setBoard] = useState<Board>({ shifts: [], quotas: [], signups: [] });
