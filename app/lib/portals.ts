@@ -102,6 +102,7 @@ export const portalConfigs: Record<PortalId, PortalConfig> = {
     futureDomain: "franchise.meponto.com",
     modules: [
       { href: "/dispatch/franchise", label: "排班配额与审核", description: "接收总部配额、拆分给站点并审核骑手报名。", permission: "manage_slots" },
+      { href: "/dispatch", label: "运力排班", description: "排班工作台：配额拆分与骑手提报。", permission: "manage_slots" },
       { href: "/performance", label: "KPI 考核", description: "查看本加盟商站点与骑手的 T+1 KPI。", permission: "view_analytics" },
       { href: "/wallet", label: "结算与提现", description: "骑手余额台账、提现付款确认（PIX）。", permission: "view_finance" },
       { href: "/support", label: "联系总部", description: "提交工单，总部统一处理回复。", permission: "view_analytics" },
@@ -125,6 +126,7 @@ export const portalConfigs: Record<PortalId, PortalConfig> = {
     futureDomain: "ponto.meponto.com",
     modules: [
       { href: "/dispatch/station", label: "排班提报", description: "查看本站配额并提报骑手报名。", permission: "manage_slots" },
+      { href: "/dispatch", label: "运力排班", description: "排班工作台：本站配额与骑手提报。", permission: "manage_slots" },
       { href: "/performance", label: "KPI 考核", description: "查看本站骑手的 T+1 KPI。", permission: "view_analytics" },
       { href: "/assessment", label: "考核目标", description: "总部考核规则与本站达标进度。", permission: "view_analytics" },
       { href: "/mall/station", label: "商城到货", description: "确认兑换商品到站与骑手领取。", permission: "manage_slots" },
