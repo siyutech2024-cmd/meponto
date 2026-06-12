@@ -194,10 +194,17 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               <div className="flex gap-2 lg:block lg:space-y-1">
                 {group.items.map((item) => {
                   const Icon = item.icon;
+                  // 运力排班 points each portal at ITS OWN workspace.
+                  const href =
+                    item.href === "/dispatch" && portal.id === "franchise"
+                      ? "/dispatch/franchise"
+                      : item.href === "/dispatch" && portal.id === "ponto"
+                        ? "/dispatch/station"
+                        : item.href;
                   return (
                     <Link
                       key={item.href}
-                      href={item.href}
+                      href={href}
                       className="flex min-h-10 shrink-0 items-center gap-3 rounded-[8px] border border-transparent px-3 text-sm font-semibold text-[var(--text-soft)] transition-colors hover:border-[var(--line)] hover:bg-[var(--surface-hover)] hover:text-[var(--text)]"
                     >
                       <Icon size={17} />

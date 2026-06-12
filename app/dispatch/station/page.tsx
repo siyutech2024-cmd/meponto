@@ -1,10 +1,11 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { ClipboardList, RefreshCcw, Star, Upload } from "lucide-react";
+import { ClipboardList, RefreshCcw, Star } from "lucide-react";
 import { AppShell, Badge, PageTitle } from "../../components/ui";
 import { readSession } from "../../lib/session";
 import type { DispatchShift, ShiftQuota, ShiftSignup } from "../../lib/dispatch";
+import { ShiftRiderPicker } from "../../components/shift-rider-picker";
 
 type Board = { shifts: DispatchShift[]; quotas: ShiftQuota[]; signups: ShiftSignup[] };
 
@@ -54,8 +55,6 @@ export default function StationDispatchPage() {
   const [board, setBoard] = useState<Board>({ shifts: [], quotas: [], signups: [] });
   const [message, setMessage] = useState<{ tone: "ok" | "err" | "warn"; text: string } | null>(null);
   const [shiftId, setShiftId] = useState("");
-  const [lines, setLines] = useState("");
-  const [busy, setBusy] = useState(false);
 
   const load = useCallback(async () => {
     const response = await fetch(`/api/dispatch?station=${encodeURIComponent(station)}&franchise=${encodeURIComponent(franchise)}`, { headers, cache: "no-store" });
@@ -108,71 +107,7 @@ export default function StationDispatchPage() {
         </div>
       )}
 
-      <div className="grid gap-4 xl:grid-cols-[420px_1fr]">
-        <div className="panel space-y-3 p-4">
-          <div className="flex items-center gap-2 text-xs font-black uppercase text-[var(--accent)]">
-            <Upload size={14} /> 提报骑手报名
-          </div>
-          <label className="block text-[10px] font-black uppercase text-[var(--muted)]">
-            选择班次
-            <select value={shiftId} onChange={(e) => setShiftId(e.target.value)} className="mt-1 h-11 w-full rounded-[8px] border border-[var(--line)] bg-[var(--surface)] px-3 text-sm font-bold outline-none">
-              <option value="">请选择...</option>
-              {openShifts.map(({ shift, quota }) => (
-                <option key={shift.id} value={shift.id}>
-                  {shift.date} {shift.timeRange}（本站配额 {quota?.quota}）
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="block text-[10px] font-black uppercase text-[var(--muted)]">
-            骑手清单（每行：姓名,99骑手ID[,CPF]）
-            <textarea
-              value={lines}
-              onChange={(e) => setLines(e.target.value)}
-              rows={7}
-              placeholder={"Carlos Mendes,650911801352198\nAndre Santos,650911920473782"}
-              className="mt-1 w-full rounded-[8px] border border-[var(--line)] bg-[var(--surface)] p-3 font-mono text-xs outline-none focus:border-[var(--accent)]"
-            />
-          </label>
-          <button
-            type="button"
-            disabled={busy || !shiftId || !lines.trim()}
-            onClick={async () => {
-              setBusy(true);
-              setMessage(null);
-              const riders = lines
-                .split("\n")
-                .map((line) => line.trim())
-                .filter(Boolean)
-                .map((line) => {
-                  const [riderName, rider99Id, riderCpf] = line.split(/[,，;\t]/).map((part) => (part ?? "").trim());
-                  return { riderName, rider99Id, riderCpf };
-                });
-              const response = await fetch("/api/dispatch", {
-                method: "POST",
-                headers,
-                body: JSON.stringify({ action: "signup", shiftId, franchise, station, riders }),
-              });
-              const payload = await response.json().catch(() => ({}));
-              setBusy(false);
-              if (!response.ok) {
-                setMessage({ tone: "err", text: payload.error ?? `提报失败 (${response.status})` });
-                return;
-              }
-              setLines("");
-              const skipped = (payload.data.skipped ?? []) as string[];
-              setMessage({
-                tone: skipped.length > 0 ? "warn" : "ok",
-                text: `已提报 ${payload.data.created?.length ?? 0} 名骑手，等待加盟商/总部审核。${skipped.length > 0 ? ` 跳过：${skipped.join("、")}` : ""}`,
-              });
-              void load();
-            }}
-            className="inline-flex h-11 w-full items-center justify-center gap-2 rounded-[8px] bg-[var(--accent)] text-sm font-black uppercase text-[var(--accent-ink)] disabled:opacity-50"
-          >
-            {busy ? "提报中..." : "提交报名"}
-          </button>
-        </div>
-
+      <div className="grid gap-4 xl:grid-cols-[1fr_420px]">
         <div className="panel p-4">
           <div className="mb-3 flex items-center gap-2 text-xs font-black uppercase text-[var(--accent)]">
             <ClipboardList size={14} /> 本站班次与报名状态
@@ -183,8 +118,13 @@ export default function StationDispatchPage() {
             <div className="space-y-3">
               {myRows.map(({ shift, quota, signups }) => {
                 const approved = signups.filter((item) => item.status === "approved" || item.status === "reported").length;
+                const active = shiftId === shift.id;
                 return (
-                  <div key={shift.id} className="rounded-[8px] border border-[var(--line)] bg-[var(--surface-raised)] p-3">
+                  <div
+                    key={shift.id}
+                    onClick={() => shift.status === "scheduling" && setShiftId(shift.id)}
+                    className={`rounded-[8px] border p-3 transition-colors ${shift.status === "scheduling" ? "cursor-pointer" : ""} ${active ? "border-[var(--accent)] bg-[var(--accent-soft)]" : "border-[var(--line)] bg-[var(--surface-raised)] hover:border-[var(--muted)]"}`}
+                  >
                     <div className="flex flex-wrap items-center justify-between gap-2">
                       <div className="flex items-center gap-2 text-sm font-black">
                         {shift.isCritical && <Star size={13} className="text-[var(--accent)]" />}
@@ -209,6 +149,15 @@ export default function StationDispatchPage() {
             </div>
           )}
         </div>
+        <ShiftRiderPicker
+          shift={openShifts.find((row) => row.shift.id === shiftId)?.shift ?? null}
+          franchise={franchise}
+          fixedStation={station}
+          headers={headers}
+          signups={board.signups}
+          onDone={(text) => { setMessage({ tone: "ok", text }); void load(); }}
+          onError={(text) => { setMessage({ tone: "err", text }); void load(); }}
+        />
       </div>
     </AppShell>
   );
