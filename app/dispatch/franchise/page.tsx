@@ -10,6 +10,20 @@ import { ShiftRiderPicker } from "../../components/shift-rider-picker";
 type Board = { shifts: DispatchShift[]; quotas: ShiftQuota[]; signups: ShiftSignup[] };
 
 const statusLabel: Record<string, string> = { scheduling: "排班中", executing: "执行中", finished: "已结束" };
+const WEEKDAYS = ["周一", "周二", "周三", "周四", "周五", "周六", "周日"];
+
+function addDays(iso: string, delta: number): string {
+  const d = new Date(`${iso}T12:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + delta);
+  return d.toISOString().slice(0, 10);
+}
+
+function mondayOf(): string {
+  const d = new Date();
+  const back = (d.getDay() - 1 + 7) % 7;
+  d.setDate(d.getDate() - back);
+  return d.toISOString().slice(0, 10);
+}
 
 export default function FranchiseDispatchPage() {
   const session = useMemo(() => readSession(), []);
@@ -42,6 +56,7 @@ export default function FranchiseDispatchPage() {
   const [stationInputs, setStationInputs] = useState<Record<string, string>>({}); // `${shiftId}|${station}` -> quota
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [activeShiftId, setActiveShiftId] = useState("");
+  const [weekStart, setWeekStart] = useState(() => mondayOf());
 
   const load = useCallback(async () => {
     if (!franchise) return;
@@ -120,61 +135,90 @@ export default function FranchiseDispatchPage() {
 
       <FranchiseOverview franchise={franchise} headers={headers} />
 
-      <div className="grid gap-4 xl:grid-cols-[1fr_420px]">
+      <div className="grid gap-4 xl:grid-cols-[1fr_380px]">
         <div className="panel p-4">
-          <div className="mb-3 text-xs font-black uppercase text-[var(--accent)]">总部分配给我的班次配额 → 拆分给站点</div>
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-2" data-i18n-skip>
+            <div className="text-xs font-black uppercase text-[var(--accent)]">总部分配给我的班次配额 → 拆分给站点</div>
+            <div className="flex items-center gap-2">
+              <button type="button" className="tag" onClick={() => setWeekStart(addDays(weekStart, -7))}>← 上一周</button>
+              <span className="text-sm font-black">{weekStart} ~ {addDays(weekStart, 6)}<span className="ml-2 text-[10px] font-bold text-[var(--muted)]">{myShifts.filter(({ shift }) => shift.date >= weekStart && shift.date <= addDays(weekStart, 6)).length} 个班次</span></span>
+              <button type="button" className="tag" onClick={() => setWeekStart(addDays(weekStart, 7))}>下一周 →</button>
+              <button type="button" className="tag" onClick={() => setWeekStart(mondayOf())}>本周</button>
+            </div>
+          </div>
           {myShifts.length === 0 ? (
             <div className="text-sm font-bold text-[var(--muted)]">总部还没有给 {franchise} 分配班次配额。</div>
           ) : (
-            <div className="space-y-3">
-              {myShifts.map(({ shift, franchiseQuota, stationQuotas }) => {
-                const allocated = stationQuotas.reduce((sum, quota) => sum + quota.quota, 0);
-                const active = activeShiftId === shift.id;
+            <div className="grid grid-cols-2 gap-2 md:grid-cols-4 2xl:grid-cols-7">
+              {Array.from({ length: 7 }, (_, index) => addDays(weekStart, index)).map((day, index) => {
+                const dayRows = myShifts.filter(({ shift }) => shift.date === day).sort((a, b) => a.shift.timeRange.localeCompare(b.shift.timeRange));
                 return (
-                  <div
-                    key={shift.id}
-                    onClick={() => setActiveShiftId(shift.id)}
-                    className={`cursor-pointer rounded-[8px] border p-3 transition-colors ${active ? "border-[var(--accent)] bg-[var(--accent-soft)]" : "border-[var(--line)] bg-[var(--surface-raised)] hover:border-[var(--muted)]"}`}
-                  >
-                    <div className="flex flex-wrap items-center justify-between gap-2">
-                      <div className="flex items-center gap-2 text-sm font-black">
-                        {shift.isCritical && <Star size={13} className="text-[var(--accent)]" />}
-                        {shift.date} {shift.timeRange}
-                        <span className="text-[10px] font-bold text-[var(--muted)]">{shift.hotzone}</span>
-                        <Badge value={statusLabel[shift.status] ?? shift.status} />
-                      </div>
-                      <div className="text-xs font-black">
-                        我的配额 <span className="text-[var(--accent)]">{franchiseQuota?.quota}</span> ｜ 已拆 <span className={allocated > (franchiseQuota?.quota ?? 0) ? "text-[var(--danger-ink)]" : ""}>{allocated}</span>
-                      </div>
+                  <div key={day} className="min-w-0 space-y-2">
+                    <div className="rounded-[8px] bg-[var(--surface-raised)] py-1.5 text-center">
+                      <div className="text-[10px] font-black text-[var(--muted)]">{WEEKDAYS[index]}</div>
+                      <div className="text-sm font-black">{day.slice(5)}</div>
                     </div>
-                    <div className="mt-2 grid gap-2 md:grid-cols-2">
-                      {(myStations.length > 0 ? myStations : knownStations).map((station) => {
-                        const existing = stationQuotas.find((quota) => quota.station === station);
-                        const key = `${shift.id}|${station}`;
-                        return (
-                          <div key={key} className="flex items-center gap-2">
-                            <span className="w-32 truncate text-xs font-bold">{station}</span>
-                            <input
-                              inputMode="numeric"
-                              className="h-9 w-20 rounded-[8px] border border-[var(--line)] bg-[var(--surface)] text-center text-sm font-black outline-none focus:border-[var(--accent)]"
-                              value={stationInputs[key] ?? String(existing?.quota ?? "")}
-                              onChange={(e) => setStationInputs({ ...stationInputs, [key]: e.target.value.replace(/\D/g, "") })}
-                            />
-                            <button
-                              type="button"
-                              className="tag"
-                              onClick={async () => {
-                                const quota = Number(stationInputs[key] ?? existing?.quota ?? 0);
-                                const result = await post({ action: "quota", shiftId: shift.id, level: "station", franchise, station, quota });
-                                if (result) setMessage({ tone: "ok", text: `${station} 配额已更新为 ${quota}。` });
-                              }}
-                            >
-                              保存
-                            </button>
+                    {dayRows.length === 0 && <div className="rounded-[8px] border border-dashed border-[var(--line)] py-4 text-center text-[10px] font-bold text-[var(--muted)]">—</div>}
+                    {dayRows.map(({ shift, franchiseQuota, stationQuotas }) => {
+                      const allocated = stationQuotas.reduce((sum, quota) => sum + quota.quota, 0);
+                      const shiftSignups = board.signups.filter((item) => item.shiftId === shift.id);
+                      const approved = shiftSignups.filter((item) => item.status === "approved" || item.status === "reported").length;
+                      const waiting = shiftSignups.filter((item) => item.status === "submitted").length;
+                      const active = activeShiftId === shift.id;
+                      return (
+                        <div
+                          key={shift.id}
+                          onClick={() => setActiveShiftId(active ? "" : shift.id)}
+                          className={`cursor-pointer rounded-[8px] border p-2.5 transition-colors ${active ? "border-[var(--accent)] bg-[var(--accent-soft)]" : "border-[var(--line)] bg-[var(--surface-raised)] hover:border-[var(--muted)]"}`}
+                        >
+                          <div className="flex items-center gap-1 text-[13px] font-black">
+                            {shift.isCritical && <Star size={11} className="shrink-0 text-[var(--accent)]" />}
+                            <span className="truncate">{shift.timeRange}</span>
                           </div>
-                        );
-                      })}
-                    </div>
+                          <div className="mt-0.5 truncate text-[10px] font-bold text-[var(--muted)]">{shift.hotzone}</div>
+                          <div className="mt-1"><Badge value={statusLabel[shift.status] ?? shift.status} /></div>
+                          <div className="mt-2 grid grid-cols-2 gap-x-2 gap-y-1 text-center">
+                            {[["我的配额", franchiseQuota?.quota ?? 0, ""], ["已拆", allocated, allocated > (franchiseQuota?.quota ?? 0) ? "text-[var(--danger-ink)]" : "text-[var(--accent)]"], ["已审通过", approved, "text-[var(--ok-ink)]"], ["待审核", waiting, waiting > 0 ? "text-[var(--warning-ink)]" : ""]].map(([label, value, cls]) => (
+                              <div key={String(label)}>
+                                <div className="text-[9px] font-black text-[var(--muted)]">{label}</div>
+                                <div className={`text-sm font-black ${cls}`}>{value}</div>
+                              </div>
+                            ))}
+                          </div>
+                          {active && (
+                            <div className="mt-2 space-y-1.5 border-t border-[var(--line)] pt-2" onClick={(e) => e.stopPropagation()}>
+                              <div className="text-[9px] font-black uppercase text-[var(--muted)]">拆分给站点</div>
+                              {(myStations.length > 0 ? myStations : knownStations).map((station) => {
+                                const existing = stationQuotas.find((quota) => quota.station === station);
+                                const key = `${shift.id}|${station}`;
+                                return (
+                                  <div key={key} className="flex items-center gap-1.5">
+                                    <span className="min-w-0 flex-1 truncate text-[10px] font-bold">{station}</span>
+                                    <input
+                                      inputMode="numeric"
+                                      className="h-8 w-12 rounded-[6px] border border-[var(--line)] bg-[var(--surface)] text-center text-xs font-black outline-none focus:border-[var(--accent)]"
+                                      value={stationInputs[key] ?? String(existing?.quota ?? "")}
+                                      onChange={(e) => setStationInputs({ ...stationInputs, [key]: e.target.value.replace(/\D/g, "") })}
+                                    />
+                                    <button
+                                      type="button"
+                                      className="rounded-[6px] bg-[var(--accent)] px-2 py-1 text-[10px] font-black text-[var(--accent-ink)]"
+                                      onClick={async () => {
+                                        const quota = Number(stationInputs[key] ?? existing?.quota ?? 0);
+                                        const result = await post({ action: "quota", shiftId: shift.id, level: "station", franchise, station, quota });
+                                        if (result) setMessage({ tone: "ok", text: `${station} 配额已更新为 ${quota}。` });
+                                      }}
+                                    >
+                                      存
+                                    </button>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
                   </div>
                 );
               })}
