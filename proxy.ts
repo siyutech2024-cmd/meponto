@@ -75,6 +75,25 @@ export async function proxy(request: NextRequest) {
     return NextResponse.redirect(new URL(session ? portalConfigs[session.portal].homePath : "/login", request.url));
   }
 
+  // On a portal domain the login lives at the clean "/login" (no redundant
+  // "/login/<portal>" suffix). The marketing host keeps the system picker.
+  if (hostPortalId) {
+    if (pathname === `/login/${hostPortalId}`) {
+      return NextResponse.redirect(new URL("/login", request.url));
+    }
+    if (pathname === "/login") {
+      const url = request.nextUrl.clone();
+      url.pathname = `/login/${hostPortalId}`;
+      return NextResponse.rewrite(url);
+    }
+    // Another system's login on this domain → send to its own domain's clean login.
+    if (pathname.startsWith("/login/")) {
+      const target = Object.values(portalConfigs).find((p) => pathname === `/login/${p.id}`);
+      if (target?.futureDomain) return NextResponse.redirect(new URL(`https://${target.futureDomain}/login`));
+      return NextResponse.redirect(new URL("/login", request.url));
+    }
+  }
+
   if (pathname.startsWith("/login") || pathname === "/reset-password") {
     return NextResponse.next();
   }
