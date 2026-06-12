@@ -5,6 +5,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Filter, Plus, RefreshCcw, Search, UserPlus } from "lucide-react";
 import { AppShell, Badge, PageTitle } from "../components/ui";
 import { downloadCsv } from "../lib/csv";
+import { useDialog } from "../components/dialog";
 
 type RiderRow = {
   id: string;
@@ -31,6 +32,7 @@ const HEADERS = { "Content-Type": "application/json", "x-vento-role": "Super Adm
 const isUnassigned = (value?: string) => !value || value === "Unassigned";
 
 export default function RidersPage() {
+  const dialog = useDialog();
   const [riders, setRiders] = useState<RiderRow[]>([]);
   const [network, setNetwork] = useState<Network>({ franchises: [], stations: [] });
   const [query, setQuery] = useState("");
@@ -99,7 +101,7 @@ export default function RidersPage() {
   async function savePending() {
     const entries = Object.entries(pending);
     if (entries.length === 0) return;
-    if (!window.confirm(`确认保存 ${entries.length} 项分配调整？\n\n${entries.map(([, e]) => `· ${e.name} → ${e.franchise ?? "（不变）"} / ${e.ponto || "（待定）"}`).join("\n")}`)) return;
+    if (!(await dialog.confirm(`确认保存 ${entries.length} 项分配调整？`, { message: entries.map(([, e]) => `· ${e.name} → ${e.franchise ?? "（不变）"} / ${e.ponto || "（待定）"}`).join("\n"), confirmText: "确认保存" }))) return;
     setSaving(true);
     let failed = 0;
     for (const [riderId, entry] of entries) {
