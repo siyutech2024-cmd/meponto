@@ -5,11 +5,13 @@ import { CheckCircle2, Headset, RefreshCcw, Reply, Send } from "lucide-react";
 import { AppShell, Badge, PageTitle } from "../components/ui";
 import { readSession } from "../lib/session";
 import type { SupportTicket } from "../lib/support";
+import { useDialog } from "../components/dialog";
 
 const channelLabel: Record<string, string> = { rider: "骑手", franchise: "加盟商", station: "站点", partner: "Partner", web: "官网" };
 const statusBadge: Record<string, string> = { open: "待处理", answered: "已回复", resolved: "已解决" };
 
 export default function SupportAdminPage() {
+  const dialog = useDialog();
   const session = useMemo(() => readSession(), []);
   const isHq = !session || session.portal === "pontosys" || session.role === "Super Admin";
   const headers = useMemo(() => ({ "Content-Type": "application/json", "x-vento-role": session?.role ?? "Super Admin" }), [session]);
@@ -32,7 +34,7 @@ export default function SupportAdminPage() {
   }, [load]);
 
   async function act(action: "reply" | "resolve", ticketId: string) {
-    const reply = action === "reply" ? window.prompt("回复内容（提交人会在自己端看到）：") ?? "" : "";
+    const reply = action === "reply" ? (await dialog.prompt("回复工单", { message: "回复内容（提交人会在自己端看到）" })) ?? "" : "";
     if (action === "reply" && !reply.trim()) return;
     const response = await fetch("/api/support", { method: "POST", headers, body: JSON.stringify({ action, ticketId, reply }) });
     if (response.ok) {
