@@ -331,22 +331,26 @@ function EarningsTab({ earnings, scopeFranchise, scopeStation, date, headers }: 
   }, [loadPaid]);
 
   async function markPaid() {
-    const rows = earnings.riders.filter((r) => selected.has(r.id) && !paidNames.has(r.riderName));
-    if (rows.length === 0) return;
+    const rows = earnings.riders.filter((r) => selected.has(r.id) && !paidNames.has(r.riderName) && r.settleAmount > 0);
+    const zero = earnings.riders.filter((r) => selected.has(r.id) && !paidNames.has(r.riderName) && r.settleAmount <= 0).length;
+    if (rows.length === 0) {
+      setNote({ tone: "err", text: zero > 0 ? `所选 ${zero} 行结算金额为 0，无需付款。` : "请选择待付骑手。" });
+      return;
+    }
     setBusy(true);
     let failed = 0;
     for (const row of rows) {
       const response = await fetch("/api/wallet", {
         method: "POST",
         headers,
-        body: JSON.stringify({ action: "recordPayment", target: "rider", refName: row.riderName, franchise: row.franchise, amount: Math.max(0.01, row.settleAmount), period: "daily", weekFrom: date, weekTo: date, note: `T+1 ${date} 日结` }),
+        body: JSON.stringify({ action: "recordPayment", target: "rider", refName: row.riderName, franchise: row.franchise, amount: row.settleAmount, period: "daily", weekFrom: date, weekTo: date, note: `T+1 ${date} 日结` }),
       });
       if (!response.ok) failed += 1;
     }
     setBusy(false);
     setSelected(new Set());
     void loadPaid();
-    setNote(failed ? { tone: "err", text: `${rows.length - failed} 笔已标记，${failed} 笔失败。` } : { tone: "ok", text: `已标记 ${rows.length} 名骑手 ${date} 日结已付款。` });
+    setNote(failed ? { tone: "err", text: `${rows.length - failed} 笔已标记，${failed} 笔失败。` } : { tone: "ok", text: `已标记 ${rows.length} 名骑手 ${date} 日结已付款${zero ? `（跳过 ${zero} 行零金额）` : ""}。` });
   }
 
   const toggle = (id: string) => setSelected((prev) => { const next = new Set(prev); next.has(id) ? next.delete(id) : next.add(id); return next; });
