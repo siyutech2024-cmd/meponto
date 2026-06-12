@@ -175,9 +175,20 @@ export async function GET(request: Request) {
   const earningDates = [...new Set(memory.riderDailyEarnings.map((row) => row.date))].sort().reverse();
   const allDates = [...new Set([...dates, ...earningDates])].sort().reverse();
   const earningDate = date && allDates.includes(date) ? date : activeDate ?? earningDates[0] ?? null;
+  const profileByNinetyNine = new Map(memory.riders.filter((r) => r.ninetyNineId).map((r) => [r.ninetyNineId!, r]));
   let earningRows: EnrichedEarning[] = memory.riderDailyEarnings
     .filter((row) => !earningDate || row.date === earningDate)
-    .map((row) => ({ ...row, ...locate(row.rider99Id) }));
+    .map((row) => {
+      // Contact fields fall back to the rider PROFILE (raw exports carry none).
+      const profile = profileByNinetyNine.get(row.rider99Id);
+      return {
+        ...row,
+        pix: row.pix || profile?.pix || "",
+        cpf: row.cpf || profile?.cpf || "",
+        phone: row.phone || profile?.phone || "",
+        ...locate(row.rider99Id),
+      };
+    });
   if (franchise) earningRows = earningRows.filter((row) => row.franchise === franchise);
   if (station) earningRows = earningRows.filter((row) => row.station === station);
 
