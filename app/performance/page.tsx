@@ -300,7 +300,7 @@ export default function PerformancePage() {
       {tab === "riders" && data && data.riders.length > 0 && <RiderTable rows={data.riders} />}
 
       {tab === "earnings" && data && (
-        <EarningsTab earnings={data.earnings} scopeFranchise={scopeFranchise} scopeStation={scopeStation} />
+        <EarningsTab earnings={data.earnings} scopeFranchise={scopeFranchise} scopeStation={scopeStation} date={data.date ?? ""} headers={headers} />
       )}
 
       {tab === "import" && <ImportTab headers={headers} onDone={(text) => { setMessage({ tone: "ok", text }); void load(); }} onError={(text) => setMessage({ tone: "err", text })} />}
@@ -310,7 +310,49 @@ export default function PerformancePage() {
 
 const money = (value: number) => `R$ ${value.toFixed(2)}`;
 
-function EarningsTab({ earnings, scopeFranchise, scopeStation }: { earnings: Payload["earnings"]; scopeFranchise: string; scopeStation: string }) {
+function EarningsTab({ earnings, scopeFranchise, scopeStation, date, headers }: { earnings: Payload["earnings"]; scopeFranchise: string; scopeStation: string; date: string; headers: Record<string, string> }) {
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [paidNames, setPaidNames] = useState<Set<string>>(new Set());
+  const [busy, setBusy] = useState(false);
+  const [note, setNote] = useState<{ tone: "ok" | "err"; text: string } | null>(null);
+
+  // Riders already marked paid for this date (daily payment records).
+  const loadPaid = useCallback(async () => {
+    if (!date) return;
+    const response = await fetch(`/api/wallet?payments=1&from=${date}&to=${date}`, { headers, cache: "no-store" });
+    if (!response.ok) return;
+    const payload = await response.json();
+    setPaidNames(new Set((payload.data as Array<{ target: string; refName: string }>).filter((p) => p.target === "rider").map((p) => p.refName)));
+  }, [date, headers]);
+
+  useEffect(() => {
+    setSelected(new Set());
+    void loadPaid();
+  }, [loadPaid]);
+
+  async function markPaid() {
+    const rows = earnings.riders.filter((r) => selected.has(r.id) && !paidNames.has(r.riderName));
+    if (rows.length === 0) return;
+    setBusy(true);
+    let failed = 0;
+    for (const row of rows) {
+      const response = await fetch("/api/wallet", {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ action: "recordPayment", target: "rider", refName: row.riderName, franchise: row.franchise, amount: Math.max(0.01, row.settleAmount), period: "daily", weekFrom: date, weekTo: date, note: `T+1 ${date} 日结` }),
+      });
+      if (!response.ok) failed += 1;
+    }
+    setBusy(false);
+    setSelected(new Set());
+    void loadPaid();
+    setNote(failed ? { tone: "err", text: `${rows.length - failed} 笔已标记，${failed} 笔失败。` } : { tone: "ok", text: `已标记 ${rows.length} 名骑手 ${date} 日结已付款。` });
+  }
+
+  const toggle = (id: string) => setSelected((prev) => { const next = new Set(prev); next.has(id) ? next.delete(id) : next.add(id); return next; });
+  const selectableRows = earnings.riders.filter((r) => !paidNames.has(r.riderName));
+  const allSelected = selectableRows.length > 0 && selectableRows.every((r) => selected.has(r.id));
+
   if (earnings.riders.length === 0) {
     return <div className="panel p-6 text-sm font-bold text-[var(--muted)]">还没有收入数据。请到「导入报表」上传 Eastwind「Ganhos do entregador parceiro」表。</div>;
   }
@@ -381,10 +423,41 @@ function EarningsTab({ earnings, scopeFranchise, scopeStation }: { earnings: Pay
       ))}
 
       <div className="panel overflow-x-auto p-4">
-        <div className="mb-3 text-xs font-black uppercase text-[var(--accent)]">骑手收入明细（结算金额取自源表「金额」列）</div>
-        <table className="w-full min-w-[1150px] text-sm">
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+          <div className="text-xs font-black uppercase text-[var(--accent)]">骑手收入明细 · {date || "全部日期"}（日结口径）</div>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              className="tag"
+              onClick={() =>
+                downloadCsv(
+                  `pagamento-${date || "all"}`,
+                  ["日期", "骑手", "99ID", "PIX", "加盟商", "站点", "完单", "结算金额", "付款状态"],
+                  earnings.riders.map((r) => [date, r.riderName, r.rider99Id, r.pix, r.franchise, r.station, String(r.orders), r.settleAmount.toFixed(2), paidNames.has(r.riderName) ? "已付" : "待付"]),
+                )
+              }
+            >
+              导出付款单
+            </button>
+            <button
+              type="button"
+              disabled={busy || selected.size === 0}
+              onClick={() => void markPaid()}
+              className="inline-flex h-9 items-center rounded-[8px] bg-[var(--accent)] px-4 text-xs font-black uppercase text-[var(--accent-ink)] disabled:opacity-40"
+            >
+              批量标记已付（{selected.size}）
+            </button>
+          </div>
+        </div>
+        {note && (
+          <div className={`mb-3 rounded-[8px] border px-3 py-2 text-xs font-black ${note.tone === "ok" ? "border-[var(--ok)] bg-[var(--ok-bg)] text-[var(--ok-ink)]" : "border-[var(--danger)] bg-[var(--danger-bg)] text-[var(--danger-ink)]"}`}>{note.text}</div>
+        )}
+        <table className="w-full min-w-[1220px] text-sm">
           <thead>
             <tr className="text-left text-[10px] font-black uppercase text-[var(--muted)]">
+              <th className="pb-2">
+                <input type="checkbox" className="h-4 w-4 accent-[var(--accent)]" checked={allSelected} onChange={(e) => setSelected(e.target.checked ? new Set(selectableRows.map((r) => r.id)) : new Set())} />
+              </th>
               <th className="pb-2">骑手</th>
               <th className="pb-2">99 ID</th>
               <th className="pb-2">PIX</th>
@@ -404,7 +477,14 @@ function EarningsTab({ earnings, scopeFranchise, scopeStation }: { earnings: Pay
           </thead>
           <tbody>
             {earnings.riders.map((row) => (
-              <tr key={row.id} className="border-t border-[var(--line)]">
+              <tr key={row.id} className={`border-t border-[var(--line)] ${paidNames.has(row.riderName) ? "opacity-60" : ""}`}>
+                <td className="py-2">
+                  {paidNames.has(row.riderName) ? (
+                    <span className="text-[10px] font-black uppercase text-[var(--ok-ink)]">已付</span>
+                  ) : (
+                    <input type="checkbox" className="h-4 w-4 accent-[var(--accent)]" checked={selected.has(row.id)} onChange={() => toggle(row.id)} />
+                  )}
+                </td>
                 <td className="py-2 font-black">{row.riderName}{!row.riderId && <span className="ml-1"><Badge value="未建档" /></span>}</td>
                 <td className="py-2 text-[11px] font-bold text-[var(--muted)]">{row.rider99Id}</td>
                 <td className="py-2 text-[11px] font-bold">{row.pix || "-"}</td>
