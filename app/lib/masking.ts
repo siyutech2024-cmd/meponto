@@ -26,24 +26,15 @@ export function canRevealRiderSensitive(request: Request) {
   return getRiderSensitiveRevealDecision(request).allowed;
 }
 
-export function getRiderSensitiveRevealDecision(request: Request) {
-  const revealHeader = request.headers.get("x-vento-reveal-sensitive");
+/**
+ * Sensitive fields (CPF/PIX) are shown BY DEFAULT to roles that manage riders
+ * or finance — pass the session-resolved role in production.
+ */
+export function getRiderSensitiveRevealDecision(request: Request, resolvedRole?: Role) {
   const roleHeader = request.headers.get("x-vento-role");
-
-  if (revealHeader !== "true" || !roleHeader || !roles.includes(roleHeader as Role)) {
-    return {
-      requested: revealHeader === "true",
-      allowed: false,
-      role: roleHeader && roles.includes(roleHeader as Role) ? (roleHeader as Role) : undefined,
-    };
-  }
-
-  const role = roleHeader as Role;
-  return {
-    requested: true,
-    allowed: can(role, "manage_riders") || can(role, "view_finance"),
-    role,
-  };
+  const role = resolvedRole ?? (roleHeader && roles.includes(roleHeader as Role) ? (roleHeader as Role) : undefined);
+  const allowed = Boolean(role && (can(role, "manage_riders") || can(role, "view_finance")));
+  return { requested: allowed, allowed, role };
 }
 
 export function maskRiderSensitive(rider: Rider): Rider {
