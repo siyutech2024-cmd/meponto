@@ -142,17 +142,32 @@ async function flushDirtyCollections() {
         state.pendingPurges.delete(name);
       }
 
-      // Explicit single-record deletes (DELETE routes).
+      // Explicit single-record deletes (DELETE routes). WRITE WINS: a record
+      // that was re-created in memory after the delete was queued (same
+      // deterministic id, e.g. re-importing a purged T+1 day) must NOT be
+      // deleted — otherwise a stale queued delete silently eats fresh imports.
       const deletes = state.pendingDeletes.get(name);
       if (deletes && deletes.size > 0) {
-        const ids = Array.from(deletes);
-        const { error: deleteError } = await supabase
-          .from(TABLE)
-          .delete()
-          .eq("collection", name)
-          .in("record_id", ids);
-        if (deleteError) throw new Error(deleteError.message);
-        state.pendingDeletes.delete(name);
+        const present = new Set(collection.map((record) => record?.id));
+        for (const id of Array.from(deletes)) {
+          if (present.has(id)) deletes.delete(id);
+        }
+      }
+      if (deletes) {
+        if (deletes.size > 0) {
+          const ids = Array.from(deletes);
+          const { error: deleteError } = await supabase
+            .from(TABLE)
+            .delete()
+            .eq("collection", name)
+            .in("record_id", ids);
+          // Clear even on failure — endlessly retrying stale deletes risks
+          // destroying rows written by sibling instances in the meantime.
+          state.pendingDeletes.delete(name);
+          if (deleteError) throw new Error(deleteError.message);
+        } else {
+          state.pendingDeletes.delete(name);
+        }
       }
 
       const records = collection.filter((record) => record && typeof record.id === "string");
@@ -235,6 +250,14 @@ export async function refreshCollectionsFromDatabase(collectionNames: string[]):
         .filter((row) => row && typeof row.id === "string");
       const dbIds = new Set(dbRows.map((row) => row.id));
       const pendingDeletes = state.pendingDeletes.get(name) ?? new Set<string>();
+      // Write wins here too: a queued delete for an id that is present in the
+      // local collection again means the record was re-created — unqueue it.
+      if (pendingDeletes.size > 0) {
+        const present = new Set(collection.map((record) => record?.id));
+        for (const id of Array.from(pendingDeletes)) {
+          if (present.has(id)) pendingDeletes.delete(id);
+        }
+      }
       const localNewSet = state.localNew.get(name) ?? new Set<string>();
       // Keep a record that's absent from the database ONLY if this instance
       // created it (not flushed yet). Anything else absent from the database
