@@ -109,15 +109,33 @@ export async function GET(request: Request) {
   return jsonResponse({ data: [...data, ...reportOnly] });
 }
 
-type AssignBody = { action: "assign"; riderId: string; ponto?: string; franchise?: string; status?: string };
+type AssignBody = { action: "assign" | "updateProfile"; riderId: string; ponto?: string; franchise?: string; status?: string };
 
 async function handlePost(request: Request) {
   const forbidden = requirePermission(request, "manage_riders");
   if (forbidden) return forbidden;
 
   await refreshCollectionsFromDatabase(COLLECTIONS);
-  const body = (await request.json()) as Partial<Rider> & Partial<AssignBody>;
+  const body = (await request.json()) as Partial<Rider> & Partial<AssignBody> & { action?: string };
   const actor = roleFromRequest(request);
+
+  // Update editable profile fields (detail page form).
+  if (body.action === "updateProfile") {
+    const riderId = String((body as { riderId?: string }).riderId ?? "");
+    const index = memory.riders.findIndex((item) => item.id === riderId);
+    if (index === -1) return jsonResponse({ error: "Rider not found" }, { status: 404 });
+    const fields = ["name", "cpf", "phone", "pix", "bairro", "vehicleType", "brand", "model"] as const;
+    const patch: Record<string, string> = {};
+    for (const field of fields) {
+      const value = (body as Record<string, unknown>)[field];
+      if (typeof value === "string") patch[field] = value.trim();
+    }
+    if (typeof body.status === "string") patch.status = normalizeStatus(body.status);
+    memory.riders[index] = { ...memory.riders[index], ...patch };
+    appendServerAudit({ actor, action: "RIDER_PROFILE_UPDATED", entity: "Rider", entityId: riderId, detail: `${memory.riders[index].name}: ${Object.keys(patch).join(", ")} updated.`, risk: "Low" });
+    await flushPendingToDatabase();
+    return jsonResponse({ data: memory.riders[index] });
+  }
 
   // Assign station/franchise/status — also materializes report-only riders.
   if (body.action === "assign") {

@@ -67,6 +67,8 @@ export default function FranchiseDispatchPage() {
         </div>
       )}
 
+      <FranchiseOverview franchise={franchise} headers={headers} />
+
       <div className="grid gap-4 xl:grid-cols-[1fr_420px]">
         <div className="panel p-4">
           <div className="mb-3 text-xs font-black uppercase text-[var(--accent)]">总部分配给我的班次配额 → 拆分给站点</div>
@@ -225,5 +227,74 @@ export default function FranchiseDispatchPage() {
         </div>
       </div>
     </AppShell>
+  );
+}
+
+/** Franchise identity card + this-week KPI strip (own data only). */
+function FranchiseOverview({ franchise, headers }: { franchise: string; headers: Record<string, string> }) {
+  const [info, setInfo] = useState<{ owner?: string; phone?: string; city?: string; depositBalance?: number; stations: number; riders: number } | null>(null);
+  const [kpi, setKpi] = useState<{ orders: number; settle: number; ar: number | null; reportDate: string } | null>(null);
+  const [week, setWeek] = useState<{ from: string; to: string } | null>(null);
+
+  useEffect(() => {
+    void (async () => {
+      const [networkResponse, ridersResponse, weeklyResponse, perfResponse] = await Promise.all([
+        fetch("/api/network", { headers, cache: "no-store" }),
+        fetch("/api/riders", { headers, cache: "no-store" }),
+        fetch("/api/wallet?view=weekly", { headers, cache: "no-store" }),
+        fetch("/api/performance", { headers, cache: "no-store" }),
+      ]);
+      if (networkResponse.ok) {
+        const network = (await networkResponse.json()).data as { franchises: Array<{ name: string; owner?: string; phone?: string; city?: string; depositBalance?: number }>; stations: Array<{ franchise?: string }> };
+        const mine = network.franchises.find((f) => f.name === franchise);
+        const stations = network.stations.filter((s) => s.franchise === franchise).length;
+        setInfo({ owner: mine?.owner, phone: mine?.phone, city: mine?.city, depositBalance: mine?.depositBalance, stations, riders: 0 });
+      }
+      if (ridersResponse.ok) {
+        const riders = (await ridersResponse.json()).data as Array<{ franchise?: string }>;
+        setInfo((current) => (current ? { ...current, riders: riders.length } : current));
+      }
+      if (weeklyResponse.ok) {
+        const weekly = (await weeklyResponse.json()).data as { week: { from: string; to: string }; franchises: Array<{ franchise: string; settle: number; riders: Array<{ orders: number }> }> };
+        setWeek(weekly.week);
+        const mine = weekly.franchises.find((g) => g.franchise === franchise);
+        setKpi((current) => ({ orders: mine?.riders.reduce((sum, r) => sum + r.orders, 0) ?? 0, settle: mine?.settle ?? 0, ar: current?.ar ?? null, reportDate: current?.reportDate ?? "" }));
+      }
+      if (perfResponse.ok) {
+        const perf = (await perfResponse.json()).data as { date: string | null; riders: Array<{ ar: number | null }> };
+        const ars = perf.riders.map((r) => r.ar).filter((v): v is number => v !== null && Number.isFinite(v));
+        const avg = ars.length ? Math.round((ars.reduce((sum, v) => sum + v, 0) / ars.length) * 10) / 10 : null;
+        setKpi((current) => ({ orders: current?.orders ?? 0, settle: current?.settle ?? 0, ar: avg, reportDate: perf.date ?? "" }));
+      }
+    })();
+  }, [franchise, headers]);
+
+  const md = (iso: string) => `${Number(iso.slice(5, 7))}.${Number(iso.slice(8, 10))}`;
+
+  return (
+    <div className="mb-4 grid gap-3 md:grid-cols-2 xl:grid-cols-6">
+      <div className="panel p-3 md:col-span-2">
+        <div className="text-[10px] font-black uppercase text-[var(--muted)]">加盟商档案</div>
+        <div className="mt-1 text-sm font-black">{franchise}</div>
+        <div className="mt-1 text-[11px] font-bold text-[var(--muted)]">
+          {info ? `${info.owner || "—"}${info.phone ? ` ｜ ${info.phone}` : ""} ｜ ${info.city || "São Paulo"}` : "加载中..."}
+        </div>
+      </div>
+      {[
+        ["下属站点", info ? String(info.stations) : "—"],
+        ["骑手数", info ? String(info.riders) : "—"],
+        ["预存余额", info ? `R$ ${(info.depositBalance ?? 0).toFixed(2)}` : "—"],
+        [week ? `本周完单（${md(week.from)}–${md(week.to)}）` : "本周完单", kpi ? String(kpi.orders) : "—"],
+      ].map(([label, value]) => (
+        <div key={label} className="panel p-3 text-center">
+          <div className="text-[10px] font-black uppercase text-[var(--muted)]">{label}</div>
+          <div className="mt-1 text-lg font-black">{value}</div>
+        </div>
+      ))}
+      <div className="panel border-[var(--accent)] p-3 text-center">
+        <div className="text-[10px] font-black uppercase text-[var(--accent)]">本周应结{kpi?.ar !== null && kpi?.ar !== undefined ? ` ｜ AR ${kpi.ar}%` : ""}</div>
+        <div className="mt-1 text-lg font-black text-[var(--accent)]">{kpi ? `R$ ${kpi.settle.toFixed(2)}` : "—"}</div>
+      </div>
+    </div>
   );
 }
