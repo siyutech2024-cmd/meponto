@@ -52,6 +52,7 @@ import { appUsers, type AppUser } from "../users";
 import { riderDailyEarnings, riderDailyKpis, type RiderDailyEarning, type RiderDailyKpi } from "../performance";
 import { mallConfigs, type MallConfig } from "../mall";
 import { riderWithdrawals, walletPayments, type RiderWithdrawal, type WalletPayment } from "../finance";
+import { assessmentRules, type AssessmentRule } from "../assessment";
 import { supportTickets, type SupportTicket } from "../support";
 import { pushSubscriptions, type PushSubscriptionRecord } from "../push";
 import { franchises, type Franchise } from "../network";
@@ -104,6 +105,7 @@ const globalState = globalThis as typeof globalThis & {
     mallConfigs: MallConfig[];
     riderWithdrawals: RiderWithdrawal[];
     walletPayments: WalletPayment[];
+    assessmentRules: AssessmentRule[];
     supportTickets: SupportTicket[];
     pushSubscriptions: PushSubscriptionRecord[];
     franchises: Franchise[];
@@ -142,6 +144,7 @@ export const memory =
     mallConfigs: trackCollection("mallConfigs", [...mallConfigs]),
     riderWithdrawals: trackCollection("riderWithdrawals", [...riderWithdrawals]),
     walletPayments: trackCollection("walletPayments", [...walletPayments]),
+    assessmentRules: trackCollection("assessmentRules", [...assessmentRules]),
     supportTickets: trackCollection("supportTickets", [...supportTickets]),
     pushSubscriptions: trackCollection("pushSubscriptions", [...pushSubscriptions]),
     franchises: trackCollection("franchises", [...franchises]),
@@ -210,6 +213,10 @@ memory.pushSubscriptions ??= [];
 memory.pushSubscriptions = trackCollection("pushSubscriptions", memory.pushSubscriptions);
 memory.franchises ??= [];
 memory.franchises = trackCollection("franchises", memory.franchises);
+memory.walletPayments ??= [];
+memory.walletPayments = trackCollection("walletPayments", memory.walletPayments);
+memory.assessmentRules ??= [];
+memory.assessmentRules = trackCollection("assessmentRules", memory.assessmentRules);
 
 export function jsonResponse<T>(data: T, init?: ResponseInit) {
   // Make sure pending mutations reach the database even on serverless,

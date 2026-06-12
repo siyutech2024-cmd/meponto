@@ -719,15 +719,9 @@ function ImportTab({ headers, onDone, onError }: { headers: Record<string, strin
           log.push(`✕ ${file.name}：没有可导入的骑手行`);
           continue;
         }
-        // Data-accuracy guard: refuse an earnings import whose 金额/完单 column was not recognized.
-        if (isEarnings) {
-          const noSettle = records.every((r) => r.settleAmount === undefined);
-          const noOrders = records.every((r) => r.orders === undefined);
-          if (noSettle || noOrders) {
-            log.push(`✕ ${file.name}：未识别${noSettle ? "「金额」" : ""}${noSettle && noOrders ? "和" : ""}${noOrders ? "「完单/order」" : ""}列，表头为：${headerRow.join(" | ").slice(0, 160)}`);
-            continue;
-          }
-        }
+        // Raw Eastwind export has no 金额/order columns — the server fills
+        // orders from the same-day KPI sheet and computes 金额 = 今日统计 + 完单×单价.
+        const rawExport = isEarnings && records.every((r) => r.settleAmount === undefined);
         // Business date comes from the sheet's own 日期 column.
         const date = normalizeDate(records[0].date ?? "") || reportDate;
         const response = await fetch("/api/performance", {
@@ -740,7 +734,7 @@ function ImportTab({ headers, onDone, onError }: { headers: Record<string, strin
           log.push(`✕ ${file.name}：${payload.error ?? response.status}`);
           continue;
         }
-        log.push(`✓ ${file.name} → ${isEarnings ? "收入结算" : "KPI 绩效"} ${date}：${payload.data.parsed} 名骑手（新增 ${payload.data.created}，更新 ${payload.data.updated}）`);
+        log.push(`✓ ${file.name} → ${isEarnings ? "收入结算" : "KPI 绩效"} ${date}：${payload.data.parsed} 名骑手（新增 ${payload.data.created}，更新 ${payload.data.updated}）${rawExport ? "｜原始表无金额列 → 金额=今日统计+完单×R$2.5（完单取自同日KPI表，请确保两表都已导入）" : ""}`);
       }
     } catch (error) {
       log.push(`✕ 解析失败：${(error as Error).message}`);

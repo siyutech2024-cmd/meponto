@@ -59,6 +59,7 @@ export const portalConfigs: Record<PortalId, PortalConfig> = {
       { href: "/users", label: "用户与权限", description: "创建多用户账号、分配角色与系统归属。", permission: "view_audit" },
       { href: "/access-control", label: "权限矩阵", description: "账号、角色和功能权限分离。", permission: "view_audit" },
       { href: "/reports", label: "报表导出", description: "运营、站点、骑手和排班报表。", permission: "view_analytics" },
+      { href: "/assessment", label: "考核规则", description: "服务质量阈值与抽佣调整规则。", permission: "view_analytics" },
     ],
   },
   partner: {
@@ -109,6 +110,7 @@ export const portalConfigs: Record<PortalId, PortalConfig> = {
       { href: "/users", label: "站点账号", description: "为下属站点创建和管理登录账号。", permission: "manage_slots" },
       { href: "/riders", label: "骑手运营", description: "查看所属骑手与状态。", permission: "manage_riders" },
       { href: "/reports", label: "经营报表", description: "查看站点与排班结果报表。", permission: "view_analytics" },
+      { href: "/assessment", label: "考核目标", description: "总部考核规则与本周达标进度。", permission: "view_analytics" },
     ],
   },
   ponto: {
@@ -124,6 +126,7 @@ export const portalConfigs: Record<PortalId, PortalConfig> = {
     modules: [
       { href: "/dispatch/station", label: "排班提报", description: "查看本站配额并提报骑手报名。", permission: "manage_slots" },
       { href: "/performance", label: "KPI 考核", description: "查看本站骑手的 T+1 KPI。", permission: "view_analytics" },
+      { href: "/assessment", label: "考核目标", description: "总部考核规则与本站达标进度。", permission: "view_analytics" },
       { href: "/mall/station", label: "商城到货", description: "确认兑换商品到站与骑手领取。", permission: "manage_slots" },
       { href: "/riders", label: "本站骑手", description: "维护站点骑手档案、状态和排班资格。", permission: "manage_riders" },
       { href: "/pontos", label: "站点资料", description: "查看站点位置、容量和负责人。", permission: "manage_pontos" },
