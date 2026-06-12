@@ -1,6 +1,6 @@
 import { appendServerAudit, jsonResponse, memory } from "../../lib/server/memory";
 import { flushPendingToDatabase, persistDeleteRecord, refreshCollectionsFromDatabase } from "../../lib/server/persistence";
-import { requirePermission, roleFromRequest } from "../../lib/server/authz";
+import { requirePermission, roleFromRequest, scopeFromRequest } from "../../lib/server/authz";
 import {
   aggregateEarnings,
   aggregateKpis,
@@ -419,6 +419,8 @@ async function handlePost(request: Request) {
   // Remove ONE business day's imported rows (both T+1 tables) — for fixing
   // mistaken uploads; re-import afterwards to restore correct data.
   if (body.action === "purgeDate") {
+    const hqScope = await scopeFromRequest(request);
+    if (hqScope.franchise || hqScope.station) return jsonResponse({ error: "仅总部可执行此操作" }, { status: 403 });
     const date = String(body.date ?? "");
     if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return jsonResponse({ error: "date (YYYY-MM-DD) is required" }, { status: 400 });
     const kpiVictims = memory.riderDailyKpis.filter((row) => row.date === date);
@@ -438,6 +440,8 @@ async function handlePost(request: Request) {
   // Backfill rider profile PIX/CPF/phone from already-imported Ganhos rows
   // (latest row per rider wins; only fills EMPTY profile fields).
   if (body.action === "syncRiderContacts") {
+    const hqScope = await scopeFromRequest(request);
+    if (hqScope.franchise || hqScope.station) return jsonResponse({ error: "仅总部可执行此操作" }, { status: 403 });
     const latestByNinetyNine = new Map<string, (typeof memory.riderDailyEarnings)[number]>();
     for (const row of [...memory.riderDailyEarnings].sort((a, b) => a.date.localeCompare(b.date))) {
       if (row.pix || row.cpf || row.phone) latestByNinetyNine.set(row.rider99Id, row);
@@ -463,6 +467,8 @@ async function handlePost(request: Request) {
 
   // Standalone PIX sheet import: match riders by 99ID → CPF → exact name.
   if (body.action === "importPixRecords") {
+    const hqScope = await scopeFromRequest(request);
+    if (hqScope.franchise || hqScope.station) return jsonResponse({ error: "仅总部可执行此操作" }, { status: 403 });
     const records = Array.isArray((body as { records?: Array<Record<string, unknown>> }).records) ? (body as { records: Array<Record<string, unknown>> }).records.slice(0, 1000) : [];
     if (records.length === 0) return jsonResponse({ error: "records are required" }, { status: 400 });
     const digits = (value: unknown) => String(value ?? "").replace(/\D/g, "");
