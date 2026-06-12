@@ -4,6 +4,7 @@ import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { BarChart3, Building2, CircleDollarSign, FileSpreadsheet, MapPin, RefreshCcw, Upload, Users } from "lucide-react";
 import { AppShell, Badge, PageTitle } from "../components/ui";
 import { downloadCsv } from "../lib/csv";
+import { useDialog } from "../components/dialog";
 import { readSession } from "../lib/session";
 import { readXlsxRows, rowsToObjects } from "../lib/xlsx-lite";
 import type { EarningAggregate, KpiAggregate, RiderDailyEarning, RiderDailyKpi } from "../lib/performance";
@@ -650,6 +651,7 @@ function RiderTable({ rows }: { rows: EnrichedKpi[] }) {
 }
 
 function ImportTab({ headers, onDone, onError }: { headers: Record<string, string>; onDone: (text: string) => void; onError: (text: string) => void }) {
+  const dialog = useDialog();
   const [raw, setRaw] = useState("");
   const [reportDate, setReportDate] = useState(() => {
     const d = new Date();
@@ -670,8 +672,37 @@ function ImportTab({ headers, onDone, onError }: { headers: Record<string, strin
         const objects = rowsToObjects(rows);
         const isEarnings = headerRow.some((cell) => cell.includes("行程收入"));
         const isKpi = headerRow.some((cell) => cell.includes("%TSH"));
+        const isPix = !isEarnings && !isKpi && headerRow.some((cell) => /pix|chave/i.test(cell));
+        if (isPix) {
+          // Standalone PIX sheet: any columns with 99ID/CPF/姓名 + PIX.
+          const pixRecords = objects
+            .map((row) => {
+              const record: Record<string, string> = {};
+              for (const [header, value] of Object.entries(row)) {
+                const h = header.trim();
+                if (/pix|chave/i.test(h) && record.pix === undefined) record.pix = value;
+                else if (/骑手ID|司机ID|99/i.test(h) && record.rider99Id === undefined) record.rider99Id = value;
+                else if (/cpf|身份证/i.test(h) && record.cpf === undefined) record.cpf = value;
+                else if (/姓名|nome|name/i.test(h) && record.riderName === undefined) record.riderName = value;
+              }
+              return record;
+            })
+            .filter((record) => (record.pix ?? "").trim());
+          if (pixRecords.length === 0) {
+            log.push(`✕ ${file.name}：未找到带 PIX 的数据行`);
+            continue;
+          }
+          const response = await fetch("/api/performance", { method: "POST", headers, body: JSON.stringify({ action: "importPixRecords", records: pixRecords }) });
+          const payload = await response.json().catch(() => ({}));
+          if (!response.ok) {
+            log.push(`✕ ${file.name}：${payload.error ?? response.status}`);
+            continue;
+          }
+          log.push(`✓ ${file.name} → PIX 导入：匹配 ${payload.data.matched} 名骑手${payload.data.unmatched.length > 0 ? `；未匹配 ${payload.data.unmatched.length}：${payload.data.unmatched.slice(0, 5).join("、")}` : ""}`);
+          continue;
+        }
         if (!isEarnings && !isKpi) {
-          log.push(`✕ ${file.name}：无法识别表头（需要 Eastwind 骑手报表或收入表）`);
+          log.push(`✕ ${file.name}：无法识别表头（需要 Eastwind 骑手报表 / 收入表 / PIX 表）`);
           continue;
         }
         const mapping = isEarnings ? EARNING_HEADERS : KPI_HEADERS;
@@ -727,6 +758,39 @@ function ImportTab({ headers, onDone, onError }: { headers: Record<string, strin
           {busy ? "解析导入中..." : "点击选择 .xlsx 文件（可多选）"}
           <input type="file" accept=".xlsx" multiple className="hidden" disabled={busy} onChange={(e) => void importFiles(e.target.files)} />
         </label>
+        <div className="flex flex-wrap items-center gap-2 border-t border-[var(--line)] pt-3">
+          <button
+            type="button"
+            className="tag"
+            disabled={busy}
+            onClick={async () => {
+              const response = await fetch("/api/performance", { method: "POST", headers, body: JSON.stringify({ action: "syncRiderContacts" }) });
+              const payload = await response.json().catch(() => ({}));
+              if (response.ok) onDone(`已从历史收入表回填 ${payload.data.filled} 名骑手的 PIX/CPF/电话。`);
+              else onError(payload.error ?? "同步失败");
+            }}
+          >
+            从已导入收入表回填 PIX
+          </button>
+          <label className="flex items-center gap-2 text-[11px] font-bold text-[var(--muted)]">
+            清除某日数据：
+            <input type="date" value={reportDate} onChange={(e) => setReportDate(e.target.value)} className="h-9 rounded-[8px] border border-[var(--line)] bg-[var(--surface-raised)] px-2 text-xs font-bold outline-none" />
+          </label>
+          <button
+            type="button"
+            className="tag text-[var(--danger-ink)]"
+            disabled={busy}
+            onClick={async () => {
+              if (!(await dialog.confirm(`清除 ${reportDate} 的全部 T+1 数据？`, { message: "该日 KPI 与收入两表的导入记录都会删除（用于修正误传），之后可重新上传正确文件。", tone: "danger", confirmText: "清除" }))) return;
+              const response = await fetch("/api/performance", { method: "POST", headers, body: JSON.stringify({ action: "purgeDate", date: reportDate }) });
+              const payload = await response.json().catch(() => ({}));
+              if (response.ok) onDone(`已清除 ${reportDate}：KPI ${payload.data.kpiRemoved} 行、收入 ${payload.data.earningsRemoved} 行。`);
+              else onError(payload.error ?? "清除失败");
+            }}
+          >
+            清除该日数据
+          </button>
+        </div>
         {fileLog.length > 0 && (
           <div className="space-y-1 text-sm font-bold">
             {fileLog.map((line) => (
