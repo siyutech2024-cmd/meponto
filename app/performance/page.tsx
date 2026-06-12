@@ -146,6 +146,15 @@ function mapRecords(rows: Array<Record<string, string>>, mapping: Record<string,
       }
       return record;
     })
+    .map((record) => {
+      // Excel re-saves can turn 15-digit ids into 6.50911E+14 or 650911...0 floats.
+      const raw = record.rider99Id ?? "";
+      if (raw && !/^\d{6,}$/.test(raw)) {
+        const parsed = Number(raw);
+        if (Number.isFinite(parsed) && parsed > 1e5) record.rider99Id = parsed.toFixed(0);
+      }
+      return record;
+    })
     .filter((record) => /^\d{6,}$/.test(record.rider99Id ?? ""));
 }
 
@@ -678,7 +687,7 @@ function ImportTab({ headers, onDone, onError }: { headers: Record<string, strin
         const rows = await readXlsxRows(await file.arrayBuffer());
         const headerRow = rows[0] ?? [];
         const objects = rowsToObjects(rows);
-        const isEarnings = headerRow.some((cell) => cell.includes("行程收入"));
+        const isEarnings = headerRow.some((cell) => cell.includes("行程收入") || /ganhos de viagem|renda de viagem|corridas\s*\(r\$\)/i.test(cell));
         const isKpi = headerRow.some((cell) => cell.includes("%TSH"));
         const isPix = !isEarnings && !isKpi && headerRow.some((cell) => /pix|chave/i.test(cell));
         if (isPix) {
@@ -710,13 +719,14 @@ function ImportTab({ headers, onDone, onError }: { headers: Record<string, strin
           continue;
         }
         if (!isEarnings && !isKpi) {
-          log.push(`✕ ${file.name}：无法识别表头（需要 Eastwind 骑手报表 / 收入表 / PIX 表）`);
+          log.push(`✕ ${file.name}：无法识别表头（需要 Eastwind 骑手报表 / 收入表 / PIX 表）。实际表头：${headerRow.filter(Boolean).join(" | ").slice(0, 300)}`);
           continue;
         }
         const mapping = isEarnings ? EARNING_HEADERS : KPI_HEADERS;
         const records = mapRecords(objects, mapping, isEarnings ? EARNING_PATTERNS : KPI_PATTERNS);
         if (records.length === 0) {
-          log.push(`✕ ${file.name}：没有可导入的骑手行`);
+          const sample = objects[0] ? Object.entries(objects[0]).slice(0, 6).map(([k, v]) => `${k}=${v}`).join("，") : "（无数据行）";
+          log.push(`✕ ${file.name}：没有可导入的骑手行（需要 6 位以上纯数字 99ID）。表头：${headerRow.filter(Boolean).join(" | ").slice(0, 200)}；首行样例：${String(sample).slice(0, 200)}`);
           continue;
         }
         // Raw Eastwind export has no 金额/order columns — the server fills
