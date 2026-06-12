@@ -360,21 +360,26 @@ export default function HomePage() {
 
       {/* ---- Chapters -------------------------------------------------------- */}
       <div className="relative z-10">
-        {t.chapters.map((section, index) => (
-          <section key={section.tag} ref={setSection(index)} data-chapter={index} className="flex min-h-screen items-center px-6 md:px-24 lg:px-36">
-            {chapter === index && ready && (
-              <div className="max-w-3xl" key={`${lang}-${index}`}>
+        {t.chapters.map((section, index) => {
+          // SEO: every chapter is always present in the server-rendered HTML
+          // (crawlers and AI engines don't run JS). Inactive chapters are
+          // hidden via CSS; remount (key change) replays entry animations.
+          const active = chapter === index && ready;
+          const Heading = index === 0 ? "h1" : "h2";
+          return (
+            <section key={section.tag} ref={setSection(index)} data-chapter={index} className="flex min-h-screen items-center px-6 md:px-24 lg:px-36">
+              <div className="max-w-3xl" key={`${lang}-${index}-${active ? "on" : "off"}`} style={active ? undefined : { visibility: "hidden" }} aria-hidden={active ? undefined : true}>
                 <div className="mp-rise mb-5 flex items-center gap-3">
                   <span className="text-[11px] font-black uppercase tracking-[0.3em]" style={{ color: "#f5b301" }}>
                     {String(index + 1).padStart(2, "0")} · {section.tag}
                   </span>
                   <span className="h-px w-16" style={{ background: "rgba(245,179,1,.5)" }} />
                 </div>
-                <h2 className="mp-rise text-5xl font-black leading-[1.02] md:text-7xl lg:text-8xl">
+                <Heading className="mp-rise text-5xl font-black leading-[1.02] md:text-7xl lg:text-8xl">
                   {section.title.map((line) => (
                     <span key={line} className="block">{line}</span>
                   ))}
-                </h2>
+                </Heading>
                 <p className="mp-rise-2 mt-7 max-w-xl text-base font-medium leading-7 md:text-lg" style={{ color: "rgba(255,255,255,.65)" }}>{section.text}</p>
                 {section.cta && (
                   <a href={section.cta.href} className="mp-rise-3 group mt-9 inline-flex items-center gap-3 text-[13px] font-black uppercase tracking-[0.2em]" style={{ color: "#f5b301" }}>
@@ -383,14 +388,16 @@ export default function HomePage() {
                   </a>
                 )}
               </div>
-            )}
-          </section>
-        ))}
+            </section>
+          );
+        })}
 
         {/* ---- Finale -------------------------------------------------------- */}
         <section ref={setSection(t.chapters.length)} data-chapter={t.chapters.length} className="relative flex min-h-screen flex-col items-center justify-center px-6 text-center">
-          {chapter === t.chapters.length && (
-            <div key={`finale-${lang}`}>
+          {(() => {
+            const finaleActive = chapter === t.chapters.length;
+            return (
+            <div key={`finale-${lang}-${finaleActive ? "on" : "off"}`} style={finaleActive ? undefined : { visibility: "hidden" }} aria-hidden={finaleActive ? undefined : true}>
               <h2 className="mp-rise text-5xl font-black leading-[1.02] md:text-7xl lg:text-8xl">
                 {t.finale.title.map((line) => (
                   <span key={line} className="block">{line}</span>
@@ -406,7 +413,8 @@ export default function HomePage() {
                 </a>
               </div>
             </div>
-          )}
+            );
+          })()}
 
           <footer className="absolute inset-x-0 bottom-0 border-t px-6 py-5" style={{ borderColor: "rgba(255,255,255,.08)", background: "rgba(11,14,20,.6)", backdropFilter: "blur(6px)" }}>
             <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-3">
