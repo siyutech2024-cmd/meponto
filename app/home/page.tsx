@@ -252,7 +252,7 @@ export default function HomePage() {
       {/* ---- Fixed map background (code-drawn Brazil) ----------------------- */}
       <div className="fixed inset-0 z-0 overflow-hidden" aria-hidden>
         <div
-          className="absolute inset-[-12%] transition-transform duration-[1800ms]"
+          className="absolute inset-0 transition-transform duration-[1800ms]"
           style={{
             transform: CAMERA[Math.min(chapter, CAMERA.length - 1)],
             transformOrigin: "65% 70%",
@@ -260,7 +260,7 @@ export default function HomePage() {
           }}
         >
           <div style={{ animation: "mpDrift 26s ease-in-out infinite", height: "100%", width: "100%" }}>
-            <svg viewBox="0 0 1200 800" className="h-full w-full" preserveAspectRatio="xMidYMid slice">
+            <svg viewBox="0 0 1200 800" className="h-full w-full" preserveAspectRatio="xMidYMid meet">
               <defs>
                 <clipPath id="mpBrazil">
                   <path d={BRAZIL} />
