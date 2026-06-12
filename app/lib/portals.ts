@@ -282,6 +282,12 @@ export const portalHostMap: Record<string, PortalId> = {
 };
 
 export function findTestAccount(identifier: string, password: string) {
+  // Kill switch for demo seed logins. Set MEPONTO_DISABLE_DEMO_LOGIN=1 (Vercel
+  // env) to turn off ALL demo accounts once real /users accounts exist — this
+  // avoids locking the owner out the moment the build deploys.
+  if (process.env.MEPONTO_DISABLE_DEMO_LOGIN === "1") {
+    return undefined;
+  }
   const normalized = identifier.trim().toLowerCase();
   return testAccounts.find(
     (account) =>
