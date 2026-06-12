@@ -77,6 +77,40 @@ export async function sessionFromRequest(request: Request) {
   return verifySessionToken(cookieValue(request.headers.get("cookie"), SESSION_COOKIE));
 }
 
+/**
+ * Synchronous session verification using Node's HMAC — lets the (sync)
+ * permission layer make decisions from the signed cookie without going async.
+ * Falls back to null on any signature/format/expiry problem.
+ */
+export function verifySessionTokenSync(token: string | undefined): AuthSession | null {
+  if (!token) return null;
+  const [encoded, signature] = token.split(".");
+  if (!encoded || !signature) return null;
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { createHmac } = require("node:crypto") as typeof import("node:crypto");
+    const secret = process.env.AUTH_SESSION_SECRET || "meponto-development-session-secret";
+    const expected = createHmac("sha256", secret)
+      .update(encoded)
+      .digest("base64")
+      .replace(/\+/g, "-")
+      .replace(/\//g, "_")
+      .replace(/=+$/g, "");
+    if (!timingSafeEqual(signature, expected)) return null;
+    const payload = JSON.parse(base64UrlDecode(encoded)) as AuthSession;
+    if (!payload.userId || !payload.portal || !payload.role || payload.expiresAt <= Math.floor(Date.now() / 1000)) {
+      return null;
+    }
+    return payload;
+  } catch {
+    return null;
+  }
+}
+
+export function sessionFromRequestSync(request: Request): AuthSession | null {
+  return verifySessionTokenSync(cookieValue(request.headers.get("cookie"), SESSION_COOKIE));
+}
+
 async function sign(value: string) {
   const secret = process.env.AUTH_SESSION_SECRET || "meponto-development-session-secret";
   const key = await crypto.subtle.importKey(

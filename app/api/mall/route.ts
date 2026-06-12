@@ -202,11 +202,11 @@ async function handlePost(request: Request) {
   // legacy mall, so admin actions must NOT rely on that permission).
   const forbidden =
     peek.action === "redeem" || peek.action === "scanPartner"
-      ? requirePermission(request, "use_rider_app") && requirePermission(request, "manage_points")
+      ? requirePermission(request, "use_rider_app")
       : peek.action === "markArrived" || peek.action === "markPickedUp"
-        ? requirePermission(request, "manage_slots") && requirePermission(request, "manage_points")
-        : peek.action === "supplierAddProduct"
-          ? requirePermission(request, "manage_supplier_catalog") && requirePermission(request, "manage_points")
+        ? requirePermission(request, "manage_slots")
+        : peek.action === "supplierAddProduct" || peek.action === "updateProduct"
+          ? requirePermission(request, "manage_supplier_catalog")
           : requirePermission(request, "manage_points");
   if (forbidden) return forbidden;
 
