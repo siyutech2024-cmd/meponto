@@ -204,7 +204,8 @@ export default function HomePage() {
     );
     sectionsRef.current.forEach((section) => section && observer.observe(section));
     return () => observer.disconnect();
-  }, [ready]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lang]);
 
   // ---- Interior texture for the country body ------------------------------
   const map = useMemo(() => {
@@ -379,7 +380,7 @@ export default function HomePage() {
           const active = chapter === index && ready;
           const Heading = index === 0 ? "h1" : "h2";
           return (
-            <section key={section.tag} ref={setSection(index)} data-chapter={index} className="flex min-h-screen items-center px-6 md:px-24 lg:px-36">
+            <section key={index} ref={setSection(index)} data-chapter={index} className="flex min-h-screen items-center px-6 md:px-24 lg:px-36">
               <div className="max-w-3xl" key={`${lang}-${index}-${active ? "on" : "off"}`} style={active ? undefined : { visibility: "hidden" }} aria-hidden={active ? undefined : true}>
                 <div className="mp-rise mb-5 flex items-center gap-3">
                   <span className="text-[11px] font-black uppercase tracking-[0.3em]" style={{ color: "#f5b301" }}>
