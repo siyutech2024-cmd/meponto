@@ -5,6 +5,7 @@ import { CheckCircle2, RefreshCcw, Send, Star, XCircle } from "lucide-react";
 import { AppShell, Badge, PageTitle } from "../../components/ui";
 import { readSession } from "../../lib/session";
 import type { DispatchShift, ShiftQuota, ShiftSignup } from "../../lib/dispatch";
+import { ShiftRiderPicker } from "../../components/shift-rider-picker";
 
 type Board = { shifts: DispatchShift[]; quotas: ShiftQuota[]; signups: ShiftSignup[] };
 
@@ -40,6 +41,7 @@ export default function FranchiseDispatchPage() {
   const [message, setMessage] = useState<{ tone: "ok" | "err" | "warn"; text: string } | null>(null);
   const [stationInputs, setStationInputs] = useState<Record<string, string>>({}); // `${shiftId}|${station}` -> quota
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [activeShiftId, setActiveShiftId] = useState("");
 
   const load = useCallback(async () => {
     if (!franchise) return;
@@ -127,8 +129,13 @@ export default function FranchiseDispatchPage() {
             <div className="space-y-3">
               {myShifts.map(({ shift, franchiseQuota, stationQuotas }) => {
                 const allocated = stationQuotas.reduce((sum, quota) => sum + quota.quota, 0);
+                const active = activeShiftId === shift.id;
                 return (
-                  <div key={shift.id} className="rounded-[8px] border border-[var(--line)] bg-[var(--surface-raised)] p-3">
+                  <div
+                    key={shift.id}
+                    onClick={() => setActiveShiftId(shift.id)}
+                    className={`cursor-pointer rounded-[8px] border p-3 transition-colors ${active ? "border-[var(--accent)] bg-[var(--accent-soft)]" : "border-[var(--line)] bg-[var(--surface-raised)] hover:border-[var(--muted)]"}`}
+                  >
                     <div className="flex flex-wrap items-center justify-between gap-2">
                       <div className="flex items-center gap-2 text-sm font-black">
                         {shift.isCritical && <Star size={13} className="text-[var(--accent)]" />}
@@ -175,6 +182,15 @@ export default function FranchiseDispatchPage() {
           )}
         </div>
 
+        <div className="space-y-4">
+        <ShiftRiderPicker
+          shift={myShifts.find((row) => row.shift.id === activeShiftId)?.shift ?? null}
+          franchise={franchise}
+          headers={headers}
+          signups={board.signups}
+          onDone={(text) => { setMessage({ tone: "ok", text }); void load(); }}
+          onError={(text) => { setMessage({ tone: "err", text }); void load(); }}
+        />
         <div className="panel p-4">
           <div className="mb-3 text-xs font-black uppercase text-[var(--accent)]">待审核报名（{pending.length}）· 以站点为准</div>
           {(() => {
@@ -273,6 +289,7 @@ export default function FranchiseDispatchPage() {
               </div>
             </>
           )}
+        </div>
         </div>
       </div>
     </AppShell>
