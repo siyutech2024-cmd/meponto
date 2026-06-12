@@ -1,829 +1,445 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-import { ArrowRight, Bike, Building2, CheckCircle2, Clock4, Coins, Headset, MapPinned, ShieldCheck, Store, Users, Warehouse } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+
+/**
+ * MePonto marketing homepage — scroll-driven narrative over a code-drawn
+ * São Paulo night map (no images, no animation libraries).
+ *
+ * Loader counter → fixed SVG map background (street grid, pulsing station
+ * dots, flowing delivery routes, live franchise marker plates) → full-screen
+ * chapters that re-frame the map while you scroll → CTA finale + footer.
+ */
 
 type Lang = "pt" | "zh" | "en";
 
-const copy = {
+const copy: Record<Lang, {
+  loading: string;
+  pontos: string;
+  chapters: Array<{ tag: string; title: string[]; text: string; cta?: { label: string; href: string } }>;
+  finale: { title: string[]; text: string; rider: string; franchise: string };
+  footer: { tagline: string; systems: Array<{ label: string; href: string }> };
+}> = {
   pt: {
-    nav: { rider: "Entregadores", franchise: "Franquia", contact: "Contato" },
-    hero: {
-      eyebrow: "Conectar · Apoiar · Entregar",
-      title: "A rede de pontos que profissionaliza a última milha no Brasil",
-      subtitle:
-        "Pontos de apoio físicos, líderes locais, escala transparente e pontos que viram benefícios reais. Estamos recrutando entregadores e franqueados.",
-      ctaFranchise: "Quero ser franqueado",
-      ctaRider: "Quero ser entregador",
-      stats: [
-        { value: "São Paulo", label: "Operação em expansão" },
-        { value: "24/7", label: "Operação dia e noite" },
-        { value: "100%", label: "Escala transparente no app" },
-        { value: "3 idiomas", label: "PT · EN · 中文" },
-      ],
-    },
-    rider: {
-      eyebrow: "Recrutamento de entregadores",
-      title: "Mais que corridas: estrutura, pontos e respeito",
-      bullets: [
-        "Ponto de apoio físico com líder, água, banheiro e segurança",
-        "Escala semanal transparente direto no app",
-        "Pontos por entrega trocáveis em produtos e serviços",
-        "Descontos reais em oficinas e postos parceiros",
-        "Cobertura noturna organizada com adicional",
-      ],
-      cta: "Acessar o app do entregador",
-      cards: [
-        { icon: "map", title: "Ponto de apoio", text: "Base física no seu bairro" },
-        { icon: "clock", title: "Escala semanal", text: "Você escolhe seus turnos" },
-        { icon: "coins", title: "Pontos", text: "Cada entrega vira benefício" },
-        { icon: "shield", title: "Segurança", text: "Líder e rede de apoio 24/7" },
-      ],
-    },
-    franchise: {
-      eyebrow: "Recrutamento de franqueados",
-      title: "Opere um território com um sistema completo",
-      bullets: [
-        "Modelo validado: receita por ponto e por serviços",
-        "Sistema completo de operação, finanças, escala e auditoria",
-        "Treinamento, SOPs e suporte da rede MePonto",
-        "Simulador de lucro por cenário incluído",
-        "Território exclusivo com rede de entregadores ativa",
-      ],
-      cta: "Receber proposta de franquia",
-    },
-    form: {
-      title: "Quero ser franqueado",
-      subtitle: "Deixe seus dados — resposta em até 1 dia útil.",
-      name: "Nome completo",
-      phone: "WhatsApp / telefone",
-      email: "E-mail (opcional)",
-      city: "Cidade",
-      message: "Conte rapidamente seu interesse",
-      submit: "Enviar",
-      sending: "Enviando...",
-      success: "Recebido! Nossa equipe vai falar com você em breve.",
-      error: "Não foi possível enviar. Tente novamente.",
-      required: "Preencha nome e telefone.",
+    loading: "Carregando a rede",
+    pontos: "PONTOS",
+    chapters: [
+      {
+        tag: "Rede",
+        title: ["Construímos", "a rede da", "última milha"],
+        text: "Pontos de apoio físicos espalhados por São Paulo: líder local, água, banheiro, segurança — uma rede que cresce todos os dias.",
+        cta: { label: "Conhecer a rede", href: "https://app.meponto.com" },
+      },
+      {
+        tag: "Turnos",
+        title: ["Escala", "transparente,", "renda real"],
+        text: "Turnos semanais direto no app, regras claras e acerto na conta. Você escolhe quando rodar — a gente organiza o resto.",
+        cta: { label: "Quero entregar", href: "https://app.meponto.com/rider-login" },
+      },
+      {
+        tag: "PontoMall",
+        title: ["Cada entrega", "vira", "benefício"],
+        text: "Pedidos viram pontos, pontos viram produtos, serviços e descontos reais em parceiros do seu bairro. Sem pegadinha.",
+        cta: { label: "Ver o PontoMall", href: "https://mall.meponto.com" },
+      },
+      {
+        tag: "Parceria",
+        title: ["Opere um", "território", "com sistema"],
+        text: "Franqueados recebem modelo validado, sistema completo de operação, escala, finanças e suporte da rede MePonto.",
+        cta: { label: "Quero ser franqueado", href: "https://franchise.meponto.com" },
+      },
+    ],
+    finale: {
+      title: ["E definimos o", "amanhã da entrega"],
+      text: "Junte-se à rede que profissionaliza a última milha no Brasil.",
+      rider: "Quero entregar",
+      franchise: "Quero ser franqueado",
     },
     footer: {
-      contact: "Contato",
-      rights: "MePonto · Conectar · Apoiar · Entregar",
-      systems: "Acesso aos sistemas",
-      support: "Atendimento",
-      supportText: "Entregadores e franqueados: abra um chamado direto no seu app/painel — resposta da central.",
-      links: [
+      tagline: "Conectar · Apoiar · Entregar",
+      systems: [
         { label: "App do Entregador", href: "https://app.meponto.com" },
+        { label: "PontoMall", href: "https://mall.meponto.com" },
         { label: "Painel da Franquia", href: "https://franchise.meponto.com" },
-        { label: "Painel da Estação", href: "https://ponto.meponto.com" },
+        { label: "Painel do Ponto", href: "https://ponto.meponto.com" },
         { label: "PontoSys (Matriz)", href: "https://sys.meponto.com" },
       ],
-      privacy: "Política de privacidade",
     },
   },
   zh: {
-    nav: { rider: "骑手招募", franchise: "加盟招募", contact: "联系我们" },
-    hero: {
-      eyebrow: "Conectar · Apoiar · Entregar",
-      title: "让巴西末端配送专业化的站点网络",
-      subtitle: "实体站点、本地站长、透明排班、积分变真实福利。我们正在招募骑手与加盟商。",
-      ctaFranchise: "我要加盟",
-      ctaRider: "我要成为骑手",
-      stats: [
-        { value: "圣保罗", label: "运营持续扩张" },
-        { value: "24/7", label: "日夜运营" },
-        { value: "100%", label: "App 内透明排班" },
-        { value: "3 种语言", label: "PT · EN · 中文" },
-      ],
-    },
-    rider: {
-      eyebrow: "骑手招募",
-      title: "不只是接单：有据点、有积分、有尊重",
-      bullets: [
-        "实体站点：站长、饮水、卫生间与安全保障",
-        "App 内透明的每周排班",
-        "每单积分，可兑换商品与服务",
-        "合作维修店、加油站真实折扣",
-        "夜班有组织、有补贴",
-      ],
-      cta: "进入骑手 App",
-      cards: [
-        { icon: "map", title: "支持站点", text: "你所在街区的实体基地" },
-        { icon: "clock", title: "每周排班", text: "自己选择班次" },
-        { icon: "coins", title: "积分", text: "每一单都变成福利" },
-        { icon: "shield", title: "安全", text: "站长与 24/7 支持网络" },
-      ],
-    },
-    franchise: {
-      eyebrow: "加盟商招募",
-      title: "用一套完整系统运营一个区域",
-      bullets: [
-        "经过验证的模式：站点收入 + 服务收入",
-        "运营、财务、排班、审计系统完备",
-        "MePonto 网络提供培训、SOP 与支持",
-        "内置多场景利润模拟器",
-        "独家区域 + 活跃骑手网络",
-      ],
-      cta: "获取加盟方案",
-    },
-    form: {
-      title: "申请加盟",
-      subtitle: "留下信息，1 个工作日内回复。",
-      name: "姓名",
-      phone: "WhatsApp / 电话",
-      email: "邮箱（选填）",
-      city: "城市",
-      message: "简单说明你的需求",
-      submit: "提交",
-      sending: "提交中...",
-      success: "已收到！我们会尽快与你联系。",
-      error: "提交失败，请重试。",
-      required: "请填写姓名和电话。",
-    },
+    loading: "网络加载中",
+    pontos: "个站点",
+    chapters: [
+      { tag: "网络", title: ["我们构建", "最后一公里", "服务网络"], text: "实体服务点遍布圣保罗：本地站长、饮水、卫生间、安全保障，网络每天都在生长。", cta: { label: "了解网络", href: "https://app.meponto.com" } },
+      { tag: "排班", title: ["透明排班", "真实收入"], text: "每周班次 App 直达，规则清晰、结算到账。你选择何时上线——其余交给我们。", cta: { label: "我要跑单", href: "https://app.meponto.com/rider-login" } },
+      { tag: "积分商城", title: ["每一单", "都变成权益"], text: "订单变积分，积分换商品、服务和街区合作伙伴的真实折扣。没有套路。", cta: { label: "逛逛商城", href: "https://mall.meponto.com" } },
+      { tag: "合作", title: ["用系统", "运营一片区域"], text: "加盟商获得验证过的模型、完整的运营/排班/财务系统，以及 MePonto 网络的支持。", cta: { label: "我要加盟", href: "https://franchise.meponto.com" } },
+    ],
+    finale: { title: ["共同定义", "配送的明天"], text: "加入正在让巴西最后一公里专业化的网络。", rider: "我要跑单", franchise: "我要加盟" },
     footer: {
-      contact: "联系方式",
-      rights: "MePonto · Conectar · Apoiar · Entregar",
-      systems: "系统入口",
-      support: "客服支持",
-      supportText: "骑手/加盟商：在各自 App/后台直接提交工单，总部统一处理回复。",
-      links: [
+      tagline: "连接 · 支持 · 送达",
+      systems: [
         { label: "骑手 App", href: "https://app.meponto.com" },
+        { label: "积分商城", href: "https://mall.meponto.com" },
         { label: "加盟商后台", href: "https://franchise.meponto.com" },
         { label: "站点后台", href: "https://ponto.meponto.com" },
         { label: "PontoSys 主后台", href: "https://sys.meponto.com" },
       ],
-      privacy: "隐私政策",
     },
   },
   en: {
-    nav: { rider: "Riders", franchise: "Franchise", contact: "Contact" },
-    hero: {
-      eyebrow: "Conectar · Apoiar · Entregar",
-      title: "The support-point network professionalizing last-mile delivery in Brazil",
-      subtitle:
-        "Physical support points, local leaders, transparent shifts and points that become real benefits. We are recruiting riders and franchisees.",
-      ctaFranchise: "Become a franchisee",
-      ctaRider: "Become a rider",
-      stats: [
-        { value: "São Paulo", label: "Expanding operation" },
-        { value: "24/7", label: "Day and night operation" },
-        { value: "100%", label: "Transparent shifts in-app" },
-        { value: "3 languages", label: "PT · EN · 中文" },
-      ],
-    },
-    rider: {
-      eyebrow: "Rider recruitment",
-      title: "More than gigs: structure, points and respect",
-      bullets: [
-        "Physical support point with leader, water, restroom and safety",
-        "Transparent weekly shifts in the app",
-        "Points per delivery, redeemable for products and services",
-        "Real discounts at partner shops and stations",
-        "Organized night coverage with extra pay",
-      ],
-      cta: "Open the rider app",
-      cards: [
-        { icon: "map", title: "Support point", text: "A physical base in your area" },
-        { icon: "clock", title: "Weekly shifts", text: "You pick your slots" },
-        { icon: "coins", title: "Points", text: "Every delivery becomes a benefit" },
-        { icon: "shield", title: "Safety", text: "Leader and 24/7 support network" },
-      ],
-    },
-    franchise: {
-      eyebrow: "Franchisee recruitment",
-      title: "Run a territory with a complete system",
-      bullets: [
-        "Validated model: revenue per point and per service",
-        "Full operations, finance, shifts and audit stack",
-        "Training, SOPs and support from the MePonto network",
-        "Scenario-based profit simulator included",
-        "Exclusive territory with an active rider network",
-      ],
-      cta: "Get the franchise deck",
-    },
-    form: {
-      title: "Become a franchisee",
-      subtitle: "Leave your details — reply within 1 business day.",
-      name: "Full name",
-      phone: "WhatsApp / phone",
-      email: "E-mail (optional)",
-      city: "City",
-      message: "Briefly describe your interest",
-      submit: "Send",
-      sending: "Sending...",
-      success: "Received! Our team will contact you soon.",
-      error: "Could not send. Please try again.",
-      required: "Name and phone are required.",
-    },
+    loading: "Loading the network",
+    pontos: "PONTOS",
+    chapters: [
+      { tag: "Network", title: ["We build", "the last-mile", "network"], text: "Physical support points across São Paulo: local leaders, water, restrooms, safety — a network growing every day.", cta: { label: "Explore the network", href: "https://app.meponto.com" } },
+      { tag: "Shifts", title: ["Transparent", "shifts,", "real income"], text: "Weekly shifts in the app, clear rules, payouts on time. You choose when to ride — we handle the rest.", cta: { label: "I want to deliver", href: "https://app.meponto.com/rider-login" } },
+      { tag: "PontoMall", title: ["Every delivery", "becomes", "a benefit"], text: "Orders become points; points become products, services and real discounts at neighborhood partners.", cta: { label: "Visit PontoMall", href: "https://mall.meponto.com" } },
+      { tag: "Partnership", title: ["Run a", "territory", "with a system"], text: "Franchisees get a validated model, full operations, scheduling and finance systems, plus MePonto network support.", cta: { label: "Become a franchisee", href: "https://franchise.meponto.com" } },
+    ],
+    finale: { title: ["And define the", "tomorrow of delivery"], text: "Join the network professionalizing the last mile in Brazil.", rider: "I want to deliver", franchise: "Become a franchisee" },
     footer: {
-      contact: "Contact",
-      rights: "MePonto · Conectar · Apoiar · Entregar",
-      systems: "System access",
-      support: "Support",
-      supportText: "Riders and franchisees: open a ticket inside your app/panel — HQ replies centrally.",
-      links: [
+      tagline: "Connect · Support · Deliver",
+      systems: [
         { label: "Rider App", href: "https://app.meponto.com" },
+        { label: "PontoMall", href: "https://mall.meponto.com" },
         { label: "Franchise Panel", href: "https://franchise.meponto.com" },
-        { label: "Station Panel", href: "https://ponto.meponto.com" },
+        { label: "Ponto Panel", href: "https://ponto.meponto.com" },
         { label: "PontoSys (HQ)", href: "https://sys.meponto.com" },
       ],
-      privacy: "Privacy policy",
     },
   },
-} as const;
+};
 
-const cardIcons = { map: MapPinned, clock: Clock4, coins: Coins, shield: ShieldCheck } as const;
-const systemIcons = [Bike, Store, Warehouse, Building2];
+/** Deterministic PRNG so SSR and client draw the identical map. */
+function mulberry32(seed: number) {
+  let a = seed;
+  return () => {
+    a |= 0;
+    a = (a + 0x6d2b79f5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
 
-
-/**
- * São Paulo particle morph field.
- *
- * ~1800 glowing particles spring between three target formations:
- * the São Paulo state map outline (with the capital marked in gold),
- * the word "SÃO PAULO" (localized — follows the page language), and the
- * "MePonto" wordmark. The cursor blasts particles apart; they spring back.
- */
-const SP_OUTLINE: Array<[number, number]> = [
-  [0.05, 0.46], [0.1, 0.38], [0.17, 0.32], [0.24, 0.27], [0.31, 0.24], [0.38, 0.2],
-  [0.45, 0.18], [0.52, 0.15], [0.58, 0.12], [0.65, 0.08], [0.72, 0.05], [0.78, 0.07],
-  [0.82, 0.12], [0.86, 0.18], [0.9, 0.24], [0.94, 0.3], [0.9, 0.37], [0.83, 0.44],
-  [0.75, 0.5], [0.67, 0.56], [0.59, 0.62], [0.51, 0.68], [0.44, 0.74], [0.37, 0.8],
-  [0.3, 0.87], [0.24, 0.92], [0.18, 0.86], [0.13, 0.78], [0.09, 0.68], [0.06, 0.57],
+/** Map camera framing per chapter — drifts and zooms while you scroll. */
+const CAMERA = [
+  "translate(0%, 0%) scale(1)",
+  "translate(-6%, -4%) scale(1.25)",
+  "translate(7%, 2%) scale(1.35)",
+  "translate(-3%, 6%) scale(1.2)",
+  "translate(0%, 0%) scale(1.05)",
 ];
-const SP_CITY: [number, number] = [0.7, 0.42];
 
-function ParticleMorph({ lang }: { lang: Lang }) {
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-  const langRef = useRef(lang);
-  langRef.current = lang;
+const MARKER_POS = [
+  { left: "16%", top: "28%" },
+  { left: "63%", top: "21%" },
+  { left: "71%", top: "63%" },
+  { left: "23%", top: "67%" },
+];
 
-  useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return;
+const ROUTES = [
+  "M60,760 C260,600 420,640 560,460 C690,295 900,330 1150,150",
+  "M120,40 C300,210 280,420 520,560 C720,675 950,640 1180,720",
+  "M-10,300 C240,330 520,250 760,360 C950,447 1060,420 1230,470",
+];
 
-    let width = 0;
-    let height = 0;
-    let raf = 0;
-    const DPR = Math.min(window.devicePixelRatio || 1, 2);
-    const mouse = { x: -9999, y: -9999 };
-
-    const resize = () => {
-      width = window.innerWidth;
-      height = window.innerHeight;
-      canvas.width = width * DPR;
-      canvas.height = height * DPR;
-      canvas.style.width = `${width}px`;
-      canvas.style.height = `${height}px`;
-      ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
-    };
-    resize();
-
-    // Pre-rendered glow sprites (fast additive blending).
-    const makeGlow = (r: number, g: number, b: number) => {
-      const cv = document.createElement("canvas");
-      cv.width = 32;
-      cv.height = 32;
-      const c = cv.getContext("2d")!;
-      const grad = c.createRadialGradient(16, 16, 0, 16, 16, 16);
-      grad.addColorStop(0, `rgba(${r},${g},${b},1)`);
-      grad.addColorStop(0.3, `rgba(${r},${g},${b},0.55)`);
-      grad.addColorStop(1, `rgba(${r},${g},${b},0)`);
-      c.fillStyle = grad;
-      c.fillRect(0, 0, 32, 32);
-      return cv;
-    };
-    const goldGlow = makeGlow(255, 208, 70);
-    const blueGlow = makeGlow(95, 160, 255);
-    const cyanGlow = makeGlow(80, 220, 255);
-
-    const COUNT = window.innerWidth < 900 ? 900 : 1800;
-
-    /** Sample target points from an offscreen drawing. */
-    const sample = (draw: (c: CanvasRenderingContext2D, w: number, h: number) => void) => {
-      const off = document.createElement("canvas");
-      off.width = 640;
-      off.height = 420;
-      const c = off.getContext("2d")!;
-      draw(c, off.width, off.height);
-      const data = c.getImageData(0, 0, off.width, off.height).data;
-      const points: Array<[number, number, number]> = []; // x, y, isGold flag from red channel bias
-      const step = 3;
-      for (let y = 0; y < off.height; y += step) {
-        for (let x = 0; x < off.width; x += step) {
-          const i = (y * off.width + x) * 4;
-          if (data[i + 3] > 120) points.push([x / off.width, y / off.height, data[i] > 200 && data[i + 2] < 120 ? 1 : 0]);
-        }
-      }
-      // Resample to COUNT.
-      const out: Array<[number, number, number]> = [];
-      for (let i = 0; i < COUNT; i += 1) out.push(points[Math.floor(Math.random() * points.length)] ?? [0.5, 0.5, 0]);
-      return out;
-    };
-
-    const mapShape = () =>
-      sample((c, w, h) => {
-        // State outline as a thick dotted stroke.
-        c.strokeStyle = "rgb(80,120,255)";
-        c.lineWidth = 11;
-        c.lineJoin = "round";
-        c.beginPath();
-        SP_OUTLINE.forEach(([nx, ny], i) => {
-          const x = nx * w * 0.92 + w * 0.04;
-          const y = ny * h * 0.92 + h * 0.04;
-          if (i === 0) c.moveTo(x, y);
-          else c.lineTo(x, y);
-        });
-        c.closePath();
-        c.stroke();
-        // Sparse interior fill (light scatter).
-        c.save();
-        c.clip();
-        c.fillStyle = "rgb(80,120,255)";
-        for (let i = 0; i < 150; i += 1) c.fillRect(Math.random() * w, Math.random() * h, 2.4, 2.4);
-        c.restore();
-        // Capital marker — bright gold cluster (red channel marks gold).
-        const cx = SP_CITY[0] * w * 0.92 + w * 0.04;
-        const cy = SP_CITY[1] * h * 0.92 + h * 0.04;
-        c.fillStyle = "rgb(255,90,40)";
-        c.beginPath();
-        c.arc(cx, cy, 16, 0, Math.PI * 2);
-        c.fill();
-      });
-
-    const textShape = (text: string) =>
-      sample((c, w, h) => {
-        c.fillStyle = "rgb(255,90,40)";
-        c.textAlign = "center";
-        c.textBaseline = "middle";
-        let size = 120;
-        c.font = `900 ${size}px Poppins, Inter, system-ui, sans-serif`;
-        while (c.measureText(text).width > w * 0.92 && size > 30) {
-          size -= 6;
-          c.font = `900 ${size}px Poppins, Inter, system-ui, sans-serif`;
-        }
-        c.fillText(text, w / 2, h / 2);
-      });
-
-    const spWord = () => (langRef.current === "zh" ? "圣保罗" : "SÃO PAULO");
-
-    let shapes = [mapShape(), textShape(spWord()), mapShape(), textShape("MePonto")];
-    let currentLang = langRef.current;
-
-    type Particle = { x: number; y: number; vx: number; vy: number; nx: number; ny: number; gold: number; size: number; phase: number };
-    const particles: Particle[] = Array.from({ length: COUNT }, () => ({
-      x: Math.random() * width,
-      y: Math.random() * height,
-      vx: 0,
-      vy: 0,
-      nx: 0.5,
-      ny: 0.5,
-      gold: Math.random() < 0.18 ? 1 : 0,
-      size: 1.5 + Math.random() * 2.6,
-      phase: Math.random() * Math.PI * 2,
-    }));
-
-    let shapeIndex = 0;
-    const applyShape = (index: number) => {
-      const shape = shapes[index % shapes.length];
-      for (let i = 0; i < COUNT; i += 1) {
-        const [nx, ny, isGold] = shape[i];
-        particles[i].nx = nx;
-        particles[i].ny = ny;
-        particles[i].gold = isGold ? (Math.random() < 0.6 ? 1 : 0) : Math.random() < 0.12 ? 1 : 0;
-        // Burst outward, then spring into the new formation.
-        const angle = Math.random() * Math.PI * 2;
-        const kick = 4 + Math.random() * 9;
-        particles[i].vx += Math.cos(angle) * kick;
-        particles[i].vy += Math.sin(angle) * kick;
-      }
-    };
-    applyShape(0);
-    const DWELL = [7000, 4600, 7000, 4600];
-    let switchTimer: ReturnType<typeof setTimeout>;
-    const scheduleNext = () => {
-      switchTimer = setTimeout(() => {
-        shapeIndex = (shapeIndex + 1) % shapes.length;
-        applyShape(shapeIndex);
-        scheduleNext();
-      }, DWELL[shapeIndex % DWELL.length]);
-    };
-    scheduleNext();
-
-    const onMove = (event: MouseEvent) => {
-      mouse.x = event.clientX;
-      mouse.y = event.clientY;
-    };
-    const onLeave = () => {
-      mouse.x = -9999;
-      mouse.y = -9999;
-    };
-    const onResize = () => resize();
-    window.addEventListener("mousemove", onMove);
-    window.addEventListener("mouseleave", onLeave);
-    window.addEventListener("resize", onResize);
-
-    let t = 0;
-    const tick = () => {
-      // Language switched → rebuild the localized word shape.
-      if (currentLang !== langRef.current) {
-        currentLang = langRef.current;
-        shapes = [mapShape(), textShape(spWord()), mapShape(), textShape("MePonto")];
-        applyShape(shapeIndex);
-      }
-      t += 0.016;
-      // Formation frame resolved fresh every frame (resize-proof).
-      const fw = width * 0.46;
-      const fh = Math.min(fw * 0.66, height * 0.72);
-      const fx = width * 0.71 - fw / 2;
-      const fy = height * 0.45 - fh / 2;
-      ctx.clearRect(0, 0, width, height);
-      ctx.globalCompositeOperation = "lighter";
-      for (const particle of particles) {
-        // Spring toward target with a soft breathing wobble.
-        const wob = Math.sin(t * 1.4 + particle.phase) * 1.1;
-        const tx = fx + particle.nx * fw + wob;
-        const ty = fy + particle.ny * fh - wob;
-        const ax = (tx - particle.x) * 0.03;
-        const ay = (ty - particle.y) * 0.03;
-        particle.vx = (particle.vx + ax) * 0.85;
-        particle.vy = (particle.vy + ay) * 0.85;
-        // Cursor blast.
-        const dx = particle.x - mouse.x;
-        const dy = particle.y - mouse.y;
-        const d2 = dx * dx + dy * dy;
-        if (d2 < 140 * 140 && d2 > 0.01) {
-          const d = Math.sqrt(d2);
-          const force = ((140 - d) / 140) * 2.6;
-          particle.vx += (dx / d) * force;
-          particle.vy += (dy / d) * force;
-        }
-        particle.x += particle.vx;
-        particle.y += particle.vy;
-        const speed = Math.min(Math.hypot(particle.vx, particle.vy), 8);
-        const sprite = particle.gold ? goldGlow : speed > 2.4 ? cyanGlow : blueGlow;
-        const size = particle.size * (1 + speed * 0.18);
-        ctx.drawImage(sprite, particle.x - size / 2, particle.y - size / 2, size, size);
-      }
-      ctx.globalCompositeOperation = "source-over";
-      raf = requestAnimationFrame(tick);
-    };
-    raf = requestAnimationFrame(tick);
-
-    return () => {
-      cancelAnimationFrame(raf);
-      clearTimeout(switchTimer);
-      window.removeEventListener("mousemove", onMove);
-      window.removeEventListener("mouseleave", onLeave);
-      window.removeEventListener("resize", onResize);
-    };
-  }, []);
-
-  return <canvas ref={canvasRef} className="pointer-events-none fixed inset-0 z-0" aria-hidden="true" />;
-}
-
-/** Per-card 3D tilt with a moving glare highlight — pure CSS transforms. */
-function Tilt3D({ children, className = "", style }: { children: React.ReactNode; className?: string; style?: React.CSSProperties }) {
-  const ref = useRef<HTMLDivElement>(null);
-  const glareRef = useRef<HTMLDivElement>(null);
-
-  return (
-    <div
-      ref={ref}
-      className={`relative will-change-transform ${className}`}
-      style={{ transformStyle: "preserve-3d", transition: "transform .18s ease-out", ...style }}
-      onMouseMove={(event) => {
-        const node = ref.current;
-        if (!node) return;
-        const rect = node.getBoundingClientRect();
-        const px = (event.clientX - rect.left) / rect.width - 0.5;
-        const py = (event.clientY - rect.top) / rect.height - 0.5;
-        node.style.transform = `perspective(800px) rotateY(${(px * 14).toFixed(2)}deg) rotateX(${(-py * 14).toFixed(2)}deg) translateZ(10px)`;
-        const glare = glareRef.current;
-        if (glare) {
-          glare.style.opacity = "1";
-          glare.style.background = `radial-gradient(280px circle at ${((px + 0.5) * 100).toFixed(1)}% ${((py + 0.5) * 100).toFixed(1)}%, rgba(255,255,255,0.16), transparent 60%)`;
-        }
-      }}
-      onMouseLeave={() => {
-        const node = ref.current;
-        if (node) node.style.transform = "perspective(800px) rotateY(0deg) rotateX(0deg) translateZ(0)";
-        if (glareRef.current) glareRef.current.style.opacity = "0";
-      }}
-    >
-      {children}
-      <div ref={glareRef} className="pointer-events-none absolute inset-0 rounded-2xl opacity-0" style={{ transition: "opacity .25s ease" }} aria-hidden="true" />
-    </div>
-  );
-}
-
-
-export default function MarketingHomePage() {
+export default function HomePage() {
   const [lang, setLang] = useState<Lang>("pt");
-  const [form, setForm] = useState({ name: "", phone: "", email: "", city: "", message: "" });
-  const [state, setState] = useState<"idle" | "sending" | "ok" | "fail" | "invalid">("idle");
-  const rootRef = useRef<HTMLElement>(null);
+  const [progress, setProgress] = useState(0);
+  const [ready, setReady] = useState(false);
+  const [chapter, setChapter] = useState(0);
+  const [markers, setMarkers] = useState<Array<{ name: string; count: number }>>([]);
+  const sectionsRef = useRef<Array<HTMLElement | null>>([]);
   const t = copy[lang];
 
+  // Loader counter, then reveal the world.
   useEffect(() => {
-    const root = rootRef.current;
-    if (!root) return;
-    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
-      root.querySelectorAll(".rv").forEach((el) => el.classList.add("rv-in"));
-      return;
-    }
+    let frame = 0;
+    const start = performance.now();
+    const tick = (now: number) => {
+      const pct = Math.min(100, Math.round(((now - start) / 1400) * 100));
+      setProgress(pct);
+      if (pct < 100) frame = requestAnimationFrame(tick);
+      else setTimeout(() => setReady(true), 350);
+    };
+    frame = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(frame);
+  }, []);
+
+  // Live network numbers for the marker plates (public summary endpoint).
+  useEffect(() => {
+    void fetch("/api/network?public=1", { cache: "no-store" })
+      .then((response) => (response.ok ? response.json() : null))
+      .then((payload) => {
+        const rows = (payload?.data?.markers ?? []) as Array<{ name: string; count: number }>;
+        if (rows.length > 0) setMarkers(rows.slice(0, 4));
+      })
+      .catch(() => undefined);
+  }, []);
+
+  // Scroll-driven chapter detection.
+  useEffect(() => {
     const observer = new IntersectionObserver(
       (entries) => {
         for (const entry of entries) {
-          if (entry.isIntersecting) {
-            entry.target.classList.add("rv-in");
-            observer.unobserve(entry.target);
-          }
+          if (entry.isIntersecting) setChapter(Number((entry.target as HTMLElement).dataset.chapter ?? 0));
         }
       },
-      { threshold: 0.18, rootMargin: "0px 0px -40px 0px" },
+      { threshold: 0.55 },
     );
-    root.querySelectorAll(".rv").forEach((el) => observer.observe(el));
+    sectionsRef.current.forEach((section) => section && observer.observe(section));
     return () => observer.disconnect();
-  }, [lang]);
+  }, [ready]);
 
-  async function submit(event: React.FormEvent) {
-    event.preventDefault();
-    if (!form.name.trim() || !form.phone.trim()) {
-      setState("invalid");
-      return;
-    }
-    setState("sending");
-    try {
-      const response = await fetch("/api/leads", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ type: "franchise", language: lang, ...form }),
+  // ---- Code-drawn São Paulo night map -------------------------------------
+  const map = useMemo(() => {
+    const rand = mulberry32(20260612);
+    const streets: Array<{ x1: number; y1: number; x2: number; y2: number; w: number; o: number }> = [];
+    for (let i = 0; i < 150; i += 1) {
+      const cx = rand() * 1200;
+      const cy = rand() * 800;
+      const horizontal = rand() > 0.45;
+      const len = 30 + rand() * 130;
+      const tilt = (rand() - 0.5) * 14;
+      streets.push({
+        x1: cx,
+        y1: cy,
+        x2: cx + (horizontal ? len : tilt),
+        y2: cy + (horizontal ? tilt : len),
+        w: rand() > 0.85 ? 2.2 : 1,
+        o: 0.06 + rand() * 0.16,
       });
-      if (!response.ok) throw new Error(String(response.status));
-      setState("ok");
-      setForm({ name: "", phone: "", email: "", city: "", message: "" });
-    } catch {
-      setState("fail");
     }
-  }
+    const dots: Array<{ x: number; y: number; r: number; d: number }> = [];
+    for (let i = 0; i < 36; i += 1) {
+      dots.push({ x: 80 + rand() * 1040, y: 70 + rand() * 660, r: 1.6 + rand() * 2.6, d: rand() * 6 });
+    }
+    return { streets, dots };
+  }, []);
 
-  const input =
-    "h-12 w-full rounded-xl border border-white/10 bg-white/5 px-4 text-sm font-bold text-white outline-none backdrop-blur placeholder:text-white/40 focus:border-[#ffd84d]/60 focus:bg-white/10";
-  const glass = "rounded-2xl border border-white/10 bg-white/[0.04] backdrop-blur-xl";
-  const gradBtn =
-    "inline-flex h-12 items-center gap-2 rounded-xl bg-gradient-to-r from-[#ffd84d] to-[#ff9d2e] px-6 text-sm font-black uppercase text-[#1a1405] shadow-[0_8px_30px_rgba(255,196,46,0.35)] transition-transform hover:scale-[1.04]";
-  const ghostBtn =
-    "inline-flex h-12 items-center gap-2 rounded-xl border border-white/20 bg-white/5 px-6 text-sm font-black uppercase text-white backdrop-blur transition-all hover:scale-[1.04] hover:border-[#4dd9ff]/60 hover:text-[#4dd9ff]";
+  const setSection = (index: number) => (el: HTMLElement | null) => {
+    sectionsRef.current[index] = el;
+  };
+
+  const railNames = [...t.chapters.map((section) => section.tag), "MePonto"];
 
   return (
-    <main
-      ref={rootRef}
-      className="min-h-screen overflow-x-clip text-white"
-      style={{
-        background:
-          "radial-gradient(900px 540px at 12% -6%, rgba(98,54,255,0.32), transparent 55%), radial-gradient(820px 520px at 92% 4%, rgba(13,118,255,0.26), transparent 55%), radial-gradient(700px 500px at 50% 110%, rgba(255,170,40,0.14), transparent 60%), linear-gradient(180deg, #070a14 0%, #0a0e1d 50%, #070a14 100%)",
-      }}
-    >
-      <ParticleMorph lang={lang} />
+    <main className="hometown" data-i18n-skip style={{ background: "#140a05", color: "#fff7ef", fontFamily: "Outfit, Inter, system-ui, sans-serif" }}>
       <style>{`
-        .rv { opacity: 0; transform: perspective(900px) rotateX(10deg) translateY(34px); transition: opacity .7s ease, transform .7s cubic-bezier(.16,1,.3,1); transition-delay: var(--d, 0ms); will-change: opacity, transform; }
-        .rv-in { opacity: 1; transform: perspective(900px) rotateX(0deg) translateY(0); }
-        @keyframes mp-float { 0%,100% { transform: translate3d(0,0,0) scale(1); } 50% { transform: translate3d(-40px,30px,0) scale(1.12); } }
-        @keyframes mp-float2 { 0%,100% { transform: translate3d(0,0,0) scale(1); } 50% { transform: translate3d(50px,-24px,0) scale(.92); } }
-        .mp-glow { animation: mp-float 14s ease-in-out infinite; }
-        .mp-glow2 { animation: mp-float2 18s ease-in-out infinite; }
-        .mp-grid { background-image: linear-gradient(rgba(255,255,255,0.045) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.045) 1px, transparent 1px); background-size: 44px 44px; mask-image: radial-gradient(ellipse 80% 60% at 50% 0%, black 30%, transparent 78%); }
-        .mp-gtext { background: linear-gradient(92deg, #ffffff 0%, #ffd84d 45%, #4dd9ff 100%); -webkit-background-clip: text; background-clip: text; color: transparent; }
-        @media (prefers-reduced-motion: reduce) { .rv { transition: none; } .mp-glow, .mp-glow2 { animation: none; } }
+        .hometown ::selection { background:#ff7a00; color:#140a05; }
+        @keyframes mpPulse { 0%{transform:scale(.6);opacity:.9} 70%{transform:scale(2.4);opacity:0} 100%{opacity:0} }
+        @keyframes mpFlow { to { stroke-dashoffset: -640; } }
+        @keyframes mpDrift { 0%{transform:translate3d(0,0,0)} 50%{transform:translate3d(-12px,8px,0)} 100%{transform:translate3d(0,0,0)} }
+        @keyframes mpRise { from { opacity:0; transform:translateY(46px) } to { opacity:1; transform:translateY(0) } }
+        @keyframes mpGlow { 0%,100%{opacity:.55} 50%{opacity:1} }
+        .mp-rise { animation: mpRise .9s cubic-bezier(.22,.8,.26,1) both; }
+        .mp-rise-2 { animation: mpRise .9s .15s cubic-bezier(.22,.8,.26,1) both; }
+        .mp-rise-3 { animation: mpRise .9s .3s cubic-bezier(.22,.8,.26,1) both; }
+        @media (prefers-reduced-motion: reduce) { .hometown * { animation: none !important; transition: none !important; } }
       `}</style>
 
-      {/* Header */}
-      <header className="sticky top-0 z-20 border-b border-white/10 bg-[rgba(7,10,20,0.7)] backdrop-blur-xl">
-        <div className="mx-auto flex max-w-6xl items-center justify-between gap-4 px-4 py-3 sm:px-6">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src="/meponto-logo.png" alt="MePonto" translate="no" className="h-10 w-auto" />
-          <nav className="hidden items-center gap-6 text-xs font-black uppercase tracking-wide text-white/60 md:flex">
-            <a href="#rider" className="transition-colors hover:text-[#ffd84d]">{t.nav.rider}</a>
-            <a href="#franchise" className="transition-colors hover:text-[#ffd84d]">{t.nav.franchise}</a>
-            <a href="#contact" className="transition-colors hover:text-[#ffd84d]">{t.nav.contact}</a>
-          </nav>
-          <div translate="no" className="flex overflow-hidden rounded-xl border border-white/15 bg-white/5 backdrop-blur">
-            {(["pt", "en", "zh"] as Lang[]).map((code) => (
-              <button
-                key={code}
-                type="button"
-                onClick={() => setLang(code)}
-                className={`px-2.5 py-1.5 text-[11px] font-black uppercase transition-colors ${lang === code ? "bg-gradient-to-r from-[#ffd84d] to-[#ff9d2e] text-[#1a1405]" : "text-white/50 hover:text-white"}`}
-              >
-                {code === "zh" ? "中文" : code.toUpperCase()}
-              </button>
-            ))}
+      {/* ---- Loader -------------------------------------------------------- */}
+      <div
+        className="fixed inset-0 z-[60] flex flex-col items-center justify-center gap-5 transition-opacity duration-700"
+        style={{ background: "#140a05", opacity: ready ? 0 : 1, pointerEvents: ready ? "none" : "auto" }}
+      >
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src="/meponto-logo.png" alt="MePonto" className="h-12 w-auto" style={{ animation: "mpGlow 1.6s ease-in-out infinite" }} />
+        <div className="text-6xl font-black tabular-nums" style={{ color: "#ff7a00" }}>{progress}%</div>
+        <div className="text-[11px] font-bold uppercase tracking-[0.3em]" style={{ color: "rgba(255,255,255,.4)" }}>{t.loading}</div>
+        <div className="h-[2px] w-48 overflow-hidden rounded" style={{ background: "rgba(255,255,255,.1)" }}>
+          <div className="h-full rounded" style={{ width: `${progress}%`, background: "#ff7a00", transition: "width .1s linear" }} />
+        </div>
+      </div>
+
+      {/* ---- Fixed map background ------------------------------------------ */}
+      <div className="fixed inset-0 z-0 overflow-hidden" aria-hidden>
+        <div
+          className="absolute inset-[-12%] transition-transform duration-[1400ms]"
+          style={{ transform: CAMERA[Math.min(chapter, CAMERA.length - 1)], transitionTimingFunction: "cubic-bezier(.3,.8,.3,1)" }}
+        >
+          <div style={{ animation: "mpDrift 26s ease-in-out infinite", height: "100%", width: "100%" }}>
+            <svg viewBox="0 0 1200 800" className="h-full w-full" preserveAspectRatio="xMidYMid slice">
+              {/* rio Pinheiros / Tietê */}
+              <path d="M-20,540 C180,470 260,560 420,520 C600,475 640,330 830,300 C980,277 1080,160 1240,140" fill="none" stroke="#080403" strokeWidth="46" opacity="0.9" />
+              <path d="M-20,540 C180,470 260,560 420,520 C600,475 640,330 830,300 C980,277 1080,160 1240,140" fill="none" stroke="#21100a" strokeWidth="40" opacity="0.9" />
+              {/* street grid */}
+              {map.streets.map((s, i) => (
+                <line key={i} x1={s.x1} y1={s.y1} x2={s.x2} y2={s.y2} stroke="#ff7a00" strokeWidth={s.w} opacity={s.o} strokeLinecap="round" />
+              ))}
+              {/* arterial avenues */}
+              <path d={ROUTES[0]} fill="none" stroke="#ff7a00" strokeWidth="2.6" opacity="0.32" />
+              <path d={ROUTES[1]} fill="none" stroke="#ff7a00" strokeWidth="2.2" opacity="0.26" />
+              <path d={ROUTES[2]} fill="none" stroke="#ff7a00" strokeWidth="2" opacity="0.22" />
+              {/* flowing delivery routes */}
+              {ROUTES.map((d, i) => (
+                <path
+                  key={d}
+                  d={d}
+                  fill="none"
+                  stroke={i === 1 ? "#ffd9b0" : "#ff7a00"}
+                  strokeWidth="3"
+                  strokeLinecap="round"
+                  strokeDasharray="14 70 4 552"
+                  style={{ animation: `mpFlow ${9 + i * 3.5}s linear infinite`, opacity: 0.9, filter: "drop-shadow(0 0 6px rgba(255,122,0,.8))" }}
+                />
+              ))}
+              {/* station dots */}
+              {map.dots.map((p, i) => (
+                <g key={i}>
+                  <circle cx={p.x} cy={p.y} r={p.r} fill="#ffb866" opacity="0.95" />
+                  <circle
+                    cx={p.x}
+                    cy={p.y}
+                    r={p.r * 3.4}
+                    fill="none"
+                    stroke="#ff7a00"
+                    strokeWidth="1"
+                    style={{ transformOrigin: `${p.x}px ${p.y}px`, animation: `mpPulse 4.6s ${p.d}s ease-out infinite` }}
+                  />
+                </g>
+              ))}
+            </svg>
           </div>
+        </div>
+        <div className="absolute inset-0" style={{ background: "radial-gradient(ellipse at 50% 42%, transparent 0%, rgba(20,10,5,.62) 72%, rgba(20,10,5,.94) 100%)" }} />
+
+        {/* franchise marker plates (live data) */}
+        {(markers.length > 0 ? markers : [{ name: "São Paulo", count: 0 }]).slice(0, 4).map((marker, i) => (
+          <div
+            key={marker.name}
+            className="absolute hidden -translate-x-1/2 -translate-y-1/2 select-none md:block"
+            style={{ ...MARKER_POS[i], opacity: ready && chapter === 0 ? 1 : 0, transition: "opacity .8s ease", transitionDelay: `${0.3 + i * 0.18}s` }}
+          >
+            <div className="flex flex-col items-center gap-1.5">
+              <div className="rounded-[10px] border px-3.5 py-2 text-center backdrop-blur-sm" style={{ borderColor: "rgba(255,122,0,.4)", background: "rgba(20,10,5,.72)" }}>
+                <div className="text-xl font-black leading-none" style={{ color: "#ff7a00" }}>{marker.count > 0 ? String(marker.count).padStart(2, "0") : "··"}</div>
+                <div className="mt-1 text-[9px] font-black uppercase tracking-[0.22em]" style={{ color: "rgba(255,255,255,.75)" }}>{t.pontos}</div>
+              </div>
+              <div className="h-7 w-px" style={{ background: "linear-gradient(to bottom, rgba(255,122,0,.7), transparent)" }} />
+              <div className="text-[11px] font-black uppercase tracking-[0.18em]" style={{ color: "rgba(255,255,255,.85)" }}>{marker.name}</div>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* ---- Top bar -------------------------------------------------------- */}
+      <header className="fixed inset-x-0 top-0 z-40 flex items-center justify-between px-5 py-4 md:px-10">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src="/meponto-logo.png" alt="MePonto" className="h-9 w-auto" />
+        <div className="flex items-center gap-2">
+          {(["pt", "zh", "en"] as Lang[]).map((code) => (
+            <button
+              key={code}
+              type="button"
+              onClick={() => setLang(code)}
+              className="rounded-full border px-3 py-1 text-[11px] font-black uppercase tracking-wider transition-colors"
+              style={{ borderColor: lang === code ? "#ff7a00" : "rgba(255,255,255,.18)", color: lang === code ? "#ff7a00" : "rgba(255,255,255,.6)" }}
+            >
+              {code === "zh" ? "中" : code}
+            </button>
+          ))}
+          <a href="https://app.meponto.com" className="ml-2 rounded-full px-4 py-1.5 text-[12px] font-black uppercase tracking-wider" style={{ background: "#ff7a00", color: "#140a05" }}>
+            App
+          </a>
         </div>
       </header>
 
-      {/* Hero */}
-      <section className="relative z-10 overflow-hidden">
-        <div className="mp-grid pointer-events-none absolute inset-0" />
-        <div className="mp-glow pointer-events-none absolute -top-36 right-[-12%] h-[460px] w-[460px] rounded-full bg-[rgba(120,80,255,0.28)] blur-3xl" />
-        <div className="mp-glow2 pointer-events-none absolute bottom-[-30%] left-[-10%] h-96 w-96 rounded-full bg-[rgba(40,180,255,0.22)] blur-3xl" />
-        <div
-          className="relative mx-auto max-w-6xl px-4 py-16 sm:px-6 md:py-28"
-          style={{ perspective: "1400px" }}
-          onMouseMove={(event) => {
-            const target = event.currentTarget.querySelector<HTMLElement>("[data-hero-stage]");
-            if (!target) return;
-            const rect = event.currentTarget.getBoundingClientRect();
-            const px = (event.clientX - rect.left) / rect.width - 0.5;
-            const py = (event.clientY - rect.top) / rect.height - 0.5;
-            target.style.transform = `rotateY(${(px * 5).toFixed(2)}deg) rotateX(${(-py * 5).toFixed(2)}deg)`;
-          }}
-          onMouseLeave={(event) => {
-            const target = event.currentTarget.querySelector<HTMLElement>("[data-hero-stage]");
-            if (target) target.style.transform = "rotateY(0deg) rotateX(0deg)";
-          }}
-        >
-          <div data-hero-stage style={{ transformStyle: "preserve-3d", transition: "transform .25s ease-out" }}>
-          <div className="rv inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/5 px-4 py-1.5 text-[11px] font-black uppercase tracking-widest text-[#ffd84d] backdrop-blur">
-            <ShieldCheck size={14} /> <span translate="no">{t.hero.eyebrow}</span>
-          </div>
-          <h1 className="mp-gtext rv mt-6 max-w-4xl text-4xl font-black leading-tight md:text-6xl" style={{ ["--d" as never]: "90ms", transform: "translateZ(70px)" }}>
-            {t.hero.title}
-          </h1>
-          <p className="rv mt-5 max-w-2xl text-base font-bold leading-7 text-white/70 md:text-lg" style={{ ["--d" as never]: "180ms", transform: "translateZ(40px)" }}>
-            {t.hero.subtitle}
-          </p>
+      {/* ---- Chapter rail ---------------------------------------------------- */}
+      <nav className="fixed left-5 top-1/2 z-40 hidden -translate-y-1/2 flex-col gap-4 lg:flex">
+        {railNames.map((name, index) => (
+          <button key={name} type="button" onClick={() => sectionsRef.current[index]?.scrollIntoView({ behavior: "smooth" })} className="group flex items-center gap-2.5 text-left">
+            <span className="h-px transition-all duration-500" style={{ width: chapter === index ? 34 : 14, background: chapter === index ? "#ff7a00" : "rgba(255,255,255,.25)" }} />
+            <span className="text-[10px] font-black uppercase tracking-[0.22em] transition-colors duration-500" style={{ color: chapter === index ? "#ff7a00" : "rgba(255,255,255,.35)" }}>
+              {name}
+            </span>
+          </button>
+        ))}
+      </nav>
 
-          <div className="rv mt-8 flex flex-wrap gap-3" style={{ ["--d" as never]: "260ms", transform: "translateZ(55px)" }}>
-            <a href="#contact" className={gradBtn}>
-              <Building2 size={18} /> {t.hero.ctaFranchise} <ArrowRight size={16} />
-            </a>
-            <a href="https://app.meponto.com" className={ghostBtn}>
-              <Bike size={18} /> {t.hero.ctaRider}
-            </a>
-          </div>
-
-          <div className="mt-14 grid grid-cols-2 gap-3 md:grid-cols-4" style={{ transform: "translateZ(50px)" }}>
-            {t.hero.stats.map((stat, index) => (
-              <Tilt3D key={stat.label} className="rv" style={{ ["--d" as never]: `${320 + index * 90}ms` }}>
-                <div className={`${glass} p-4`}>
-                  <div className="text-xl font-black text-[#ffd84d]">{stat.value}</div>
-                  <div className="mt-1 text-xs font-bold text-white/50">{stat.label}</div>
+      {/* ---- Chapters -------------------------------------------------------- */}
+      <div className="relative z-10">
+        {t.chapters.map((section, index) => (
+          <section key={section.tag} ref={setSection(index)} data-chapter={index} className="flex min-h-screen items-center px-6 md:px-24 lg:px-36">
+            {chapter === index && ready && (
+              <div className="max-w-3xl" key={`${lang}-${index}`}>
+                <div className="mp-rise mb-5 flex items-center gap-3">
+                  <span className="text-[11px] font-black uppercase tracking-[0.3em]" style={{ color: "#ff7a00" }}>
+                    {String(index + 1).padStart(2, "0")} · {section.tag}
+                  </span>
+                  <span className="h-px w-16" style={{ background: "rgba(255,122,0,.5)" }} />
                 </div>
-              </Tilt3D>
-            ))}
-          </div>
-          </div>
-        </div>
-      </section>
+                <h2 className="mp-rise text-5xl font-black leading-[1.02] md:text-7xl lg:text-8xl">
+                  {section.title.map((line) => (
+                    <span key={line} className="block">{line}</span>
+                  ))}
+                </h2>
+                <p className="mp-rise-2 mt-7 max-w-xl text-base font-medium leading-7 md:text-lg" style={{ color: "rgba(255,255,255,.65)" }}>{section.text}</p>
+                {section.cta && (
+                  <a href={section.cta.href} className="mp-rise-3 group mt-9 inline-flex items-center gap-3 text-[13px] font-black uppercase tracking-[0.2em]" style={{ color: "#ff7a00" }}>
+                    <span className="grid h-10 w-10 place-items-center rounded-full border transition-transform group-hover:scale-110" style={{ borderColor: "#ff7a00" }}>→</span>
+                    {section.cta.label}
+                  </a>
+                )}
+              </div>
+            )}
+          </section>
+        ))}
 
-      {/* Rider recruitment */}
-      <section id="rider" className="relative z-10 border-t border-white/10">
-        <div className="pointer-events-none absolute left-[-8%] top-1/4 h-72 w-72 rounded-full bg-[rgba(255,170,40,0.12)] blur-3xl" />
-        <div className="relative mx-auto grid max-w-6xl gap-10 px-4 py-16 sm:px-6 lg:grid-cols-2 lg:items-center md:py-24">
-          <div>
-            <div className="rv text-[11px] font-black uppercase tracking-widest text-[#4dd9ff]">{t.rider.eyebrow}</div>
-            <h2 className="rv mt-3 text-3xl font-black md:text-4xl" style={{ ["--d" as never]: "80ms" }}>{t.rider.title}</h2>
-            <ul className="mt-6 space-y-3">
-              {t.rider.bullets.map((bullet, index) => (
-                <li key={bullet} className="rv flex items-start gap-3 text-sm font-bold leading-6 text-white/75" style={{ ["--d" as never]: `${140 + index * 70}ms` }}>
-                  <CheckCircle2 size={18} className="mt-0.5 shrink-0 text-[#ffd84d]" /> {bullet}
-                </li>
-              ))}
-            </ul>
-            <a href="https://app.meponto.com" className={`rv mt-8 ${gradBtn}`} style={{ ["--d" as never]: "500ms" }}>
-              <Bike size={18} /> {t.rider.cta} <ArrowRight size={16} />
-            </a>
-          </div>
-          <div className="grid grid-cols-2 gap-3" style={{ perspective: "1000px" }}>
-            {t.rider.cards.map((card, index) => {
-              const Icon = cardIcons[card.icon as keyof typeof cardIcons];
-              return (
-                <Tilt3D key={card.title} className="rv" style={{ ["--d" as never]: `${120 + index * 110}ms` }}>
-                  <div className={`${glass} p-5 hover:border-[#4dd9ff]/40`}>
-                    <div className="grid h-11 w-11 place-items-center rounded-xl bg-gradient-to-br from-[#ffd84d]/25 to-[#4dd9ff]/20 text-[#ffd84d]" style={{ transform: "translateZ(30px)" }}>
-                      <Icon size={22} />
-                    </div>
-                    <div className="mt-4 text-base font-black" style={{ transform: "translateZ(20px)" }}>{card.title}</div>
-                    <p className="mt-1 text-xs font-bold leading-5 text-white/55">{card.text}</p>
-                  </div>
-                </Tilt3D>
-              );
-            })}
-          </div>
-        </div>
-      </section>
+        {/* ---- Finale -------------------------------------------------------- */}
+        <section ref={setSection(t.chapters.length)} data-chapter={t.chapters.length} className="relative flex min-h-screen flex-col items-center justify-center px-6 text-center">
+          {chapter === t.chapters.length && (
+            <div key={`finale-${lang}`}>
+              <h2 className="mp-rise text-5xl font-black leading-[1.02] md:text-7xl lg:text-8xl">
+                {t.finale.title.map((line) => (
+                  <span key={line} className="block">{line}</span>
+                ))}
+              </h2>
+              <p className="mp-rise-2 mx-auto mt-6 max-w-xl text-base font-medium leading-7 md:text-lg" style={{ color: "rgba(255,255,255,.65)" }}>{t.finale.text}</p>
+              <div className="mp-rise-3 mt-10 flex flex-wrap items-center justify-center gap-4">
+                <a href="https://app.meponto.com/rider-login" className="rounded-full px-8 py-4 text-sm font-black uppercase tracking-wider transition-transform hover:scale-105" style={{ background: "#ff7a00", color: "#140a05" }}>
+                  {t.finale.rider}
+                </a>
+                <a href="https://franchise.meponto.com" className="rounded-full border px-8 py-4 text-sm font-black uppercase tracking-wider transition-transform hover:scale-105" style={{ borderColor: "rgba(255,122,0,.65)", color: "#ff7a00" }}>
+                  {t.finale.franchise}
+                </a>
+              </div>
+            </div>
+          )}
 
-      {/* Franchise recruitment */}
-      <section id="franchise" className="relative z-10 border-t border-white/10">
-        <div className="pointer-events-none absolute right-[-8%] top-1/3 h-72 w-72 rounded-full bg-[rgba(120,80,255,0.16)] blur-3xl" />
-        <div className="relative mx-auto grid max-w-6xl gap-10 px-4 py-16 sm:px-6 lg:grid-cols-2 lg:items-center md:py-24">
-          <div className="order-2 lg:order-1">
-            <div className={`rv ${glass} p-8`}>
-              <Users size={56} className="text-[#ffd84d]" />
-              <div className="mt-6 grid grid-cols-3 gap-3">
-                {[68, 44, 84].map((height, index) => (
-                  <div key={index} className="flex h-28 items-end rounded-xl border border-white/10 bg-white/[0.03] p-2">
-                    <div className="w-full rounded-lg bg-gradient-to-t from-[#ffd84d]/60 to-[#4dd9ff]/40" style={{ height: `${height}%` }} />
-                  </div>
+          <footer className="absolute inset-x-0 bottom-0 border-t px-6 py-5" style={{ borderColor: "rgba(255,255,255,.08)", background: "rgba(20,10,5,.6)", backdropFilter: "blur(6px)" }}>
+            <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-3">
+              <div className="text-[11px] font-black uppercase tracking-[0.25em]" style={{ color: "rgba(255,255,255,.45)" }}>MePonto · {t.footer.tagline}</div>
+              <div className="flex flex-wrap items-center gap-x-5 gap-y-1.5">
+                {t.footer.systems.map((system) => (
+                  <a key={system.href} href={system.href} className="text-[11px] font-bold transition-colors hover:text-[#ff7a00]" style={{ color: "rgba(255,255,255,.55)" }}>
+                    {system.label}
+                  </a>
                 ))}
               </div>
-              <div className="mt-4 h-2 w-2/3 rounded bg-gradient-to-r from-[#ffd84d]/50 to-transparent" />
-              <div className="mt-2 h-2 w-1/2 rounded bg-white/10" />
             </div>
-          </div>
-          <div className="order-1 lg:order-2">
-            <div className="rv text-[11px] font-black uppercase tracking-widest text-[#4dd9ff]">{t.franchise.eyebrow}</div>
-            <h2 className="rv mt-3 text-3xl font-black md:text-4xl" style={{ ["--d" as never]: "80ms" }}>{t.franchise.title}</h2>
-            <ul className="mt-6 space-y-3">
-              {t.franchise.bullets.map((bullet, index) => (
-                <li key={bullet} className="rv flex items-start gap-3 text-sm font-bold leading-6 text-white/75" style={{ ["--d" as never]: `${140 + index * 70}ms` }}>
-                  <CheckCircle2 size={18} className="mt-0.5 shrink-0 text-[#ffd84d]" /> {bullet}
-                </li>
-              ))}
-            </ul>
-            <a href="#contact" className={`rv mt-8 ${gradBtn}`} style={{ ["--d" as never]: "500ms" }}>
-              <Building2 size={18} /> {t.franchise.cta} <ArrowRight size={16} />
-            </a>
-          </div>
-        </div>
-      </section>
+          </footer>
+        </section>
+      </div>
 
-      {/* Franchise lead form */}
-      <section id="contact" className="relative z-10 border-t border-white/10">
-        <div className="pointer-events-none absolute inset-x-0 top-0 mx-auto h-64 max-w-3xl rounded-full bg-[rgba(255,196,46,0.08)] blur-3xl" />
-        <div className="relative mx-auto max-w-3xl px-4 py-16 sm:px-6 md:py-24">
-          <h2 className="mp-gtext rv text-3xl font-black md:text-4xl">{t.form.title}</h2>
-          <p className="rv mt-2 text-sm font-bold text-white/60" style={{ ["--d" as never]: "80ms" }}>{t.form.subtitle}</p>
-
-          <form onSubmit={submit} className={`rv mt-8 space-y-4 ${glass} p-6 md:p-8`} style={{ ["--d" as never]: "160ms" }}>
-            <div className="grid gap-4 sm:grid-cols-2">
-              <input className={input} placeholder={t.form.name} value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
-              <input className={input} placeholder={t.form.phone} value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} />
-              <input className={input} placeholder={t.form.email} value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} />
-              <input className={input} placeholder={t.form.city} value={form.city} onChange={(e) => setForm({ ...form, city: e.target.value })} />
-            </div>
-            <textarea
-              className="min-h-28 w-full rounded-xl border border-white/10 bg-white/5 p-4 text-sm font-bold text-white outline-none backdrop-blur placeholder:text-white/40 focus:border-[#ffd84d]/60 focus:bg-white/10"
-              placeholder={t.form.message}
-              value={form.message}
-              onChange={(e) => setForm({ ...form, message: e.target.value })}
-            />
-            <input type="text" name="company_website" tabIndex={-1} autoComplete="off" className="hidden" aria-hidden="true" />
-
-            <button type="submit" disabled={state === "sending"} className={`${gradBtn} disabled:opacity-60`}>
-              {state === "sending" ? t.form.sending : t.form.submit} <ArrowRight size={16} />
-            </button>
-
-            {state === "ok" && <div className="rounded-xl border border-emerald-400/40 bg-emerald-400/10 px-4 py-3 text-sm font-black text-emerald-300">{t.form.success}</div>}
-            {state === "fail" && <div className="rounded-xl border border-red-400/40 bg-red-400/10 px-4 py-3 text-sm font-black text-red-300">{t.form.error}</div>}
-            {state === "invalid" && <div className="rounded-xl border border-amber-400/40 bg-amber-400/10 px-4 py-3 text-sm font-black text-amber-300">{t.form.required}</div>}
-          </form>
-        </div>
-      </section>
-
-      {/* Footer */}
-      <footer className="relative z-10 border-t border-white/10 bg-[rgba(5,7,14,0.6)] backdrop-blur-xl">
-        <div className="mx-auto grid max-w-6xl gap-10 px-4 py-12 sm:px-6 md:grid-cols-3">
-          <div>
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src="/meponto-logo.png" alt="MePonto" translate="no" className="h-9 w-auto" />
-            <p className="mt-3 text-xs font-bold text-white/40" translate="no">{t.footer.rights}</p>
-            <a href="/privacy" className="mt-3 inline-block text-xs font-bold text-white/40 underline-offset-2 hover:text-[#ffd84d] hover:underline">
-              {t.footer.privacy}
-            </a>
-          </div>
-
-          <div>
-            <div className="text-[11px] font-black uppercase tracking-widest text-[#4dd9ff]">{t.footer.systems}</div>
-            <ul className="mt-3 space-y-2">
-              {t.footer.links.map((link, index) => {
-                const Icon = systemIcons[index] ?? Building2;
-                return (
-                  <li key={link.href}>
-                    <a href={link.href} className="inline-flex items-center gap-2 text-sm font-bold text-white/60 transition-colors hover:text-[#ffd84d]">
-                      <Icon size={15} className="text-[#ffd84d]/70" /> {link.label}
-                    </a>
-                  </li>
-                );
-              })}
-            </ul>
-          </div>
-
-          <div>
-            <div className="text-[11px] font-black uppercase tracking-widest text-[#4dd9ff]">{t.footer.support}</div>
-            <p className="mt-3 max-w-xs text-xs font-bold leading-5 text-white/50">{t.footer.supportText}</p>
-            <div className="mt-3 inline-flex items-center gap-2 text-sm font-bold text-white/60" translate="no">
-              <Headset size={15} className="text-[#ffd84d]/70" /> contato@meponto.com
-            </div>
-            <div className="text-sm font-bold text-white/40">São Paulo · Brasil</div>
-          </div>
-        </div>
-      </footer>
+      {/* ---- Prev / Next ------------------------------------------------------ */}
+      <div className="fixed bottom-6 right-6 z-40 flex gap-2">
+        {[
+          { label: "↑", target: Math.max(0, chapter - 1) },
+          { label: "↓", target: Math.min(t.chapters.length, chapter + 1) },
+        ].map((button) => (
+          <button
+            key={button.label}
+            type="button"
+            onClick={() => sectionsRef.current[button.target]?.scrollIntoView({ behavior: "smooth" })}
+            className="grid h-11 w-11 place-items-center rounded-full border text-lg font-black transition-colors hover:border-[#ff7a00] hover:text-[#ff7a00]"
+            style={{ borderColor: "rgba(255,255,255,.2)", color: "rgba(255,255,255,.7)", background: "rgba(20,10,5,.5)", backdropFilter: "blur(4px)" }}
+          >
+            {button.label}
+          </button>
+        ))}
+      </div>
     </main>
   );
 }
