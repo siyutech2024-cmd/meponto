@@ -260,7 +260,18 @@ export default function WalletAdminPage() {
               <span className="mb-1 block text-[10px] font-black uppercase text-[var(--muted)]">付款类型</span>
               <div className="flex gap-2">
                 {(["weekly", "daily"] as const).map((p) => (
-                  <button key={p} type="button" onClick={() => setPayPeriod(p)} className={`tag ${payPeriod === p ? "border-[var(--accent)] text-[var(--accent)]" : ""}`}>{p === "weekly" ? "周付款" : "日付款"}</button>
+                  <button
+                    key={p}
+                    type="button"
+                    onClick={() => setPayPeriod(p)}
+                    className={`h-10 rounded-[8px] border px-4 text-sm font-black transition-colors ${
+                      payPeriod === p
+                        ? "border-[var(--accent)] bg-[var(--accent)] text-[var(--accent-ink)]"
+                        : "border-[var(--line)] bg-[var(--surface-raised)] text-[var(--muted-strong)] hover:border-[var(--muted)]"
+                    }`}
+                  >
+                    {payPeriod === p ? "✓ " : ""}{p === "weekly" ? "周付款" : "日付款"}
+                  </button>
                 ))}
               </div>
             </div>
