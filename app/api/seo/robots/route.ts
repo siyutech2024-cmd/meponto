@@ -32,7 +32,7 @@ export function GET(request: Request) {
         "Allow: /",
         "",
         ...AI_BOTS.flatMap((bot) => [`User-agent: ${bot}`, "Allow: /", ""]),
-        "Sitemap: https://meponto.com/sitemap.xml",
+        "Sitemap: https://www.meponto.com/sitemap.xml",
         "",
       ].join("\n")
     : "User-agent: *\nDisallow: /\n";
