@@ -330,6 +330,13 @@ async function handlePost(request: Request) {
           memory.riderDailyKpis[index] = record;
           updated += 1;
         }
+        // If the earnings row for this day lacked order/金额 columns, complete it now.
+        const earnIndex = memory.riderDailyEarnings.findIndex((row) => row.date === date && row.rider99Id === rider99Id);
+        if (earnIndex !== -1 && (memory.riderDailyEarnings[earnIndex].orders ?? 0) === 0 && record.completedOrders > 0) {
+          const earning = memory.riderDailyEarnings[earnIndex];
+          const computedSettle = (earning.settleAmount ?? 0) > 0 ? earning.settleAmount : Math.round(((earning.total ?? 0) + record.completedOrders * 2.5) * 100) / 100;
+          memory.riderDailyEarnings[earnIndex] = { ...earning, orders: record.completedOrders, settleAmount: computedSettle };
+        }
         const riderIndex = memory.riders.findIndex((rider) => rider.ninetyNineId === rider99Id);
         if (riderIndex !== -1) {
           if (record.ar !== null) {
@@ -345,11 +352,15 @@ async function handlePost(request: Request) {
         }
       }
     } else {
+      const perOrderRate = num((body as { perOrderRate?: unknown }).perOrderRate) || 2.5;
       for (const raw of records) {
         const rider99Id = String(raw.rider99Id ?? "").trim();
         if (!/^\d{6,}$/.test(rider99Id)) continue;
-        const orders = num(raw.orders);
         const total = num(raw.total);
+        // Raw Eastwind export has no order/金额 columns: orders come from the
+        // same-day KPI sheet; settle = 今日统计 + 完单 × per-order rate.
+        const kpiSameDay = memory.riderDailyKpis.find((row) => row.date === date && row.rider99Id === rider99Id);
+        const orders = raw.orders !== undefined ? num(raw.orders) : kpiSameDay?.completedOrders ?? 0;
         const record: RiderDailyEarning = {
           id: `earn-${date}-${rider99Id}`,
           date,
@@ -369,9 +380,9 @@ async function handlePost(request: Request) {
           referralBonus: num(raw.referralBonus),
           pix: String(raw.pix ?? "").trim(),
           orders,
-          // Settlement comes straight from the source sheet's 金额 column —
-          // no formula is applied on our side (rates can change per week).
-          settleAmount: num(raw.settleAmount),
+          // Settlement: source sheet's 金额 column when present; otherwise
+          // computed as 今日统计 + 完单 × 单价 (configurable per import).
+          settleAmount: raw.settleAmount !== undefined ? num(raw.settleAmount) : Math.round((total + orders * perOrderRate) * 100) / 100,
           importedAt,
         };
         const index = memory.riderDailyEarnings.findIndex((row) => row.id === record.id);
