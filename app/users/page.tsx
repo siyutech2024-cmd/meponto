@@ -7,6 +7,7 @@ import { roles, type Role } from "../lib/rbac";
 import { portalConfigs, type PortalId } from "../lib/portals";
 import type { AppUser } from "../lib/users";
 import { readSession } from "../lib/session";
+import { useDialog } from "../components/dialog";
 
 type SafeUser = Omit<AppUser, "passwordHash" | "salt">;
 
@@ -14,19 +15,27 @@ const headers = { "Content-Type": "application/json", "x-vento-role": "Super Adm
 const portalIds = Object.keys(portalConfigs) as PortalId[];
 
 export default function UsersPage() {
+  const dialog = useDialog();
   // Franchise portal: this page becomes "station accounts" scoped to itself.
   const session = useMemo(() => readSession(), []);
   const isFranchise = session?.portal === "franchise";
   const ownFranchise = session?.franchise || session?.organization || "";
   const [users, setUsers] = useState<SafeUser[]>([]);
+  const [network, setNetwork] = useState<{ franchises: Array<{ id: string; name: string }>; stations: Array<{ id: string; name: string; franchise?: string }> }>({ franchises: [], stations: [] });
   const [message, setMessage] = useState<{ tone: "ok" | "err"; text: string } | null>(null);
   const [form, setForm] = useState({ name: "", identifier: "", phone: "", password: "", role: "Ponto Manager" as Role, portal: "ponto" as PortalId, franchise: "", station: "" });
   const [busy, setBusy] = useState(false);
 
   const load = useCallback(async () => {
-    const response = await fetch("/api/users", { headers, cache: "no-store" });
-    const payload = await response.json();
-    if (response.ok) setUsers(payload.data);
+    const [usersResponse, networkResponse] = await Promise.all([
+      fetch("/api/users", { headers, cache: "no-store" }),
+      fetch("/api/network", { headers, cache: "no-store" }),
+    ]);
+    if (usersResponse.ok) setUsers((await usersResponse.json()).data);
+    if (networkResponse.ok) {
+      const payload = (await networkResponse.json()).data;
+      setNetwork({ franchises: payload.franchises, stations: payload.stations });
+    }
   }, []);
 
   useEffect(() => {
@@ -104,9 +113,20 @@ export default function UsersPage() {
             {isFranchise ? (
               <input className={input} value={ownFranchise} disabled />
             ) : (
-              <input className={input} placeholder="所属加盟商（选填）" value={form.franchise} onChange={(e) => setForm({ ...form, franchise: e.target.value })} />
+              <select className={input} value={form.franchise} onChange={(e) => setForm({ ...form, franchise: e.target.value, station: "" })}>
+                <option value="">所属加盟商{form.portal === "franchise" ? " *" : "（选填）"}</option>
+                {network.franchises.map((f) => <option key={f.id} value={f.name}>{f.name}</option>)}
+              </select>
             )}
-            <input className={input} placeholder={isFranchise ? "站点名称 *" : "所属站点（选填）"} value={form.station} onChange={(e) => setForm({ ...form, station: e.target.value })} />
+            <select className={input} value={form.station} onChange={(e) => setForm({ ...form, station: e.target.value })}>
+              <option value="">所属站点{form.portal === "ponto" ? " *" : "（选填）"}</option>
+              {network.stations
+                .filter((s) => {
+                  const fr = isFranchise ? ownFranchise : form.franchise;
+                  return !fr || s.franchise === fr;
+                })
+                .map((s) => <option key={s.id} value={s.name}>{s.name}</option>)}
+            </select>
           </div>
           <button
             type="button"
@@ -155,7 +175,7 @@ export default function UsersPage() {
                         type="button"
                         className="tag inline-flex items-center gap-1"
                         onClick={async () => {
-                          const password = window.prompt(`为 ${user.identifier} 设置新密码（至少 6 位）：`);
+                          const password = await dialog.prompt("重置密码", { message: `为 ${user.identifier} 设置新密码（至少 6 位）` });
                           if (!password) return;
                           const result = await post({ action: "resetPassword", userId: user.id, password });
                           if (result) setMessage({ tone: "ok", text: "密码已重置。" });
