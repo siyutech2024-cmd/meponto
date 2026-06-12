@@ -734,7 +734,7 @@ function ImportTab({ headers, onDone, onError }: { headers: Record<string, strin
           log.push(`✕ ${file.name}：${payload.error ?? response.status}`);
           continue;
         }
-        log.push(`✓ ${file.name} → ${isEarnings ? "收入结算" : "KPI 绩效"} ${date}：${payload.data.parsed} 名骑手（新增 ${payload.data.created}，更新 ${payload.data.updated}）${rawExport ? "｜原始表无金额列 → 金额=今日统计+完单×R$2.5（完单取自同日KPI表，请确保两表都已导入）" : ""}`);
+        log.push(`✓ ${file.name} → ${isEarnings ? "收入结算" : "KPI 绩效"} ${date}：${payload.data.parsed} 名骑手（新增 ${payload.data.created}，更新 ${payload.data.updated}）${rawExport ? "｜原始表无「金额」列 → 结算金额留空（0），完单取自同日KPI表；金额以含金额列的表为准" : ""}`);
       }
     } catch (error) {
       log.push(`✕ 解析失败：${(error as Error).message}`);
