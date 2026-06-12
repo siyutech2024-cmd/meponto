@@ -107,7 +107,7 @@ export async function proxy(request: NextRequest) {
   // Each portal domain only serves ITS OWN pages. Opening another system's
   // path (e.g. franchise.meponto.com/pontosys) bounces to the owning domain —
   // regardless of who is logged in.
-  const publicPaths = ["/rider-login", "/scan", "/privacy", "/home"];
+  const publicPaths = ["/rider-login", "/scan", "/privacy", "/home", "/robots.txt", "/sitemap.xml", "/llms.txt", "/og.png", "/480d2d55480284b1ce870c54bf62e21a.txt"];
   if (hostPortalId && !publicPaths.some((p) => pathname === p || pathname.startsWith(`${p}/`))) {
     const hostPortal = portalConfigs[hostPortalId];
     const belongsTo = (portal: (typeof portalConfigs)[keyof typeof portalConfigs]) =>

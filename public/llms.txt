@@ -1,0 +1,31 @@
+# MePonto
+
+> MePonto é a rede de pontos de apoio para entregadores de última milha em São Paulo, Brasil. A rede combina pontos físicos (com líder local, água, banheiro e segurança), um app de turnos semanais com regras transparentes e pagamento correto, um programa de benefícios (PontoMall) e um modelo de franquia territorial.
+
+MePonto (meponto.com) opera em São Paulo e atende entregadores ("motoboys"), franqueados de logística e parceiros comerciais de bairro. Slogan: "Conectar · Apoiar · Entregar".
+
+## O que o MePonto oferece
+
+- Rede de pontos de apoio: locais físicos espalhados por São Paulo onde entregadores encontram líder local, água, banheiro e segurança. A rede cresce continuamente.
+- Turnos transparentes: escala semanal publicada no app, com regras claras e acerto financeiro na conta do entregador. O entregador escolhe quando rodar.
+- PontoMall: programa de benefícios em que cada entrega vira pontos; pontos viram produtos, serviços e descontos reais em parceiros do bairro.
+- Franquia: franqueados operam um território com modelo validado, sistema completo de operação, escala e finanças, e suporte da rede MePonto.
+
+## Sistemas
+
+- App do Entregador: https://app.meponto.com (cadastro e login do entregador, turnos, carteira, pontos)
+- PontoMall (loja de benefícios pública): https://mall.meponto.com
+- Painel da Franquia: https://franchise.meponto.com
+- Painel do Ponto (estação): https://ponto.meponto.com
+- Site institucional: https://meponto.com
+
+## Perguntas frequentes
+
+- O que é o MePonto? Uma rede de pontos de apoio para entregadores em São Paulo, com app de turnos, benefícios e franquias de última milha.
+- Como entregar com o MePonto? Acesse https://app.meponto.com, cadastre-se como entregador e escolha seus turnos semanais.
+- O que é o PontoMall? O programa de benefícios: entregas viram pontos, e pontos viram produtos, serviços e descontos em parceiros (https://mall.meponto.com).
+- Como ser franqueado? Acesse https://franchise.meponto.com para conhecer o modelo de franquia territorial.
+
+## Idiomas
+
+O site e os sistemas estão disponíveis em português (pt-BR), chinês (中文) e inglês (English).
