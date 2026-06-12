@@ -12,15 +12,29 @@ const statusLabel: Record<string, string> = { scheduling: "排班中", executing
 
 export default function FranchiseDispatchPage() {
   const session = useMemo(() => readSession(), []);
-  const franchise = session?.franchise || session?.organization || "Franquia Sul";
+  // SERVER session is the source of truth for identity — localStorage can be
+  // stale after account switches and would query the wrong franchise.
+  const [franchise, setFranchise] = useState(session?.franchise || session?.organization || "");
+  useEffect(() => {
+    void fetch("/api/auth/session", { cache: "no-store" })
+      .then((response) => (response.ok ? response.json() : null))
+      .then((payload) => {
+        const user = payload?.data?.user ?? payload?.user;
+        const serverFranchise = user?.franchise || user?.organization;
+        if (serverFranchise) setFranchise(serverFranchise);
+      })
+      .catch(() => undefined);
+  }, []);
   const headers = useMemo(() => ({ "Content-Type": "application/json", "x-vento-role": session?.role ?? "Franchise Admin" }), [session]);
 
   const [board, setBoard] = useState<Board>({ shifts: [], quotas: [], signups: [] });
+  const [myStations, setMyStations] = useState<string[]>([]);
   const [message, setMessage] = useState<{ tone: "ok" | "err" | "warn"; text: string } | null>(null);
   const [stationInputs, setStationInputs] = useState<Record<string, string>>({}); // `${shiftId}|${station}` -> quota
   const [selected, setSelected] = useState<Set<string>>(new Set());
 
   const load = useCallback(async () => {
+    if (!franchise) return;
     const response = await fetch(`/api/dispatch?franchise=${encodeURIComponent(franchise)}`, { headers, cache: "no-store" });
     const payload = await response.json();
     if (response.ok) setBoard(payload.data);
@@ -29,6 +43,18 @@ export default function FranchiseDispatchPage() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  // Real station list of this franchise (quota split targets).
+  useEffect(() => {
+    if (!franchise) return;
+    void fetch("/api/network", { headers, cache: "no-store" })
+      .then((response) => (response.ok ? response.json() : null))
+      .then((payload) => {
+        const stations = (payload?.data?.stations ?? []) as Array<{ name: string; franchise?: string }>;
+        setMyStations(stations.filter((item) => item.franchise === franchise).map((item) => item.name));
+      })
+      .catch(() => undefined);
+  }, [franchise, headers]);
 
   async function post(body: Record<string, unknown>) {
     const response = await fetch("/api/dispatch", { method: "POST", headers, body: JSON.stringify(body) });
@@ -92,7 +118,7 @@ export default function FranchiseDispatchPage() {
                       </div>
                     </div>
                     <div className="mt-2 grid gap-2 md:grid-cols-2">
-                      {(knownStations.length > 0 ? knownStations : ["Santo Amaro", "Pinheiros"]).map((station) => {
+                      {(myStations.length > 0 ? myStations : knownStations).map((station) => {
                         const existing = stationQuotas.find((quota) => quota.station === station);
                         const key = `${shift.id}|${station}`;
                         return (
