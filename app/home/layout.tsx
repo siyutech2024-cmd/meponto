@@ -6,7 +6,7 @@ import type { Metadata } from "next";
  * classic crawlers and AI engines (which don't execute JS) see everything.
  */
 
-const SITE = "https://meponto.com";
+const SITE = "https://www.meponto.com";
 const TITLE = "MePonto — Rede de Pontos de Apoio para Entregadores em São Paulo";
 const DESCRIPTION =
   "MePonto é a rede de pontos de apoio para entregadores em São Paulo: turnos transparentes pelo app, água, banheiro e segurança nos pontos, PontoMall de benefícios e franquias de última milha.";
