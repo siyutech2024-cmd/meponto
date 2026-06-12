@@ -2,12 +2,25 @@ import { appendServerAudit, jsonResponse, makeServerId, memory } from "../../lib
 import { flushPendingToDatabase, refreshCollectionsFromDatabase } from "../../lib/server/persistence";
 import { requirePermission, roleFromRequest } from "../../lib/server/authz";
 import { sendPushToRider } from "../../lib/server/notify";
-import { computeBalance, type RiderWithdrawal } from "../../lib/finance";
+import { computeBalance, type RiderWithdrawal, type WalletPayment } from "../../lib/finance";
+import { scopeFromRequest } from "../../lib/server/authz";
 
-const COLLECTIONS = ["riderWithdrawals", "riderDailyEarnings", "riders", "franchises"];
+const COLLECTIONS = ["riderWithdrawals", "riderDailyEarnings", "riderDailyKpis", "riders", "franchises", "walletPayments"];
 
 const today = () => new Date().toISOString().slice(0, 10);
 const nowStamp = () => new Date().toISOString().slice(0, 16).replace("T", " ");
+
+/** Saturday-anchored natural week containing `date` → [start..start+6]. */
+function weekWindow(date: string): { from: string; to: string } {
+  const d = new Date(`${date}T12:00:00Z`);
+  const day = d.getUTCDay(); // 0=Sun..6=Sat
+  const back = (day - 6 + 7) % 7; // days since the most recent Saturday
+  const start = new Date(d);
+  start.setUTCDate(d.getUTCDate() - back);
+  const end = new Date(start);
+  end.setUTCDate(start.getUTCDate() + 6);
+  return { from: start.toISOString().slice(0, 10), to: end.toISOString().slice(0, 10) };
+}
 
 export async function GET(request: Request) {
   const url = new URL(request.url);
@@ -28,20 +41,85 @@ export async function GET(request: Request) {
     const to = url.searchParams.get("to") || today();
     const from = url.searchParams.get("from") || new Date(Date.now() - 6 * 86400000).toISOString().slice(0, 10);
     const byNinetyNine = new Map(memory.riders.filter((r) => r.ninetyNineId).map((r) => [r.ninetyNineId!, r]));
+    const kpiByKey = new Map(memory.riderDailyKpis.map((k) => [`${k.date}|${k.rider99Id}`, k]));
+    const r2 = (n: number) => Math.round((n ?? 0) * 100) / 100;
     const rows = memory.riderDailyEarnings
       .filter((row) => row.date >= from && row.date <= to)
       .map((row) => ({ row, rider: byNinetyNine.get(row.rider99Id) }))
       .filter(({ rider }) => statementFranchise === "all" || (rider?.franchise ?? "Unassigned") === statementFranchise)
-      .map(({ row, rider }) => ({
-        date: row.date,
-        riderName: rider?.name ?? row.rider99Id,
-        rider99Id: row.rider99Id,
-        station: rider?.ponto ?? "Unassigned",
-        settleAmount: Math.round((row.settleAmount ?? 0) * 100) / 100,
-      }))
+      .map(({ row, rider }) => {
+        const kpi = kpiByKey.get(`${row.date}|${row.rider99Id}`);
+        return {
+          date: row.date,
+          riderName: rider?.name ?? row.riderName ?? row.rider99Id,
+          rider99Id: row.rider99Id,
+          cpf: rider?.cpf ?? row.cpf ?? "",
+          pix: rider?.pix ?? row.pix ?? "",
+          franchise: rider?.franchise ?? "Unassigned",
+          station: rider?.ponto ?? "Unassigned",
+          orders: row.orders ?? 0,
+          onlineHours: kpi?.onlineHours ?? null,
+          ar: kpi?.ar ?? null,
+          tripIncome: r2(row.tripIncome),
+          bonus: r2(row.bonus),
+          tips: r2(row.tips),
+          cashDebt: r2(row.cashDebt),
+          mealDeduction: r2(row.mealDeduction),
+          other: r2(row.other),
+          settleAmount: r2(row.settleAmount),
+        };
+      })
       .sort((a, b) => a.date.localeCompare(b.date) || a.riderName.localeCompare(b.riderName));
     const total = Math.round(rows.reduce((sum, row) => sum + row.settleAmount, 0) * 100) / 100;
     return jsonResponse({ data: { franchise: statementFranchise, from, to, rows, total } });
+  }
+
+  // Weekly settlement, folded franchise → rider (the main HQ wallet view).
+  if (url.searchParams.get("view") === "weekly") {
+    const anchor = url.searchParams.get("week") || today();
+    const win = weekWindow(anchor);
+    const scope = await scopeFromRequest(request);
+    const byNinetyNine = new Map(memory.riders.filter((r) => r.ninetyNineId).map((r) => [r.ninetyNineId!, r]));
+    const round = (n: number) => Math.round(n * 100) / 100;
+
+    // Sum settle per rider within the window.
+    const riderAgg = new Map<string, { name: string; rider99Id: string; franchise: string; station: string; settle: number; orders: number; days: number }>();
+    for (const row of memory.riderDailyEarnings) {
+      if (row.date < win.from || row.date > win.to) continue;
+      const rider = byNinetyNine.get(row.rider99Id);
+      const franchise = rider?.franchise ?? "Unassigned";
+      if (scope.franchise && franchise !== scope.franchise) continue;
+      const key = row.rider99Id;
+      const cur = riderAgg.get(key) ?? { name: rider?.name ?? row.rider99Id, rider99Id: row.rider99Id, franchise, station: rider?.ponto ?? "Unassigned", settle: 0, orders: 0, days: 0 };
+      cur.settle += row.settleAmount ?? 0;
+      cur.orders += row.orders ?? 0;
+      cur.days += 1;
+      riderAgg.set(key, cur);
+    }
+
+    // Payments already recorded for this window.
+    const paymentsInWindow = memory.walletPayments.filter((p) => p.weekFrom === win.from && p.weekTo === win.to);
+    const paidToRider = new Map<string, number>();
+    const paidToFranchise = new Map<string, number>();
+    for (const p of paymentsInWindow) {
+      if (p.target === "rider") paidToRider.set(p.refName, (paidToRider.get(p.refName) ?? 0) + p.amount);
+      else paidToFranchise.set(p.refName, (paidToFranchise.get(p.refName) ?? 0) + p.amount);
+    }
+
+    // Group into franchise → riders.
+    const groups = new Map<string, { franchise: string; settle: number; riders: Array<{ name: string; rider99Id: string; station: string; settle: number; orders: number; days: number; paid: number }> }>();
+    for (const r of riderAgg.values()) {
+      const g = groups.get(r.franchise) ?? { franchise: r.franchise, settle: 0, riders: [] };
+      g.settle = round(g.settle + r.settle);
+      g.riders.push({ name: r.name, rider99Id: r.rider99Id, station: r.station, settle: round(r.settle), orders: r.orders, days: r.days, paid: round(paidToRider.get(r.name) ?? 0) });
+      groups.set(r.franchise, g);
+    }
+    const franchises = [...groups.values()]
+      .map((g) => ({ ...g, riders: g.riders.sort((a, b) => b.settle - a.settle), franchisePaid: round(paidToFranchise.get(g.franchise) ?? 0) }))
+      .sort((a, b) => b.settle - a.settle);
+    const grandTotal = round(franchises.reduce((s, g) => s + g.settle, 0));
+
+    return jsonResponse({ data: { week: win, franchises, grandTotal, payments: paymentsInWindow, scoped: Boolean(scope.franchise) } });
   }
 
   // Single-rider wallet (rider app).
@@ -104,7 +182,8 @@ export async function GET(request: Request) {
 type Body =
   | { action: "requestWithdrawal"; riderId?: string; riderName?: string; amount: number }
   | { action: "confirmPayment"; withdrawalId: string; note?: string }
-  | { action: "rejectWithdrawal"; withdrawalId: string; note?: string };
+  | { action: "rejectWithdrawal"; withdrawalId: string; note?: string }
+  | { action: "recordPayment"; target: "franchise" | "rider"; refName: string; franchise?: string; amount: number; period?: "weekly" | "daily"; weekFrom: string; weekTo: string; note?: string };
 
 async function handlePost(request: Request) {
   const peek = (await request.clone().json().catch(() => ({}))) as { action?: string };
@@ -119,6 +198,40 @@ async function handlePost(request: Request) {
   const actor = roleFromRequest(request);
 
   switch (body.action) {
+    case "recordPayment": {
+      const { target, refName, franchise = "", period = "weekly", weekFrom, weekTo, note = "" } = body as {
+        target: "franchise" | "rider"; refName?: string; franchise?: string; period?: "weekly" | "daily"; weekFrom?: string; weekTo?: string; note?: string;
+      };
+      const amount = Math.round(Number(body.amount) * 100) / 100;
+      if (target !== "franchise" && target !== "rider") return jsonResponse({ error: "target inválido" }, { status: 400 });
+      if (!refName?.trim() || !Number.isFinite(amount) || amount <= 0) return jsonResponse({ error: "请填写有效的对象与金额" }, { status: 400 });
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(weekFrom ?? "") || !/^\d{4}-\d{2}-\d{2}$/.test(weekTo ?? "")) return jsonResponse({ error: "结算周期无效" }, { status: 400 });
+      const payment: WalletPayment = {
+        id: makeServerId("pay", memory.walletPayments.length + 1),
+        target,
+        refName: refName.trim(),
+        franchise: (target === "franchise" ? refName : franchise).trim(),
+        amount,
+        period: period === "daily" ? "daily" : "weekly",
+        weekFrom: weekFrom!,
+        weekTo: weekTo!,
+        note: String(note).slice(0, 200),
+        paidBy: actor,
+        paidAt: nowStamp(),
+      };
+      memory.walletPayments.unshift(payment);
+      // HQ→franchise payment also draws down the franchise prepaid balance.
+      if (target === "franchise") {
+        const fIndex = memory.franchises.findIndex((f) => f.name === refName.trim());
+        if (fIndex !== -1) {
+          const next = Math.round(((memory.franchises[fIndex].depositBalance ?? 0) - amount) * 100) / 100;
+          memory.franchises[fIndex] = { ...memory.franchises[fIndex], depositBalance: next };
+        }
+      }
+      appendServerAudit({ actor, action: "WALLET_PAYMENT_RECORDED", entity: "WalletPayment", entityId: payment.id, detail: `${target} ${refName} R$${amount.toFixed(2)} (${payment.period}, ${weekFrom}~${weekTo})${note ? ` — ${note}` : ""}.`, risk: "Medium" });
+      return jsonResponse({ data: payment }, { status: 201 });
+    }
+
     case "requestWithdrawal": {
       const { riderId, riderName } = body as { riderId?: string; riderName?: string };
       const rider = memory.riders.find((item) => (riderId && item.id === riderId) || (riderName && item.name === riderName));
