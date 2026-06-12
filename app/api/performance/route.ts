@@ -334,7 +334,10 @@ async function handlePost(request: Request) {
         const earnIndex = memory.riderDailyEarnings.findIndex((row) => row.date === date && row.rider99Id === rider99Id);
         if (earnIndex !== -1 && (memory.riderDailyEarnings[earnIndex].orders ?? 0) === 0 && record.completedOrders > 0) {
           const earning = memory.riderDailyEarnings[earnIndex];
-          const computedSettle = (earning.settleAmount ?? 0) > 0 ? earning.settleAmount : Math.round(((earning.total ?? 0) + record.completedOrders * 2.5) * 100) / 100;
+          // settle==total is the signature of a raw import (orders were 0) —
+          // recompute with the now-known orders; keep explicit 金额 values.
+          const wasComputedWithoutOrders = (earning.settleAmount ?? 0) === 0 || earning.settleAmount === earning.total;
+          const computedSettle = wasComputedWithoutOrders ? Math.round(((earning.total ?? 0) + record.completedOrders * 2.5) * 100) / 100 : earning.settleAmount;
           memory.riderDailyEarnings[earnIndex] = { ...earning, orders: record.completedOrders, settleAmount: computedSettle };
         }
         const riderIndex = memory.riders.findIndex((rider) => rider.ninetyNineId === rider99Id);
