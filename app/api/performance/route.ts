@@ -1,5 +1,5 @@
 import { appendServerAudit, jsonResponse, memory } from "../../lib/server/memory";
-import { flushPendingToDatabase, refreshCollectionsFromDatabase } from "../../lib/server/persistence";
+import { flushPendingToDatabase, persistDeleteRecord, refreshCollectionsFromDatabase } from "../../lib/server/persistence";
 import { requirePermission, roleFromRequest } from "../../lib/server/authz";
 import {
   aggregateEarnings,
@@ -382,6 +382,16 @@ async function handlePost(request: Request) {
           memory.riderDailyEarnings[index] = record;
           updated += 1;
         }
+        // Backfill empty profile contact fields from the Ganhos sheet (PIX 等).
+        const riderIndex = memory.riders.findIndex((rider) => rider.ninetyNineId === rider99Id);
+        if (riderIndex !== -1) {
+          const rider = memory.riders[riderIndex];
+          const patch: Partial<typeof rider> = {};
+          if (!rider.pix && record.pix) patch.pix = record.pix;
+          if (!rider.cpf && record.cpf) patch.cpf = record.cpf;
+          if (!rider.phone && record.phone) patch.phone = record.phone;
+          if (Object.keys(patch).length > 0) memory.riders[riderIndex] = { ...rider, ...patch };
+        }
       }
     }
 
@@ -404,6 +414,81 @@ async function handlePost(request: Request) {
     }
 
     return jsonResponse({ data: { created, updated, parsed: created + updated, achievements: achievements.length } }, { status: 201 });
+  }
+
+  // Remove ONE business day's imported rows (both T+1 tables) — for fixing
+  // mistaken uploads; re-import afterwards to restore correct data.
+  if (body.action === "purgeDate") {
+    const date = String(body.date ?? "");
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return jsonResponse({ error: "date (YYYY-MM-DD) is required" }, { status: 400 });
+    const kpiVictims = memory.riderDailyKpis.filter((row) => row.date === date);
+    const earnVictims = memory.riderDailyEarnings.filter((row) => row.date === date);
+    for (const row of kpiVictims) persistDeleteRecord("riderDailyKpis", row.id);
+    for (const row of earnVictims) persistDeleteRecord("riderDailyEarnings", row.id);
+    for (let i = memory.riderDailyKpis.length - 1; i >= 0; i -= 1) {
+      if (memory.riderDailyKpis[i].date === date) memory.riderDailyKpis.splice(i, 1);
+    }
+    for (let i = memory.riderDailyEarnings.length - 1; i >= 0; i -= 1) {
+      if (memory.riderDailyEarnings[i].date === date) memory.riderDailyEarnings.splice(i, 1);
+    }
+    appendServerAudit({ actor, action: "T1_DATE_PURGED", entity: "RiderDailyKpi", entityId: date, detail: `Purged ${kpiVictims.length} KPI + ${earnVictims.length} earning rows for ${date}.`, risk: "Medium" });
+    return jsonResponse({ data: { kpiRemoved: kpiVictims.length, earningsRemoved: earnVictims.length } });
+  }
+
+  // Backfill rider profile PIX/CPF/phone from already-imported Ganhos rows
+  // (latest row per rider wins; only fills EMPTY profile fields).
+  if (body.action === "syncRiderContacts") {
+    const latestByNinetyNine = new Map<string, (typeof memory.riderDailyEarnings)[number]>();
+    for (const row of [...memory.riderDailyEarnings].sort((a, b) => a.date.localeCompare(b.date))) {
+      if (row.pix || row.cpf || row.phone) latestByNinetyNine.set(row.rider99Id, row);
+    }
+    let filled = 0;
+    for (let i = 0; i < memory.riders.length; i += 1) {
+      const rider = memory.riders[i];
+      if (!rider.ninetyNineId) continue;
+      const source = latestByNinetyNine.get(rider.ninetyNineId);
+      if (!source) continue;
+      const patch: Partial<typeof rider> = {};
+      if (!rider.pix && source.pix) patch.pix = source.pix;
+      if (!rider.cpf && source.cpf) patch.cpf = source.cpf;
+      if (!rider.phone && source.phone) patch.phone = source.phone;
+      if (Object.keys(patch).length > 0) {
+        memory.riders[i] = { ...rider, ...patch };
+        filled += 1;
+      }
+    }
+    appendServerAudit({ actor, action: "RIDER_CONTACTS_SYNCED", entity: "Rider", entityId: "all", detail: `Backfilled contact fields for ${filled} riders from imported earnings.`, risk: "Low" });
+    return jsonResponse({ data: { filled } });
+  }
+
+  // Standalone PIX sheet import: match riders by 99ID → CPF → exact name.
+  if (body.action === "importPixRecords") {
+    const records = Array.isArray((body as { records?: Array<Record<string, unknown>> }).records) ? (body as { records: Array<Record<string, unknown>> }).records.slice(0, 1000) : [];
+    if (records.length === 0) return jsonResponse({ error: "records are required" }, { status: 400 });
+    const digits = (value: unknown) => String(value ?? "").replace(/\D/g, "");
+    let matched = 0;
+    const unmatched: string[] = [];
+    for (const raw of records) {
+      const pix = String(raw.pix ?? "").trim();
+      if (!pix) continue;
+      const id99 = digits(raw.rider99Id);
+      const cpf = digits(raw.cpf);
+      const name = String(raw.riderName ?? "").trim().toLowerCase();
+      const index = memory.riders.findIndex(
+        (rider) =>
+          (id99 && rider.ninetyNineId === id99) ||
+          (cpf && digits(rider.cpf) === cpf) ||
+          (name && rider.name.trim().toLowerCase() === name),
+      );
+      if (index === -1) {
+        unmatched.push(String(raw.riderName ?? raw.rider99Id ?? raw.cpf ?? "?"));
+        continue;
+      }
+      memory.riders[index] = { ...memory.riders[index], pix };
+      matched += 1;
+    }
+    appendServerAudit({ actor, action: "RIDER_PIX_IMPORTED", entity: "Rider", entityId: "all", detail: `PIX import: ${matched} matched, ${unmatched.length} unmatched.`, risk: "Low" });
+    return jsonResponse({ data: { matched, unmatched: unmatched.slice(0, 20) } }, { status: 201 });
   }
 
   return jsonResponse({ error: "unknown action" }, { status: 400 });
