@@ -5,7 +5,7 @@ import { sendPushToRider } from "../../lib/server/notify";
 import { getAvailablePoints, type MarketplaceOrder, type MarketplaceProduct, type PointsLedgerEntry } from "../../lib/points";
 import { defaultMallConfig, resolveTier, tierDefinitions, type MallConfig } from "../../lib/mall";
 
-const COLLECTIONS = ["mallConfigs", "marketplaceProducts", "marketplaceOrders", "pointsLedgerEntries", "partnerPointsLedgerEntries", "riders", "riderDailyKpis"];
+const COLLECTIONS = ["mallConfigs", "marketplaceProducts", "marketplaceOrders", "pointsLedgerEntries", "partnerPointsLedgerEntries", "riders", "riderDailyKpis", "mallCategories", "mallBanners", "mallPayments"];
 
 function nowStamp() {
   return new Date().toISOString().slice(0, 16).replace("T", " ");
@@ -171,7 +171,10 @@ export async function GET(request: Request) {
 
   return jsonResponse({
     data: {
-      config,
+      config: { ...config, pixKey: undefined },
+      pixKey: config.pixKey ?? "",
+      categories: [...memory.mallCategories].filter((c) => c.active).sort((a, b) => a.sort - b.sort),
+      banners: [...memory.mallBanners].filter((b) => b.active).sort((a, b) => a.sort - b.sort),
       tiers: tierDefinitions,
       products,
       orders,
@@ -222,6 +225,7 @@ async function handlePost(request: Request) {
         const value = Number(body[field]);
         if (Number.isFinite(value) && value >= 0) config[field] = value;
       }
+      if (typeof body.pixKey === "string") config.pixKey = String(body.pixKey).slice(0, 120);
       config.updatedAt = nowStamp();
       config.updatedBy = actor;
       const index = memory.mallConfigs.findIndex((item) => item.id === "mall-config");
@@ -268,11 +272,13 @@ async function handlePost(request: Request) {
       const pointsPrice = Math.max(0, Math.floor(Number(body.pointsPrice) || 0));
       const marginPct = Number(body.marginPct);
       const status = body.status === "paused" ? "paused" : "active";
+      const cashPriceBRL = Number(body.cashPriceBRL);
       memory.marketplaceProducts[index] = {
         ...memory.marketplaceProducts[index],
         pointsPrice,
         marginPct: Number.isFinite(marginPct) ? marginPct : memory.marketplaceProducts[index].marginPct,
-        status: pointsPrice > 0 ? status : "pending_pricing",
+        cashPriceBRL: Number.isFinite(cashPriceBRL) && cashPriceBRL > 0 ? Math.round(cashPriceBRL * 100) / 100 : undefined,
+        status: pointsPrice > 0 || (Number.isFinite(cashPriceBRL) && cashPriceBRL > 0) ? status : "pending_pricing",
       };
       appendServerAudit({ actor, action: "MALL_PRODUCT_PRICED", entity: "MarketplaceProduct", entityId: productId ?? "", detail: `pointsPrice=${pointsPrice} margin=${marginPct}% status=${status}.`, risk: "Low" });
       return jsonResponse({ data: memory.marketplaceProducts[index] });
@@ -345,6 +351,7 @@ async function handlePost(request: Request) {
       const voucherCode = isVirtual
         ? `MP-${Date.now().toString(36).toUpperCase()}-${Math.random().toString(36).slice(2, 6).toUpperCase()}`
         : undefined;
+      const cashDue = Math.round((product.cashPriceBRL ?? 0) * 100) / 100;
       const order: MarketplaceOrder = {
         id: makeServerId("mko", memory.marketplaceOrders.length + 1),
         accountType: "rider",
@@ -359,8 +366,27 @@ async function handlePost(request: Request) {
         franchise: rider.franchise ?? "Unassigned",
         etaDate: isVirtual ? createdAt.slice(0, 10) : eta.toISOString().slice(0, 10),
         ...(isVirtual ? { pickedUpAt: createdAt, voucherCode } : {}),
+        ...(cashDue > 0 ? { cashDue, paymentStatus: "pending" as const } : {}),
       };
       memory.marketplaceOrders.unshift(order);
+
+      // Hybrid checkout: open a manual PIX reconciliation record. Pickup is
+      // blocked until the mall office confirms the transfer.
+      let payment = null;
+      if (cashDue > 0) {
+        payment = {
+          id: makeServerId("mpay", memory.mallPayments.length + 1),
+          orderId: order.id,
+          riderId: rider.id,
+          riderName: rider.name,
+          productName: product.name,
+          amountBRL: cashDue,
+          pixKey: getConfig().pixKey ?? "",
+          status: "pending" as const,
+          createdAt,
+        };
+        memory.mallPayments.unshift(payment);
+      }
 
       const entry: PointsLedgerEntry = {
         id: makeServerId("pts", memory.pointsLedgerEntries.length + 1),
@@ -386,7 +412,7 @@ async function handlePost(request: Request) {
       }
 
       appendServerAudit({ actor, action: "MALL_REDEEMED", entity: "MarketplaceOrder", entityId: order.id, detail: `${rider.name} redeemed ${product.name} for ${price} pts, pickup at ${order.station}, ETA ${order.etaDate}.`, risk: "Low" });
-      return jsonResponse({ data: { order, balance: available - price } }, { status: 201 });
+      return jsonResponse({ data: { order, payment, balance: available - price } }, { status: 201 });
     }
 
     case "markArrived":
@@ -399,6 +425,9 @@ async function handlePost(request: Request) {
       if (body.action === "markArrived") {
         memory.marketplaceOrders[index] = { ...order, status: "arrived", arrivedAt: stamp, notifiedAt: stamp };
       } else {
+        if (order.paymentStatus && order.paymentStatus !== "paid") {
+          return jsonResponse({ error: "现金部分尚未核销，不能交付（先在商城后台确认收款）。" }, { status: 409 });
+        }
         memory.marketplaceOrders[index] = { ...order, status: "fulfilled", pickedUpAt: stamp };
       }
       appendServerAudit({ actor, action: body.action === "markArrived" ? "MALL_ORDER_ARRIVED" : "MALL_ORDER_PICKED_UP", entity: "MarketplaceOrder", entityId: orderId ?? "", detail: `${order.productName} for ${order.riderName} at ${order.station}.`, risk: "Low" });
