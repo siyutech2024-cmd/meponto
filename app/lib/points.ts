@@ -93,6 +93,8 @@ export type MarketplaceProduct = {
   category?: string;
   /** Per-rider monthly redemption cap for this product (0 / undefined = unlimited). */
   purchaseLimit?: number;
+  /** Hybrid checkout: cash difference in R$ paid via PIX on top of points (0 = points only). */
+  cashPriceBRL?: number;
 };
 
 export type MarketplaceOrderStatus = "created" | "arrived" | "fulfilled" | "cancelled";
@@ -119,6 +121,10 @@ export type MarketplaceOrder = {
   notifiedAt?: string;
   /** Voucher code issued instantly for virtual products. */
   voucherCode?: string;
+  /** Hybrid checkout: cash amount due via PIX (undefined = points only). */
+  cashDue?: number;
+  /** Hybrid checkout reconciliation state. */
+  paymentStatus?: "pending" | "submitted" | "paid";
 };
 
 export type PointsRuleSummary = {

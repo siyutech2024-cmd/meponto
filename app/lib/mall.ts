@@ -21,6 +21,8 @@ export type MallConfig = {
   referralPoints: number;
   partnerServicePoints: number;
   partnerServiceCount: number;
+  /** Company PIX key shown for hybrid (points + cash) checkout transfers. */
+  pixKey?: string;
   updatedAt: string;
   updatedBy: string;
 };
@@ -31,6 +33,7 @@ export const defaultMallConfig: MallConfig = {
   referralPoints: 20,
   partnerServicePoints: 20,
   partnerServiceCount: 3,
+  pixKey: "",
   updatedAt: "",
   updatedBy: "seed",
 };
