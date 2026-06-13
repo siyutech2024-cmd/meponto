@@ -51,6 +51,7 @@ import { dispatchShifts, shiftQuotas, shiftSignups, type DispatchShift, type Shi
 import { appUsers, type AppUser } from "../users";
 import { riderDailyEarnings, riderDailyKpis, type RiderDailyEarning, type RiderDailyKpi } from "../performance";
 import { mallConfigs, type MallConfig } from "../mall";
+import type { MallBanner, MallCategory, MallPayment, PriceChangeRequest, PurchaseOrder, SupplierStatement } from "../mall-ops";
 import { riderWithdrawals, walletPayments, type RiderWithdrawal, type WalletPayment } from "../finance";
 import { assessmentRules, type AssessmentRule } from "../assessment";
 import { supportTickets, type SupportTicket } from "../support";
@@ -109,6 +110,12 @@ const globalState = globalThis as typeof globalThis & {
     supportTickets: SupportTicket[];
     pushSubscriptions: PushSubscriptionRecord[];
     franchises: Franchise[];
+    mallCategories: MallCategory[];
+    mallBanners: MallBanner[];
+    priceChangeRequests: PriceChangeRequest[];
+    purchaseOrders: PurchaseOrder[];
+    supplierStatements: SupplierStatement[];
+    mallPayments: MallPayment[];
   };
 };
 
@@ -148,6 +155,12 @@ export const memory =
     supportTickets: trackCollection("supportTickets", [...supportTickets]),
     pushSubscriptions: trackCollection("pushSubscriptions", [...pushSubscriptions]),
     franchises: trackCollection("franchises", [...franchises]),
+    mallCategories: trackCollection("mallCategories", []),
+    mallBanners: trackCollection("mallBanners", []),
+    priceChangeRequests: trackCollection("priceChangeRequests", []),
+    purchaseOrders: trackCollection("purchaseOrders", []),
+    supplierStatements: trackCollection("supplierStatements", []),
+    mallPayments: trackCollection("mallPayments", []),
   });
 
 // Restore persisted data from the database (no-op when USE_SUPABASE is off).
@@ -213,6 +226,18 @@ memory.pushSubscriptions ??= [];
 memory.pushSubscriptions = trackCollection("pushSubscriptions", memory.pushSubscriptions);
 memory.franchises ??= [];
 memory.franchises = trackCollection("franchises", memory.franchises);
+memory.mallCategories ??= [];
+memory.mallCategories = trackCollection("mallCategories", memory.mallCategories);
+memory.mallBanners ??= [];
+memory.mallBanners = trackCollection("mallBanners", memory.mallBanners);
+memory.priceChangeRequests ??= [];
+memory.priceChangeRequests = trackCollection("priceChangeRequests", memory.priceChangeRequests);
+memory.purchaseOrders ??= [];
+memory.purchaseOrders = trackCollection("purchaseOrders", memory.purchaseOrders);
+memory.supplierStatements ??= [];
+memory.supplierStatements = trackCollection("supplierStatements", memory.supplierStatements);
+memory.mallPayments ??= [];
+memory.mallPayments = trackCollection("mallPayments", memory.mallPayments);
 memory.walletPayments ??= [];
 memory.walletPayments = trackCollection("walletPayments", memory.walletPayments);
 memory.assessmentRules ??= [];

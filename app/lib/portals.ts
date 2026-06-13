@@ -53,7 +53,7 @@ export const portalConfigs: Record<PortalId, PortalConfig> = {
       { href: "/riders", label: "骑手档案", description: "维护骑手、敏感资料和状态。", permission: "manage_riders" },
       { href: "/pontos", label: "站点网络", description: "维护 Ponto 站点、负责人和容量。", permission: "manage_pontos" },
       { href: "/franchise", label: "加盟治理", description: "合作条款、SOP 和加盟商管理口径。", permission: "view_analytics" },
-      { href: "/mall", label: "积分商城管理", description: "积分规则、供应商商品定价分成、兑换订单。", permission: "manage_marketplace" },
+      { href: "/mall-insights", label: "商城关键数据", description: "商城 GMV、兑换、收款与供应商结算关键指标（操作在独立商城后台）。", permission: "view_analytics" },
       { href: "/wallet", label: "结算与提现", description: "加盟商应结对账、全网提现流水与余额台账。", permission: "view_finance" },
       { href: "/support", label: "客服工单中心", description: "骑手/加盟商/站点/官网工单统一处理。", permission: "view_audit" },
       { href: "/users", label: "用户与权限", description: "创建多用户账号、分配角色与系统归属。", permission: "view_audit" },
@@ -87,7 +87,7 @@ export const portalConfigs: Record<PortalId, PortalConfig> = {
     vercelPath: "/supplier-admin",
     futureDomain: "supplier.meponto.com",
     modules: [
-      { href: "/mall/supplier", label: "商品供货", description: "上传商品、报供应价与派送周期，等待总部定价上架；含月度对账。", permission: "manage_marketplace" },
+      { href: "/mall/supplier", label: "供应链工作台", description: "商品与报价、调价申请、补货单、月度对账与数据看板。", permission: "manage_supplier_catalog" },
     ],
   },
   franchise: {
