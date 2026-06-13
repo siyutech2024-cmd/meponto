@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { ArrowRight, Clock, Gift, LogIn, MapPin, Package, Search, Sparkles, Star, Wallet, X } from "lucide-react";
 import type { MarketplaceOrder, MarketplaceProduct } from "../lib/points";
-import type { MallBanner, MallCategory } from "../lib/mall-ops";
+import type { CashTopUp, MallBanner, MallCategory } from "../lib/mall-ops";
 
 /**
  * PontoMall public storefront (mall.meponto.com) — responsive PC + mobile.
@@ -19,6 +19,8 @@ type Me = {
   balance: number;
   tierLabel: string;
   redeemDiscount: number;
+  cashBalance: number;
+  topUps?: CashTopUp[];
 };
 
 type Payload = {
@@ -59,8 +61,10 @@ export default function StorefrontPage() {
   const [busy, setBusy] = useState(false);
   const [toast, setToast] = useState<{ tone: "ok" | "err"; text: string } | null>(null);
   const [ordersOpen, setOrdersOpen] = useState(false);
-  const [payOrder, setPayOrder] = useState<MarketplaceOrder | null>(null);
-  const [payRef, setPayRef] = useState("");
+  const [topUpOpen, setTopUpOpen] = useState(false);
+  const [topUpAmount, setTopUpAmount] = useState("");
+  const [activeTopUp, setActiveTopUp] = useState<CashTopUp | null>(null);
+  const [topUpRef, setTopUpRef] = useState("");
   const [bannerIndex, setBannerIndex] = useState(0);
 
   const load = useCallback(async (name: string | null) => {
@@ -115,7 +119,8 @@ export default function StorefrontPage() {
   }, [data]);
 
   const myOrders = useMemo(() => (me ? (data?.orders ?? []).filter((order) => order.riderId === me.riderId) : []), [data, me]);
-  const actionNeeded = myOrders.filter((order) => order.status === "arrived" || (order.paymentStatus && order.paymentStatus !== "paid")).length;
+  const pendingTopUps = (me?.topUps ?? []).filter((topUp) => topUp.status === "pending");
+  const actionNeeded = myOrders.filter((order) => order.status === "arrived").length + pendingTopUps.length;
 
   const priceFor = (product: MarketplaceProduct) => Math.ceil(product.pointsPrice * (me?.redeemDiscount ?? 1));
 
@@ -133,29 +138,36 @@ export default function StorefrontPage() {
     const payload = await response.json().catch(() => ({}));
     setBusy(false);
     if (!response.ok) {
+      if (payload.needTopUp) {
+        setDetail(null);
+        setTopUpAmount(String(Math.max(1, Math.ceil((payload.cashDue ?? 0) - (payload.cashAvailable ?? 0)))));
+        setActiveTopUp(null);
+        setTopUpOpen(true);
+        setToast({ tone: "err", text: payload.error ?? "Saldo insuficiente — recarregue via PIX." });
+        return;
+      }
       setToast({ tone: "err", text: payload.error ?? `Erro (${response.status})` });
       return;
     }
     setDetail(null);
     await load(riderName);
     const order = payload.data?.order as MarketplaceOrder | undefined;
-    if (order?.cashDue) {
-      setPayOrder(order);
-      setPayRef("");
-    } else if (order?.voucherCode) {
+    if (order?.voucherCode) {
       setToast({ tone: "ok", text: `Resgatado! Seu código: ${order.voucherCode}` });
     } else {
       setToast({ tone: "ok", text: `Resgatado! Retire em ${order?.station ?? "seu ponto"} a partir de ${order?.etaDate ?? "breve"}.` });
     }
   }
 
-  async function submitPaymentRef() {
-    if (!payOrder || !payRef.trim()) return;
+  async function requestTopUp() {
+    if (!me) return;
+    const amount = Number(topUpAmount);
+    if (!Number.isFinite(amount) || amount < 1) return;
     setBusy(true);
     const response = await fetch("/api/mall/ops", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action: "submitPaymentRef", orderId: payOrder.id, reference: payRef.trim() }),
+      body: JSON.stringify({ action: "requestTopUp", riderId: me.riderId, amountBRL: amount }),
     });
     const payload = await response.json().catch(() => ({}));
     setBusy(false);
@@ -163,8 +175,27 @@ export default function StorefrontPage() {
       setToast({ tone: "err", text: payload.error ?? `Erro (${response.status})` });
       return;
     }
-    setPayOrder(null);
-    setToast({ tone: "ok", text: "Comprovante enviado! Vamos confirmar o pagamento em breve." });
+    setActiveTopUp(payload.data as CashTopUp);
+    setTopUpRef("");
+  }
+
+  async function submitTopUpRef(topUp: CashTopUp) {
+    if (!topUpRef.trim()) return;
+    setBusy(true);
+    const response = await fetch("/api/mall/ops", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "submitTopUpRef", topUpId: topUp.id, reference: topUpRef.trim() }),
+    });
+    const payload = await response.json().catch(() => ({}));
+    setBusy(false);
+    if (!response.ok) {
+      setToast({ tone: "err", text: payload.error ?? `Erro (${response.status})` });
+      return;
+    }
+    setTopUpOpen(false);
+    setActiveTopUp(null);
+    setToast({ tone: "ok", text: "Comprovante enviado! O saldo entra após a confirmação do escritório." });
     await load(riderName);
   }
 
@@ -208,6 +239,15 @@ export default function StorefrontPage() {
                   <Wallet size={15} style={{ color: "#9a7400" }} />
                   {me.balance.toLocaleString("pt-BR")} pts
                 </div>
+                <button
+                  type="button"
+                  onClick={() => { setTopUpOpen(true); setActiveTopUp(null); setTopUpAmount(""); }}
+                  className="inline-flex h-10 items-center gap-1.5 rounded-full border px-4 text-sm font-black transition-colors hover:border-[#f5b301]"
+                  style={{ background: "#eef6f0", borderColor: "transparent", color: "#1d7a3e" }}
+                  title="Saldo em dinheiro — recarregar via PIX"
+                >
+                  R$ {me.cashBalance.toFixed(2)} <span className="text-base leading-none">+</span>
+                </button>
               </>
             ) : (
               <a
@@ -364,19 +404,35 @@ export default function StorefrontPage() {
                   <div className="flex items-baseline gap-2">
                     <span className="text-3xl font-black" style={{ color: "#9a7400" }}>{priceFor(detail).toLocaleString("pt-BR")}</span>
                     <span className="text-xs font-black uppercase text-black/40">pts</span>
-                    {(detail.cashPriceBRL ?? 0) > 0 && <span className="text-sm font-black text-black/65">+ R$ {detail.cashPriceBRL?.toFixed(2)} via PIX</span>}
+                    {(detail.cashPriceBRL ?? 0) > 0 && <span className="text-sm font-black text-black/65">+ R$ {detail.cashPriceBRL?.toFixed(2)} do saldo</span>}
                   </div>
-                  {me && <div className="mt-1 text-xs font-bold text-black/45">Seu saldo: {me.balance.toLocaleString("pt-BR")} pts</div>}
-                  <button
-                    type="button"
-                    disabled={busy || detail.stock <= 0 || (!!me && me.balance < priceFor(detail))}
-                    onClick={() => void redeem(detail)}
-                    className="mt-4 inline-flex h-12 w-full items-center justify-center gap-2 rounded-full text-sm font-black uppercase tracking-wide transition-transform hover:scale-[1.02] disabled:opacity-45"
-                    style={{ background: GOLD, color: INK }}
-                  >
-                    {detail.stock <= 0 ? "Esgotado" : me ? (me.balance < priceFor(detail) ? "Pontos insuficientes" : "Resgatar agora") : "Entrar para resgatar"}
-                    {detail.stock > 0 && (!me || me.balance >= priceFor(detail)) && <ArrowRight size={16} />}
-                  </button>
+                  {me && (
+                    <div className="mt-1 text-xs font-bold text-black/45">
+                      Seu saldo: {me.balance.toLocaleString("pt-BR")} pts
+                      {(detail.cashPriceBRL ?? 0) > 0 && <> · R$ {me.cashBalance.toFixed(2)} em dinheiro {me.cashBalance < (detail.cashPriceBRL ?? 0) && <span style={{ color: "#c4423b" }}>(insuficiente)</span>}</>}
+                    </div>
+                  )}
+                  {me && (detail.cashPriceBRL ?? 0) > 0 && me.cashBalance < (detail.cashPriceBRL ?? 0) ? (
+                    <button
+                      type="button"
+                      onClick={() => { setDetail(null); setTopUpOpen(true); setActiveTopUp(null); setTopUpAmount(String(Math.max(1, Math.ceil((detail.cashPriceBRL ?? 0) - me.cashBalance)))); }}
+                      className="mt-4 inline-flex h-12 w-full items-center justify-center gap-2 rounded-full text-sm font-black uppercase tracking-wide transition-transform hover:scale-[1.02]"
+                      style={{ background: INK, color: "#fff" }}
+                    >
+                      Recarregar saldo via PIX <ArrowRight size={16} />
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      disabled={busy || detail.stock <= 0 || (!!me && me.balance < priceFor(detail))}
+                      onClick={() => void redeem(detail)}
+                      className="mt-4 inline-flex h-12 w-full items-center justify-center gap-2 rounded-full text-sm font-black uppercase tracking-wide transition-transform hover:scale-[1.02] disabled:opacity-45"
+                      style={{ background: GOLD, color: INK }}
+                    >
+                      {detail.stock <= 0 ? "Esgotado" : me ? (me.balance < priceFor(detail) ? "Pontos insuficientes" : "Resgatar agora") : "Entrar para resgatar"}
+                      {detail.stock > 0 && (!me || me.balance >= priceFor(detail)) && <ArrowRight size={16} />}
+                    </button>
+                  )}
                 </div>
               </div>
             </div>
@@ -384,32 +440,60 @@ export default function StorefrontPage() {
         </div>
       )}
 
-      {/* ---- PIX payment modal ---------------------------------------------------- */}
-      {payOrder && (
+      {/* ---- PIX top-up modal ------------------------------------------------------ */}
+      {topUpOpen && me && (
         <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/45 backdrop-blur-sm md:items-center md:p-6">
           <div className="w-full max-w-md rounded-t-3xl bg-white p-6 md:rounded-3xl">
-            <div className="text-lg font-black">Pagamento PIX</div>
-            <p className="mt-1 text-sm font-medium text-black/60">
-              「{payOrder.productName}」tem uma parte em dinheiro. Transfira <b>R$ {payOrder.cashDue?.toFixed(2)}</b> para a chave PIX abaixo e informe o código/ID do comprovante.
-            </p>
-            <div className="mt-4 rounded-2xl border border-dashed px-4 py-3 text-center" style={{ borderColor: GOLD, background: "#fffaf0" }}>
-              <div className="text-[10px] font-black uppercase tracking-[0.2em] text-black/40">Chave PIX MePonto</div>
-              <div className="mt-1 break-all font-mono text-sm font-bold">{pixKey || "(chave PIX será informada pelo suporte)"}</div>
-              <div className="mt-1 text-xs font-bold text-black/50">Pedido {payOrder.id}</div>
+            <div className="flex items-center justify-between">
+              <div className="text-lg font-black">Recarregar saldo</div>
+              <button type="button" onClick={() => { setTopUpOpen(false); setActiveTopUp(null); }} className="grid h-9 w-9 place-items-center rounded-full bg-black/5"><X size={16} /></button>
             </div>
-            <input
-              value={payRef}
-              onChange={(event) => setPayRef(event.target.value)}
-              placeholder="ID / código do comprovante da transferência"
-              className="mt-4 h-12 w-full rounded-xl border border-black/15 px-4 text-sm font-bold outline-none focus:border-[#f5b301]"
-            />
-            <div className="mt-4 flex gap-2">
-              <button type="button" onClick={() => setPayOrder(null)} className="h-11 flex-1 rounded-full border border-black/15 text-sm font-black text-black/60">Depois</button>
-              <button type="button" disabled={busy || !payRef.trim()} onClick={() => void submitPaymentRef()} className="h-11 flex-1 rounded-full text-sm font-black disabled:opacity-45" style={{ background: INK, color: "#fff" }}>
-                Enviar comprovante
-              </button>
-            </div>
-            <p className="mt-3 text-center text-[11px] font-bold text-black/40">Você também pode enviar depois em “Meus resgates”.</p>
+            <div className="mt-1 text-sm font-bold text-black/50">Saldo atual: R$ {me.cashBalance.toFixed(2)}</div>
+
+            {!activeTopUp ? (
+              <>
+                <div className="mt-4 flex gap-2">
+                  {[10, 20, 50, 100].map((value) => (
+                    <button key={value} type="button" onClick={() => setTopUpAmount(String(value))} className="h-10 flex-1 rounded-xl border text-sm font-black transition-colors" style={topUpAmount === String(value) ? { borderColor: GOLD, background: "#fff4cf" } : { borderColor: "rgba(0,0,0,.12)" }}>
+                      R$ {value}
+                    </button>
+                  ))}
+                </div>
+                <input
+                  value={topUpAmount}
+                  onChange={(event) => setTopUpAmount(event.target.value.replace(/[^0-9.,]/g, "").replace(",", "."))}
+                  placeholder="Outro valor (R$)"
+                  inputMode="decimal"
+                  className="mt-3 h-12 w-full rounded-xl border border-black/15 px-4 text-sm font-bold outline-none focus:border-[#f5b301]"
+                />
+                <button type="button" disabled={busy || !(Number(topUpAmount) >= 1)} onClick={() => void requestTopUp()} className="mt-4 h-12 w-full rounded-full text-sm font-black uppercase tracking-wide disabled:opacity-45" style={{ background: GOLD, color: INK }}>
+                  Gerar recarga
+                </button>
+              </>
+            ) : (
+              <>
+                <p className="mt-3 text-sm font-medium text-black/60">
+                  Transfira <b>R$ {activeTopUp.amountBRL.toFixed(2)}</b> para a chave PIX abaixo e informe o código/ID do comprovante. O saldo entra após a confirmação do escritório.
+                </p>
+                <div className="mt-3 rounded-2xl border border-dashed px-4 py-3 text-center" style={{ borderColor: GOLD, background: "#fffaf0" }}>
+                  <div className="text-[10px] font-black uppercase tracking-[0.2em] text-black/40">Chave PIX MePonto</div>
+                  <div className="mt-1 break-all font-mono text-sm font-bold">{activeTopUp.pixKey || data?.pixKey || "(chave PIX será informada pelo suporte)"}</div>
+                  <div className="mt-1 text-xs font-bold text-black/50">Recarga {activeTopUp.id}</div>
+                </div>
+                <input
+                  value={topUpRef}
+                  onChange={(event) => setTopUpRef(event.target.value)}
+                  placeholder="ID / código do comprovante da transferência"
+                  className="mt-4 h-12 w-full rounded-xl border border-black/15 px-4 text-sm font-bold outline-none focus:border-[#f5b301]"
+                />
+                <div className="mt-4 flex gap-2">
+                  <button type="button" onClick={() => { setTopUpOpen(false); setActiveTopUp(null); }} className="h-11 flex-1 rounded-full border border-black/15 text-sm font-black text-black/60">Enviar depois</button>
+                  <button type="button" disabled={busy || !topUpRef.trim()} onClick={() => void submitTopUpRef(activeTopUp)} className="h-11 flex-1 rounded-full text-sm font-black disabled:opacity-45" style={{ background: INK, color: "#fff" }}>
+                    Enviar comprovante
+                  </button>
+                </div>
+              </>
+            )}
           </div>
         </div>
       )}
@@ -423,6 +507,28 @@ export default function StorefrontPage() {
               <button type="button" onClick={() => setOrdersOpen(false)} className="grid h-9 w-9 place-items-center rounded-full bg-black/5"><X size={16} /></button>
             </div>
             <div className="flex-1 space-y-3 overflow-y-auto p-5">
+              {(me.topUps ?? []).length > 0 && (
+                <div className="rounded-2xl border border-black/8 bg-[#f8f9fb] p-4">
+                  <div className="mb-2 flex items-center justify-between">
+                    <div className="text-xs font-black uppercase tracking-wider text-black/45">Recargas (PIX)</div>
+                    <div className="text-xs font-black" style={{ color: "#1d7a3e" }}>Saldo: R$ {me.cashBalance.toFixed(2)}</div>
+                  </div>
+                  <div className="space-y-1.5">
+                    {(me.topUps ?? []).map((topUp) => (
+                      <div key={topUp.id} className="flex items-center justify-between gap-2 text-xs font-bold">
+                        <span>R$ {topUp.amountBRL.toFixed(2)} · {topUp.createdAt.slice(0, 10)}</span>
+                        {topUp.status === "pending" ? (
+                          <button type="button" onClick={() => { setOrdersOpen(false); setTopUpOpen(true); setActiveTopUp(topUp); setTopUpRef(""); }} className="rounded-full px-2.5 py-1 font-black text-white" style={{ background: INK }}>Enviar comprovante</button>
+                        ) : (
+                          <span className="rounded-full px-2.5 py-1" style={topUp.status === "confirmed" ? { background: "#e8f6ec", color: "#1d7a3e" } : topUp.status === "submitted" ? { background: "#fff4cf", color: "#9a7400" } : { background: "#fdeceb", color: "#c4423b" }}>
+                            {topUp.status === "confirmed" ? "Confirmada" : topUp.status === "submitted" ? "Em análise" : "Rejeitada"}
+                          </span>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
               {myOrders.length === 0 && <div className="pt-10 text-center text-sm font-bold text-black/40">Nenhum resgate ainda — escolha um benefício! 🎁</div>}
               {myOrders.map((order) => (
                 <div key={order.id} className="rounded-2xl border border-black/8 p-4" style={{ borderColor: order.status === "arrived" ? GOLD : "rgba(0,0,0,.08)", background: order.status === "arrived" ? "#fffaf0" : "#fff" }}>
@@ -437,12 +543,7 @@ export default function StorefrontPage() {
                     {!order.voucherCode && ` · ${order.station}`}
                   </div>
                   {order.voucherCode && <div className="mt-2 rounded-lg bg-black/5 px-3 py-1.5 text-center font-mono text-sm font-black">{order.voucherCode}</div>}
-                  {order.paymentStatus === "pending" && (
-                    <button type="button" onClick={() => { setOrdersOpen(false); setPayOrder(order); setPayRef(""); }} className="mt-2 h-9 w-full rounded-full text-xs font-black" style={{ background: INK, color: "#fff" }}>
-                      Pagar parte em dinheiro (R$ {order.cashDue?.toFixed(2)})
-                    </button>
-                  )}
-                  {order.paymentStatus === "submitted" && <div className="mt-2 text-center text-[11px] font-black" style={{ color: "#9a7400" }}>Comprovante em análise…</div>}
+
                 </div>
               ))}
             </div>

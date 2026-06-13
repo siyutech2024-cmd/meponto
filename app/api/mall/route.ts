@@ -4,8 +4,19 @@ import { requirePermission, roleFromRequest } from "../../lib/server/authz";
 import { sendPushToRider } from "../../lib/server/notify";
 import { getAvailablePoints, type MarketplaceOrder, type MarketplaceProduct, type PointsLedgerEntry } from "../../lib/points";
 import { defaultMallConfig, resolveTier, tierDefinitions, type MallConfig } from "../../lib/mall";
+import type { CashLedgerEntry } from "../../lib/mall-ops";
 
-const COLLECTIONS = ["mallConfigs", "marketplaceProducts", "marketplaceOrders", "pointsLedgerEntries", "partnerPointsLedgerEntries", "riders", "riderDailyKpis", "mallCategories", "mallBanners", "mallPayments"];
+/** Cash balance = immutable ledger sum (top-ups minus spends). */
+function cashBalanceOf(riderId: string): number {
+  let balance = 0;
+  for (const entry of memory.cashLedgerEntries) {
+    if (entry.riderId !== riderId) continue;
+    balance += entry.type === "spend" ? -entry.amountBRL : entry.amountBRL;
+  }
+  return Math.round(balance * 100) / 100;
+}
+
+const COLLECTIONS = ["mallConfigs", "marketplaceProducts", "marketplaceOrders", "pointsLedgerEntries", "partnerPointsLedgerEntries", "riders", "riderDailyKpis", "mallCategories", "mallBanners", "mallPayments", "cashTopUps", "cashLedgerEntries"];
 
 function nowStamp() {
   return new Date().toISOString().slice(0, 16).replace("T", " ");
@@ -126,6 +137,8 @@ export async function GET(request: Request) {
       tierLabel: tier.label,
       redeemDiscount: tier.redeemDiscount,
       perks: tier.perks,
+      cashBalance: cashBalanceOf(rider.id),
+      topUps: memory.cashTopUps.filter((t) => t.riderId === rider.id).slice(0, 10),
     };
   }
 
@@ -352,6 +365,17 @@ async function handlePost(request: Request) {
         ? `MP-${Date.now().toString(36).toUpperCase()}-${Math.random().toString(36).slice(2, 6).toUpperCase()}`
         : undefined;
       const cashDue = Math.round((product.cashPriceBRL ?? 0) * 100) / 100;
+      // Hybrid checkout: cash part is paid from the rider's prepaid balance
+      // (topped up via PIX and confirmed by the mall office). No balance, no order.
+      if (cashDue > 0) {
+        const cashAvailable = cashBalanceOf(rider.id);
+        if (cashAvailable < cashDue) {
+          return jsonResponse(
+            { error: `Saldo insuficiente: precisa de R$ ${cashDue.toFixed(2)}, você tem R$ ${cashAvailable.toFixed(2)}. Recarregue via PIX.`, cashDue, cashAvailable, needTopUp: true },
+            { status: 409 },
+          );
+        }
+      }
       const order: MarketplaceOrder = {
         id: makeServerId("mko", memory.marketplaceOrders.length + 1),
         accountType: "rider",
@@ -366,26 +390,26 @@ async function handlePost(request: Request) {
         franchise: rider.franchise ?? "Unassigned",
         etaDate: isVirtual ? createdAt.slice(0, 10) : eta.toISOString().slice(0, 10),
         ...(isVirtual ? { pickedUpAt: createdAt, voucherCode } : {}),
-        ...(cashDue > 0 ? { cashDue, paymentStatus: "pending" as const } : {}),
+        ...(cashDue > 0 ? { cashDue, paymentStatus: "paid" as const } : {}),
       };
       memory.marketplaceOrders.unshift(order);
 
-      // Hybrid checkout: open a manual PIX reconciliation record. Pickup is
-      // blocked until the mall office confirms the transfer.
-      let payment = null;
+      // Deduct the cash part from the prepaid balance — immutable ledger record.
       if (cashDue > 0) {
-        payment = {
-          id: makeServerId("mpay", memory.mallPayments.length + 1),
-          orderId: order.id,
+        const cashAvailable = cashBalanceOf(rider.id);
+        const ledgerEntry: CashLedgerEntry = {
+          id: makeServerId("mcl", memory.cashLedgerEntries.length + 1),
           riderId: rider.id,
           riderName: rider.name,
-          productName: product.name,
+          type: "spend",
           amountBRL: cashDue,
-          pixKey: getConfig().pixKey ?? "",
-          status: "pending" as const,
+          sourceId: order.id,
+          balanceAfter: Math.round((cashAvailable - cashDue) * 100) / 100,
+          note: product.name,
+          createdBy: "PontoMall",
           createdAt,
         };
-        memory.mallPayments.unshift(payment);
+        memory.cashLedgerEntries.unshift(ledgerEntry);
       }
 
       const entry: PointsLedgerEntry = {
@@ -412,7 +436,7 @@ async function handlePost(request: Request) {
       }
 
       appendServerAudit({ actor, action: "MALL_REDEEMED", entity: "MarketplaceOrder", entityId: order.id, detail: `${rider.name} redeemed ${product.name} for ${price} pts, pickup at ${order.station}, ETA ${order.etaDate}.`, risk: "Low" });
-      return jsonResponse({ data: { order, payment, balance: available - price } }, { status: 201 });
+      return jsonResponse({ data: { order, balance: available - price, cashBalance: cashBalanceOf(rider.id) } }, { status: 201 });
     }
 
     case "markArrived":

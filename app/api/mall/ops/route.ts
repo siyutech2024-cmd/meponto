@@ -2,7 +2,7 @@ import { appendServerAudit, jsonResponse, makeServerId, memory } from "../../../
 import { flushPendingToDatabase, persistDeleteRecord, refreshCollectionsFromDatabase } from "../../../lib/server/persistence";
 import { requirePermission, roleFromRequest } from "../../../lib/server/authz";
 import { sessionFromRequest } from "../../../lib/auth-session";
-import type { MallBanner, MallCategory, PriceChangeRequest, PurchaseOrder, PurchaseOrderItem, SupplierStatement, SupplierStatementLine } from "../../../lib/mall-ops";
+import type { CashLedgerEntry, CashTopUp, MallBanner, MallCategory, PriceChangeRequest, PurchaseOrder, PurchaseOrderItem, SupplierStatement, SupplierStatementLine } from "../../../lib/mall-ops";
 
 /**
  * PontoMall operations API — mall back office + supplier supply chain.
@@ -14,6 +14,8 @@ import type { MallBanner, MallCategory, PriceChangeRequest, PurchaseOrder, Purch
  */
 
 const COLLECTIONS = [
+  "cashTopUps",
+  "cashLedgerEntries",
   "mallCategories",
   "mallBanners",
   "priceChangeRequests",
@@ -23,6 +25,15 @@ const COLLECTIONS = [
   "marketplaceProducts",
   "marketplaceOrders",
 ];
+
+export function cashBalanceOf(riderId: string): number {
+  let balance = 0;
+  for (const entry of memory.cashLedgerEntries) {
+    if (entry.riderId !== riderId) continue;
+    balance += entry.type === "spend" ? -entry.amountBRL : entry.amountBRL;
+  }
+  return Math.round(balance * 100) / 100;
+}
 
 function nowStamp() {
   return new Date().toISOString().slice(0, 16).replace("T", " ");
@@ -67,11 +78,13 @@ export async function GET(request: Request) {
       purchaseOrders: own(memory.purchaseOrders),
       statements: own(memory.supplierStatements),
       payments: isOffice ? memory.mallPayments : [],
+      topUps: isOffice ? memory.cashTopUps : [],
+      cashLedger: isOffice ? memory.cashLedgerEntries.slice(0, 300) : [],
       summary: {
         orders: scopedOrders.length,
         pointsGmv,
         cashGmv: Math.round(cashGmv * 100) / 100,
-        pendingPayments: isOffice ? memory.mallPayments.filter((p) => p.status === "submitted").length : 0,
+        pendingPayments: isOffice ? memory.mallPayments.filter((p) => p.status === "submitted").length + memory.cashTopUps.filter((t) => t.status === "submitted").length : 0,
         daily: [...last30.entries()].map(([date, count]) => ({ date, count })),
       },
     },
@@ -95,6 +108,9 @@ const OFFICE_ACTIONS = new Set([
   "payStatement",
   "confirmPayment",
   "rejectPayment",
+  "confirmTopUp",
+  "rejectTopUp",
+  "adjustCash",
 ]);
 const SUPPLIER_ACTIONS = new Set(["requestPriceChange", "confirmPO", "shipPO", "confirmStatement"]);
 
@@ -115,7 +131,7 @@ async function handlePost(request: Request) {
   } else if (SUPPLIER_ACTIONS.has(action)) {
     const forbidden = requirePermission(request, "manage_supplier_catalog");
     if (forbidden) return forbidden;
-  } else if (action === "submitPaymentRef") {
+  } else if (action === "submitPaymentRef" || action === "requestTopUp" || action === "submitTopUpRef") {
     const forbidden = requirePermission(request, "use_rider_app");
     if (forbidden) return forbidden;
   } else {
@@ -371,6 +387,92 @@ async function handlePost(request: Request) {
       }
       appendServerAudit({ actor, action: confirmed ? "MALL_PAYMENT_CONFIRMED" : "MALL_PAYMENT_REJECTED", entity: "MallPayment", entityId: payment.id, detail: `${payment.riderName} · ${payment.productName} · R$${payment.amountBRL}`, risk: "Medium" });
       return jsonResponse({ data: memory.mallPayments[index] });
+    }
+
+    // ---- Cash balance top-ups (PIX, manual review) -------------------------
+    case "requestTopUp": {
+      const rider = memory.riders.find((item) => item.id === body.riderId);
+      if (!rider) return jsonResponse({ error: "rider not found" }, { status: 404 });
+      const amount = Math.round(Number(body.amountBRL) * 100) / 100;
+      if (!Number.isFinite(amount) || amount < 1 || amount > 5000) {
+        return jsonResponse({ error: "valor inválido (R$ 1 a R$ 5.000)" }, { status: 400 });
+      }
+      const config = memory.mallConfigs.find((item) => item.id === "mall-config");
+      const topUp: CashTopUp = {
+        id: makeServerId("mtu", memory.cashTopUps.length + 1),
+        riderId: rider.id,
+        riderName: rider.name,
+        amountBRL: amount,
+        pixKey: config?.pixKey ?? "",
+        status: "pending",
+        createdAt: nowStamp(),
+      };
+      memory.cashTopUps.unshift(topUp);
+      return jsonResponse({ data: topUp }, { status: 201 });
+    }
+    case "submitTopUpRef": {
+      const index = memory.cashTopUps.findIndex((item) => item.id === body.topUpId && item.status !== "confirmed");
+      if (index === -1) return jsonResponse({ error: "top-up not found" }, { status: 404 });
+      const reference = String(body.reference ?? "").trim().slice(0, 120);
+      if (!reference) return jsonResponse({ error: "informe o comprovante da transferência" }, { status: 400 });
+      memory.cashTopUps[index] = { ...memory.cashTopUps[index], reference, status: "submitted", submittedAt: nowStamp() };
+      return jsonResponse({ data: memory.cashTopUps[index] });
+    }
+    case "confirmTopUp":
+    case "rejectTopUp": {
+      const index = memory.cashTopUps.findIndex((item) => item.id === body.topUpId);
+      if (index === -1) return jsonResponse({ error: "top-up not found" }, { status: 404 });
+      const topUp = memory.cashTopUps[index];
+      if (topUp.status === "confirmed") return jsonResponse({ error: "已入账，不可重复操作" }, { status: 409 });
+      const confirmed = action === "confirmTopUp";
+      memory.cashTopUps[index] = { ...topUp, status: confirmed ? "confirmed" : "rejected", decidedAt: nowStamp(), decidedBy: actor, note: String(body.note ?? "").slice(0, 200) || undefined };
+      if (confirmed) {
+        const balance = cashBalanceOf(topUp.riderId);
+        const entry: CashLedgerEntry = {
+          id: makeServerId("mcl", memory.cashLedgerEntries.length + 1),
+          riderId: topUp.riderId,
+          riderName: topUp.riderName,
+          type: "topup",
+          amountBRL: topUp.amountBRL,
+          sourceId: topUp.id,
+          balanceAfter: Math.round((balance + topUp.amountBRL) * 100) / 100,
+          note: topUp.reference ? `PIX ref ${topUp.reference}` : undefined,
+          createdBy: actor,
+          createdAt: nowStamp(),
+        };
+        memory.cashLedgerEntries.unshift(entry);
+      }
+      appendServerAudit({ actor, action: confirmed ? "MALL_TOPUP_CONFIRMED" : "MALL_TOPUP_REJECTED", entity: "CashTopUp", entityId: topUp.id, detail: `${topUp.riderName} R$${topUp.amountBRL.toFixed(2)}${topUp.reference ? ` ref ${topUp.reference}` : ""}`, risk: "Medium" });
+      return jsonResponse({ data: memory.cashTopUps[index] });
+    }
+    case "adjustCash": {
+      // Manual correction (refund / adjustment) — always leaves a ledger record.
+      const rider = memory.riders.find((item) => item.id === body.riderId);
+      if (!rider) return jsonResponse({ error: "rider not found" }, { status: 404 });
+      const amount = Math.round(Number(body.amountBRL) * 100) / 100;
+      const note = String(body.note ?? "").trim().slice(0, 200);
+      if (!Number.isFinite(amount) || amount === 0 || !note) {
+        return jsonResponse({ error: "amountBRL (≠0) e note são obrigatórios" }, { status: 400 });
+      }
+      const balance = cashBalanceOf(rider.id);
+      if (balance + amount < 0) return jsonResponse({ error: `余额不足以扣减（当前 R$ ${balance.toFixed(2)}）` }, { status: 409 });
+      const entry: CashLedgerEntry = {
+        id: makeServerId("mcl", memory.cashLedgerEntries.length + 1),
+        riderId: rider.id,
+        riderName: rider.name,
+        type: amount > 0 ? "refund" : "adjust",
+        amountBRL: Math.abs(amount) * (amount > 0 ? 1 : 1),
+        sourceId: `manual-${Date.now()}`,
+        balanceAfter: Math.round((balance + amount) * 100) / 100,
+        note,
+        createdBy: actor,
+        createdAt: nowStamp(),
+      };
+      // For negative adjustments store as spend-like entry with type adjust.
+      if (amount < 0) entry.amountBRL = -Math.abs(amount);
+      memory.cashLedgerEntries.unshift(entry);
+      appendServerAudit({ actor, action: "MALL_CASH_ADJUSTED", entity: "CashLedger", entityId: entry.id, detail: `${rider.name} ${amount > 0 ? "+" : ""}${amount.toFixed(2)} · ${note}`, risk: "Medium" });
+      return jsonResponse({ data: entry });
     }
 
     default:

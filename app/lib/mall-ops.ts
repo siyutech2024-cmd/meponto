@@ -141,3 +141,45 @@ export const paymentStatusLabel: Record<MallPaymentStatus, string> = {
   confirmed: "已核销",
   rejected: "已驳回",
 };
+
+export type CashTopUpStatus = "pending" | "submitted" | "confirmed" | "rejected";
+
+/** Rider-initiated PIX top-up into the mall cash balance (manual review). */
+export type CashTopUp = {
+  id: string;
+  riderId: string;
+  riderName: string;
+  amountBRL: number;
+  /** Company PIX key shown to the rider (snapshot from mall config). */
+  pixKey: string;
+  /** Rider-submitted transfer reference / receipt code. */
+  reference?: string;
+  status: CashTopUpStatus;
+  createdAt: string;
+  submittedAt?: string;
+  decidedAt?: string;
+  decidedBy?: string;
+  note?: string;
+};
+
+/** Immutable cash-balance ledger — every credit/debit keeps a record. */
+export type CashLedgerEntry = {
+  id: string;
+  riderId: string;
+  riderName: string;
+  type: "topup" | "spend" | "refund" | "adjust";
+  amountBRL: number;
+  /** Source record: top-up id / order id / manual note. */
+  sourceId: string;
+  balanceAfter: number;
+  note?: string;
+  createdBy: string;
+  createdAt: string;
+};
+
+export const topUpStatusLabel: Record<CashTopUpStatus, string> = {
+  pending: "待转账",
+  submitted: "待核销",
+  confirmed: "已入账",
+  rejected: "已驳回",
+};

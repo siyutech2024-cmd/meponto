@@ -6,8 +6,8 @@ import { AppShell, Badge, PageTitle } from "../components/ui";
 import { downloadCsv } from "../lib/csv";
 import type { MarketplaceOrder, MarketplaceProduct } from "../lib/points";
 import type { MallConfig } from "../lib/mall";
-import type { MallBanner, MallCategory, MallPayment, PriceChangeRequest, PurchaseOrder, SupplierStatement } from "../lib/mall-ops";
-import { paymentStatusLabel, poStatusLabel, statementStatusLabel } from "../lib/mall-ops";
+import type { CashLedgerEntry, CashTopUp, MallBanner, MallCategory, MallPayment, PriceChangeRequest, PurchaseOrder, SupplierStatement } from "../lib/mall-ops";
+import { paymentStatusLabel, poStatusLabel, statementStatusLabel, topUpStatusLabel } from "../lib/mall-ops";
 
 /**
  * PontoMall back office (mall.meponto.com/admin → /mall) — the independent
@@ -30,6 +30,8 @@ type OpsPayload = {
   purchaseOrders: PurchaseOrder[];
   statements: SupplierStatement[];
   payments: MallPayment[];
+  topUps: CashTopUp[];
+  cashLedger: CashLedgerEntry[];
   summary: { orders: number; pointsGmv: number; cashGmv: number; pendingPayments: number; daily: Array<{ date: string; count: number }> };
 };
 
@@ -42,7 +44,7 @@ const TABS = [
   { id: "products", label: "商品与定价", icon: ShoppingBag },
   { id: "merch", label: "分类与Banner", icon: LayoutGrid },
   { id: "orders", label: "订单履约", icon: Package },
-  { id: "payments", label: "收款核销", icon: Banknote },
+  { id: "payments", label: "充值与收款", icon: Banknote },
   { id: "supply", label: "供应链", icon: Truck },
   { id: "settings", label: "设置", icon: Settings2 },
 ] as const;
@@ -339,36 +341,86 @@ export default function MallAdminPage() {
         </div>
       )}
 
-      {/* ================= 收款核销 ================= */}
+      {/* ================= 充值与收款 ================= */}
       {tab === "payments" && (
-        <div className="panel p-5">
-          <div className="mb-3 text-xs font-black uppercase text-[var(--muted)]">PIX 收款核销（积分+现金订单）</div>
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[760px] text-sm">
-              <thead><tr className="text-left text-[11px] font-black uppercase text-[var(--muted)]"><th className="py-2">骑手</th><th>商品</th><th>金额</th><th>凭证号</th><th>状态</th><th>时间</th><th className="text-right">操作</th></tr></thead>
-              <tbody>
-                {(ops?.payments ?? []).map((payment) => (
-                  <tr key={payment.id} className="border-t border-[var(--line)] font-bold">
-                    <td className="py-2.5">{payment.riderName}</td>
-                    <td>{payment.productName}</td>
-                    <td>R$ {payment.amountBRL.toFixed(2)}</td>
-                    <td className="font-mono text-xs">{payment.reference ?? "—"}</td>
-                    <td><Badge value={paymentStatusLabel[payment.status]} /></td>
-                    <td className="text-xs text-[var(--muted)]">{payment.submittedAt ?? payment.createdAt}</td>
-                    <td className="text-right">
-                      {payment.status === "submitted" && (
-                        <span className="inline-flex gap-1.5">
-                          <button type="button" onClick={() => void post("/api/mall/ops", { action: "confirmPayment", paymentId: payment.id }, "已核销，订单可交付")} className="inline-flex h-8 items-center gap-1 rounded-[8px] bg-[var(--accent)] px-2.5 text-xs font-black text-[var(--accent-ink)]"><CheckCircle2 size={13} /> 核销</button>
-                          <button type="button" onClick={() => void post("/api/mall/ops", { action: "rejectPayment", paymentId: payment.id }, "已驳回，骑手可重新提交")} className="inline-flex h-8 items-center gap-1 rounded-[8px] border border-[#c4423b]/40 px-2.5 text-xs font-black text-[#c4423b]"><XCircle size={13} /> 驳回</button>
-                        </span>
-                      )}
-                    </td>
-                  </tr>
-                ))}
-                {(ops?.payments ?? []).length === 0 && <tr><td colSpan={7} className="py-8 text-center font-bold text-[var(--muted)]">暂无混合支付订单。</td></tr>}
-              </tbody>
-            </table>
+        <div className="space-y-5">
+          <div className="panel p-5">
+            <div className="mb-3 text-xs font-black uppercase text-[var(--muted)]">PIX 充值核销 · 确认到账后入余额（操作留痕）</div>
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[760px] text-sm">
+                <thead><tr className="text-left text-[11px] font-black uppercase text-[var(--muted)]"><th className="py-2">骑手</th><th>金额</th><th>凭证号</th><th>状态</th><th>申请时间</th><th>处理</th><th className="text-right">操作</th></tr></thead>
+                <tbody>
+                  {(ops?.topUps ?? []).map((topUp) => (
+                    <tr key={topUp.id} className="border-t border-[var(--line)] font-bold">
+                      <td className="py-2.5">{topUp.riderName}</td>
+                      <td>R$ {topUp.amountBRL.toFixed(2)}</td>
+                      <td className="font-mono text-xs">{topUp.reference ?? "—"}</td>
+                      <td><Badge value={topUpStatusLabel[topUp.status]} /></td>
+                      <td className="text-xs text-[var(--muted)]">{topUp.createdAt}</td>
+                      <td className="text-xs text-[var(--muted)]">{topUp.decidedAt ? `${topUp.decidedAt} · ${topUp.decidedBy}` : "—"}</td>
+                      <td className="text-right">
+                        {topUp.status === "submitted" && (
+                          <span className="inline-flex gap-1.5">
+                            <button type="button" onClick={() => void post("/api/mall/ops", { action: "confirmTopUp", topUpId: topUp.id }, "已确认到账，余额已入账")} className="inline-flex h-8 items-center gap-1 rounded-[8px] bg-[var(--accent)] px-2.5 text-xs font-black text-[var(--accent-ink)]"><CheckCircle2 size={13} /> 确认到账</button>
+                            <button type="button" onClick={() => { const note = prompt("驳回原因（可空）") ?? ""; void post("/api/mall/ops", { action: "rejectTopUp", topUpId: topUp.id, note }, "已驳回"); }} className="inline-flex h-8 items-center gap-1 rounded-[8px] border border-[#c4423b]/40 px-2.5 text-xs font-black text-[#c4423b]"><XCircle size={13} /> 驳回</button>
+                          </span>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                  {(ops?.topUps ?? []).length === 0 && <tr><td colSpan={7} className="py-8 text-center font-bold text-[var(--muted)]">暂无充值申请。</td></tr>}
+                </tbody>
+              </table>
+            </div>
           </div>
+
+          <div className="panel p-5">
+            <div className="mb-3 flex items-center gap-2">
+              <span className="text-xs font-black uppercase text-[var(--muted)]">现金余额台账（不可篡改记录）</span>
+              <button type="button" onClick={() => downloadCsv("cash-ledger.csv", ["时间", "骑手", "类型", "金额", "余额", "来源", "备注", "操作人"], (ops?.cashLedger ?? []).map((entry) => [entry.createdAt, entry.riderName, entry.type, entry.amountBRL.toFixed(2), entry.balanceAfter.toFixed(2), entry.sourceId, entry.note ?? "", entry.createdBy]))} className="ml-auto h-9 rounded-[8px] border border-[var(--line)] px-3 text-xs font-black text-[var(--muted)] hover:border-[var(--accent)]">导出 CSV</button>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[760px] text-sm">
+                <thead><tr className="text-left text-[11px] font-black uppercase text-[var(--muted)]"><th className="py-2">时间</th><th>骑手</th><th>类型</th><th>金额</th><th>余额</th><th>来源</th><th>操作人</th></tr></thead>
+                <tbody>
+                  {(ops?.cashLedger ?? []).map((entry) => (
+                    <tr key={entry.id} className="border-t border-[var(--line)] font-bold">
+                      <td className="py-2.5 text-xs text-[var(--muted)]">{entry.createdAt}</td>
+                      <td>{entry.riderName}</td>
+                      <td>{entry.type === "topup" ? "充值" : entry.type === "spend" ? "消费" : entry.type === "refund" ? "退款" : "调整"}</td>
+                      <td style={{ color: entry.type === "spend" ? "#c4423b" : "#1d7a3e" }}>{entry.type === "spend" ? "-" : "+"}R$ {Math.abs(entry.amountBRL).toFixed(2)}</td>
+                      <td>R$ {entry.balanceAfter.toFixed(2)}</td>
+                      <td className="font-mono text-xs">{entry.sourceId}{entry.note ? ` · ${entry.note}` : ""}</td>
+                      <td className="text-xs text-[var(--muted)]">{entry.createdBy}</td>
+                    </tr>
+                  ))}
+                  {(ops?.cashLedger ?? []).length === 0 && <tr><td colSpan={7} className="py-8 text-center font-bold text-[var(--muted)]">暂无余额流水。</td></tr>}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          {(ops?.payments ?? []).length > 0 && (
+            <div className="panel p-5">
+              <div className="mb-3 text-xs font-black uppercase text-[var(--muted)]">历史按单收款记录（旧流程存档）</div>
+              <div className="overflow-x-auto">
+                <table className="w-full min-w-[680px] text-sm">
+                  <thead><tr className="text-left text-[11px] font-black uppercase text-[var(--muted)]"><th className="py-2">骑手</th><th>商品</th><th>金额</th><th>凭证号</th><th>状态</th></tr></thead>
+                  <tbody>
+                    {(ops?.payments ?? []).map((payment) => (
+                      <tr key={payment.id} className="border-t border-[var(--line)] font-bold">
+                        <td className="py-2.5">{payment.riderName}</td>
+                        <td>{payment.productName}</td>
+                        <td>R$ {payment.amountBRL.toFixed(2)}</td>
+                        <td className="font-mono text-xs">{payment.reference ?? "—"}</td>
+                        <td><Badge value={paymentStatusLabel[payment.status]} /></td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
         </div>
       )}
 
@@ -495,7 +547,7 @@ export default function MallAdminPage() {
                 <input value={configDraft[field.key] ?? String(field.value ?? "")} onChange={(e) => setConfigDraft((prev) => ({ ...prev, [field.key]: e.target.value }))} className="mt-1 h-10 w-full rounded-[8px] border border-[var(--line)] bg-[var(--surface-raised)] px-3 text-sm font-bold outline-none focus:border-[var(--accent)]" />
               </label>
             ))}
-            <label className="text-[11px] font-black text-[var(--muted)] md:col-span-2">公司 PIX 收款 Key（混合支付订单展示给骑手）
+            <label className="text-[11px] font-black text-[var(--muted)] md:col-span-2">公司 PIX 收款 Key（骑手充值时展示）
               <input value={configDraft.pixKey ?? mall?.pixKey ?? ""} onChange={(e) => setConfigDraft((prev) => ({ ...prev, pixKey: e.target.value }))} placeholder="CNPJ / e-mail / chave aleatória" className="mt-1 h-10 w-full rounded-[8px] border border-[var(--line)] bg-[var(--surface-raised)] px-3 font-mono text-sm font-bold outline-none focus:border-[var(--accent)]" />
             </label>
           </div>
