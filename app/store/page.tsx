@@ -57,6 +57,12 @@ function ProductImage({ product, big = false }: { product: MarketplaceProduct; b
   );
 }
 
+/** Rider login on app.meponto.com, returning to the current mall page after. */
+function loginUrlWithReturn() {
+  const back = typeof window !== "undefined" ? window.location.href : "https://mall.meponto.com/";
+  return `https://app.meponto.com/rider-login?returnTo=${encodeURIComponent(back)}`;
+}
+
 export default function StorefrontPage() {
   const [data, setData] = useState<Payload | null>(null);
   const [loading, setLoading] = useState(true);
@@ -177,7 +183,7 @@ export default function StorefrontPage() {
 
   async function redeem(product: MarketplaceProduct) {
     if (!me) {
-      window.location.href = "https://app.meponto.com/rider-login";
+      window.location.href = loginUrlWithReturn();
       return;
     }
     setBusy(true);
@@ -349,6 +355,7 @@ export default function StorefrontPage() {
             ) : (
               <a
                 href="https://app.meponto.com/rider-login"
+                onClick={(event) => { event.preventDefault(); window.location.href = loginUrlWithReturn(); }}
                 className="inline-flex h-10 items-center gap-2 rounded-full px-5 text-sm font-black transition-transform hover:scale-105"
                 style={{ background: INK, color: "#fff" }}
               >

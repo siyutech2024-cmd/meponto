@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Bike, LogIn, UserPlus } from "lucide-react";
 import { writeSession } from "../lib/session";
 import { useVentoStore } from "../lib/store";
@@ -22,9 +22,12 @@ export default function RiderLoginPage() {
   const [reg, setReg] = useState({ name: "", phone: "", email: "", password: "", birthday: "", pix: "", station: "", inviteCode: "" });
   const [showMore, setShowMore] = useState(false);
   const [invited, setInvited] = useState(false);
+  // Where to return after login (e.g. the mall storefront the rider came from).
+  const returnToRef = useRef<string | null>(null);
 
   // Invite/QR onboarding: prefill station + invite code from the share link
   // (e.g. /rider-login?ref=<riderId>&station=Pinheiros) and jump to sign-up.
+  // Also capture an optional returnTo to send the rider back where they came from.
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const ref = params.get("ref") ?? params.get("invite") ?? "";
@@ -33,6 +36,16 @@ export default function RiderLoginPage() {
       setReg((prev) => ({ ...prev, inviteCode: ref || prev.inviteCode, station: station || prev.station }));
       setTab("register");
       if (ref) setInvited(true);
+    }
+    const rt = params.get("returnTo");
+    if (rt) {
+      try {
+        const host = new URL(rt).hostname.toLowerCase();
+        // Open-redirect guard: only return to our own *.meponto.com hosts.
+        if (host === "meponto.com" || host.endsWith(".meponto.com")) returnToRef.current = rt;
+      } catch {
+        /* ignore malformed returnTo */
+      }
     }
   }, []);
 
@@ -47,7 +60,7 @@ export default function RiderLoginPage() {
       franchise: user.franchise,
       station: user.station,
     });
-    window.location.href = "/rider-app";
+    window.location.href = returnToRef.current ?? "/rider-app";
   }
 
   async function doLogin(identifier: string, password: string) {
