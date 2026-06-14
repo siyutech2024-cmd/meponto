@@ -28,6 +28,7 @@ type Me = {
 
 type Payload = {
   pixKey?: string;
+  config?: { referralPoints?: number };
   categories?: MallCategory[];
   banners?: MallBanner[];
   products: MarketplaceProduct[];
@@ -431,6 +432,25 @@ export default function StorefrontPage() {
             {(me.redeemDiscount ?? 1) < 1 && <span className="rounded-full px-2.5 py-0.5 text-xs font-black" style={{ background: "#e8f6ec", color: "#1d7a3e" }}>Desconto de membro: {Math.round((1 - (me.redeemDiscount ?? 1)) * 100)}%</span>}
           </section>
         ) : null}
+
+        {/* ---- Invite friends (riders only) ------------------------------------ */}
+        {me && me.accountType !== "partner" && (
+          <section id="invite" className="mt-4 flex items-center gap-4 rounded-2xl border border-black/5 bg-white p-4 scroll-mt-20">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={`https://api.qrserver.com/v1/create-qr-code/?size=96x96&data=${encodeURIComponent(`https://app.meponto.com/scan?ref=${me.riderId}`)}`}
+              alt="QR de convite"
+              width={96}
+              height={96}
+              className="h-24 w-24 shrink-0 rounded-xl border border-black/10 p-1"
+            />
+            <div className="min-w-0">
+              <div className="flex items-center gap-1.5 text-sm font-black"><Gift size={15} style={{ color: GOLD }} /> Convide amigos{data?.config?.referralPoints ? ` = +${data.config.referralPoints} pts` : ""}</div>
+              <p className="mt-1 text-xs font-bold leading-5 text-black/55">Seu amigo escaneia o QR, cria a conta e você ganha os pontos após o primeiro pedido dele.</p>
+              <div className="mt-1.5 inline-flex items-center rounded-lg bg-black/5 px-2.5 py-1 text-xs font-black">Código: {me.riderId}</div>
+            </div>
+          </section>
+        )}
 
         {/* ---- Categories ------------------------------------------------------ */}
         <nav className="scrollbar-none mt-5 flex gap-2 overflow-x-auto pb-1">

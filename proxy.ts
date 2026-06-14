@@ -60,7 +60,13 @@ export async function proxy(request: NextRequest) {
     if (pathname === "/" && !session) {
       return NextResponse.redirect(new URL("/rider-login", request.url));
     }
-    const riderSections = new Set(["wallet", "shifts", "agenda", "mall", "support", "scan"]);
+    // Single mall: the app's "Loja" (/mall, /mall#invite) lives on the public
+    // storefront mall.meponto.com (the shared .meponto.com cookie keeps the
+    // rider logged in). The browser re-applies any #invite fragment.
+    if (pathname === "/mall" || pathname.startsWith("/mall/")) {
+      return NextResponse.redirect(new URL("https://mall.meponto.com/"));
+    }
+    const riderSections = new Set(["wallet", "shifts", "agenda", "support", "scan"]);
     const firstSegment = pathname.split("/")[1] ?? "";
     // /scan?partner=… and /scan?ref=… are the PUBLIC QR validation page; the
     // bare /scan is the in-app camera scanner.
