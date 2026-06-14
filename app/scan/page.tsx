@@ -69,7 +69,15 @@ function ScanInner() {
               setState({ tone: "err", text: payload.error ?? `Falha (${response.status})` });
               return;
             }
-            setState({ tone: "ok", text: `Parceiro ${payload.data.partnerName} validado! +${payload.data.points} pontos creditados ao parceiro.` });
+            {
+              const d = payload.data as { partnerName: string; points: number; earned?: boolean; remaining?: number; grantPoints?: number };
+              setState({
+                tone: "ok",
+                text: d.earned
+                  ? `Parceiro ${d.partnerName} validado! +${d.points} pontos creditados ao parceiro. 🎉`
+                  : `Parceiro ${d.partnerName} validado! Faltam ${d.remaining} para ele ganhar ${d.grantPoints ?? ""} pontos.`,
+              });
+            }
           }}
           className="inline-flex h-12 w-full items-center justify-center gap-2 rounded-[8px] bg-[var(--accent)] text-sm font-black uppercase text-[var(--accent-ink)] disabled:opacity-50"
         >

@@ -849,18 +849,32 @@ async function handlePost(request: Request) {
       }
 
       const config = getConfig();
+      // Points are granted only on every Nth completed service (config.
+      // partnerServiceCount). Each scan is still recorded (count + anti-fraud);
+      // the points-bearing entry lands on the Nth scan. N=1 → every scan earns.
+      const n = Math.max(1, Math.floor(config.partnerServiceCount || 1));
+      const priorScans = memory.partnerPointsLedgerEntries.filter(
+        (entry) => entry.partnerId === partner.id && entry.reasonCode === "PARTNER_QR_SCAN",
+      ).length;
+      const scanNo = priorScans + 1;
+      const earned = scanNo % n === 0;
+      const points = earned ? config.partnerServicePoints : 0;
+      const availableBefore = getAvailablePartnerPoints(memory.partnerPointsLedgerEntries, partner.id);
+      const progress = scanNo % n; // 0 when earned
+      const remaining = earned ? 0 : n - progress;
+
       memory.partnerPointsLedgerEntries.unshift({
         id: scanId,
         partnerId: partner.id,
         accountId: `ppts-${partner.id}`,
         type: "earn",
-        points: config.partnerServicePoints,
+        points,
         status: "approved",
         sourceType: "partner_service_benefit",
         sourceId: scanId,
-        balanceAfter: 0,
+        balanceAfter: availableBefore + points,
         reasonCode: "PARTNER_QR_SCAN",
-        note: `Validado pelo entregador ${rider.name}`,
+        note: earned ? `Validado por ${rider.name} — meta de ${n} serviços atingida: +${points} pts` : `Validado por ${rider.name} — progresso ${progress}/${n}`,
         createdBy: "QR Scan",
         createdAt: nowStamp(),
       });
@@ -870,11 +884,11 @@ async function handlePost(request: Request) {
         action: "PARTNER_QR_SCANNED",
         entity: "PartnerPoints",
         entityId: partner.id,
-        detail: `${rider.name} scanned ${partner.name}: +${config.partnerServicePoints} pts (scan ${todayScans + 1}/10 today).`,
+        detail: `${rider.name} scanned ${partner.name}: scan #${scanNo}, ${earned ? `+${points} pts (meta ${n})` : `progresso ${progress}/${n}`}; ${todayScans + 1}/10 today.`,
         risk: "Low",
       });
 
-      return jsonResponse({ data: { ok: true, partnerName: partner.name, points: config.partnerServicePoints } }, { status: 201 });
+      return jsonResponse({ data: { ok: true, partnerName: partner.name, points, earned, remaining, target: n, grantPoints: config.partnerServicePoints } }, { status: 201 });
     }
 
     case "awardPartnerService": {
