@@ -60,7 +60,7 @@ async function handlePost(request: Request) {
     organization: station.trim() || "MePonto",
     tenantId: "rider-self",
     defaultPath: "/rider-app",
-    status: "Active" as const,
+    status: "active" as const,
     createdAt: nowStamp(),
   } as unknown as (typeof memory.appUsers)[number];
   memory.appUsers.unshift(account);

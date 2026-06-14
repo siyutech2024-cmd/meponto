@@ -2,9 +2,42 @@ import { appendServerAudit, jsonResponse, makeServerId, memory } from "../../lib
 import { flushPendingToDatabase, persistDeleteRecord, refreshCollectionsFromDatabase } from "../../lib/server/persistence";
 import { requirePermission, roleFromRequest } from "../../lib/server/authz";
 import { sendPushToRider } from "../../lib/server/notify";
-import { getAvailablePoints, type MarketplaceOrder, type MarketplaceProduct, type PointsLedgerEntry } from "../../lib/points";
+import { getAvailablePoints, getAvailablePartnerPoints, type MarketplaceOrder, type MarketplaceProduct, type PartnerPointsLedgerEntry, type PointsLedgerEntry } from "../../lib/points";
 import { defaultMallConfig, resolveTier, tierDefinitions, type MallConfig } from "../../lib/mall";
-import type { CashLedgerEntry } from "../../lib/mall-ops";
+import type { CashLedgerEntry, MallCoupon } from "../../lib/mall-ops";
+
+/** Tier rank for coupon eligibility (member=0 … diamante=4). */
+function tierRank(name: string): number {
+  return tierDefinitions.findIndex((t) => t.tier === name);
+}
+
+/** Coupons a rider is eligible for (tier + validity + per-rider limit), ignoring
+ *  the per-product minPoints threshold (applied per product at display/redeem). */
+function eligibleCouponsForRider(riderId: string, tierName: string): MallCoupon[] {
+  const today = new Date().toISOString().slice(0, 10);
+  const riderRank = tierRank(tierName);
+  return memory.mallCoupons.filter((c) => {
+    if (!c.active) return false;
+    if (c.expiresAt && c.expiresAt < today) return false;
+    if (riderRank < tierRank(c.minTier)) return false;
+    if (c.perRiderLimit > 0) {
+      const used = memory.marketplaceOrders.filter((o) => o.couponId === c.id && o.riderId === riderId && o.status !== "cancelled").length;
+      if (used >= c.perRiderLimit) return false;
+    }
+    return true;
+  });
+}
+
+/** Best coupon (max discount) for a rider against a given tier-discounted price. */
+function bestCouponForRider(riderId: string, tierName: string, price: number): { coupon: MallCoupon; discount: number } | null {
+  let best: { coupon: MallCoupon; discount: number } | null = null;
+  for (const c of eligibleCouponsForRider(riderId, tierName)) {
+    if (price < c.minPoints) continue;
+    const discount = c.type === "percent_off" ? Math.floor((price * c.value) / 100) : Math.min(c.value, price);
+    if (discount > 0 && (!best || discount > best.discount)) best = { coupon: c, discount };
+  }
+  return best;
+}
 
 /** Cash balance = immutable ledger sum (top-ups minus spends). */
 function cashBalanceOf(riderId: string): number {
@@ -16,7 +49,7 @@ function cashBalanceOf(riderId: string): number {
   return Math.round(balance * 100) / 100;
 }
 
-const COLLECTIONS = ["mallConfigs", "marketplaceProducts", "marketplaceOrders", "pointsLedgerEntries", "partnerPointsLedgerEntries", "riders", "riderDailyKpis", "mallCategories", "mallBanners", "mallPayments", "cashTopUps", "cashLedgerEntries"];
+const COLLECTIONS = ["mallConfigs", "marketplaceProducts", "marketplaceOrders", "pointsLedgerEntries", "partnerPointsLedgerEntries", "riders", "riderDailyKpis", "mallCategories", "mallBanners", "mallCoupons", "mallPayments", "cashTopUps", "cashLedgerEntries"];
 
 function nowStamp() {
   return new Date().toISOString().slice(0, 16).replace("T", " ");
@@ -111,7 +144,12 @@ export async function GET(request: Request) {
   await refreshCollectionsFromDatabase(COLLECTIONS);
 
   const config = getConfig();
-  let orders = memory.marketplaceOrders.filter((order) => order.accountType === "rider");
+  // HQ/unscoped views include Partner redemptions for reconciliation; the
+  // scope (station/franchise) and riderId filters below naturally exclude
+  // Partner orders for rider storefronts and franchise/station portals, since
+  // Partner orders carry no station/franchise/riderId. (Partner storefront
+  // gets its own scoped list further down.)
+  let orders = memory.marketplaceOrders.filter((order) => order.accountType === "rider" || order.accountType === "partner");
   if (scopeStation) orders = orders.filter((order) => order.station === scopeStation);
   if (scopeFranchise) orders = orders.filter((order) => order.franchise === scopeFranchise);
   if (riderId) orders = orders.filter((order) => order.riderId === riderId);
@@ -139,6 +177,7 @@ export async function GET(request: Request) {
       perks: tier.perks,
       cashBalance: cashBalanceOf(rider.id),
       topUps: memory.cashTopUps.filter((t) => t.riderId === rider.id).slice(0, 10),
+      coupons: eligibleCouponsForRider(rider.id, tier.tier),
     };
   }
 
@@ -176,6 +215,25 @@ export async function GET(request: Request) {
   const isHq = session?.portal === "pontosys" || session?.portal === "pontomall";
   // Suppliers still see THEIR OWN quoted prices.
   const supplierName = session?.portal === "supplier" ? session.organization || "" : "";
+
+  // Partner storefront context: a logged-in Partner (portal "partner") redeems
+  // with its Partner points. Identity maps read-only via organization → the
+  // crmPartner with the same name (no auth/session changes required).
+  if (!me && session?.portal === "partner") {
+    const partner = memory.crmPartners.find((p) => p.name === session.organization);
+    if (partner) {
+      me = {
+        accountType: "partner",
+        partnerId: partner.id,
+        riderId: "",
+        name: partner.name,
+        balance: getAvailablePartnerPoints(memory.partnerPointsLedgerEntries, partner.id),
+      };
+      // Partner sees only its own redemption orders.
+      orders = memory.marketplaceOrders.filter((order) => order.accountType === "partner" && order.partnerId === partner.id);
+    }
+  }
+
   const products = memory.marketplaceProducts.map((product) => {
     if (isHq || (supplierName && product.supplierName === supplierName)) return product;
     const { supplyPrice: _sp, marginPct: _mp, ...rest } = product;
@@ -203,23 +261,31 @@ type Body =
   | { action: "updateProduct"; productId: string; name?: string; description?: string; imageUrl?: string; category?: string; stock?: number; deliveryCycleDays?: number; purchaseLimit?: number }
   | { action: "priceProduct"; productId: string; pointsPrice: number; marginPct?: number; status?: "active" | "paused" }
   | { action: "deleteProduct"; productId: string }
-  | { action: "redeem"; productId: string; riderId?: string; riderName?: string }
+  | { action: "redeem"; productId: string; riderId?: string; riderName?: string; accountType?: "rider" | "partner" }
+  | { action: "cancelOrder"; orderId: string; riderId?: string }
+  | { action: "confirmReceipt"; orderId: string }
   | { action: "markArrived"; orderId: string }
   | { action: "markPickedUp"; orderId: string }
+  | { action: "reviewOrder"; orderId: string; decision: "approve" | "reject" }
   | { action: "awardReferral"; inviterRiderId: string; newRiderName: string }
   | { action: "awardPartnerService"; riderId: string; note?: string }
   | { action: "scanPartner"; riderId: string; partnerId: string };
 
 async function handlePost(request: Request) {
-  const peek = (await request.clone().json().catch(() => ({}))) as { action?: string };
-  // Permission map: redeem = rider app; arrivals = station ops; supplier
-  // upload = supplier catalog; config/pricing/awards = HQ points authority
-  // (note: the plain Rider role intentionally has manage_marketplace for the
-  // legacy mall, so admin actions must NOT rely on that permission).
+  const peek = (await request.clone().json().catch(() => ({}))) as { action?: string; accountType?: string };
+  // Permission map: redeem = rider app (or partner services for a Partner
+  // account); arrivals = station ops; supplier upload = supplier catalog;
+  // config/pricing/awards = HQ points authority (note: the plain Rider role
+  // intentionally has manage_marketplace for the legacy mall, so admin actions
+  // must NOT rely on that permission).
   const forbidden =
-    peek.action === "redeem" || peek.action === "scanPartner"
-      ? requirePermission(request, "use_rider_app")
-      : peek.action === "markArrived" || peek.action === "markPickedUp"
+    peek.action === "redeem"
+      ? requirePermission(request, peek.accountType === "partner" ? "manage_partner_services" : "use_rider_app")
+      : peek.action === "confirmReceipt"
+      ? requirePermission(request, "manage_partner_services")
+      : peek.action === "scanPartner" || peek.action === "cancelOrder"
+        ? requirePermission(request, "use_rider_app")
+        : peek.action === "markArrived" || peek.action === "markPickedUp"
         ? requirePermission(request, "manage_slots")
         : peek.action === "supplierAddProduct" || peek.action === "updateProduct"
           ? requirePermission(request, "manage_supplier_catalog")
@@ -328,8 +394,94 @@ async function handlePost(request: Request) {
 
     case "redeem": {
       const { productId, riderId, riderName } = body as { productId?: string; riderId?: string; riderName?: string };
+      const accountType = (body as { accountType?: string }).accountType === "partner" ? "partner" : "rider";
+
+      // ---- Partner redemption -------------------------------------------------
+      // A logged-in Partner (portal "partner") redeems with its Partner points.
+      // Identity maps read-only via organization → crmPartner name. Points-only,
+      // no tier discount. Virtual goods → instant voucher; physical goods are
+      // shipped to the partner's own shop and the partner self-confirms receipt.
+      if (accountType === "partner") {
+        const { sessionFromRequest } = await import("../../lib/auth-session");
+        const session = await sessionFromRequest(request);
+        const partner = session?.portal === "partner" ? memory.crmPartners.find((p) => p.name === session.organization) : undefined;
+        if (!partner) return jsonResponse({ error: "Conta de parceiro não encontrada." }, { status: 404 });
+        const product = memory.marketplaceProducts.find((item) => item.id === productId && item.status === "active");
+        if (!product) return jsonResponse({ error: "Produto indisponível ou fora de catálogo." }, { status: 404 });
+        if (product.audience !== "partner" && product.audience !== "both") {
+          return jsonResponse({ error: "Este produto não está disponível para parceiros." }, { status: 409 });
+        }
+        if (product.stock <= 0) return jsonResponse({ error: "Produto esgotado." }, { status: 409 });
+        if ((product.cashPriceBRL ?? 0) > 0) {
+          return jsonResponse({ error: "Resgates com parte em dinheiro ainda não estão disponíveis para parceiros." }, { status: 409 });
+        }
+        const price = product.pointsPrice;
+        const available = getAvailablePartnerPoints(memory.partnerPointsLedgerEntries, partner.id);
+        if (available < price) {
+          return jsonResponse({ error: `Pontos insuficientes: precisa de ${price}, você tem ${available}.`, available, required: price }, { status: 409 });
+        }
+        const createdAt = nowStamp();
+        const isVirtual = product.isVirtual === true;
+        const eta = new Date();
+        eta.setDate(eta.getDate() + (product.deliveryCycleDays ?? 7));
+        const voucherCode = isVirtual ? `MP-${Date.now().toString(36).toUpperCase()}-${Math.random().toString(36).slice(2, 6).toUpperCase()}` : undefined;
+        const order: MarketplaceOrder = {
+          id: makeServerId("mko", memory.marketplaceOrders.length + 1),
+          accountType: "partner",
+          partnerId: partner.id,
+          productId: product.id,
+          pointsSpent: price,
+          // Virtual: instant. Physical: shipped to the partner's shop, partner
+          // self-confirms receipt (confirmReceipt) to complete.
+          status: isVirtual ? "fulfilled" : "created",
+          createdAt,
+          productName: product.name,
+          riderName: partner.name,
+          // Reuse "station" to carry the partner's delivery location (its bairro).
+          station: isVirtual ? undefined : partner.bairro ?? "Loja do parceiro",
+          etaDate: isVirtual ? createdAt.slice(0, 10) : eta.toISOString().slice(0, 10),
+          ...(isVirtual ? { pickedUpAt: createdAt, voucherCode } : {}),
+        };
+        memory.marketplaceOrders.unshift(order);
+        const ledger: PartnerPointsLedgerEntry = {
+          id: makeServerId("ppts", memory.partnerPointsLedgerEntries.length + 1),
+          partnerId: partner.id,
+          accountId: `ppts-${partner.id}`,
+          type: "spend",
+          points: price,
+          status: "approved",
+          sourceType: "marketplace_order",
+          sourceId: order.id,
+          marketplaceOrderId: order.id,
+          balanceAfter: available - price,
+          reasonCode: "MALL_REDEMPTION",
+          note: product.name,
+          createdBy: "PontoMall",
+          createdAt,
+        };
+        memory.partnerPointsLedgerEntries.unshift(ledger);
+        const partnerProductIndex = memory.marketplaceProducts.findIndex((item) => item.id === product.id);
+        if (partnerProductIndex !== -1) memory.marketplaceProducts[partnerProductIndex] = { ...product, stock: product.stock - 1 };
+        appendServerAudit({ actor, action: "MALL_REDEEMED", entity: "MarketplaceOrder", entityId: order.id, detail: `${partner.name} (parceiro) resgatou ${product.name} por ${price} pts.`, risk: price >= 8000 ? "High" : "Low" });
+        return jsonResponse({ data: { order, balance: available - price } }, { status: 201 });
+      }
+
       const rider = memory.riders.find((item) => (riderId && item.id === riderId) || (riderName && item.name === riderName));
       if (!rider) return jsonResponse({ error: "骑手档案未找到，请先注册建档" }, { status: 404 });
+
+      // Risk control: fraud-held riders cannot self-redeem (manual review required).
+      if (rider.status === "Risk") {
+        appendServerAudit({ actor, action: "MALL_REDEEM_BLOCKED_RISK", entity: "Rider", entityId: rider.id, detail: `${rider.name} (status Risk) bloqueado de resgatar.`, risk: "High" });
+        return jsonResponse({ error: "Sua conta está em revisão de segurança. Fale com o suporte para resgatar." }, { status: 403 });
+      }
+      // Anti-abuse: per-rider daily redemption cap (guardrail against scripted abuse).
+      const DAILY_REDEEM_CAP = 20;
+      const todayKey = nowStamp().slice(0, 10);
+      const todayRedeems = memory.marketplaceOrders.filter((o) => o.riderId === rider.id && o.status !== "cancelled" && o.createdAt.startsWith(todayKey)).length;
+      if (todayRedeems >= DAILY_REDEEM_CAP) {
+        return jsonResponse({ error: `Limite diário de resgates atingido (${DAILY_REDEEM_CAP}/dia). Tente novamente amanhã.` }, { status: 429 });
+      }
+
       const product = memory.marketplaceProducts.find((item) => item.id === productId && item.status === "active");
       if (!product) return jsonResponse({ error: "商品不存在或未上架" }, { status: 404 });
       if (product.stock <= 0) return jsonResponse({ error: "商品库存不足" }, { status: 409 });
@@ -350,18 +502,30 @@ async function handlePost(request: Request) {
       applyPointsExpiry(rider.id);
 
       const tier = resolveTier(lifetimeOrders(rider.ninetyNineId));
-      const price = Math.ceil(product.pointsPrice * tier.redeemDiscount);
+      const basePrice = Math.ceil(product.pointsPrice * tier.redeemDiscount);
+      // Auto-apply the best eligible storefront coupon (points discount).
+      const couponPick = bestCouponForRider(rider.id, tier.tier, basePrice);
+      const couponDiscount = couponPick?.discount ?? 0;
+      const price = Math.max(0, basePrice - couponDiscount);
       const available = getAvailablePoints(memory.pointsLedgerEntries, rider.id);
       if (available < price) {
         return jsonResponse({ error: `积分不足：需要 ${price} 分，当前 ${available} 分`, available, required: price }, { status: 409 });
       }
 
+      // High-value redemptions are held for manual review before completing:
+      // points are debited (held) immediately, but virtual vouchers are NOT
+      // issued and fulfilment is blocked until an operator approves.
+      const HIGH_VALUE_POINTS = 8000;
+      const heldForReview = price >= HIGH_VALUE_POINTS;
+
       const createdAt = nowStamp();
       const eta = new Date();
       eta.setDate(eta.getDate() + (product.deliveryCycleDays ?? 7));
-      // Virtual goods: no logistics — issue an instant voucher code instead.
+      // Virtual goods: no logistics — issue an instant voucher code instead
+      // (unless held for review, in which case the code waits for approval).
       const isVirtual = product.isVirtual === true;
-      const voucherCode = isVirtual
+      const issueNow = isVirtual && !heldForReview;
+      const voucherCode = issueNow
         ? `MP-${Date.now().toString(36).toUpperCase()}-${Math.random().toString(36).slice(2, 6).toUpperCase()}`
         : undefined;
       const cashDue = Math.round((product.cashPriceBRL ?? 0) * 100) / 100;
@@ -382,14 +546,16 @@ async function handlePost(request: Request) {
         riderId: rider.id,
         productId: product.id,
         pointsSpent: price,
-        status: isVirtual ? "fulfilled" : "created",
+        status: issueNow ? "fulfilled" : "created",
         createdAt,
         productName: product.name,
         riderName: rider.name,
         station: rider.ponto ?? "Unassigned",
         franchise: rider.franchise ?? "Unassigned",
         etaDate: isVirtual ? createdAt.slice(0, 10) : eta.toISOString().slice(0, 10),
-        ...(isVirtual ? { pickedUpAt: createdAt, voucherCode } : {}),
+        ...(issueNow ? { pickedUpAt: createdAt, voucherCode } : {}),
+        ...(heldForReview ? { reviewStatus: "pending" as const } : {}),
+        ...(couponDiscount > 0 && couponPick ? { couponId: couponPick.coupon.id, couponDiscount } : {}),
         ...(cashDue > 0 ? { cashDue, paymentStatus: "paid" as const } : {}),
       };
       memory.marketplaceOrders.unshift(order);
@@ -424,7 +590,7 @@ async function handlePost(request: Request) {
         marketplaceOrderId: order.id,
         balanceAfter: available - price,
         reasonCode: "MALL_REDEMPTION",
-        note: `${product.name}（${tier.label}${tier.redeemDiscount < 1 ? ` ${Math.round(tier.redeemDiscount * 100)}折` : ""}）`,
+        note: `${product.name}（${tier.label}${tier.redeemDiscount < 1 ? ` ${Math.round(tier.redeemDiscount * 100)}折` : ""}${couponDiscount > 0 ? ` · cupom -${couponDiscount}` : ""}）`,
         createdBy: "PontoMall",
         createdAt,
       };
@@ -435,8 +601,112 @@ async function handlePost(request: Request) {
         memory.marketplaceProducts[productIndex] = { ...product, stock: product.stock - 1 };
       }
 
-      appendServerAudit({ actor, action: "MALL_REDEEMED", entity: "MarketplaceOrder", entityId: order.id, detail: `${rider.name} redeemed ${product.name} for ${price} pts, pickup at ${order.station}, ETA ${order.etaDate}.`, risk: "Low" });
-      return jsonResponse({ data: { order, balance: available - price, cashBalance: cashBalanceOf(rider.id) } }, { status: 201 });
+      appendServerAudit({ actor, action: heldForReview ? "MALL_REDEEM_HELD_REVIEW" : "MALL_REDEEMED", entity: "MarketplaceOrder", entityId: order.id, detail: `${rider.name} redeemed ${product.name} for ${price} pts${heldForReview ? " — HELD for review" : `, pickup at ${order.station}, ETA ${order.etaDate}`}.`, risk: heldForReview ? "High" : "Low" });
+      return jsonResponse({ data: { order, balance: available - price, cashBalance: cashBalanceOf(rider.id), held: heldForReview, couponDiscount } }, { status: 201 });
+    }
+
+    case "cancelOrder": {
+      // Rider self-service cancellation of an in-transit redemption. Refunds
+      // points (+ any cash paid from the prepaid balance) and restocks the item.
+      const { orderId, riderId } = body as { orderId?: string; riderId?: string };
+      const index = memory.marketplaceOrders.findIndex((item) => item.id === orderId);
+      if (index === -1) return jsonResponse({ error: "Resgate não encontrado." }, { status: 404 });
+      const order = memory.marketplaceOrders[index];
+      // Ownership check (mirrors the redeem trust model: rider acts on own order).
+      if (riderId && order.riderId && order.riderId !== riderId) {
+        return jsonResponse({ error: "Você só pode cancelar seus próprios resgates." }, { status: 403 });
+      }
+      if (order.accountType !== "rider" || !order.riderId) {
+        return jsonResponse({ error: "Este resgate não pode ser cancelado por aqui — contate o suporte." }, { status: 409 });
+      }
+      // Only in-transit physical orders are self-cancellable. Delivered vouchers,
+      // arrived (already at the station) and already-cancelled orders are not.
+      if (order.status !== "created") {
+        const why = order.status === "fulfilled" ? "já foi entregue" : order.status === "arrived" ? "já chegou ao seu ponto — retire ou fale com o ponto" : "já foi cancelado";
+        return jsonResponse({ error: `Não é possível cancelar: o resgate ${why}.` }, { status: 409 });
+      }
+
+      const stamp = nowStamp();
+      // Refund points (auditable refund ledger entry).
+      const pointsAvailable = getAvailablePoints(memory.pointsLedgerEntries, order.riderId);
+      memory.pointsLedgerEntries.unshift({
+        id: makeServerId("pts", memory.pointsLedgerEntries.length + 1),
+        riderId: order.riderId,
+        accountId: `pts-${order.riderId}`,
+        type: "refund",
+        points: order.pointsSpent,
+        status: "approved",
+        sourceType: "marketplace_order",
+        sourceId: order.id,
+        marketplaceOrderId: order.id,
+        balanceAfter: pointsAvailable + order.pointsSpent,
+        reasonCode: "MALL_REFUND",
+        note: `Cancelamento de ${order.productName ?? "resgate"}`,
+        createdBy: "PontoMall",
+        createdAt: stamp,
+      });
+
+      // Refund the cash part to the prepaid balance, if any was charged.
+      const cashRefund = Math.round((order.cashDue ?? 0) * 100) / 100;
+      if (cashRefund > 0) {
+        const cashAvailable = cashBalanceOf(order.riderId);
+        const refundEntry: CashLedgerEntry = {
+          id: makeServerId("mcl", memory.cashLedgerEntries.length + 1),
+          riderId: order.riderId,
+          riderName: order.riderName ?? "",
+          type: "refund",
+          amountBRL: cashRefund,
+          sourceId: order.id,
+          balanceAfter: Math.round((cashAvailable + cashRefund) * 100) / 100,
+          note: `Estorno de ${order.productName ?? "resgate"}`,
+          createdBy: "PontoMall",
+          createdAt: stamp,
+        };
+        memory.cashLedgerEntries.unshift(refundEntry);
+      }
+
+      // Restock the item.
+      const productIndex = memory.marketplaceProducts.findIndex((item) => item.id === order.productId);
+      if (productIndex !== -1) {
+        const product = memory.marketplaceProducts[productIndex];
+        memory.marketplaceProducts[productIndex] = { ...product, stock: product.stock + 1 };
+      }
+
+      memory.marketplaceOrders[index] = { ...order, status: "cancelled" };
+      appendServerAudit({
+        actor,
+        action: "MALL_ORDER_CANCELLED",
+        entity: "MarketplaceOrder",
+        entityId: order.id,
+        detail: `${order.riderName} cancelou ${order.productName}: +${order.pointsSpent} pts${cashRefund > 0 ? ` e R$ ${cashRefund.toFixed(2)}` : ""} estornados.`,
+        risk: "Low",
+      });
+      if (order.riderName) {
+        await sendPushToRider(order.riderName, "Resgate cancelado", `Devolvemos ${order.pointsSpent} pts${cashRefund > 0 ? ` e R$ ${cashRefund.toFixed(2)}` : ""} para você.`, "/rider-app/mall");
+      }
+      return jsonResponse({ data: { order: memory.marketplaceOrders[index], balance: pointsAvailable + order.pointsSpent, cashBalance: cashBalanceOf(order.riderId) } });
+    }
+
+    case "confirmReceipt": {
+      // Partner self-confirms receipt of a physical redemption shipped to its shop.
+      const { orderId } = body as { orderId?: string };
+      const { sessionFromRequest } = await import("../../lib/auth-session");
+      const session = await sessionFromRequest(request);
+      const partner = session?.portal === "partner" ? memory.crmPartners.find((p) => p.name === session.organization) : undefined;
+      if (!partner) return jsonResponse({ error: "Conta de parceiro não encontrada." }, { status: 404 });
+      const index = memory.marketplaceOrders.findIndex((item) => item.id === orderId);
+      if (index === -1) return jsonResponse({ error: "Resgate não encontrado." }, { status: 404 });
+      const order = memory.marketplaceOrders[index];
+      if (order.accountType !== "partner" || order.partnerId !== partner.id) {
+        return jsonResponse({ error: "Você só pode confirmar seus próprios resgates." }, { status: 403 });
+      }
+      if (order.status !== "created" && order.status !== "arrived") {
+        return jsonResponse({ error: "Este resgate não pode ser confirmado neste estado." }, { status: 409 });
+      }
+      const stamp = nowStamp();
+      memory.marketplaceOrders[index] = { ...order, status: "fulfilled", pickedUpAt: stamp };
+      appendServerAudit({ actor, action: "MALL_PARTNER_RECEIPT_CONFIRMED", entity: "MarketplaceOrder", entityId: order.id, detail: `${partner.name} confirmou recebimento de ${order.productName}.`, risk: "Low" });
+      return jsonResponse({ data: memory.marketplaceOrders[index] });
     }
 
     case "markArrived":
@@ -445,6 +715,10 @@ async function handlePost(request: Request) {
       const index = memory.marketplaceOrders.findIndex((item) => item.id === orderId);
       if (index === -1) return jsonResponse({ error: "order not found" }, { status: 404 });
       const order = memory.marketplaceOrders[index];
+      // High-value orders awaiting review cannot move forward until approved.
+      if (order.reviewStatus === "pending") {
+        return jsonResponse({ error: "Resgate em análise — aprove a revisão antes de avançar." }, { status: 409 });
+      }
       const stamp = nowStamp();
       if (body.action === "markArrived") {
         memory.marketplaceOrders[index] = { ...order, status: "arrived", arrivedAt: stamp, notifiedAt: stamp };
@@ -457,6 +731,83 @@ async function handlePost(request: Request) {
       appendServerAudit({ actor, action: body.action === "markArrived" ? "MALL_ORDER_ARRIVED" : "MALL_ORDER_PICKED_UP", entity: "MarketplaceOrder", entityId: orderId ?? "", detail: `${order.productName} for ${order.riderName} at ${order.station}.`, risk: "Low" });
       if (body.action === "markArrived" && order.riderName) {
         await sendPushToRider(order.riderName, "Seu resgate chegou! 🎁", `「${order.productName}」já está em ${order.station}. Retire quando puder.`, "/rider-app/mall");
+      }
+      return jsonResponse({ data: memory.marketplaceOrders[index] });
+    }
+
+    case "reviewOrder": {
+      // HQ/mall operator decides a held high-value redemption.
+      const { orderId, decision } = body as { orderId?: string; decision?: string };
+      const index = memory.marketplaceOrders.findIndex((item) => item.id === orderId);
+      if (index === -1) return jsonResponse({ error: "Resgate não encontrado." }, { status: 404 });
+      const order = memory.marketplaceOrders[index];
+      if (order.reviewStatus !== "pending") {
+        return jsonResponse({ error: "Este resgate não está em análise." }, { status: 409 });
+      }
+      const stamp = nowStamp();
+
+      if (decision === "approve") {
+        const product = memory.marketplaceProducts.find((item) => item.id === order.productId);
+        const isVirtual = product?.isVirtual === true;
+        if (isVirtual) {
+          const voucherCode = `MP-${Date.now().toString(36).toUpperCase()}-${Math.random().toString(36).slice(2, 6).toUpperCase()}`;
+          memory.marketplaceOrders[index] = { ...order, reviewStatus: "approved", status: "fulfilled", pickedUpAt: stamp, voucherCode };
+        } else {
+          memory.marketplaceOrders[index] = { ...order, reviewStatus: "approved" };
+        }
+        appendServerAudit({ actor, action: "MALL_REVIEW_APPROVED", entity: "MarketplaceOrder", entityId: order.id, detail: `${order.riderName}: ${order.productName} (${order.pointsSpent} pts) aprovado.`, risk: "Medium" });
+        if (order.riderName) {
+          await sendPushToRider(order.riderName, "Resgate aprovado ✅", isVirtual ? `Seu código de ${order.productName} já está disponível.` : `「${order.productName}」foi aprovado e seguirá para entrega.`, "/rider-app/mall");
+        }
+        return jsonResponse({ data: memory.marketplaceOrders[index] });
+      }
+
+      // Reject → refund points (+ cash), restock and cancel.
+      if (order.accountType === "rider" && order.riderId) {
+        const pointsAvailable = getAvailablePoints(memory.pointsLedgerEntries, order.riderId);
+        memory.pointsLedgerEntries.unshift({
+          id: makeServerId("pts", memory.pointsLedgerEntries.length + 1),
+          riderId: order.riderId,
+          accountId: `pts-${order.riderId}`,
+          type: "refund",
+          points: order.pointsSpent,
+          status: "approved",
+          sourceType: "marketplace_order",
+          sourceId: order.id,
+          marketplaceOrderId: order.id,
+          balanceAfter: pointsAvailable + order.pointsSpent,
+          reasonCode: "MALL_REVIEW_REJECTED",
+          note: `Revisão recusada: ${order.productName ?? "resgate"}`,
+          createdBy: actor,
+          createdAt: stamp,
+        });
+        const cashRefund = Math.round((order.cashDue ?? 0) * 100) / 100;
+        if (cashRefund > 0) {
+          const cashAvailable = cashBalanceOf(order.riderId);
+          const refundEntry: CashLedgerEntry = {
+            id: makeServerId("mcl", memory.cashLedgerEntries.length + 1),
+            riderId: order.riderId,
+            riderName: order.riderName ?? "",
+            type: "refund",
+            amountBRL: cashRefund,
+            sourceId: order.id,
+            balanceAfter: Math.round((cashAvailable + cashRefund) * 100) / 100,
+            note: `Estorno (revisão recusada): ${order.productName ?? ""}`,
+            createdBy: actor,
+            createdAt: stamp,
+          };
+          memory.cashLedgerEntries.unshift(refundEntry);
+        }
+      }
+      const productIndex = memory.marketplaceProducts.findIndex((item) => item.id === order.productId);
+      if (productIndex !== -1) {
+        const product = memory.marketplaceProducts[productIndex];
+        memory.marketplaceProducts[productIndex] = { ...product, stock: product.stock + 1 };
+      }
+      memory.marketplaceOrders[index] = { ...order, status: "cancelled", reviewStatus: "rejected" };
+      appendServerAudit({ actor, action: "MALL_REVIEW_REJECTED", entity: "MarketplaceOrder", entityId: order.id, detail: `${order.riderName}: ${order.productName} recusado, ${order.pointsSpent} pts estornados.`, risk: "Medium" });
+      if (order.riderName) {
+        await sendPushToRider(order.riderName, "Resgate recusado", `Sua solicitação de ${order.productName} não foi aprovada. ${order.pointsSpent} pts foram devolvidos.`, "/rider-app/mall");
       }
       return jsonResponse({ data: memory.marketplaceOrders[index] });
     }

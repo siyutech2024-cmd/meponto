@@ -6,7 +6,7 @@ import { AppShell, Badge, PageTitle } from "../components/ui";
 import { downloadCsv } from "../lib/csv";
 import type { MarketplaceOrder, MarketplaceProduct } from "../lib/points";
 import type { MallConfig } from "../lib/mall";
-import type { CashLedgerEntry, CashTopUp, MallBanner, MallCategory, MallPayment, PriceChangeRequest, PurchaseOrder, SupplierStatement } from "../lib/mall-ops";
+import type { CashLedgerEntry, CashTopUp, MallBanner, MallCategory, MallCoupon, MallPayment, PriceChangeRequest, PurchaseOrder, SupplierStatement } from "../lib/mall-ops";
 import { paymentStatusLabel, poStatusLabel, statementStatusLabel, topUpStatusLabel } from "../lib/mall-ops";
 
 /**
@@ -26,13 +26,14 @@ type MallPayload = {
 type OpsPayload = {
   categories: MallCategory[];
   banners: MallBanner[];
+  coupons?: MallCoupon[];
   priceChanges: PriceChangeRequest[];
   purchaseOrders: PurchaseOrder[];
   statements: SupplierStatement[];
   payments: MallPayment[];
   topUps: CashTopUp[];
   cashLedger: CashLedgerEntry[];
-  summary: { orders: number; pointsGmv: number; cashGmv: number; pendingPayments: number; daily: Array<{ date: string; count: number }> };
+  summary: { orders: number; pointsGmv: number; cashGmv: number; pendingPayments: number; reviewPending?: number; partnerOrders?: number; partnerPointsSpent?: number; topProducts?: Array<{ name: string; count: number }>; daily: Array<{ date: string; count: number }> };
 };
 
 const orderStatusLabel: Record<string, string> = { created: "在途", arrived: "已到站", fulfilled: "已交付", cancelled: "已取消" };
@@ -71,6 +72,7 @@ export default function MallAdminPage() {
   const [editDraft, setEditDraft] = useState<Record<string, string>>({});
   const [categoryName, setCategoryName] = useState("");
   const [bannerDraft, setBannerDraft] = useState({ title: "", imageUrl: "", href: "" });
+  const [couponDraft, setCouponDraft] = useState({ title: "", type: "points_off", value: "", minPoints: "", minTier: "member", perRiderLimit: "", expiresAt: "" });
   const [orderFilter, setOrderFilter] = useState("");
   const [poSupplier, setPoSupplier] = useState("");
   const [poItems, setPoItems] = useState<Record<string, string>>({});
@@ -166,6 +168,31 @@ export default function MallAdminPage() {
             <Stat label="待付对账单" value={`R$ ${payablePending.toFixed(2)}`} hint="供应商已确认待付款" />
             <Stat label="调价待审批" value={String((ops?.priceChanges ?? []).filter((row) => row.status === "pending").length)} hint="供应链 Tab 处理" />
           </div>
+          <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+            <button type="button" onClick={() => setTab("orders")} className="panel p-4 text-left transition-colors hover:border-[var(--accent)]" style={(summary?.reviewPending ?? 0) > 0 ? { borderColor: "#9a7400" } : undefined}>
+              <div className="text-[11px] font-black uppercase text-[var(--muted)]">高价值待审核</div>
+              <div className="mt-1 text-2xl font-black" style={(summary?.reviewPending ?? 0) > 0 ? { color: "#9a7400" } : undefined}>{summary?.reviewPending ?? 0}</div>
+              <div className="mt-0.5 text-[11px] font-bold text-[var(--muted)]">点击去订单 Tab 处理</div>
+            </button>
+            <Stat label="合作方兑换" value={String(summary?.partnerOrders ?? 0)} hint="Partner 兑换单数" />
+            <Stat label="合作方积分消耗" value={`${(summary?.partnerPointsSpent ?? 0).toLocaleString()} 分`} hint="Partner 积分账户（独立口径）" />
+            <Stat label="近 30 天兑换" value={String((summary?.daily ?? []).reduce((sum, d) => sum + d.count, 0))} hint="最近 30 天订单合计" />
+          </div>
+
+          {(summary?.topProducts ?? []).length > 0 && (
+            <div className="panel p-5">
+              <div className="mb-3 text-xs font-black uppercase text-[var(--muted)]">热销商品 Top 5（兑换次数）</div>
+              <div className="space-y-2">
+                {(summary?.topProducts ?? []).map((row, i) => (
+                  <div key={row.name} className="flex items-center gap-3">
+                    <span className="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-[var(--accent)]/15 text-xs font-black text-[var(--accent)]">{i + 1}</span>
+                    <span className="flex-1 truncate text-sm font-bold">{row.name}</span>
+                    <span className="text-sm font-black">{row.count}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
 
           <div className="panel p-5">
             <div className="mb-3 text-xs font-black uppercase text-[var(--muted)]">近 30 天兑换量</div>
@@ -301,6 +328,45 @@ export default function MallAdminPage() {
               ))}
             </div>
           </div>
+
+          {/* ---- 优惠券 ---- */}
+          <div className="panel p-5 lg:col-span-2">
+            <div className="mb-1 text-xs font-black uppercase text-[var(--muted)]">优惠券（兑换时按等级自动抵扣最优券）</div>
+            <div className="mb-3 text-[11px] font-bold text-[var(--muted)]">满减券：消耗满「门槛」积分可用；折扣券：按抵扣后积分价百分比。按会员等级发放，每人可限用次数。</div>
+            <div className="mb-3 grid gap-2 md:grid-cols-7">
+              <input value={couponDraft.title} onChange={(e) => setCouponDraft((p) => ({ ...p, title: e.target.value }))} placeholder="券名" className="h-10 rounded-[8px] border border-[var(--line)] bg-[var(--surface-raised)] px-3 text-sm font-bold outline-none focus:border-[var(--accent)] md:col-span-2" />
+              <select value={couponDraft.type} onChange={(e) => setCouponDraft((p) => ({ ...p, type: e.target.value }))} className="h-10 rounded-[8px] border border-[var(--line)] bg-[var(--surface-raised)] px-2 text-sm font-bold outline-none focus:border-[var(--accent)]">
+                <option value="points_off">满减(积分)</option>
+                <option value="percent_off">折扣(%)</option>
+              </select>
+              <input value={couponDraft.value} onChange={(e) => setCouponDraft((p) => ({ ...p, value: e.target.value.replace(/[^0-9]/g, "") }))} placeholder={couponDraft.type === "percent_off" ? "折扣% (1-100)" : "立减积分"} inputMode="numeric" className="h-10 rounded-[8px] border border-[var(--line)] bg-[var(--surface-raised)] px-3 text-sm font-bold outline-none focus:border-[var(--accent)]" />
+              <input value={couponDraft.minPoints} onChange={(e) => setCouponDraft((p) => ({ ...p, minPoints: e.target.value.replace(/[^0-9]/g, "") }))} placeholder="门槛积分(可空)" inputMode="numeric" className="h-10 rounded-[8px] border border-[var(--line)] bg-[var(--surface-raised)] px-3 text-sm font-bold outline-none focus:border-[var(--accent)]" />
+              <select value={couponDraft.minTier} onChange={(e) => setCouponDraft((p) => ({ ...p, minTier: e.target.value }))} className="h-10 rounded-[8px] border border-[var(--line)] bg-[var(--surface-raised)] px-2 text-sm font-bold outline-none focus:border-[var(--accent)]">
+                <option value="member">全员</option>
+                <option value="bronze">铜牌+</option>
+                <option value="prata">银牌+</option>
+                <option value="ouro">金牌+</option>
+                <option value="diamante">钻石</option>
+              </select>
+              <input value={couponDraft.perRiderLimit} onChange={(e) => setCouponDraft((p) => ({ ...p, perRiderLimit: e.target.value.replace(/[^0-9]/g, "") }))} placeholder="每人限(0不限)" inputMode="numeric" className="h-10 rounded-[8px] border border-[var(--line)] bg-[var(--surface-raised)] px-3 text-sm font-bold outline-none focus:border-[var(--accent)]" />
+            </div>
+            <div className="mb-3 flex gap-2">
+              <input type="date" value={couponDraft.expiresAt} onChange={(e) => setCouponDraft((p) => ({ ...p, expiresAt: e.target.value }))} className="h-10 rounded-[8px] border border-[var(--line)] bg-[var(--surface-raised)] px-3 text-sm font-bold outline-none focus:border-[var(--accent)]" />
+              <button type="button" disabled={!couponDraft.title.trim() || !(Number(couponDraft.value) > 0)} onClick={() => void post("/api/mall/ops", { action: "addCoupon", title: couponDraft.title.trim(), type: couponDraft.type, value: Number(couponDraft.value), minPoints: Number(couponDraft.minPoints) || 0, minTier: couponDraft.minTier, perRiderLimit: Number(couponDraft.perRiderLimit) || 0, expiresAt: couponDraft.expiresAt || undefined }, "优惠券已创建").then(() => setCouponDraft({ title: "", type: "points_off", value: "", minPoints: "", minTier: "member", perRiderLimit: "", expiresAt: "" }))} className="h-10 rounded-[8px] bg-[var(--accent)] px-4 text-xs font-black text-[var(--accent-ink)] disabled:opacity-50">创建券</button>
+            </div>
+            <div className="space-y-2">
+              {(ops?.coupons ?? []).map((coupon) => (
+                <div key={coupon.id} className="flex flex-wrap items-center gap-2 rounded-[10px] border border-[var(--line)] bg-[var(--surface-raised)] px-3 py-2" style={{ opacity: coupon.active ? 1 : 0.5 }}>
+                  <span className="text-sm font-black">{coupon.title}</span>
+                  <span className="rounded-full bg-[var(--accent)]/15 px-2 py-0.5 text-[11px] font-black text-[var(--accent)]">{coupon.type === "percent_off" ? `${coupon.value}% 折` : `-${coupon.value} 分`}</span>
+                  <span className="text-[11px] font-bold text-[var(--muted)]">门槛 {coupon.minPoints} 分 · {({ member: "全员", bronze: "铜+", prata: "银+", ouro: "金+", diamante: "钻" } as Record<string, string>)[coupon.minTier]} · 每人{coupon.perRiderLimit === 0 ? "不限" : coupon.perRiderLimit}{coupon.expiresAt ? ` · 至 ${coupon.expiresAt}` : ""}</span>
+                  <button type="button" onClick={() => void post("/api/mall/ops", { action: "updateCoupon", couponId: coupon.id, active: !coupon.active })} className="tag ml-auto">{coupon.active ? "停用" : "启用"}</button>
+                  <button type="button" onClick={() => void post("/api/mall/ops", { action: "deleteCoupon", couponId: coupon.id })} className="text-xs font-black text-[#c4423b]">删除</button>
+                </div>
+              ))}
+              {(ops?.coupons ?? []).length === 0 && <div className="py-4 text-center text-xs font-bold text-[var(--muted)]">暂无优惠券。创建后骑手兑换时自动按等级匹配最优券抵扣。</div>}
+            </div>
+          </div>
         </div>
       )}
 
@@ -326,11 +392,22 @@ export default function MallAdminPage() {
                     <td>{order.station}</td>
                     <td>{order.pointsSpent} 分{order.cashDue ? ` + R$${order.cashDue.toFixed(2)}` : ""}</td>
                     <td>{order.paymentStatus ? <span style={{ color: payChipTone[order.paymentStatus] }}>{order.paymentStatus === "paid" ? "已收款" : order.paymentStatus === "submitted" ? "凭证待核" : "待付款"}</span> : "—"}</td>
-                    <td><Badge value={orderStatusLabel[order.status] ?? order.status} /></td>
+                    <td>{order.reviewStatus === "pending" ? <span className="rounded-full px-2 py-0.5 text-[11px] font-black" style={{ background: "#fff4cf", color: "#9a7400" }}>待审核·高价值</span> : <Badge value={orderStatusLabel[order.status] ?? order.status} />}</td>
                     <td className="text-xs text-[var(--muted)]">{order.createdAt}</td>
                     <td className="text-right">
-                      {order.status === "created" && !order.voucherCode && <button type="button" onClick={() => void post("/api/mall", { action: "markArrived", orderId: order.id }, "已标记到站并推送骑手")} className="h-8 rounded-[8px] border border-[var(--line)] px-2.5 text-xs font-black text-[var(--muted)] hover:border-[var(--accent)]">到站</button>}
-                      {order.status === "arrived" && <button type="button" onClick={() => void post("/api/mall", { action: "markPickedUp", orderId: order.id }, "已交付")} className="ml-1.5 h-8 rounded-[8px] bg-[var(--accent)] px-2.5 text-xs font-black text-[var(--accent-ink)]">交付</button>}
+                      {order.reviewStatus === "pending" ? (
+                        <>
+                          <button type="button" onClick={() => void post("/api/mall", { action: "reviewOrder", orderId: order.id, decision: "approve" }, "已批准，资格放行")} className="h-8 rounded-[8px] bg-[var(--accent)] px-2.5 text-xs font-black text-[var(--accent-ink)]">批准</button>
+                          <button type="button" onClick={() => { if (confirm(`拒绝并退还 ${order.pointsSpent} 分给 ${order.riderName}？`)) void post("/api/mall", { action: "reviewOrder", orderId: order.id, decision: "reject" }, "已拒绝并退分"); }} className="ml-1.5 h-8 rounded-[8px] border border-[#c4423b]/40 px-2.5 text-xs font-black text-[#c4423b]">拒绝</button>
+                        </>
+                      ) : order.accountType === "partner" ? (
+                        <span className="text-xs text-[var(--muted)]">{order.status === "fulfilled" ? "合作方已确认收货" : "直送门店·待合作方确认"}</span>
+                      ) : (
+                        <>
+                          {order.status === "created" && !order.voucherCode && <button type="button" onClick={() => void post("/api/mall", { action: "markArrived", orderId: order.id }, "已标记到站并推送骑手")} className="h-8 rounded-[8px] border border-[var(--line)] px-2.5 text-xs font-black text-[var(--muted)] hover:border-[var(--accent)]">到站</button>}
+                          {order.status === "arrived" && <button type="button" onClick={() => void post("/api/mall", { action: "markPickedUp", orderId: order.id }, "已交付")} className="ml-1.5 h-8 rounded-[8px] bg-[var(--accent)] px-2.5 text-xs font-black text-[var(--accent-ink)]">交付</button>}
+                        </>
+                      )}
                     </td>
                   </tr>
                 ))}

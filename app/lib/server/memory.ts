@@ -51,7 +51,7 @@ import { dispatchShifts, shiftQuotas, shiftSignups, type DispatchShift, type Shi
 import { appUsers, type AppUser } from "../users";
 import { riderDailyEarnings, riderDailyKpis, type RiderDailyEarning, type RiderDailyKpi } from "../performance";
 import { mallConfigs, type MallConfig } from "../mall";
-import type { CashLedgerEntry, CashTopUp, MallBanner, MallCategory, MallPayment, PriceChangeRequest, PurchaseOrder, SupplierStatement } from "../mall-ops";
+import type { CashLedgerEntry, CashTopUp, MallBanner, MallCategory, MallCoupon, MallPayment, PriceChangeRequest, PurchaseOrder, SupplierStatement } from "../mall-ops";
 import { riderWithdrawals, walletPayments, type RiderWithdrawal, type WalletPayment } from "../finance";
 import { assessmentRules, type AssessmentRule } from "../assessment";
 import { supportTickets, type SupportTicket } from "../support";
@@ -112,6 +112,7 @@ const globalState = globalThis as typeof globalThis & {
     franchises: Franchise[];
     mallCategories: MallCategory[];
     mallBanners: MallBanner[];
+    mallCoupons: MallCoupon[];
     priceChangeRequests: PriceChangeRequest[];
     purchaseOrders: PurchaseOrder[];
     supplierStatements: SupplierStatement[];
@@ -159,6 +160,7 @@ export const memory =
     franchises: trackCollection("franchises", [...franchises]),
     mallCategories: trackCollection("mallCategories", []),
     mallBanners: trackCollection("mallBanners", []),
+    mallCoupons: trackCollection("mallCoupons", []),
     priceChangeRequests: trackCollection("priceChangeRequests", []),
     purchaseOrders: trackCollection("purchaseOrders", []),
     supplierStatements: trackCollection("supplierStatements", []),
@@ -234,6 +236,8 @@ memory.mallCategories ??= [];
 memory.mallCategories = trackCollection("mallCategories", memory.mallCategories);
 memory.mallBanners ??= [];
 memory.mallBanners = trackCollection("mallBanners", memory.mallBanners);
+memory.mallCoupons ??= [];
+memory.mallCoupons = trackCollection("mallCoupons", memory.mallCoupons);
 memory.priceChangeRequests ??= [];
 memory.priceChangeRequests = trackCollection("priceChangeRequests", memory.priceChangeRequests);
 memory.purchaseOrders ??= [];

@@ -28,6 +28,35 @@ export type MallBanner = {
   active: boolean;
 };
 
+/**
+ * Storefront coupon: a points discount applied automatically at redeem time
+ * to the best-eligible coupon for the rider.
+ *  - points_off: flat points discount (e.g. -100 pts).
+ *  - percent_off: percentage discount on the (tier-discounted) points price.
+ * Eligibility: rider tier ≥ minTier, points price ≥ minPoints (满减门槛),
+ * active, not expired, and within the per-rider usage limit.
+ */
+export type MallCouponType = "points_off" | "percent_off";
+
+export type MallCoupon = {
+  id: string;
+  title: string;
+  type: MallCouponType;
+  /** points_off → flat points; percent_off → 1..100. */
+  value: number;
+  /** Minimum (tier-discounted) points price for the coupon to apply (0 = none). */
+  minPoints: number;
+  /** Eligibility gate by membership tier. */
+  minTier: "member" | "bronze" | "prata" | "ouro" | "diamante";
+  /** Max uses per rider (0 = unlimited). */
+  perRiderLimit: number;
+  active: boolean;
+  /** ISO date (YYYY-MM-DD); undefined = no expiry. */
+  expiresAt?: string;
+  createdAt: string;
+  createdBy: string;
+};
+
 export type PriceChangeStatus = "pending" | "approved" | "rejected";
 
 export type PriceChangeRequest = {

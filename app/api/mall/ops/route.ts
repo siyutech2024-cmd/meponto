@@ -2,7 +2,7 @@ import { appendServerAudit, jsonResponse, makeServerId, memory } from "../../../
 import { flushPendingToDatabase, persistDeleteRecord, refreshCollectionsFromDatabase } from "../../../lib/server/persistence";
 import { requirePermission, roleFromRequest } from "../../../lib/server/authz";
 import { sessionFromRequest } from "../../../lib/auth-session";
-import type { CashLedgerEntry, CashTopUp, MallBanner, MallCategory, PriceChangeRequest, PurchaseOrder, PurchaseOrderItem, SupplierStatement, SupplierStatementLine } from "../../../lib/mall-ops";
+import type { CashLedgerEntry, CashTopUp, MallBanner, MallCategory, MallCoupon, MallCouponType, PriceChangeRequest, PurchaseOrder, PurchaseOrderItem, SupplierStatement, SupplierStatementLine } from "../../../lib/mall-ops";
 
 /**
  * PontoMall operations API — mall back office + supplier supply chain.
@@ -18,6 +18,7 @@ const COLLECTIONS = [
   "cashLedgerEntries",
   "mallCategories",
   "mallBanners",
+  "mallCoupons",
   "priceChangeRequests",
   "purchaseOrders",
   "supplierStatements",
@@ -70,10 +71,27 @@ export async function GET(request: Request) {
     if (last30.has(day)) last30.set(day, (last30.get(day) ?? 0) + 1);
   }
 
+  // Office-only enrichments: high-value review queue, Partner redemptions and
+  // a top-products leaderboard (across rider + partner, non-cancelled).
+  const reviewPending = isOffice ? memory.marketplaceOrders.filter((o) => o.reviewStatus === "pending").length : 0;
+  const partnerOrdersList = memory.marketplaceOrders.filter((o) => o.accountType === "partner" && o.status !== "cancelled");
+  const partnerOrders = isOffice ? partnerOrdersList.length : 0;
+  const partnerPointsSpent = isOffice ? partnerOrdersList.reduce((sum, o) => sum + o.pointsSpent, 0) : 0;
+  const topMap = new Map<string, number>();
+  if (isOffice) {
+    for (const o of memory.marketplaceOrders) {
+      if (o.status === "cancelled") continue;
+      const key = o.productName ?? o.productId;
+      topMap.set(key, (topMap.get(key) ?? 0) + 1);
+    }
+  }
+  const topProducts = [...topMap.entries()].sort((a, b) => b[1] - a[1]).slice(0, 5).map(([name, count]) => ({ name, count }));
+
   return jsonResponse({
     data: {
       categories: [...memory.mallCategories].sort((a, b) => a.sort - b.sort),
       banners: [...memory.mallBanners].sort((a, b) => a.sort - b.sort),
+      coupons: isOffice ? [...memory.mallCoupons] : [],
       priceChanges: own(memory.priceChangeRequests),
       purchaseOrders: own(memory.purchaseOrders),
       statements: own(memory.supplierStatements),
@@ -85,6 +103,10 @@ export async function GET(request: Request) {
         pointsGmv,
         cashGmv: Math.round(cashGmv * 100) / 100,
         pendingPayments: isOffice ? memory.mallPayments.filter((p) => p.status === "submitted").length + memory.cashTopUps.filter((t) => t.status === "submitted").length : 0,
+        reviewPending,
+        partnerOrders,
+        partnerPointsSpent,
+        topProducts,
         daily: [...last30.entries()].map(([date, count]) => ({ date, count })),
       },
     },
@@ -203,6 +225,56 @@ async function handlePost(request: Request) {
       if (index === -1) return jsonResponse({ error: "banner not found" }, { status: 404 });
       const [removed] = memory.mallBanners.splice(index, 1);
       persistDeleteRecord("mallBanners", removed.id);
+      return jsonResponse({ data: { ok: true } });
+    }
+
+    case "addCoupon": {
+      const title = String(body.title ?? "").trim().slice(0, 60);
+      if (!title) return jsonResponse({ error: "title is required" }, { status: 400 });
+      const type: MallCouponType = body.type === "percent_off" ? "percent_off" : "points_off";
+      const rawValue = Math.floor(Number(body.value) || 0);
+      const value = type === "percent_off" ? Math.min(100, Math.max(1, rawValue)) : Math.max(1, rawValue);
+      const validTiers = ["member", "bronze", "prata", "ouro", "diamante"] as const;
+      const minTier = (validTiers as readonly string[]).includes(String(body.minTier)) ? (String(body.minTier) as MallCoupon["minTier"]) : "member";
+      const coupon: MallCoupon = {
+        id: makeServerId("cpn", memory.mallCoupons.length + 1),
+        title,
+        type,
+        value,
+        minPoints: Math.max(0, Math.floor(Number(body.minPoints) || 0)),
+        minTier,
+        perRiderLimit: Math.max(0, Math.floor(Number(body.perRiderLimit) || 0)),
+        active: true,
+        expiresAt: body.expiresAt ? String(body.expiresAt).slice(0, 10) : undefined,
+        createdAt: nowStamp(),
+        createdBy: actor,
+      };
+      memory.mallCoupons.push(coupon);
+      appendServerAudit({ actor, action: "MALL_COUPON_CREATED", entity: "MallCoupon", entityId: coupon.id, detail: `${coupon.title}: ${type === "percent_off" ? `${value}%` : `-${value} pts`}, minTier ${minTier}, min ${coupon.minPoints} pts.`, risk: "Low" });
+      return jsonResponse({ data: coupon }, { status: 201 });
+    }
+    case "updateCoupon": {
+      const index = memory.mallCoupons.findIndex((item) => item.id === body.couponId);
+      if (index === -1) return jsonResponse({ error: "coupon not found" }, { status: 404 });
+      const current = memory.mallCoupons[index];
+      memory.mallCoupons[index] = {
+        ...current,
+        ...(body.title !== undefined ? { title: String(body.title).slice(0, 60) } : {}),
+        ...(body.value !== undefined ? { value: current.type === "percent_off" ? Math.min(100, Math.max(1, Math.floor(Number(body.value) || current.value))) : Math.max(1, Math.floor(Number(body.value) || current.value)) } : {}),
+        ...(body.minPoints !== undefined ? { minPoints: Math.max(0, Math.floor(Number(body.minPoints) || 0)) } : {}),
+        ...(body.perRiderLimit !== undefined ? { perRiderLimit: Math.max(0, Math.floor(Number(body.perRiderLimit) || 0)) } : {}),
+        ...(body.active !== undefined ? { active: body.active === true } : {}),
+        ...(body.expiresAt !== undefined ? { expiresAt: body.expiresAt ? String(body.expiresAt).slice(0, 10) : undefined } : {}),
+      };
+      appendServerAudit({ actor, action: "MALL_COUPON_UPDATED", entity: "MallCoupon", entityId: current.id, detail: JSON.stringify(body).slice(0, 160), risk: "Low" });
+      return jsonResponse({ data: memory.mallCoupons[index] });
+    }
+    case "deleteCoupon": {
+      const index = memory.mallCoupons.findIndex((item) => item.id === body.couponId);
+      if (index === -1) return jsonResponse({ error: "coupon not found" }, { status: 404 });
+      const [removed] = memory.mallCoupons.splice(index, 1);
+      persistDeleteRecord("mallCoupons", removed.id);
+      appendServerAudit({ actor, action: "MALL_COUPON_DELETED", entity: "MallCoupon", entityId: removed.id, detail: removed.title, risk: "Low" });
       return jsonResponse({ data: { ok: true } });
     }
 

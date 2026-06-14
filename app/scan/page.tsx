@@ -10,6 +10,7 @@ function ScanInner() {
   const params = useSearchParams();
   const partnerId = params.get("partner") ?? "";
   const ref = params.get("ref") ?? "";
+  const station = params.get("station") ?? params.get("ponto") ?? "";
   const session = useMemo(() => readSession(), []);
   const headers = useMemo(() => ({ "Content-Type": "application/json", "x-vento-role": session?.role ?? "Rider" }), [session]);
 
@@ -32,6 +33,15 @@ function ScanInner() {
       <div className={`panel p-5 text-sm font-bold ${state.tone === "ok" ? "text-[var(--ok-ink)]" : state.tone === "err" ? "text-[var(--danger-ink)]" : ""}`}>
         {state.text}
       </div>
+
+      {ref && !session?.name && (
+        <Link
+          href={`/rider-login?ref=${encodeURIComponent(ref)}${station ? `&station=${encodeURIComponent(station)}` : ""}`}
+          className="inline-flex h-12 w-full items-center justify-center gap-2 rounded-[8px] bg-[var(--accent)] text-sm font-black uppercase text-[var(--accent-ink)]"
+        >
+          <CheckCircle2 size={16} /> Criar minha conta
+        </Link>
+      )}
 
       {partnerId && state.tone === "info" && (
         <button

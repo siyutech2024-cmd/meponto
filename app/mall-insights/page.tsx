@@ -14,7 +14,7 @@ import type { MallPayment, SupplierStatement } from "../lib/mall-ops";
 type OpsPayload = {
   statements: SupplierStatement[];
   payments: MallPayment[];
-  summary: { orders: number; pointsGmv: number; cashGmv: number; pendingPayments: number; daily: Array<{ date: string; count: number }> };
+  summary: { orders: number; pointsGmv: number; cashGmv: number; pendingPayments: number; reviewPending?: number; partnerOrders?: number; partnerPointsSpent?: number; topProducts?: Array<{ name: string; count: number }>; daily: Array<{ date: string; count: number }> };
 };
 
 
@@ -84,6 +84,27 @@ export default function MallInsightsPage() {
         <Stat label="待付供应商" value={`R$ ${payablePending.toFixed(2)}`} hint="已确认对账单" />
         <Stat label="供应商数" value={String(new Set(products.map((product) => product.supplierName).filter(Boolean)).size)} hint="有商品的供应商" />
       </div>
+      <div className="mt-3 grid grid-cols-2 gap-3 md:grid-cols-4">
+        <Stat label="高价值待审核" value={String(summary?.reviewPending ?? 0)} hint="商城后台处理" />
+        <Stat label="合作方兑换" value={String(summary?.partnerOrders ?? 0)} hint="Partner 兑换单数" />
+        <Stat label="合作方积分消耗" value={`${(summary?.partnerPointsSpent ?? 0).toLocaleString()} 分`} hint="Partner 独立积分口径" />
+        <Stat label="近 30 天兑换" value={String((summary?.daily ?? []).reduce((sum, day) => sum + day.count, 0))} hint="最近 30 天合计" />
+      </div>
+
+      {(summary?.topProducts ?? []).length > 0 && (
+        <div className="panel mt-5 p-5">
+          <div className="mb-3 text-xs font-black uppercase text-[var(--muted)]">热销商品 Top 5（兑换次数）</div>
+          <div className="space-y-2">
+            {(summary?.topProducts ?? []).map((row, i) => (
+              <div key={row.name} className="flex items-center gap-3">
+                <span className="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-[var(--accent)]/15 text-xs font-black text-[var(--accent)]">{i + 1}</span>
+                <span className="flex-1 truncate text-sm font-bold">{row.name}</span>
+                <span className="text-sm font-black">{row.count}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       <div className="panel mt-5 p-5">
         <div className="mb-3 text-xs font-black uppercase text-[var(--muted)]">近 30 天兑换量</div>

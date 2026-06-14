@@ -125,6 +125,11 @@ export type MarketplaceOrder = {
   cashDue?: number;
   /** Hybrid checkout reconciliation state. */
   paymentStatus?: "pending" | "submitted" | "paid";
+  /** High-value redemptions are held for manual review before completing. */
+  reviewStatus?: "pending" | "approved" | "rejected";
+  /** Storefront coupon applied at redeem and the points it discounted. */
+  couponId?: string;
+  couponDiscount?: number;
 };
 
 export type PointsRuleSummary = {

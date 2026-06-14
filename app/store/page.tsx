@@ -1,9 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { ArrowRight, Clock, Gift, LogIn, MapPin, Package, Search, Sparkles, Star, Wallet, X } from "lucide-react";
+import { ArrowRight, Check, Clock, Copy, Gift, LogIn, MapPin, Package, Search, Sparkles, Star, Wallet, X } from "lucide-react";
 import type { MarketplaceOrder, MarketplaceProduct } from "../lib/points";
-import type { CashTopUp, MallBanner, MallCategory } from "../lib/mall-ops";
+import type { CashTopUp, MallBanner, MallCategory, MallCoupon } from "../lib/mall-ops";
 
 /**
  * PontoMall public storefront (mall.meponto.com) — responsive PC + mobile.
@@ -13,14 +13,17 @@ import type { CashTopUp, MallBanner, MallCategory } from "../lib/mall-ops";
  */
 
 type Me = {
+  accountType?: "rider" | "partner";
   riderId: string;
+  partnerId?: string;
   name: string;
-  station: string;
+  station?: string;
   balance: number;
-  tierLabel: string;
-  redeemDiscount: number;
-  cashBalance: number;
+  tierLabel?: string;
+  redeemDiscount?: number;
+  cashBalance?: number;
   topUps?: CashTopUp[];
+  coupons?: MallCoupon[];
 };
 
 type Payload = {
@@ -35,6 +38,8 @@ type Payload = {
 const GOLD = "#f5b301";
 const INK = "#19202c";
 const statusLabel: Record<string, string> = { created: "Em trânsito", arrived: "Chegou · retire", fulfilled: "Retirado", cancelled: "Cancelado" };
+// Partners receive shipments at their own shop (no station pickup).
+const partnerStatusLabel: Record<string, string> = { created: "A caminho da loja", arrived: "Chegou na loja", fulfilled: "Recebido", cancelled: "Cancelado" };
 
 const categoryEmoji: Record<string, string> = {
   Equipamento: "🛵", Equipamentos: "🛵", Voucher: "🎟️", Vouchers: "🎟️", Serviço: "🛠️", Servicos: "🛠️", Serviços: "🛠️", Outros: "🎁",
@@ -54,6 +59,7 @@ function ProductImage({ product, big = false }: { product: MarketplaceProduct; b
 
 export default function StorefrontPage() {
   const [data, setData] = useState<Payload | null>(null);
+  const [loading, setLoading] = useState(true);
   const [riderName, setRiderName] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState("");
@@ -66,6 +72,18 @@ export default function StorefrontPage() {
   const [activeTopUp, setActiveTopUp] = useState<CashTopUp | null>(null);
   const [topUpRef, setTopUpRef] = useState("");
   const [bannerIndex, setBannerIndex] = useState(0);
+  const [copiedCode, setCopiedCode] = useState<string | null>(null);
+
+  const copyVoucher = useCallback(async (code: string) => {
+    try {
+      await navigator.clipboard.writeText(code);
+      setCopiedCode(code);
+      setToast({ tone: "ok", text: "Código copiado!" });
+      setTimeout(() => setCopiedCode((current) => (current === code ? null : current)), 2500);
+    } catch {
+      setToast({ tone: "err", text: "Não foi possível copiar — copie manualmente." });
+    }
+  }, []);
 
   const load = useCallback(async (name: string | null) => {
     const params = new URLSearchParams();
@@ -73,6 +91,7 @@ export default function StorefrontPage() {
     const response = await fetch(`/api/mall?${params}`, { cache: "no-store" });
     const payload = await response.json().catch(() => ({}));
     if (response.ok) setData(payload.data as Payload);
+    setLoading(false);
   }, []);
 
   useEffect(() => {
@@ -103,11 +122,25 @@ export default function StorefrontPage() {
     return () => clearTimeout(timer);
   }, [toast]);
 
+  // Esc closes the topmost open overlay (a11y).
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      if (detail) setDetail(null);
+      else if (topUpOpen) { setTopUpOpen(false); setActiveTopUp(null); }
+      else if (ordersOpen) setOrdersOpen(false);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [detail, topUpOpen, ordersOpen]);
+
   const me = data?.me ?? null;
   const products = useMemo(() => {
+    const acct = data?.me?.accountType === "partner" ? "partner" : "rider";
     const active = (data?.products ?? []).filter((product) => product.status === "active");
     const term = query.trim().toLowerCase();
     return active
+      .filter((product) => product.audience === "both" || product.audience === acct)
       .filter((product) => !category || (product.category || "Outros") === category)
       .filter((product) => !term || product.name.toLowerCase().includes(term) || (product.description ?? "").toLowerCase().includes(term));
   }, [data, query, category]);
@@ -118,11 +151,29 @@ export default function StorefrontPage() {
     return [...new Set([...fromConfig, ...fromProducts])];
   }, [data]);
 
-  const myOrders = useMemo(() => (me ? (data?.orders ?? []).filter((order) => order.riderId === me.riderId) : []), [data, me]);
+  const myOrders = useMemo(() => {
+    if (!me) return [];
+    const all = data?.orders ?? [];
+    // Partner orders are already scoped server-side; rider orders are filtered by id.
+    return me.accountType === "partner" ? all : all.filter((order) => order.riderId === me.riderId);
+  }, [data, me]);
   const pendingTopUps = (me?.topUps ?? []).filter((topUp) => topUp.status === "pending");
   const actionNeeded = myOrders.filter((order) => order.status === "arrived").length + pendingTopUps.length;
 
   const priceFor = (product: MarketplaceProduct) => Math.ceil(product.pointsPrice * (me?.redeemDiscount ?? 1));
+
+  // Best storefront coupon applicable to a product (mirrors the server logic
+  // for a live preview; the server re-applies authoritatively at redeem).
+  const bestCoupon = (product: MarketplaceProduct): { coupon: MallCoupon; discount: number } | null => {
+    const price = priceFor(product);
+    let best: { coupon: MallCoupon; discount: number } | null = null;
+    for (const c of me?.coupons ?? []) {
+      if (price < c.minPoints) continue;
+      const discount = c.type === "percent_off" ? Math.floor((price * c.value) / 100) : Math.min(c.value, price);
+      if (discount > 0 && (!best || discount > best.discount)) best = { coupon: c, discount };
+    }
+    return best;
+  };
 
   async function redeem(product: MarketplaceProduct) {
     if (!me) {
@@ -133,7 +184,11 @@ export default function StorefrontPage() {
     const response = await fetch("/api/mall", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action: "redeem", productId: product.id, riderId: me.riderId }),
+      body: JSON.stringify(
+        me.accountType === "partner"
+          ? { action: "redeem", productId: product.id, accountType: "partner" }
+          : { action: "redeem", productId: product.id, riderId: me.riderId },
+      ),
     });
     const payload = await response.json().catch(() => ({}));
     setBusy(false);
@@ -152,11 +207,51 @@ export default function StorefrontPage() {
     setDetail(null);
     await load(riderName);
     const order = payload.data?.order as MarketplaceOrder | undefined;
-    if (order?.voucherCode) {
+    if (payload.data?.held) {
+      setToast({ tone: "ok", text: "Resgate de alto valor enviado para análise. Avisaremos assim que for aprovado." });
+    } else if (order?.voucherCode) {
       setToast({ tone: "ok", text: `Resgatado! Seu código: ${order.voucherCode}` });
+    } else if (me?.accountType === "partner") {
+      setToast({ tone: "ok", text: `Pedido confirmado! Entrega na sua loja até ${order?.etaDate ?? "breve"}.` });
     } else {
       setToast({ tone: "ok", text: `Resgatado! Retire em ${order?.station ?? "seu ponto"} a partir de ${order?.etaDate ?? "breve"}.` });
     }
+  }
+
+  async function cancelOrder(order: MarketplaceOrder) {
+    if (!me) return;
+    setBusy(true);
+    const response = await fetch("/api/mall", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "cancelOrder", orderId: order.id, riderId: me.riderId }),
+    });
+    const payload = await response.json().catch(() => ({}));
+    setBusy(false);
+    if (!response.ok) {
+      setToast({ tone: "err", text: payload.error ?? `Erro (${response.status})` });
+      return;
+    }
+    setToast({ tone: "ok", text: `Resgate cancelado — ${order.pointsSpent.toLocaleString("pt-BR")} pts devolvidos.` });
+    await load(riderName);
+  }
+
+  async function confirmReceipt(order: MarketplaceOrder) {
+    if (!me) return;
+    setBusy(true);
+    const response = await fetch("/api/mall", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "confirmReceipt", orderId: order.id }),
+    });
+    const payload = await response.json().catch(() => ({}));
+    setBusy(false);
+    if (!response.ok) {
+      setToast({ tone: "err", text: payload.error ?? `Erro (${response.status})` });
+      return;
+    }
+    setToast({ tone: "ok", text: "Recebimento confirmado! 🎉" });
+    await load(riderName);
   }
 
   async function requestTopUp() {
@@ -239,15 +334,17 @@ export default function StorefrontPage() {
                   <Wallet size={15} style={{ color: "#9a7400" }} />
                   {me.balance.toLocaleString("pt-BR")} pts
                 </div>
-                <button
-                  type="button"
-                  onClick={() => { setTopUpOpen(true); setActiveTopUp(null); setTopUpAmount(""); }}
-                  className="inline-flex h-10 items-center gap-1.5 rounded-full border px-4 text-sm font-black transition-colors hover:border-[#f5b301]"
-                  style={{ background: "#eef6f0", borderColor: "transparent", color: "#1d7a3e" }}
-                  title="Saldo em dinheiro — recarregar via PIX"
-                >
-                  R$ {me.cashBalance.toFixed(2)} <span className="text-base leading-none">+</span>
-                </button>
+                {me.accountType !== "partner" && (
+                  <button
+                    type="button"
+                    onClick={() => { setTopUpOpen(true); setActiveTopUp(null); setTopUpAmount(""); }}
+                    className="inline-flex h-10 items-center gap-1.5 rounded-full border px-4 text-sm font-black transition-colors hover:border-[#f5b301]"
+                    style={{ background: "#eef6f0", borderColor: "transparent", color: "#1d7a3e" }}
+                    title="Saldo em dinheiro — recarregar via PIX"
+                  >
+                    R$ {(me.cashBalance ?? 0).toFixed(2)} <span className="text-base leading-none">+</span>
+                  </button>
+                )}
               </>
             ) : (
               <a
@@ -314,13 +411,19 @@ export default function StorefrontPage() {
         </section>
 
         {/* ---- Member strip ---------------------------------------------------- */}
-        {me && (
+        {me && me.accountType === "partner" ? (
+          <section className="mt-4 flex flex-wrap items-center gap-x-5 gap-y-1 rounded-2xl border border-black/5 bg-white px-5 py-3 text-sm font-bold">
+            <span className="inline-flex items-center gap-1.5"><Star size={14} style={{ color: GOLD }} /> {me.name}</span>
+            <span className="rounded-full px-2.5 py-0.5 text-xs font-black" style={{ background: "#eef2ff", color: "#3b4a9a" }}>Parceiro</span>
+            <span className="text-black/55">Resgate vouchers e produtos com seus pontos — entrega na sua loja.</span>
+          </section>
+        ) : me ? (
           <section className="mt-4 flex flex-wrap items-center gap-x-5 gap-y-1 rounded-2xl border border-black/5 bg-white px-5 py-3 text-sm font-bold">
             <span className="inline-flex items-center gap-1.5"><Star size={14} style={{ color: GOLD }} /> {me.name} · {me.tierLabel}</span>
             <span className="inline-flex items-center gap-1.5 text-black/55"><MapPin size={14} /> Retirada: {me.station}</span>
-            {me.redeemDiscount < 1 && <span className="rounded-full px-2.5 py-0.5 text-xs font-black" style={{ background: "#e8f6ec", color: "#1d7a3e" }}>Desconto de membro: {Math.round((1 - me.redeemDiscount) * 100)}%</span>}
+            {(me.redeemDiscount ?? 1) < 1 && <span className="rounded-full px-2.5 py-0.5 text-xs font-black" style={{ background: "#e8f6ec", color: "#1d7a3e" }}>Desconto de membro: {Math.round((1 - (me.redeemDiscount ?? 1)) * 100)}%</span>}
           </section>
-        )}
+        ) : null}
 
         {/* ---- Categories ------------------------------------------------------ */}
         <nav className="scrollbar-none mt-5 flex gap-2 overflow-x-auto pb-1">
@@ -338,12 +441,29 @@ export default function StorefrontPage() {
         </nav>
 
         {/* ---- Product grid ----------------------------------------------------- */}
-        {products.length === 0 ? (
-          <div className="mt-16 text-center text-sm font-bold text-black/40">Nenhum produto encontrado.</div>
+        {loading ? (
+          <section className="mt-4 grid grid-cols-2 gap-3 md:grid-cols-3 md:gap-5 lg:grid-cols-4 xl:grid-cols-5" aria-busy="true" aria-label="Carregando produtos">
+            {Array.from({ length: 10 }).map((_, index) => (
+              <div key={index} className="overflow-hidden rounded-2xl border border-black/5 bg-white shadow-sm">
+                <div className="aspect-square animate-pulse bg-black/[0.06]" />
+                <div className="space-y-2 p-3 md:p-4">
+                  <div className="h-3.5 w-4/5 animate-pulse rounded bg-black/[0.06]" />
+                  <div className="h-3.5 w-1/2 animate-pulse rounded bg-black/[0.06]" />
+                  <div className="h-5 w-2/5 animate-pulse rounded bg-black/[0.08]" />
+                </div>
+              </div>
+            ))}
+          </section>
+        ) : products.length === 0 ? (
+          <div className="mt-16 text-center text-sm font-bold text-black/40">
+            {query || category ? "Nenhum produto encontrado para esta busca." : "Nenhum produto disponível no momento. Volte em breve! 🎁"}
+          </div>
         ) : (
           <section className="mt-4 grid grid-cols-2 gap-3 md:grid-cols-3 md:gap-5 lg:grid-cols-4 xl:grid-cols-5">
             {products.map((product) => {
               const price = priceFor(product);
+              const cpn = bestCoupon(product);
+              const finalPrice = price - (cpn?.discount ?? 0);
               return (
                 <button
                   key={product.id}
@@ -355,15 +475,16 @@ export default function StorefrontPage() {
                     <ProductImage product={product} />
                     {product.isVirtual && <span className="absolute left-2 top-2 rounded-full bg-white/90 px-2 py-0.5 text-[10px] font-black uppercase tracking-wider text-black/60">Voucher digital</span>}
                     {product.stock <= 3 && product.stock > 0 && <span className="absolute right-2 top-2 rounded-full px-2 py-0.5 text-[10px] font-black text-white" style={{ background: "#e2554d" }}>Últimas {product.stock}</span>}
+                    {cpn && <span className="absolute bottom-2 left-2 rounded-full px-2 py-0.5 text-[10px] font-black text-white shadow" style={{ background: "#1d7a3e" }}>🎟️ −{cpn.discount.toLocaleString("pt-BR")}</span>}
                   </div>
                   <div className="p-3 md:p-4">
                     <div className="line-clamp-2 min-h-10 text-[13px] font-bold leading-5 md:text-sm">{product.name}</div>
                     <div className="mt-2 flex flex-wrap items-baseline gap-x-1.5">
-                      <span className="text-lg font-black md:text-xl" style={{ color: "#9a7400" }}>{price.toLocaleString("pt-BR")}</span>
+                      <span className="text-lg font-black md:text-xl" style={{ color: "#9a7400" }}>{finalPrice.toLocaleString("pt-BR")}</span>
                       <span className="text-[11px] font-black uppercase text-black/40">pts</span>
                       {(product.cashPriceBRL ?? 0) > 0 && <span className="text-[11px] font-black text-black/55">+ R$ {product.cashPriceBRL?.toFixed(2)}</span>}
                     </div>
-                    {me && product.pointsPrice !== price && <div className="text-[10px] font-bold text-black/35 line-through">{product.pointsPrice.toLocaleString("pt-BR")} pts</div>}
+                    {me && finalPrice < product.pointsPrice && <div className="text-[10px] font-bold text-black/35 line-through">{product.pointsPrice.toLocaleString("pt-BR")} pts</div>}
                   </div>
                 </button>
               );
@@ -381,7 +502,7 @@ export default function StorefrontPage() {
       {/* ---- Product detail modal ------------------------------------------------ */}
       {detail && (
         <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/45 p-0 backdrop-blur-sm md:items-center md:p-6" onClick={() => setDetail(null)}>
-          <div className="max-h-[92vh] w-full max-w-3xl overflow-y-auto rounded-t-3xl bg-white md:rounded-3xl" onClick={(event) => event.stopPropagation()}>
+          <div role="dialog" aria-modal="true" aria-label={detail.name} className="max-h-[92vh] w-full max-w-3xl overflow-y-auto rounded-t-3xl bg-white md:rounded-3xl" onClick={(event) => event.stopPropagation()}>
             <div className="grid md:grid-cols-2">
               <div className="relative aspect-square md:aspect-auto md:min-h-[380px]">
                 <ProductImage product={detail} big />
@@ -401,21 +522,29 @@ export default function StorefrontPage() {
                   {detail.isVirtual && <span className="inline-flex items-center gap-1 rounded-full bg-black/5 px-2.5 py-1"><Sparkles size={12} /> Código instantâneo</span>}
                 </div>
                 <div className="mt-auto pt-6">
-                  <div className="flex items-baseline gap-2">
-                    <span className="text-3xl font-black" style={{ color: "#9a7400" }}>{priceFor(detail).toLocaleString("pt-BR")}</span>
-                    <span className="text-xs font-black uppercase text-black/40">pts</span>
-                    {(detail.cashPriceBRL ?? 0) > 0 && <span className="text-sm font-black text-black/65">+ R$ {detail.cashPriceBRL?.toFixed(2)} do saldo</span>}
-                  </div>
+                  {(() => {
+                    const cpn = bestCoupon(detail);
+                    const final = priceFor(detail) - (cpn?.discount ?? 0);
+                    return (
+                      <div className="flex flex-wrap items-baseline gap-2">
+                        <span className="text-3xl font-black" style={{ color: "#9a7400" }}>{final.toLocaleString("pt-BR")}</span>
+                        <span className="text-xs font-black uppercase text-black/40">pts</span>
+                        {cpn && <span className="text-sm font-bold text-black/35 line-through">{priceFor(detail).toLocaleString("pt-BR")}</span>}
+                        {cpn && <span className="rounded-full px-2 py-0.5 text-[11px] font-black" style={{ background: "#e8f6ec", color: "#1d7a3e" }}>🎟️ {cpn.coupon.title} −{cpn.discount.toLocaleString("pt-BR")}</span>}
+                        {(detail.cashPriceBRL ?? 0) > 0 && <span className="text-sm font-black text-black/65">+ R$ {detail.cashPriceBRL?.toFixed(2)} do saldo</span>}
+                      </div>
+                    );
+                  })()}
                   {me && (
                     <div className="mt-1 text-xs font-bold text-black/45">
                       Seu saldo: {me.balance.toLocaleString("pt-BR")} pts
-                      {(detail.cashPriceBRL ?? 0) > 0 && <> · R$ {me.cashBalance.toFixed(2)} em dinheiro {me.cashBalance < (detail.cashPriceBRL ?? 0) && <span style={{ color: "#c4423b" }}>(insuficiente)</span>}</>}
+                      {(detail.cashPriceBRL ?? 0) > 0 && <> · R$ {(me.cashBalance ?? 0).toFixed(2)} em dinheiro {(me.cashBalance ?? 0) < (detail.cashPriceBRL ?? 0) && <span style={{ color: "#c4423b" }}>(insuficiente)</span>}</>}
                     </div>
                   )}
-                  {me && (detail.cashPriceBRL ?? 0) > 0 && me.cashBalance < (detail.cashPriceBRL ?? 0) ? (
+                  {me && (detail.cashPriceBRL ?? 0) > 0 && (me.cashBalance ?? 0) < (detail.cashPriceBRL ?? 0) ? (
                     <button
                       type="button"
-                      onClick={() => { setDetail(null); setTopUpOpen(true); setActiveTopUp(null); setTopUpAmount(String(Math.max(1, Math.ceil((detail.cashPriceBRL ?? 0) - me.cashBalance)))); }}
+                      onClick={() => { setDetail(null); setTopUpOpen(true); setActiveTopUp(null); setTopUpAmount(String(Math.max(1, Math.ceil((detail.cashPriceBRL ?? 0) - (me.cashBalance ?? 0))))); }}
                       className="mt-4 inline-flex h-12 w-full items-center justify-center gap-2 rounded-full text-sm font-black uppercase tracking-wide transition-transform hover:scale-[1.02]"
                       style={{ background: INK, color: "#fff" }}
                     >
@@ -424,13 +553,13 @@ export default function StorefrontPage() {
                   ) : (
                     <button
                       type="button"
-                      disabled={busy || detail.stock <= 0 || (!!me && me.balance < priceFor(detail))}
+                      disabled={busy || detail.stock <= 0 || (!!me && me.balance < priceFor(detail) - (bestCoupon(detail)?.discount ?? 0))}
                       onClick={() => void redeem(detail)}
                       className="mt-4 inline-flex h-12 w-full items-center justify-center gap-2 rounded-full text-sm font-black uppercase tracking-wide transition-transform hover:scale-[1.02] disabled:opacity-45"
                       style={{ background: GOLD, color: INK }}
                     >
-                      {detail.stock <= 0 ? "Esgotado" : me ? (me.balance < priceFor(detail) ? "Pontos insuficientes" : "Resgatar agora") : "Entrar para resgatar"}
-                      {detail.stock > 0 && (!me || me.balance >= priceFor(detail)) && <ArrowRight size={16} />}
+                      {detail.stock <= 0 ? "Esgotado" : me ? (me.balance < priceFor(detail) - (bestCoupon(detail)?.discount ?? 0) ? "Pontos insuficientes" : "Resgatar agora") : "Entrar para resgatar"}
+                      {detail.stock > 0 && (!me || me.balance >= priceFor(detail) - (bestCoupon(detail)?.discount ?? 0)) && <ArrowRight size={16} />}
                     </button>
                   )}
                 </div>
@@ -448,7 +577,7 @@ export default function StorefrontPage() {
               <div className="text-lg font-black">Recarregar saldo</div>
               <button type="button" onClick={() => { setTopUpOpen(false); setActiveTopUp(null); }} className="grid h-9 w-9 place-items-center rounded-full bg-black/5"><X size={16} /></button>
             </div>
-            <div className="mt-1 text-sm font-bold text-black/50">Saldo atual: R$ {me.cashBalance.toFixed(2)}</div>
+            <div className="mt-1 text-sm font-bold text-black/50">Saldo atual: R$ {(me.cashBalance ?? 0).toFixed(2)}</div>
 
             {!activeTopUp ? (
               <>
@@ -511,7 +640,7 @@ export default function StorefrontPage() {
                 <div className="rounded-2xl border border-black/8 bg-[#f8f9fb] p-4">
                   <div className="mb-2 flex items-center justify-between">
                     <div className="text-xs font-black uppercase tracking-wider text-black/45">Recargas (PIX)</div>
-                    <div className="text-xs font-black" style={{ color: "#1d7a3e" }}>Saldo: R$ {me.cashBalance.toFixed(2)}</div>
+                    <div className="text-xs font-black" style={{ color: "#1d7a3e" }}>Saldo: R$ {(me.cashBalance ?? 0).toFixed(2)}</div>
                   </div>
                   <div className="space-y-1.5">
                     {(me.topUps ?? []).map((topUp) => (
@@ -531,19 +660,49 @@ export default function StorefrontPage() {
               )}
               {myOrders.length === 0 && <div className="pt-10 text-center text-sm font-bold text-black/40">Nenhum resgate ainda — escolha um benefício! 🎁</div>}
               {myOrders.map((order) => (
-                <div key={order.id} className="rounded-2xl border border-black/8 p-4" style={{ borderColor: order.status === "arrived" ? GOLD : "rgba(0,0,0,.08)", background: order.status === "arrived" ? "#fffaf0" : "#fff" }}>
+                <div key={order.id} className="rounded-2xl border border-black/8 p-4" style={{ borderColor: order.reviewStatus === "pending" ? "#9a7400" : order.status === "arrived" ? GOLD : "rgba(0,0,0,.08)", background: order.status === "arrived" ? "#fffaf0" : "#fff" }}>
                   <div className="flex items-start justify-between gap-2">
                     <div className="text-sm font-black">{order.productName}</div>
-                    <span className="shrink-0 rounded-full px-2.5 py-0.5 text-[10px] font-black" style={order.status === "arrived" ? { background: GOLD, color: INK } : { background: "rgba(0,0,0,.06)", color: "rgba(0,0,0,.6)" }}>
-                      {statusLabel[order.status] ?? order.status}
+                    <span className="shrink-0 rounded-full px-2.5 py-0.5 text-[10px] font-black" style={order.reviewStatus === "pending" ? { background: "#fff4cf", color: "#9a7400" } : order.status === "arrived" ? { background: GOLD, color: INK } : { background: "rgba(0,0,0,.06)", color: "rgba(0,0,0,.6)" }}>
+                      {order.reviewStatus === "pending" ? "Em análise" : (me.accountType === "partner" ? partnerStatusLabel : statusLabel)[order.status] ?? order.status}
                     </span>
                   </div>
                   <div className="mt-1.5 text-xs font-bold text-black/50">
                     {order.pointsSpent.toLocaleString("pt-BR")} pts{order.cashDue ? ` + R$ ${order.cashDue.toFixed(2)}` : ""} · {order.createdAt.slice(0, 10)}
                     {!order.voucherCode && ` · ${order.station}`}
                   </div>
-                  {order.voucherCode && <div className="mt-2 rounded-lg bg-black/5 px-3 py-1.5 text-center font-mono text-sm font-black">{order.voucherCode}</div>}
-
+                  {order.voucherCode && (
+                    <button
+                      type="button"
+                      onClick={() => void copyVoucher(order.voucherCode!)}
+                      title="Toque para copiar o código"
+                      className="mt-2 flex w-full items-center justify-center gap-2 rounded-lg bg-black/5 px-3 py-1.5 font-mono text-sm font-black transition-colors hover:bg-black/10"
+                    >
+                      {order.voucherCode}
+                      {copiedCode === order.voucherCode ? <Check size={14} className="text-[#1d7a3e]" /> : <Copy size={14} className="text-black/40" />}
+                    </button>
+                  )}
+                  {me.accountType === "partner" && (order.status === "created" || order.status === "arrived") && !order.voucherCode && (
+                    <button
+                      type="button"
+                      disabled={busy}
+                      onClick={() => void confirmReceipt(order)}
+                      className="mt-2 w-full rounded-lg px-3 py-1.5 text-xs font-black text-white transition-transform hover:scale-[1.01] disabled:opacity-45"
+                      style={{ background: "#1d7a3e" }}
+                    >
+                      Confirmar recebimento
+                    </button>
+                  )}
+                  {me.accountType !== "partner" && order.status === "created" && (
+                    <button
+                      type="button"
+                      disabled={busy}
+                      onClick={() => void cancelOrder(order)}
+                      className="mt-2 w-full rounded-lg border border-black/10 px-3 py-1.5 text-xs font-black text-black/55 transition-colors hover:border-[#c4423b] hover:text-[#c4423b] disabled:opacity-45"
+                    >
+                      Cancelar e devolver pontos
+                    </button>
+                  )}
                 </div>
               ))}
             </div>
