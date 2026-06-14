@@ -93,6 +93,25 @@ npm run smoke          # 登录与门面冒烟
 - **生产生效前提**：需先 push 含上述代码的提交触发 Vercel 部署（当前线上为旧代码）；
   Client secret 未使用、未保存。
 
+## 六点六、验证记录（2026-06-13）
+
+提交：`da8967b`（main，15 文件 +1318/−83，工作区干净）。
+
+通过：
+- 代码：`tsc --noEmit` 全清。
+- 离线仿真：商城状态机 27 项断言、优惠券台账 8 项断言全过。
+- Vercel：`NEXT_PUBLIC_GOOGLE_CLIENT_ID` 存在，All Environments，值与 Client ID 一致。
+- Google OAuth 客户端「MePonto Rider」：Client ID 一致；JS 来源 `https://app.meponto.com` +
+  `http://localhost:3000`；重定向 URI 空；状态 Enabled。
+- 同意屏幕（Audience）：In production + External；仅用基础范围（openid/email/profile，非敏感），
+  不受 100 用户上限限制、不弹「未验证应用」——公开骑手可正常登录。
+
+未能在沙箱完成（需本地）：
+- 运行时功能测试：沙箱 `node_modules` 的 Next SWC 为 macOS 二进制，平台不匹配，起不了 dev server。
+  本地 `npm run dev` → `/rider-login` 点 Google 按钮验证（首次自动建档）。
+- 推送：沙箱无 GitHub 网络（代理 403）。Mac 上 `git pull --rebase origin main` 后 `git push`；
+  该次 Vercel 部署带上代码+变量，线上生效。
+
 ## 七、生产前提 / 留给后续
 
 - **Partner 身份**：partner 用户 `organization` 须等于其 `crmPartners.name`（建账约定）；
