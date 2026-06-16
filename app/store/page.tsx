@@ -308,9 +308,12 @@ export default function StorefrontPage() {
       {/* ---- Header ---------------------------------------------------------- */}
       <header className="sticky top-0 z-40 border-b border-black/5 bg-white/90 backdrop-blur">
         <div className="mx-auto flex h-16 max-w-7xl items-center gap-3 px-4 md:gap-6 md:px-8">
-          <a href="/" className="flex shrink-0 items-baseline gap-0.5 text-xl font-black tracking-tight">
-            <span>Ponto</span>
-            <span className="rounded-md px-1.5 py-0.5" style={{ background: GOLD }}>Mall</span>
+          <a href="/" className="flex shrink-0 items-center gap-2">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src="/meponto-logo-icon.png" alt="MePonto" className="h-9 w-9 rounded-lg object-contain" />
+            <span className="text-xl font-black tracking-tight" style={{ letterSpacing: "-0.02em" }}>
+              <span style={{ color: INK }}>Ponto</span><span style={{ color: "#cf9700" }}>Mall</span>
+            </span>
           </a>
           <div className="relative hidden flex-1 md:block">
             <Search size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-black/35" />
