@@ -49,6 +49,7 @@ const navItems: Array<{
   permission?: Permission;
 }> = [
   { href: "/dashboard", labelKey: "navDashboard", icon: LayoutDashboard, permission: "view_dashboard" },
+  { href: "/rider-monitor", labelKey: "navRiderMonitor", icon: Bike, permission: "manage_riders" },
   { href: "/riders", labelKey: "navRiders", icon: Bike, permission: "manage_riders" },
   { href: "/rider-app", labelKey: "navRiderApp", icon: Bike, permission: "use_rider_app" },
   { href: "/pontos", labelKey: "navPontos", icon: MapPinned, permission: "manage_pontos" },
@@ -78,6 +79,7 @@ const navGroups: Array<{
     items: navItems.filter((item) =>
       [
         "/dashboard",
+        "/rider-monitor",
         "/dispatch",
         "/performance",
         "/assessment",
