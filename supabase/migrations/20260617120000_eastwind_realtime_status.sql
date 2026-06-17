@@ -17,17 +17,22 @@ CREATE TABLE IF NOT EXISTS rider_status_snapshots (
   id            bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
   captured_at   timestamptz NOT NULL,          -- batch time, aligned to 5 min
   city_id       text,                          -- e.g. 55000199
-  rider_ext_id  text,                          -- Eastwind rider id (join key)
-  rider_name    text,
-  phone         text,
-  status        text,                          -- raw label: 未履约 / 不在区域内 / 不及预期 / ...
-  status_code   text,                          -- enum code when present in JSON
-  shift_start   text,                          -- "11:00"
-  shift_end     text,                          -- "14:00"
-  hot_zone      text,                          -- "Santo Amaro"
-  online_mins   integer,
-  rest_mins     integer,
-  finished_cnt  integer,
+  rider_ext_id  text,                          -- riderID (join key)
+  rider_name    text,                          -- riderName
+  phone         text,                          -- phoneNumber
+  id_no         text,                          -- idNo (national ID; stable join key)
+  status        text,                          -- statusStr: Conectado / Entregando / Abaixo das expectativas …
+  status_code   text,                          -- workStatus: 1=below expectations, 2=delivering, 4=online
+  error_show    text,                          -- errorShow (secondary status text)
+  shift_start   text,                          -- from slotPeriod "14:00"
+  shift_end     text,                          -- "18:00"
+  hot_zone      text,                          -- slotArea, e.g. "Santo Amaro"
+  vehicle       text,                          -- vehicleType (Bicicleta / Motocicleta)
+  shop_id       text,                          -- shopID
+  shop_name     text,                          -- shopName
+  online_mins   integer,                       -- currentShift seconds → minutes
+  rest_mins     integer,                       -- riderRestTimeCnt seconds → minutes
+  finished_cnt  integer,                       -- order (completed orders)
   lat           double precision,
   lng           double precision,
   raw           jsonb,

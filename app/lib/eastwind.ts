@@ -16,19 +16,24 @@
 export type RiderSnapshotRow = {
   captured_at: string;
   city_id: string | null;
-  rider_ext_id: string | null;
-  rider_name: string | null;
-  phone: string | null;
-  status: string | null;
-  status_code: string | null;
-  shift_start: string | null;
+  rider_ext_id: string | null;   // riderID
+  rider_name: string | null;     // riderName
+  phone: string | null;          // phoneNumber
+  id_no: string | null;          // idNo (national ID — stable join key)
+  status: string | null;         // statusStr (Conectado / Entregando / Abaixo das expectativas …)
+  status_code: string | null;    // workStatus (1=below expectations, 2=delivering, 4=online)
+  error_show: string | null;     // errorShow (secondary status text)
+  shift_start: string | null;    // from slotPeriod "14:00-18:00"
   shift_end: string | null;
-  hot_zone: string | null;
-  online_mins: number | null;
-  rest_mins: number | null;
-  finished_cnt: number | null;
-  lat: number | null;
-  lng: number | null;
+  hot_zone: string | null;       // slotArea
+  vehicle: string | null;        // vehicleType
+  shop_id: string | null;        // shopID
+  shop_name: string | null;      // shopName
+  online_mins: number | null;    // currentShift (seconds) → minutes
+  rest_mins: number | null;      // riderRestTimeCnt (seconds) → minutes
+  finished_cnt: number | null;   // order (completed orders)
+  lat: number | null;            // location.lat
+  lng: number | null;            // location.lng
   raw: unknown;
 };
 
@@ -132,22 +137,22 @@ function pick(obj: AnyObj, candidates: string[]): unknown {
 const str = (v: unknown): string | null =>
   v === undefined || v === null || v === "" ? null : String(v);
 
+// Brazilian/intl-aware numeric parse: "66,0%" → 66, "1.234,5" → 1234.5, 35 → 35.
 const num = (v: unknown): number | null => {
   if (v === undefined || v === null || v === "") return null;
-  const n = typeof v === "number" ? v : parseFloat(String(v).replace(/[^0-9.+-]/g, ""));
+  if (typeof v === "number") return Number.isFinite(v) ? v : null;
+  let s = String(v).replace(/[^0-9.,-]/g, "");
+  if (s.includes(",") && !s.includes(".")) s = s.replace(",", "."); // comma is the decimal sep
+  else s = s.replace(/,/g, ""); // comma is a thousands sep
+  const n = parseFloat(s);
   return Number.isFinite(n) ? n : null;
 };
 
-/** "10mins" / "22 min" / 600 (sec) / "01:05:00" → minutes. */
-function toMinutes(v: unknown): number | null {
-  if (v === undefined || v === null || v === "") return null;
-  if (typeof v === "number") return Math.round(v >= 6000 ? v / 60 : v); // big => seconds
-  const s = String(v).trim();
-  const hm = s.match(/^(\d+):(\d{2})(?::(\d{2}))?$/);
-  if (hm) return parseInt(hm[1]) * 60 + parseInt(hm[2]);
-  const n = parseFloat(s.replace(/[^0-9.]/g, ""));
-  return Number.isFinite(n) ? Math.round(n) : null;
-}
+// Eastwind reports currentShift / riderRestTimeCnt in SECONDS → minutes.
+const secToMin = (v: unknown): number | null => {
+  const n = num(v);
+  return n === null ? null : Math.round(n / 60);
+};
 
 /**
  * Resolve a time value to an ISO string.
@@ -180,22 +185,38 @@ function splitShift(v: unknown): [string | null, string | null] {
   return m ? [m[1], m[2]] : [s, null];
 }
 
-// --- candidate key lists (extend after first live run by inspecting raw) -----
+// --- candidate key lists. Primary names are the real Eastwind riderList keys;
+//     fallbacks kept for resilience. Extend by inspecting `raw` if needed. -----
 const K = {
-  riderId: ["riderId", "driverId", "knightId", "courierId", "id", "riderID", "driverID"],
-  riderName: ["riderName", "driverName", "name", "courierName", "knightName"],
-  phone: ["phone", "mobile", "phoneNumber", "phoneNo", "tel", "contact"],
-  status: ["status", "statusName", "shiftStatus", "stateName", "state", "statusDesc"],
-  statusCode: ["statusCode", "shiftStatusCode", "stateCode", "code"],
-  shift: ["shiftTime", "shift", "shiftPeriod", "scheduleTime", "shiftRange"],
+  riderId: ["riderID", "riderId", "driverId", "id"],
+  riderName: ["riderName", "name", "driverName"],
+  phone: ["phoneNumber", "phone", "mobile", "phoneNo"],
+  idNo: ["idNo", "idNumber", "cpf", "documentNo"],
+  status: ["statusStr", "status", "statusName"],
+  statusCode: ["workStatus", "statusCode", "state"],
+  errorShow: ["errorShow", "errorMsg", "tip"],
+  shift: ["slotPeriod", "shiftTime", "shift", "shiftPeriod"],
   shiftStart: ["shiftStartTime", "shiftStart", "startTime"],
   shiftEnd: ["shiftEndTime", "shiftEnd", "endTime"],
-  zone: ["hotZone", "zoneName", "areaName", "hotArea", "zone", "shiftAreaName"],
-  online: ["onlineTime", "onlineDuration", "onlineMinutes", "onlineMins", "workTime"],
-  rest: ["restTime", "restDuration", "restMinutes", "restMins"],
-  finished: ["finishOrderNum", "completedOrders", "finishedOrderCnt", "finishCnt", "completeNum", "orderNum", "doneCount"],
+  zone: ["slotArea", "hotZone", "zoneName", "areaName"],
+  vehicle: ["vehicleType", "vehicle", "transportType"],
+  shopId: ["shopID", "shopId", "storeId"],
+  shopName: ["shopName", "storeName", "poiName"],
+  online: ["currentShift", "onlineTime", "onlineDuration"],
+  rest: ["riderRestTimeCnt", "restTime", "restDuration"],
+  finished: ["order", "finishOrderNum", "completedOrders", "completeOrderCnt"],
   lat: ["lat", "latitude", "riderLat"],
   lng: ["lng", "lon", "longitude", "riderLng"],
+};
+
+// KPI header (vendor.rider.monitor.vendorFeatureInShift → data{…})
+const KK = {
+  ar: ["AR", "ar", "acceptRate"],
+  caa: ["CAA", "caa", "cancelRate"],
+  overtime: ["overtime", "overtimeRate"],
+  tsh: ["TSH", "tsh"],
+  accept: ["acceptOrderCnt", "acceptCnt", "acceptNum"],
+  finished: ["completeOrderCnt", "finishedCnt", "completeNum"],
 };
 
 const KD = {
@@ -225,13 +246,21 @@ function timelineNodes(rec: AnyObj): AnyObj[] | null {
   return null;
 }
 
+/**
+ * Parse the rider board.
+ *  - ridersPayload = vendor.rider.monitor.riderList  → snapshot rows
+ *  - kpiPayload    = vendor.rider.monitor.vendorFeatureInShift → KPI row
+ * Either may be null/undefined.
+ */
 export function parseRiders(
-  payload: unknown,
+  ridersPayload: unknown,
+  kpiPayload: unknown,
   capturedAtIso: string,
   cityId: string | null,
 ): { snapshots: RiderSnapshotRow[]; kpi: KpiRow } {
   const captured_at = alignTo5Min(capturedAtIso);
-  const list = findRecordList(payload);
+
+  const list = ridersPayload != null ? findRecordList(ridersPayload) : [];
   const snapshots: RiderSnapshotRow[] = list.map((rec) => {
     let [ss, se] = splitShift(pick(rec, K.shift));
     if (!ss) ss = str(pick(rec, K.shiftStart));
@@ -242,13 +271,18 @@ export function parseRiders(
       rider_ext_id: str(pick(rec, K.riderId)),
       rider_name: str(pick(rec, K.riderName)),
       phone: str(pick(rec, K.phone)),
+      id_no: str(pick(rec, K.idNo)),
       status: str(pick(rec, K.status)),
       status_code: str(pick(rec, K.statusCode)),
+      error_show: str(pick(rec, K.errorShow)),
       shift_start: ss,
       shift_end: se,
       hot_zone: str(pick(rec, K.zone)),
-      online_mins: toMinutes(pick(rec, K.online)),
-      rest_mins: toMinutes(pick(rec, K.rest)),
+      vehicle: str(pick(rec, K.vehicle)),
+      shop_id: str(pick(rec, K.shopId)),
+      shop_name: str(pick(rec, K.shopName)),
+      online_mins: secToMin(pick(rec, K.online)),
+      rest_mins: secToMin(pick(rec, K.rest)),
       finished_cnt: num(pick(rec, K.finished)),
       lat: num(pick(rec, K.lat)),
       lng: num(pick(rec, K.lng)),
@@ -256,21 +290,19 @@ export function parseRiders(
     };
   });
 
-  // KPIs usually live in a header/summary object, not inside the list.
-  const header =
-    (isObj(payload) && (pick(payload as AnyObj, ["summary", "header", "kpi", "stat", "statistics", "data"]) as AnyObj)) ||
-    (isObj(payload) ? (payload as AnyObj) : {});
-  const h = isObj(header) ? header : {};
+  // KPI header: unwrap the gateway envelope (data{…}).
+  const env = isObj(kpiPayload) ? (kpiPayload as AnyObj) : {};
+  const h = isObj(env.data) ? (env.data as AnyObj) : env;
   const kpi: KpiRow = {
     captured_at,
     city_id: cityId,
-    ar: num(pick(h, ["ar", "acceptRate", "AR"])),
-    caa: num(pick(h, ["caa", "CAA", "cancelRate"])),
-    accept_cnt: num(pick(h, ["acceptCnt", "acceptNum", "接单量", "orderAcceptNum"])),
-    overtime: num(pick(h, ["overtime", "overtimeRate", "Overtime"])),
-    tsh: num(pick(h, ["tsh", "TSH", "tshRate"])),
-    finished_cnt: num(pick(h, ["finishedCnt", "finishNum", "completeNum", "完单数量"])),
-    raw: header,
+    ar: num(pick(h, KK.ar)),
+    caa: num(pick(h, KK.caa)),
+    accept_cnt: num(pick(h, KK.accept)),
+    overtime: num(pick(h, KK.overtime)),
+    tsh: num(pick(h, KK.tsh)),
+    finished_cnt: num(pick(h, KK.finished)),
+    raw: kpiPayload ?? null,
   };
   return { snapshots, kpi };
 }

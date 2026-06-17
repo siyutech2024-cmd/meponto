@@ -7,6 +7,7 @@
  *
  *   node login.mjs
  */
+import "./load-env.mjs";
 import { chromium } from "playwright";
 import readline from "node:readline";
 

@@ -24,12 +24,12 @@
  *   HEADLESS              "false" to watch it (default true)
  */
 
+import "./load-env.mjs";
 import { chromium } from "playwright";
 
 const RIDERS_URL = "https://eastwind.99app.com/monitor/riders/list";
-const WAYBILL_URL = "https://eastwind.99app.com/monitor/waybill/list";
-const RIDERS_API = "vendorFeatureInShift";
-const DELIVERY_API = "vendor.rider.monitor.delivery";
+const RIDER_LIST_API = "vendor.rider.monitor.riderList";          // the rider list
+const KPI_API = "vendor.rider.monitor.vendorFeatureInShift";      // header KPIs
 
 const cfg = {
   ingestUrl: process.env.MEPONTO_INGEST_URL,
@@ -53,18 +53,6 @@ function inShiftWindow() {
   return hour >= cfg.shiftStart || hour < cfg.shiftEnd; // window wraps midnight
 }
 
-/** Load a monitor page and return the parsed JSON of its gateway response. */
-async function grab(page, url, apiNeedle) {
-  const waitForResp = page.waitForResponse(
-    (r) => r.url().includes(apiNeedle) && r.request().method() === "GET",
-    { timeout: 30000 },
-  );
-  await page.goto(url, { waitUntil: "domcontentloaded" });
-  const resp = await waitForResp;
-  if (resp.status() !== 200) throw new Error(`${apiNeedle} HTTP ${resp.status()}`);
-  return resp.json();
-}
-
 async function pull(ctx) {
   if (!inShiftWindow()) {
     log("outside shift window — skip");
@@ -72,23 +60,30 @@ async function pull(ctx) {
   }
   const capturedAt = new Date().toISOString();
   const page = await ctx.newPage();
+
+  // Capture both gateway responses fired by the rider board in one page load.
+  const caps = {};
+  page.on("response", async (r) => {
+    const u = r.url();
+    if (!u.includes("/gateway")) return;
+    const m = u.match(/[?&]api=([^&]+)/);
+    const api = m ? decodeURIComponent(m[1]) : "";
+    if (api === RIDER_LIST_API || api === KPI_API) {
+      try { caps[api] = await r.json(); } catch { /* non-json */ }
+    }
+  });
+
   try {
-    // Login check: if redirected away from the monitor, the session expired.
     await page.goto(RIDERS_URL, { waitUntil: "domcontentloaded" });
     if (!page.url().includes("/monitor/")) {
       log("LOGIN_REQUIRED — session expired, re-run login.mjs (hook alerting here)");
       return;
     }
-    const riders = await grab(page, RIDERS_URL, RIDERS_API).catch((e) => {
-      log("riders grab failed:", e.message);
-      return null;
-    });
-    const delivery = await grab(page, WAYBILL_URL, DELIVERY_API).catch((e) => {
-      log("delivery grab failed:", e.message);
-      return null;
-    });
+    await page.waitForTimeout(6000); // let riderList + KPI fire
 
-    if (!riders && !delivery) {
+    const riderList = caps[RIDER_LIST_API] ?? null;
+    const kpi = caps[KPI_API] ?? null;
+    if (!riderList && !kpi) {
       log("nothing captured this round");
       return;
     }
@@ -96,7 +91,7 @@ async function pull(ctx) {
     const res = await fetch(cfg.ingestUrl, {
       method: "POST",
       headers: { "Content-Type": "application/json", "x-ingest-token": cfg.ingestToken },
-      body: JSON.stringify({ capturedAt, cityId: cfg.cityId, riders, delivery }),
+      body: JSON.stringify({ capturedAt, cityId: cfg.cityId, riderList, kpi }),
     });
     const txt = await res.text();
     log(`ingest ${res.status}: ${txt.slice(0, 300)}`);

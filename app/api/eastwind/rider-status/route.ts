@@ -41,8 +41,9 @@ export async function POST(request: Request) {
   let body: {
     capturedAt?: string;
     cityId?: string;
-    riders?: unknown;
-    delivery?: unknown;
+    riderList?: unknown; // vendor.rider.monitor.riderList payload
+    kpi?: unknown;       // vendor.rider.monitor.vendorFeatureInShift payload
+    delivery?: unknown;  // optional (waybill board, currently disabled)
   };
   try {
     body = await request.json();
@@ -57,8 +58,8 @@ export async function POST(request: Request) {
   const result: Record<string, unknown> = { capturedAt: alignTo5Min(capturedAt) };
 
   // --- riders → snapshots + kpi -------------------------------------------
-  if (body.riders !== undefined && body.riders !== null) {
-    const { snapshots, kpi } = parseRiders(body.riders, capturedAt, cityId);
+  if (body.riderList != null || body.kpi != null) {
+    const { snapshots, kpi } = parseRiders(body.riderList, body.kpi, capturedAt, cityId);
     const batch = alignTo5Min(capturedAt);
 
     // Idempotent batch: remove any prior rows for this exact batch first.
@@ -76,8 +77,8 @@ export async function POST(request: Request) {
     result.kpiCaptured = true;
   }
 
-  // --- delivery → upsert by order_no --------------------------------------
-  if (body.delivery !== undefined && body.delivery !== null) {
+  // --- delivery → upsert by order_no (waybill board; disabled for now) -----
+  if (body.delivery != null) {
     const rows = parseDeliveries(body.delivery, cityId, capturedAt);
     const now = new Date().toISOString();
     // first_seen_at is intentionally omitted so existing rows keep their value;
