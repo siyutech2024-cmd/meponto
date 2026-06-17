@@ -126,19 +126,61 @@ const tierPreviews = [
 ];
 
 export default function RiderAppPage() {
-  // Auth guard: the rider app requires a logged-in account (store requirement).
-  useEffect(() => {
-    const session = readSession();
-    if (!session || (session.portal !== "rider" && session.role !== "Super Admin")) {
-      window.location.replace("/rider-login");
-    }
-  }, []);
-
-  // Greet the LOGGED-IN rider; seed profile only backs the demo KPI widgets.
+  // Deferred login: the home opens WITHOUT an account. Logged-out riders see a
+  // welcome screen + public browse (Loja / Turnos); the personal dashboard and
+  // sensitive sections require login.
+  const [auth, setAuth] = useState<"loading" | "in" | "out">("loading");
   const [displayName, setDisplayName] = useState("");
   useEffect(() => {
-    setDisplayName(readSession()?.name ?? "");
+    const session = readSession();
+    const signedIn = Boolean(session) && (session?.portal === "rider" || session?.role === "Super Admin");
+    setAuth(signedIn ? "in" : "out");
+    setDisplayName(session?.name ?? "");
   }, []);
+
+  if (auth !== "in") {
+    return (
+      <main className="min-h-screen bg-[#101010] text-[#050505]" style={{ fontFamily: "Poppins, Inter, system-ui, sans-serif" }}>
+        <div className="mx-auto min-h-screen w-full max-w-[430px] bg-[#f3f2ee] px-4 pb-24 pt-6">
+          <div className="flex items-center gap-3">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src="/meponto-app-icon.png" alt="MePonto" className="h-11 w-11 rounded-[8px] shadow-[0_10px_18px_rgba(0,0,0,0.14)]" />
+            <div>
+              <div className="text-[11px] font-black uppercase tracking-[0.14em] text-[#ff7a00]">MePonto</div>
+              <h1 className="text-lg font-black leading-5">App do Entregador</h1>
+            </div>
+          </div>
+
+          {auth === "out" && (
+            <>
+              <div className="mt-6 overflow-hidden rounded-[12px] bg-[#101010] p-5 text-white shadow-[0_18px_42px_rgba(0,0,0,0.22)]">
+                <div className="text-[11px] font-black uppercase tracking-[0.14em] text-[#ff7a00]">Bem-vindo</div>
+                <h2 className="mt-2 text-2xl font-black leading-7">Cada entrega vira <span className="text-[#ff7a00]">benefício</span></h2>
+                <p className="mt-2 text-sm font-bold text-white/60">Entre para ver seu saldo, pontos, turnos e a Loja de Pontos.</p>
+                <a href="/rider-login?returnTo=/" className="mt-4 flex h-12 w-full items-center justify-center gap-2 rounded-[8px] bg-[#ff7a00] text-sm font-black text-[#050505]">
+                  Entrar ou criar conta <ChevronRight size={18} />
+                </a>
+              </div>
+
+              <div className="mt-4 text-[11px] font-black uppercase tracking-[0.12em] text-[#77746f]">Explore sem login</div>
+              <div className="mt-2 grid grid-cols-2 gap-3">
+                <a href="/mall" style={{ color: "#050505" }} className="flex flex-col gap-2 rounded-[8px] bg-white p-4 shadow-[0_10px_22px_rgba(0,0,0,0.06)]">
+                  <span className="grid h-11 w-11 place-items-center rounded-[8px] bg-[#fff4cf] text-[#ff7a00]"><Gift size={22} /></span>
+                  <span className="text-sm font-black">Loja de Pontos</span>
+                  <span className="text-[11px] font-bold text-[#77746f]">Veja produtos e vouchers</span>
+                </a>
+                <a href="/shifts" style={{ color: "#050505" }} className="flex flex-col gap-2 rounded-[8px] bg-white p-4 shadow-[0_10px_22px_rgba(0,0,0,0.06)]">
+                  <span className="grid h-11 w-11 place-items-center rounded-[8px] bg-[#fff4cf] text-[#ff7a00]"><CalendarDays size={22} /></span>
+                  <span className="text-sm font-black">Turnos</span>
+                  <span className="text-[11px] font-bold text-[#77746f]">Veja os turnos do seu ponto</span>
+                </a>
+              </div>
+            </>
+          )}
+        </div>
+      </main>
+    );
+  }
   const member = riders[0];
   const openCase = incidents.find((incident) => incident.rider === member.name && incident.status !== "Closed");
   const benefit = ledgerEntries.find((entry) => entry.recipient === member.name);

@@ -239,7 +239,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             <IconButton label={nextTheme === "dark" ? "Switch to dark mode" : "Switch to light mode"} onClick={() => setTheme(nextTheme)}>
               {theme === "dark" ? <Sun size={18} /> : <Moon size={18} />}
             </IconButton>
-            <IconButton label={canReset ? t("resetDemoData") : t("resetRequiresSuperAdmin")} onClick={canReset ? resetDemoData : undefined} disabled={!canReset}>
+            <IconButton label={canReset ? t("resetDemoData") : t("resetRequiresSuperAdmin")} onClick={canReset ? () => { if (typeof window !== "undefined" && window.confirm("⚠️ 确认重置为演示数据？将清空骑手等真实数据且不可恢复！\n（生产环境已在服务端禁用此操作）")) resetDemoData(); } : undefined} disabled={!canReset}>
               <RotateCcw size={18} />
             </IconButton>
             <select
