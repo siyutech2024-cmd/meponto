@@ -57,6 +57,14 @@ export default function SupplierWorkspacePage() {
 
   // Compress a picked image to a small JPEG data URL (no external storage needed).
   async function onPickImage(file: File) {
+    if (!file.type.startsWith("image/")) {
+      setMessage({ tone: "err", text: "Selecione um arquivo de imagem." });
+      return;
+    }
+    if (file.size > 15 * 1024 * 1024) {
+      setMessage({ tone: "err", text: "Imagem muito grande (máx. 15 MB)." });
+      return;
+    }
     setUploading(true);
     try {
       const dataUrl: string = await new Promise((resolve, reject) => {
@@ -82,7 +90,7 @@ export default function SupplierWorkspacePage() {
       const out = canvas.toDataURL("image/jpeg", 0.62);
       setForm((prev) => ({ ...prev, imageUrl: out }));
     } catch {
-      setMessage({ tone: "err", text: "Falha ao processar a imagem." });
+      setMessage({ tone: "err", text: "Não foi possível processar a imagem. Tente JPG ou PNG (HEIC do iPhone pode não funcionar)." });
     } finally {
       setUploading(false);
     }
@@ -230,7 +238,7 @@ export default function SupplierWorkspacePage() {
                 </label>
                 <button
                   type="button"
-                  disabled={!form.name.trim() || !(Number(form.supplyPrice) > 0)}
+                  disabled={uploading || !form.name.trim() || !(Number(form.supplyPrice) > 0)}
                   onClick={() => {
                     const fields = { name: form.name.trim(), supplyPrice: Number(form.supplyPrice), deliveryCycleDays: Number(form.deliveryCycleDays) || 7, stock: Number(form.stock) || 0, description: form.description, imageUrl: form.imageUrl, category: form.category, isVirtual: form.isVirtual, audience: form.audience, type: form.type };
                     const payload = editingId ? { action: "supplierUpdateProduct", productId: editingId, ...fields } : { action: "supplierAddProduct", supplierName, ...fields };
@@ -244,7 +252,7 @@ export default function SupplierWorkspacePage() {
           </div>
 
           <div className="space-y-2">
-            {products.map((product) => (
+            {products.filter((product) => product.supplierName === supplierName).map((product) => (
               <div key={product.id} className="panel flex flex-wrap items-center gap-3 p-4">
                 <div className="h-12 w-12 shrink-0 overflow-hidden rounded-[10px] border border-[var(--line)] bg-[var(--surface-raised)]">
                   {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -272,7 +280,7 @@ export default function SupplierWorkspacePage() {
                 </div>
               </div>
             ))}
-            {products.length === 0 && <div className="panel p-10 text-center text-sm font-bold text-[var(--muted)]">还没有商品，先在上方提报。</div>}
+            {products.filter((product) => product.supplierName === supplierName).length === 0 && <div className="panel p-10 text-center text-sm font-bold text-[var(--muted)]">还没有你的商品，先在上方提报。</div>}
           </div>
         </div>
       )}
