@@ -12,11 +12,11 @@ export default function PartnerPointsPage() {
   const [services, setServices] = useState<PartnerServiceRecord[]>([]);
   const [partners, setPartners] = useState<CrmPartner[]>([]);
   const [riders, setRiders] = useState<Rider[]>([]);
-  const [riderId, setRiderId] = useState("r-1002");
+  const [riderId, setRiderId] = useState("");
   const [partnerId, setPartnerId] = useState("");
   const [category, setCategory] = useState<PartnerServiceCategory>("maintenance");
   const [amount, setAmount] = useState(120);
-  const [receiptRef, setReceiptRef] = useState("NF-DEMO-001");
+  const [receiptRef, setReceiptRef] = useState("");
   const [message, setMessage] = useState("");
 
   useEffect(() => {
@@ -31,6 +31,7 @@ export default function PartnerPointsPage() {
       setPartners(partnersPayload.data);
       setRiders(ridersPayload.data);
       setPartnerId(partnersPayload.data[0]?.id ?? "");
+      setRiderId(ridersPayload.data[0]?.id ?? "");
     });
     return () => {
       active = false;
@@ -82,7 +83,7 @@ export default function PartnerPointsPage() {
         </select>
         <input type="number" min="1" value={amount} onChange={(event) => setAmount(Number(event.target.value))} className="h-11 rounded border border-[var(--line)] bg-[var(--surface)] px-3 outline-none" />
         <input value={receiptRef} onChange={(event) => setReceiptRef(event.target.value)} className="h-11 rounded border border-[var(--line)] bg-[var(--surface)] px-3 outline-none" />
-        <button className="h-11 rounded border border-[var(--accent)] bg-[var(--accent)] px-4 text-sm font-black text-[var(--accent-ink)]">Submit</button>
+        <button disabled={!riderId || !partnerId || !receiptRef.trim() || !(amount > 0)} className="h-11 rounded border border-[var(--accent)] bg-[var(--accent)] px-4 text-sm font-black text-[var(--accent-ink)] disabled:opacity-50">Submit</button>
         {message ? <div className="text-sm font-bold text-[var(--text-soft)] lg:col-span-6">{message}</div> : null}
       </form>
 
