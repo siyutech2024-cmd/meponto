@@ -71,7 +71,7 @@ export default function MallStationPage() {
                   <div key={order.id} className="rounded-[8px] border border-[var(--line)] bg-[var(--surface-raised)] p-3">
                     <div className="flex items-center justify-between gap-2 text-sm font-black">
                       {order.productName ?? order.productId}
-                      <Badge value={statusLabel[order.status] ?? order.status} />
+                      <Badge value={order.reviewStatus === "pending" ? "待总部审核" : statusLabel[order.status] ?? order.status} />
                     </div>
                     <div className="mt-1 text-[11px] font-bold text-[var(--muted)]">
                       {order.riderName} ｜ {order.pointsSpent} 分 ｜ 兑换 {order.createdAt}
@@ -79,7 +79,9 @@ export default function MallStationPage() {
                       {order.arrivedAt && ` ｜ 到站 ${order.arrivedAt}`}
                       {order.pickedUpAt && ` ｜ 领取 ${order.pickedUpAt}`}
                     </div>
-                    {action && (
+                    {action && order.reviewStatus === "pending" ? (
+                      <div className="mt-2 text-[11px] font-black text-[#9a7400]">高价值兑换，等待总部审核后可确认到货。</div>
+                    ) : action ? (
                       <button
                         type="button"
                         onClick={() => void act(action, order.id, okText)}
@@ -87,7 +89,7 @@ export default function MallStationPage() {
                       >
                         <CheckCircle2 size={13} /> {buttonLabel}
                       </button>
-                    )}
+                    ) : null}
                   </div>
                 ))}
               </div>
