@@ -48,9 +48,62 @@ export default function SupplierWorkspacePage() {
   const [products, setProducts] = useState<MarketplaceProduct[]>([]);
   const [ops, setOps] = useState<OpsPayload | null>(null);
   const [message, setMessage] = useState<{ tone: "ok" | "err"; text: string } | null>(null);
-  const [form, setForm] = useState({ name: "", supplyPrice: "", deliveryCycleDays: "7", stock: "", description: "", imageUrl: "", category: "", isVirtual: false });
+  const emptyForm = { name: "", supplyPrice: "", deliveryCycleDays: "7", stock: "", description: "", imageUrl: "", category: "", isVirtual: false, audience: "rider", type: "equipment" };
+  const [form, setForm] = useState(emptyForm);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [uploading, setUploading] = useState(false);
   const [priceDraft, setPriceDraft] = useState<Record<string, string>>({});
   const [pixDraft, setPixDraft] = useState("");
+
+  // Compress a picked image to a small JPEG data URL (no external storage needed).
+  async function onPickImage(file: File) {
+    setUploading(true);
+    try {
+      const dataUrl: string = await new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onerror = () => reject(new Error("read"));
+        reader.onload = () => resolve(String(reader.result));
+        reader.readAsDataURL(file);
+      });
+      const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+        const i = new Image();
+        i.onload = () => resolve(i);
+        i.onerror = () => reject(new Error("img"));
+        i.src = dataUrl;
+      });
+      const max = 600;
+      const scale = Math.min(1, max / Math.max(img.width, img.height));
+      const w = Math.round(img.width * scale);
+      const h = Math.round(img.height * scale);
+      const canvas = document.createElement("canvas");
+      canvas.width = w;
+      canvas.height = h;
+      canvas.getContext("2d")?.drawImage(img, 0, 0, w, h);
+      const out = canvas.toDataURL("image/jpeg", 0.62);
+      setForm((prev) => ({ ...prev, imageUrl: out }));
+    } catch {
+      setMessage({ tone: "err", text: "Falha ao processar a imagem." });
+    } finally {
+      setUploading(false);
+    }
+  }
+
+  function startEdit(product: MarketplaceProduct) {
+    setEditingId(product.id);
+    setForm({
+      name: product.name ?? "",
+      supplyPrice: String(product.supplyPrice ?? ""),
+      deliveryCycleDays: String(product.deliveryCycleDays ?? 7),
+      stock: String(product.stock ?? ""),
+      description: product.description ?? "",
+      imageUrl: product.imageUrl ?? "",
+      category: product.category ?? "",
+      isVirtual: product.isVirtual === true,
+      audience: product.audience ?? "rider",
+      type: product.type ?? "equipment",
+    });
+    if (typeof window !== "undefined") window.scrollTo({ top: 0, behavior: "smooth" });
+  }
 
   const load = useCallback(async () => {
     const sessionRes = await fetch("/api/auth/session", { cache: "no-store" });
@@ -123,7 +176,7 @@ export default function SupplierWorkspacePage() {
       {tab === "catalog" && (
         <div className="space-y-5">
           <div className="panel p-5">
-            <div className="mb-3 flex items-center gap-2 text-xs font-black uppercase text-[var(--muted)]"><PackagePlus size={14} /> 提报新商品（商城定价后上架）</div>
+            <div className="mb-3 flex items-center gap-2 text-xs font-black uppercase text-[var(--muted)]"><PackagePlus size={14} /> {editingId ? "编辑商品（仅未定价商品）" : "提报新商品（商城定价后上架）"}</div>
             <div className="grid gap-2 md:grid-cols-3">
               {[
                 { key: "name", label: "商品名称 *" },
@@ -131,25 +184,61 @@ export default function SupplierWorkspacePage() {
                 { key: "deliveryCycleDays", label: "供货周期（天）" },
                 { key: "stock", label: "首批库存" },
                 { key: "category", label: "分类（如 Equipamento）" },
-                { key: "imageUrl", label: "图片 URL" },
               ].map((field) => (
                 <label key={field.key} className="text-[11px] font-black text-[var(--muted)]">{field.label}
                   <input value={(form as Record<string, unknown>)[field.key] as string} onChange={(e) => setForm((prev) => ({ ...prev, [field.key]: e.target.value }))} className="mt-1 h-10 w-full rounded-[8px] border border-[var(--line)] bg-[var(--surface-raised)] px-3 text-sm font-bold outline-none focus:border-[var(--accent)]" />
                 </label>
               ))}
-              <label className="text-[11px] font-black text-[var(--muted)] md:col-span-2">描述
+              <label className="text-[11px] font-black text-[var(--muted)]">面向对象
+                <select value={form.audience} onChange={(e) => setForm((prev) => ({ ...prev, audience: e.target.value }))} className="mt-1 h-10 w-full rounded-[8px] border border-[var(--line)] bg-[var(--surface-raised)] px-2 text-sm font-bold outline-none focus:border-[var(--accent)]">
+                  <option value="rider">骑手</option>
+                  <option value="partner">合作方 Partner</option>
+                  <option value="both">两者皆可</option>
+                </select>
+              </label>
+              <label className="text-[11px] font-black text-[var(--muted)]">类型
+                <select value={form.type} onChange={(e) => setForm((prev) => ({ ...prev, type: e.target.value }))} className="mt-1 h-10 w-full rounded-[8px] border border-[var(--line)] bg-[var(--surface-raised)] px-2 text-sm font-bold outline-none focus:border-[var(--accent)]">
+                  <option value="equipment">装备</option>
+                  <option value="safety_item">安全用品</option>
+                  <option value="fuel_coupon">加油券</option>
+                  <option value="maintenance_coupon">维修券</option>
+                  <option value="phone_data">话费/流量</option>
+                  <option value="partner_voucher">合作方券</option>
+                </select>
+              </label>
+              <label className="text-[11px] font-black text-[var(--muted)] md:col-span-3">描述
                 <input value={form.description} onChange={(e) => setForm((prev) => ({ ...prev, description: e.target.value }))} className="mt-1 h-10 w-full rounded-[8px] border border-[var(--line)] bg-[var(--surface-raised)] px-3 text-sm font-bold outline-none focus:border-[var(--accent)]" />
               </label>
-              <div className="flex items-end gap-3">
+              <div className="md:col-span-3">
+                <div className="text-[11px] font-black text-[var(--muted)]">商品图片（上传文件或粘贴 URL）</div>
+                <div className="mt-1 flex flex-wrap items-center gap-3">
+                  <div className="h-16 w-16 shrink-0 overflow-hidden rounded-[10px] border border-[var(--line)] bg-[var(--surface-raised)]">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    {form.imageUrl ? <img src={form.imageUrl} alt="" className="h-full w-full object-cover" /> : <div className="grid h-full w-full place-items-center text-lg text-[var(--muted)]">🖼️</div>}
+                  </div>
+                  <label className="cursor-pointer rounded-[8px] border border-[var(--line)] px-3 py-2 text-xs font-black text-[var(--muted)] hover:border-[var(--accent)]">
+                    {uploading ? "处理中…" : "上传图片"}
+                    <input type="file" accept="image/*" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) void onPickImage(f); e.target.value = ""; }} />
+                  </label>
+                  <input value={form.imageUrl.startsWith("data:") ? "" : form.imageUrl} onChange={(e) => setForm((prev) => ({ ...prev, imageUrl: e.target.value }))} placeholder="或粘贴图片 URL" className="h-9 min-w-0 flex-1 rounded-[8px] border border-[var(--line)] bg-[var(--surface-raised)] px-3 text-sm font-bold outline-none focus:border-[var(--accent)]" />
+                  {form.imageUrl && <button type="button" onClick={() => setForm((prev) => ({ ...prev, imageUrl: "" }))} className="text-xs font-black text-[#c4423b]">清除</button>}
+                </div>
+              </div>
+              <div className="flex flex-wrap items-center gap-3 md:col-span-3">
                 <label className="flex h-10 cursor-pointer items-center gap-2 text-xs font-black text-[var(--muted)]">
                   <input type="checkbox" checked={form.isVirtual} onChange={(e) => setForm((prev) => ({ ...prev, isVirtual: e.target.checked }))} className="h-4 w-4 accent-[var(--accent)]" /> 虚拟商品（即时发码）
                 </label>
                 <button
                   type="button"
                   disabled={!form.name.trim() || !(Number(form.supplyPrice) > 0)}
-                  onClick={() => void post("/api/mall", { action: "supplierAddProduct", name: form.name.trim(), supplierName, supplyPrice: Number(form.supplyPrice), deliveryCycleDays: Number(form.deliveryCycleDays) || 7, stock: Number(form.stock) || 0, description: form.description, imageUrl: form.imageUrl, category: form.category, isVirtual: form.isVirtual }, "已提报，等待商城定价上架").then(() => setForm({ name: "", supplyPrice: "", deliveryCycleDays: "7", stock: "", description: "", imageUrl: "", category: "", isVirtual: false }))}
+                  onClick={() => {
+                    const fields = { name: form.name.trim(), supplyPrice: Number(form.supplyPrice), deliveryCycleDays: Number(form.deliveryCycleDays) || 7, stock: Number(form.stock) || 0, description: form.description, imageUrl: form.imageUrl, category: form.category, isVirtual: form.isVirtual, audience: form.audience, type: form.type };
+                    const payload = editingId ? { action: "supplierUpdateProduct", productId: editingId, ...fields } : { action: "supplierAddProduct", supplierName, ...fields };
+                    void post("/api/mall", payload, editingId ? "已保存修改" : "已提报，等待商城定价上架").then(() => { setForm(emptyForm); setEditingId(null); });
+                  }}
                   className="h-10 rounded-[8px] bg-[var(--accent)] px-5 text-xs font-black text-[var(--accent-ink)] disabled:opacity-50"
-                >提报商品</button>
+                >{editingId ? "保存修改" : "提报商品"}</button>
+                {editingId && <button type="button" onClick={() => { setForm(emptyForm); setEditingId(null); }} className="text-xs font-black text-[var(--muted)] underline">取消编辑</button>}
               </div>
             </div>
           </div>
@@ -169,8 +258,17 @@ export default function SupplierWorkspacePage() {
                   <div className="text-xs font-bold text-[var(--muted)]">供货价 R$ {(product.supplyPrice ?? 0).toFixed(2)} · 库存 {product.stock} · 周期 {product.deliveryCycleDays ?? 7} 天{product.pointsPrice ? ` · 商城售价 ${product.pointsPrice} 分${product.cashPriceBRL ? ` + R$${product.cashPriceBRL.toFixed(2)}` : ""}` : ""}</div>
                 </div>
                 <div className="flex items-center gap-2">
-                  <input value={priceDraft[product.id] ?? ""} onChange={(e) => setPriceDraft((prev) => ({ ...prev, [product.id]: e.target.value }))} placeholder="新供货价" className="h-9 w-24 rounded-[8px] border border-[var(--line)] bg-[var(--surface-raised)] px-2 text-sm font-bold outline-none focus:border-[var(--accent)]" />
-                  <button type="button" disabled={!(Number(priceDraft[product.id]) > 0)} onClick={() => void post("/api/mall/ops", { action: "requestPriceChange", productId: product.id, newPrice: Number(priceDraft[product.id]) }, "调价申请已提交，等待商城审批").then(() => setPriceDraft((prev) => ({ ...prev, [product.id]: "" })))} className="h-9 rounded-[8px] border border-[var(--line)] px-3 text-xs font-black text-[var(--muted)] hover:border-[var(--accent)] disabled:opacity-50">申请调价</button>
+                  {product.supplierName === supplierName && product.status === "pending_pricing" ? (
+                    <>
+                      <button type="button" onClick={() => startEdit(product)} className="h-9 rounded-[8px] border border-[var(--line)] px-3 text-xs font-black text-[var(--muted)] hover:border-[var(--accent)]">编辑</button>
+                      <button type="button" onClick={() => { if (confirm(`删除「${product.name}」？该商品尚未定价。`)) void post("/api/mall", { action: "supplierDeleteProduct", productId: product.id }, "已删除"); }} className="h-9 rounded-[8px] border border-[#c4423b]/40 px-3 text-xs font-black text-[#c4423b]">删除</button>
+                    </>
+                  ) : (
+                    <>
+                      <input value={priceDraft[product.id] ?? ""} onChange={(e) => setPriceDraft((prev) => ({ ...prev, [product.id]: e.target.value }))} placeholder="新供货价" className="h-9 w-24 rounded-[8px] border border-[var(--line)] bg-[var(--surface-raised)] px-2 text-sm font-bold outline-none focus:border-[var(--accent)]" />
+                      <button type="button" disabled={!(Number(priceDraft[product.id]) > 0)} onClick={() => void post("/api/mall/ops", { action: "requestPriceChange", productId: product.id, newPrice: Number(priceDraft[product.id]) }, "调价申请已提交，等待商城审批").then(() => setPriceDraft((prev) => ({ ...prev, [product.id]: "" })))} className="h-9 rounded-[8px] border border-[var(--line)] px-3 text-xs font-black text-[var(--muted)] hover:border-[var(--accent)] disabled:opacity-50">申请调价</button>
+                    </>
+                  )}
                 </div>
               </div>
             ))}

@@ -51,6 +51,8 @@ function cashBalanceOf(riderId: string): number {
 
 const COLLECTIONS = ["mallConfigs", "marketplaceProducts", "marketplaceOrders", "pointsLedgerEntries", "partnerPointsLedgerEntries", "riders", "riderDailyKpis", "mallCategories", "mallBanners", "mallCoupons", "mallPayments", "cashTopUps", "cashLedgerEntries"];
 
+const PRODUCT_TYPES = ["equipment", "fuel_coupon", "maintenance_coupon", "phone_data", "safety_item", "partner_voucher"] as const;
+
 function nowStamp() {
   return new Date().toISOString().slice(0, 16).replace("T", " ");
 }
@@ -257,7 +259,9 @@ export async function GET(request: Request) {
 
 type Body =
   | { action: "setConfig"; perOrderPoints?: number; referralPoints?: number; partnerServicePoints?: number; partnerServiceCount?: number }
-  | { action: "supplierAddProduct"; name: string; supplierName: string; supplyPrice: number; deliveryCycleDays: number; stock: number; description?: string; imageUrl?: string; category?: string; isVirtual?: boolean }
+  | { action: "supplierAddProduct"; name: string; supplierName: string; supplyPrice: number; deliveryCycleDays: number; stock: number; description?: string; imageUrl?: string; category?: string; isVirtual?: boolean; audience?: "rider" | "partner" | "both"; type?: string }
+  | { action: "supplierUpdateProduct"; productId: string; name?: string; supplyPrice?: number; description?: string; imageUrl?: string; category?: string; stock?: number; deliveryCycleDays?: number; isVirtual?: boolean; audience?: "rider" | "partner" | "both"; type?: string }
+  | { action: "supplierDeleteProduct"; productId: string }
   | { action: "updateProduct"; productId: string; name?: string; description?: string; imageUrl?: string; category?: string; stock?: number; deliveryCycleDays?: number; purchaseLimit?: number }
   | { action: "priceProduct"; productId: string; pointsPrice: number; marginPct?: number; status?: "active" | "paused" }
   | { action: "deleteProduct"; productId: string }
@@ -287,7 +291,7 @@ async function handlePost(request: Request) {
         ? requirePermission(request, "use_rider_app")
         : peek.action === "markArrived" || peek.action === "markPickedUp"
         ? requirePermission(request, "manage_slots")
-        : peek.action === "supplierAddProduct" || peek.action === "updateProduct"
+        : peek.action === "supplierAddProduct" || peek.action === "updateProduct" || peek.action === "supplierUpdateProduct" || peek.action === "supplierDeleteProduct"
           ? requirePermission(request, "manage_supplier_catalog")
           : requirePermission(request, "manage_points");
   if (forbidden) return forbidden;
@@ -319,29 +323,79 @@ async function handlePost(request: Request) {
       const supplyPrice = Number(body.supplyPrice);
       const deliveryCycleDays = Math.max(1, Math.floor(Number(body.deliveryCycleDays) || 7));
       const stock = Math.max(0, Math.floor(Number(body.stock) || 0));
+      const type = (PRODUCT_TYPES as readonly string[]).includes(String(body.type)) ? (String(body.type) as MarketplaceProduct["type"]) : "equipment";
+      const audience = (["rider", "partner", "both"] as const as readonly string[]).includes(String(body.audience)) ? (String(body.audience) as MarketplaceProduct["audience"]) : "rider";
       if (!name || !supplierName || !Number.isFinite(supplyPrice) || supplyPrice <= 0) {
         return jsonResponse({ error: "name, supplierName and supplyPrice are required" }, { status: 400 });
       }
       const product: MarketplaceProduct = {
         id: makeServerId("mkp", memory.marketplaceProducts.length + 1),
         name: String(name).slice(0, 80),
-        type: "equipment",
+        type,
         pointsPrice: 0,
         stock,
         city: "São Paulo",
         status: "pending_pricing",
-        audience: "rider",
+        audience,
         supplierName: String(supplierName).slice(0, 80),
         supplyPrice,
         deliveryCycleDays,
         description: String(description).slice(0, 200),
         isVirtual: isVirtual === true,
-        imageUrl: String(imageUrl).slice(0, 300),
+        imageUrl: String(imageUrl).slice(0, 400000),
         category: String(category).slice(0, 40),
       };
       memory.marketplaceProducts.unshift(product);
-      appendServerAudit({ actor, action: "MALL_PRODUCT_SUBMITTED", entity: "MarketplaceProduct", entityId: product.id, detail: `${product.name} by ${supplierName} @ R$${supplyPrice} (cycle ${deliveryCycleDays}d).`, risk: "Low" });
+      appendServerAudit({ actor, action: "MALL_PRODUCT_SUBMITTED", entity: "MarketplaceProduct", entityId: product.id, detail: `${product.name} by ${supplierName} @ R$${supplyPrice} (cycle ${deliveryCycleDays}d, ${audience}/${type}).`, risk: "Low" });
       return jsonResponse({ data: product }, { status: 201 });
+    }
+
+    case "supplierUpdateProduct": {
+      // A supplier edits its OWN still-unpriced product (identity from session).
+      const { sessionFromRequest } = await import("../../lib/auth-session");
+      const session = await sessionFromRequest(request);
+      const supplier = session?.portal === "supplier" ? session.organization || "" : "";
+      if (!supplier) return jsonResponse({ error: "Apenas fornecedores podem editar produtos." }, { status: 403 });
+      const { productId } = body as { productId?: string };
+      const index = memory.marketplaceProducts.findIndex((item) => item.id === productId);
+      if (index === -1) return jsonResponse({ error: "Produto não encontrado." }, { status: 404 });
+      const current = memory.marketplaceProducts[index];
+      if (current.supplierName !== supplier) return jsonResponse({ error: "Este produto não é seu." }, { status: 403 });
+      if (current.status !== "pending_pricing") return jsonResponse({ error: "Produto já precificado — solicite alteração de preço ao mall." }, { status: 409 });
+      const fields = body as Record<string, unknown>;
+      const sp = Number(fields.supplyPrice);
+      memory.marketplaceProducts[index] = {
+        ...current,
+        ...(fields.name !== undefined ? { name: String(fields.name).slice(0, 80) } : {}),
+        ...(fields.description !== undefined ? { description: String(fields.description).slice(0, 200) } : {}),
+        ...(fields.imageUrl !== undefined ? { imageUrl: String(fields.imageUrl).slice(0, 400000) } : {}),
+        ...(fields.category !== undefined ? { category: String(fields.category).slice(0, 40) } : {}),
+        ...(fields.stock !== undefined ? { stock: Math.max(0, Math.floor(Number(fields.stock) || 0)) } : {}),
+        ...(fields.deliveryCycleDays !== undefined ? { deliveryCycleDays: Math.max(1, Math.floor(Number(fields.deliveryCycleDays) || 7)) } : {}),
+        ...(Number.isFinite(sp) && sp > 0 ? { supplyPrice: sp } : {}),
+        ...(fields.isVirtual !== undefined ? { isVirtual: fields.isVirtual === true } : {}),
+        ...((PRODUCT_TYPES as readonly string[]).includes(String(fields.type)) ? { type: String(fields.type) as MarketplaceProduct["type"] } : {}),
+        ...((["rider", "partner", "both"] as readonly string[]).includes(String(fields.audience)) ? { audience: String(fields.audience) as MarketplaceProduct["audience"] } : {}),
+      };
+      appendServerAudit({ actor, action: "MALL_PRODUCT_SUPPLIER_UPDATED", entity: "MarketplaceProduct", entityId: productId ?? "", detail: `${supplier} editou ${current.name}.`, risk: "Low" });
+      return jsonResponse({ data: memory.marketplaceProducts[index] });
+    }
+
+    case "supplierDeleteProduct": {
+      const { sessionFromRequest } = await import("../../lib/auth-session");
+      const session = await sessionFromRequest(request);
+      const supplier = session?.portal === "supplier" ? session.organization || "" : "";
+      if (!supplier) return jsonResponse({ error: "Apenas fornecedores podem excluir produtos." }, { status: 403 });
+      const { productId } = body as { productId?: string };
+      const index = memory.marketplaceProducts.findIndex((item) => item.id === productId);
+      if (index === -1) return jsonResponse({ error: "Produto não encontrado." }, { status: 404 });
+      const current = memory.marketplaceProducts[index];
+      if (current.supplierName !== supplier) return jsonResponse({ error: "Este produto não é seu." }, { status: 403 });
+      if (current.status !== "pending_pricing") return jsonResponse({ error: "Produto já precificado — não pode ser excluído pelo fornecedor." }, { status: 409 });
+      memory.marketplaceProducts.splice(index, 1);
+      persistDeleteRecord("marketplaceProducts", productId ?? "");
+      appendServerAudit({ actor, action: "MALL_PRODUCT_SUPPLIER_DELETED", entity: "MarketplaceProduct", entityId: productId ?? "", detail: `${supplier} excluiu ${current.name}.`, risk: "Low" });
+      return jsonResponse({ data: { ok: true } });
     }
 
     case "priceProduct": {
@@ -373,7 +427,7 @@ async function handlePost(request: Request) {
         ...current,
         ...(fields.name !== undefined ? { name: String(fields.name).slice(0, 80) } : {}),
         ...(fields.description !== undefined ? { description: String(fields.description).slice(0, 200) } : {}),
-        ...(fields.imageUrl !== undefined ? { imageUrl: String(fields.imageUrl).slice(0, 300) } : {}),
+        ...(fields.imageUrl !== undefined ? { imageUrl: String(fields.imageUrl).slice(0, 400000) } : {}),
         ...(fields.category !== undefined ? { category: String(fields.category).slice(0, 40) } : {}),
         ...(fields.stock !== undefined ? { stock: Math.max(0, Number(fields.stock) || 0) } : {}),
         ...(fields.deliveryCycleDays !== undefined ? { deliveryCycleDays: Math.max(0, Number(fields.deliveryCycleDays) || 0) } : {}),
