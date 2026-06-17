@@ -13,10 +13,20 @@ import readline from "node:readline";
 
 const profileDir = process.env.PROFILE_DIR || "./.eastwind-profile";
 
-const ctx = await chromium.launchPersistentContext(profileDir, {
+// Optional: route browser traffic through a proxy so the login session is
+// created from a specific IP (e.g. an SSH SOCKS tunnel to the VPS):
+//   ssh -D 1080 root@<vps> -N
+//   PROXY=socks5://localhost:1080 node login.mjs
+const launchOpts = {
   headless: false,
   viewport: { width: 1440, height: 900 },
-});
+};
+if (process.env.PROXY) {
+  launchOpts.proxy = { server: process.env.PROXY };
+  console.log("Using proxy:", process.env.PROXY);
+}
+
+const ctx = await chromium.launchPersistentContext(profileDir, launchOpts);
 const page = ctx.pages()[0] || (await ctx.newPage());
 await page.goto("https://eastwind.99app.com/monitor/riders/list");
 

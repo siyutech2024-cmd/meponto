@@ -94,13 +94,16 @@ async function pull(ctx) {
   const capturedAt = new Date().toISOString();
   const page = await ctx.newPage();
 
-  // Capture both gateway responses fired by the rider board in one page load.
+  // Capture gateway responses fired by the rider board. Track every gateway
+  // api name seen this round so we can tell "page didn't load" from "auth issue".
   const caps = {};
+  const seenApis = new Set();
   page.on("response", async (r) => {
     const u = r.url();
     if (!u.includes("/gateway")) return;
     const m = u.match(/[?&]api=([^&]+)/);
     const api = m ? decodeURIComponent(m[1]) : "";
+    if (api) seenApis.add(api);
     if (api === RIDER_LIST_API || api === KPI_API) {
       try { caps[api] = await r.json(); } catch { /* non-json */ }
     }
@@ -112,12 +115,26 @@ async function pull(ctx) {
       await alert("login", "LOGIN_REQUIRED — session expired. Re-copy .eastwind-profile (run login.mjs on a desktop, then redeploy).");
       return;
     }
-    await page.waitForTimeout(6000); // let riderList + KPI fire
+    // Wait explicitly for the rider list response (cold start / slow networks
+    // can take much longer than a fixed delay). Then a short settle for KPI.
+    await page
+      .waitForResponse((r) => r.url().includes(RIDER_LIST_API), { timeout: 30000 })
+      .catch(() => {});
+    await page.waitForTimeout(2500);
 
     const riderList = caps[RIDER_LIST_API] ?? null;
     const kpi = caps[KPI_API] ?? null;
     if (!riderList && !kpi) {
-      await alert("empty", "nothing captured this round (no riderList/KPI response).");
+      // Diagnostics: what is the page actually showing?
+      let diag = "";
+      try {
+        const url = page.url();
+        const title = await page.title().catch(() => "");
+        const bodyText = (await page.evaluate(() => document.body?.innerText || "").catch(() => "")).replace(/\s+/g, " ").slice(0, 220);
+        diag = ` | url=${url} | title=${title} | body="${bodyText}"`;
+        await page.screenshot({ path: "debug-last.png", fullPage: false }).catch(() => {});
+      } catch { /* ignore */ }
+      await alert("empty", `nothing captured (gateway APIs seen: ${[...seenApis].join(", ") || "none"})${diag}`);
       return;
     }
 
