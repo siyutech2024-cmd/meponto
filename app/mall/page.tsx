@@ -238,6 +238,7 @@ export default function MallAdminPage() {
                     <div className="flex flex-wrap items-center gap-2">
                       <span className="text-sm font-black">{product.name}</span>
                       <Badge value={productStatusLabel[product.status] ?? product.status} />
+                      <span className="rounded-full px-2 py-0.5 text-[11px] font-black" style={product.audience === "partner" ? { background: "#eef2ff", color: "#3b4a9a" } : product.audience === "both" ? { background: "#fff4cf", color: "#9a7400" } : { background: "rgba(0,0,0,.06)", color: "rgba(0,0,0,.6)" }}>{product.audience === "partner" ? "合作方" : product.audience === "both" ? "骑手+合作方" : "骑手"}</span>
                       {product.isVirtual && <Badge value="虚拟" />}
                       {product.category && <span className="tag">{product.category}</span>}
                     </div>
