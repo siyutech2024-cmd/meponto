@@ -11,32 +11,40 @@ import type { Rider } from "../../../lib/data";
  * Reads the latest Eastwind snapshot batch (rider_status_snapshots + KPI),
  * joins each rider to its MePonto profile (ninetyNineId → rider_ext_id, else
  * cpf → id_no, else phone) to attach ownership (franchise / ponto / leader),
- * then scopes:
- *   - HQ (no params)      → all riders, unmatched ones flagged 未归属
- *   - franchise=<name>    → only that franchise's riders
- *   - ponto=<name>        → only that station's riders
+ * then scopes: HQ → all (unmatched flagged 未归属); franchise/ponto → own only.
  *
- * Returns rows + status/franchise/ponto summaries + the header KPI snapshot.
+ * Returns rows (with a normalized status category + Chinese label) plus
+ * per-status / per-franchise / per-ponto summaries and the header KPI.
  */
 
 const digits = (v: unknown) => String(v ?? "").replace(/\D/g, "");
 
+// Normalize Eastwind workStatus → a stable category + Chinese label.
+// Categories are fixed so the dashboard columns/cards are always consistent.
+type Cat = "delivering" | "online" | "below" | "outArea" | "other";
+const CAT_BY_CODE: Record<string, { cat: Cat; label: string }> = {
+  "2": { cat: "delivering", label: "配送中" },
+  "4": { cat: "online", label: "在线" },
+  "1": { cat: "below", label: "不及预期" },
+  "3": { cat: "outArea", label: "不在区域内" },
+};
+function classify(statusCode: string | null, statusStr: string | null): { cat: Cat; label: string } {
+  const byCode = statusCode != null ? CAT_BY_CODE[String(statusCode)] : undefined;
+  if (byCode) return byCode;
+  const s = (statusStr || "").toLowerCase();
+  if (/entregando|em rota/.test(s)) return { cat: "delivering", label: "配送中" };
+  if (/conectado|online/.test(s)) return { cat: "online", label: "在线" };
+  if (/abaixo|expectativ/.test(s)) return { cat: "below", label: "不及预期" };
+  if (/fora|área|area/.test(s)) return { cat: "outArea", label: "不在区域内" };
+  return { cat: "other", label: statusStr || "未知" };
+}
+const EMPTY_CATS = () => ({ delivering: 0, online: 0, below: 0, outArea: 0, other: 0 });
+
 type SnapshotRow = {
-  rider_ext_id: string | null;
-  rider_name: string | null;
-  phone: string | null;
-  id_no: string | null;
-  status: string | null;
-  status_code: string | null;
-  shift_start: string | null;
-  shift_end: string | null;
-  hot_zone: string | null;
-  vehicle: string | null;
-  online_mins: number | null;
-  rest_mins: number | null;
-  finished_cnt: number | null;
-  lat: number | null;
-  lng: number | null;
+  rider_ext_id: string | null; rider_name: string | null; phone: string | null; id_no: string | null;
+  status: string | null; status_code: string | null; shift_start: string | null; shift_end: string | null;
+  hot_zone: string | null; vehicle: string | null; online_mins: number | null; rest_mins: number | null;
+  finished_cnt: number | null; lat: number | null; lng: number | null;
 };
 
 export async function GET(request: Request) {
@@ -45,13 +53,8 @@ export async function GET(request: Request) {
   const ponto = url.searchParams.get("ponto")?.trim() || "";
 
   const client = getSupabaseServerClient();
-
-  // Latest batch timestamp.
   const { data: latest, error: latestErr } = await client
-    .from("rider_status_snapshots")
-    .select("captured_at")
-    .order("captured_at", { ascending: false })
-    .limit(1);
+    .from("rider_status_snapshots").select("captured_at").order("captured_at", { ascending: false }).limit(1);
   if (latestErr) return jsonResponse({ error: latestErr.message }, { status: 500 });
   const capturedAt = latest?.[0]?.captured_at ?? null;
 
@@ -66,11 +69,8 @@ export async function GET(request: Request) {
     kpi = (kpis?.[0] as Record<string, unknown>) ?? null;
   }
 
-  // Build rider-profile lookups for ownership join.
   await refreshCollectionsFromDatabase(["riders"]);
-  const by99 = new Map<string, Rider>();
-  const byCpf = new Map<string, Rider>();
-  const byPhone = new Map<string, Rider>();
+  const by99 = new Map<string, Rider>(), byCpf = new Map<string, Rider>(), byPhone = new Map<string, Rider>();
   for (const r of memory.riders as Rider[]) {
     if (r.ninetyNineId) by99.set(String(r.ninetyNineId), r);
     if (r.cpf) byCpf.set(digits(r.cpf), r);
@@ -81,76 +81,55 @@ export async function GET(request: Request) {
     const match =
       (s.rider_ext_id && by99.get(String(s.rider_ext_id))) ||
       (s.id_no && byCpf.get(digits(s.id_no))) ||
-      (s.phone && byPhone.get(digits(s.phone))) ||
-      null;
-    const ownerFranchise = match?.franchise || "";
-    const ownerPonto = match?.ponto || "";
+      (s.phone && byPhone.get(digits(s.phone))) || null;
+    const { cat, label } = classify(s.status_code, s.status);
     return {
-      riderExtId: s.rider_ext_id,
-      name: match?.name || s.rider_name,
-      phone: s.phone,
-      status: s.status,
-      statusCode: s.status_code,
+      riderExtId: s.rider_ext_id, name: match?.name || s.rider_name, phone: s.phone,
+      status: s.status, statusLabel: label, cat,
       shift: [s.shift_start, s.shift_end].filter(Boolean).join("-"),
-      hotZone: s.hot_zone,
-      vehicle: s.vehicle,
-      onlineMins: s.online_mins,
-      restMins: s.rest_mins,
-      finishedCnt: s.finished_cnt,
-      lat: s.lat,
-      lng: s.lng,
-      franchise: ownerFranchise,
-      ponto: ownerPonto,
-      leader: match?.leader || "",
-      assigned: Boolean(match && ownerFranchise),
+      hotZone: s.hot_zone, vehicle: s.vehicle, onlineMins: s.online_mins, restMins: s.rest_mins,
+      finishedCnt: s.finished_cnt, lat: s.lat, lng: s.lng,
+      franchise: match?.franchise || "", ponto: match?.ponto || "", leader: match?.leader || "",
+      assigned: Boolean(match && match.franchise),
     };
   });
 
-  // Scope by portal.
   const scoped = rows.filter((r) => {
     if (franchise) return r.franchise === franchise;
     if (ponto) return r.ponto === ponto;
-    return true; // HQ: everything, including 未归属
+    return true;
   });
 
   // Summaries.
-  const statusCounts: Record<string, number> = {};
-  const franchiseAgg: Record<string, { online: number; finished: number }> = {};
-  const pontoAgg: Record<string, { online: number; finished: number }> = {};
+  const cats = EMPTY_CATS();
+  const frAgg: Record<string, { total: number; finished: number } & ReturnType<typeof EMPTY_CATS>> = {};
+  const ptAgg: Record<string, { total: number; finished: number } & ReturnType<typeof EMPTY_CATS>> = {};
   for (const r of scoped) {
-    const st = r.status || "未知";
-    statusCounts[st] = (statusCounts[st] || 0) + 1;
-    const fr = r.franchise || "未归属";
-    franchiseAgg[fr] = franchiseAgg[fr] || { online: 0, finished: 0 };
-    franchiseAgg[fr].online += 1;
-    franchiseAgg[fr].finished += r.finishedCnt || 0;
-    const pt = r.ponto || "未归属";
-    pontoAgg[pt] = pontoAgg[pt] || { online: 0, finished: 0 };
-    pontoAgg[pt].online += 1;
-    pontoAgg[pt].finished += r.finishedCnt || 0;
+    cats[r.cat] += 1;
+    for (const [key, name] of [["fr", r.franchise || "未归属"], ["pt", r.ponto || "未归属"]] as const) {
+      const agg = key === "fr" ? frAgg : ptAgg;
+      agg[name] = agg[name] || { total: 0, finished: 0, ...EMPTY_CATS() };
+      agg[name].total += 1;
+      agg[name].finished += r.finishedCnt || 0;
+      agg[name][r.cat] += 1;
+    }
   }
-  const toSorted = (agg: Record<string, { online: number; finished: number }>) =>
-    Object.entries(agg)
-      .map(([name, v]) => ({ name, ...v }))
-      .sort((a, b) => b.online - a.online);
+  const sortAgg = (agg: typeof frAgg) =>
+    Object.entries(agg).map(([name, v]) => ({ name, ...v })).sort((a, b) => b.total - a.total);
 
   return jsonResponse({
     data: {
       capturedAt,
-      kpi: kpi
-        ? {
-            ar: kpi.ar, caa: kpi.caa, acceptCnt: kpi.accept_cnt,
-            overtime: kpi.overtime, tsh: kpi.tsh, finishedCnt: kpi.finished_cnt,
-          }
-        : null,
+      kpi: kpi ? { ar: kpi.ar, caa: kpi.caa, acceptCnt: kpi.accept_cnt, overtime: kpi.overtime, tsh: kpi.tsh, finishedCnt: kpi.finished_cnt } : null,
       riders: scoped,
       summary: {
         total: scoped.length,
         assigned: scoped.filter((r) => r.assigned).length,
         unassigned: scoped.filter((r) => !r.assigned).length,
-        statusCounts,
-        byFranchise: toSorted(franchiseAgg),
-        byPonto: toSorted(pontoAgg),
+        finishedTotal: scoped.reduce((sum, r) => sum + (r.finishedCnt || 0), 0),
+        cats,
+        byFranchise: sortAgg(frAgg),
+        byPonto: sortAgg(ptAgg),
       },
     },
   });
