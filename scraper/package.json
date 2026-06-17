@@ -1,0 +1,14 @@
+{
+  "name": "eastwind-rider-status-scraper",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Logged-in Playwright scraper for the 99Food Eastwind real-time monitor; forwards rider status + waybill JSON to the MePonto ingest endpoint.",
+  "scripts": {
+    "login": "node login.mjs",
+    "start": "node eastwind-rider-status.mjs"
+  },
+  "dependencies": {
+    "playwright": "^1.49.0"
+  }
+}
