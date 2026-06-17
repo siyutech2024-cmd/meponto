@@ -88,7 +88,16 @@ export default function SupplierWorkspacePage() {
       canvas.height = h;
       canvas.getContext("2d")?.drawImage(img, 0, 0, w, h);
       const out = canvas.toDataURL("image/jpeg", 0.62);
-      setForm((prev) => ({ ...prev, imageUrl: out }));
+      // Prefer Supabase Storage (small payloads); fall back to the inline data URL.
+      let finalUrl = out;
+      try {
+        const res = await fetch("/api/mall/upload", { method: "POST", headers, body: JSON.stringify({ dataUrl: out }) });
+        const payload = await res.json().catch(() => ({}));
+        if (res.ok && payload?.url) finalUrl = payload.url as string;
+      } catch {
+        /* storage unavailable — keep the inline data URL */
+      }
+      setForm((prev) => ({ ...prev, imageUrl: finalUrl }));
     } catch {
       setMessage({ tone: "err", text: "Não foi possível processar a imagem. Tente JPG ou PNG (HEIC do iPhone pode não funcionar)." });
     } finally {
