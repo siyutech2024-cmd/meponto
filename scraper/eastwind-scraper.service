@@ -1,0 +1,30 @@
+# systemd unit for the Eastwind scraper (alternative to pm2).
+# Install:
+#   sudo cp eastwind-scraper.service /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now eastwind-scraper
+#   journalctl -u eastwind-scraper -f      # follow logs
+#
+# Adjust User= and WorkingDirectory= to match your deploy path.
+# Env is loaded from <WorkingDirectory>/.env by the script (load-env.mjs).
+
+[Unit]
+Description=Eastwind (99Food) rider monitor scraper
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=eastwind
+WorkingDirectory=/opt/eastwind-scraper
+ExecStart=/usr/bin/node eastwind-rider-status.mjs
+# If anti-bot challenges appear in headless mode, switch to headed under Xvfb:
+#   set HEADLESS=false in .env, install xvfb, and use:
+# ExecStart=/usr/bin/xvfb-run -a /usr/bin/node eastwind-rider-status.mjs
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

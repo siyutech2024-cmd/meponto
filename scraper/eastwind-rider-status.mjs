@@ -31,26 +31,59 @@ const RIDERS_URL = "https://eastwind.99app.com/monitor/riders/list";
 const RIDER_LIST_API = "vendor.rider.monitor.riderList";          // the rider list
 const KPI_API = "vendor.rider.monitor.vendorFeatureInShift";      // header KPIs
 
+// Parse "HH:MM" (or "HH") into minutes-of-day. Falls back to `def`.
+function hmToMin(s, def) {
+  if (s == null || s === "") return def;
+  const m = String(s).trim().match(/^(\d{1,2})(?::(\d{2}))?$/);
+  if (!m) return def;
+  return parseInt(m[1], 10) * 60 + (m[2] ? parseInt(m[2], 10) : 0);
+}
+
 const cfg = {
   ingestUrl: process.env.MEPONTO_INGEST_URL,
   ingestToken: process.env.MEPONTO_INGEST_TOKEN || "",
   profileDir: process.env.PROFILE_DIR || "./.eastwind-profile",
   cityId: process.env.CITY_ID || "55000199",
   intervalMin: Number(process.env.INTERVAL_MIN || 5),
-  shiftStart: Number(process.env.SHIFT_START || 0),
-  shiftEnd: Number(process.env.SHIFT_END || 24),
+  shiftStartMin: hmToMin(process.env.SHIFT_START, 0),     // e.g. "10:30"
+  shiftEndMin: hmToMin(process.env.SHIFT_END, 24 * 60),   // e.g. "22:30"
   tz: process.env.TZ || "America/Sao_Paulo",
   headless: process.env.HEADLESS !== "false",
+  alertWebhook: process.env.ALERT_WEBHOOK_URL || "", // Slack/Discord/Zapier incoming webhook
 };
 
 const log = (...a) => console.log(new Date().toISOString(), ...a);
 
+// Throttled alert to a generic webhook. Sends Slack- and Discord-compatible
+// payloads. Re-alerts for the same key at most once per hour to avoid spam.
+const _alertedAt = new Map();
+async function alert(key, text) {
+  log("ALERT:", text);
+  if (!cfg.alertWebhook) return;
+  const last = _alertedAt.get(key) || 0;
+  if (Date.now() - last < 60 * 60 * 1000) return; // once per hour per key
+  _alertedAt.set(key, Date.now());
+  const msg = `[Eastwind scraper] ${text}`;
+  try {
+    await fetch(cfg.alertWebhook, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text: msg, content: msg }),
+    });
+  } catch (e) {
+    log("alert webhook failed:", e.message);
+  }
+}
+
 function inShiftWindow() {
-  const hour = Number(
-    new Intl.DateTimeFormat("en-US", { timeZone: cfg.tz, hour: "2-digit", hour12: false }).format(new Date()),
-  );
-  if (cfg.shiftStart <= cfg.shiftEnd) return hour >= cfg.shiftStart && hour < cfg.shiftEnd;
-  return hour >= cfg.shiftStart || hour < cfg.shiftEnd; // window wraps midnight
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: cfg.tz, hour: "2-digit", minute: "2-digit", hour12: false,
+  }).formatToParts(new Date());
+  const h = Number(parts.find((p) => p.type === "hour").value) % 24;
+  const mi = Number(parts.find((p) => p.type === "minute").value);
+  const cur = h * 60 + mi;
+  if (cfg.shiftStartMin <= cfg.shiftEndMin) return cur >= cfg.shiftStartMin && cur < cfg.shiftEndMin;
+  return cur >= cfg.shiftStartMin || cur < cfg.shiftEndMin; // window wraps midnight
 }
 
 async function pull(ctx) {
@@ -76,7 +109,7 @@ async function pull(ctx) {
   try {
     await page.goto(RIDERS_URL, { waitUntil: "domcontentloaded" });
     if (!page.url().includes("/monitor/")) {
-      log("LOGIN_REQUIRED — session expired, re-run login.mjs (hook alerting here)");
+      await alert("login", "LOGIN_REQUIRED — session expired. Re-copy .eastwind-profile (run login.mjs on a desktop, then redeploy).");
       return;
     }
     await page.waitForTimeout(6000); // let riderList + KPI fire
@@ -84,7 +117,7 @@ async function pull(ctx) {
     const riderList = caps[RIDER_LIST_API] ?? null;
     const kpi = caps[KPI_API] ?? null;
     if (!riderList && !kpi) {
-      log("nothing captured this round");
+      await alert("empty", "nothing captured this round (no riderList/KPI response).");
       return;
     }
 
@@ -95,6 +128,8 @@ async function pull(ctx) {
     });
     const txt = await res.text();
     log(`ingest ${res.status}: ${txt.slice(0, 300)}`);
+    if (!res.ok) await alert("ingest", `ingest failed HTTP ${res.status}: ${txt.slice(0, 200)}`);
+    else _alertedAt.delete("login"); // healthy round clears the login alert throttle
   } finally {
     await page.close();
   }
@@ -105,7 +140,11 @@ async function main() {
     console.error("MEPONTO_INGEST_URL is required");
     process.exit(1);
   }
-  log("starting scraper", { interval: cfg.intervalMin, shift: [cfg.shiftStart, cfg.shiftEnd], tz: cfg.tz });
+  log("starting scraper", {
+    interval: cfg.intervalMin,
+    shift: `${process.env.SHIFT_START || "00:00"}-${process.env.SHIFT_END || "24:00"}`,
+    tz: cfg.tz,
+  });
   const ctx = await chromium.launchPersistentContext(cfg.profileDir, {
     headless: cfg.headless,
     viewport: { width: 1440, height: 900 },
