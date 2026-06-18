@@ -2,7 +2,7 @@ import { appendServerAudit, jsonResponse, makeServerId, memory } from "../../lib
 import { flushPendingToDatabase, persistDeleteRecord, refreshCollectionsFromDatabase } from "../../lib/server/persistence";
 import { requirePermission, roleFromRequest } from "../../lib/server/authz";
 import { sendPushToRider } from "../../lib/server/notify";
-import { getAvailablePoints, getAvailablePartnerPoints, type MarketplaceOrder, type MarketplaceProduct, type PartnerPointsLedgerEntry, type PointsLedgerEntry } from "../../lib/points";
+import { getAvailablePoints, getAvailablePartnerPoints, pointsRules, type MarketplaceOrder, type MarketplaceProduct, type PartnerPointsLedgerEntry, type PointsLedgerEntry } from "../../lib/points";
 import { defaultMallConfig, resolveTier, tierDefinitions, type MallConfig } from "../../lib/mall";
 import type { CashLedgerEntry, MallCoupon } from "../../lib/mall-ops";
 
@@ -180,6 +180,22 @@ export async function GET(request: Request) {
       cashBalance: cashBalanceOf(rider.id),
       topUps: memory.cashTopUps.filter((t) => t.riderId === rider.id).slice(0, 10),
       coupons: eligibleCouponsForRider(rider.id, tier.tier),
+      // Read-only points ledger slice (newest 30) for the storefront extract
+      // drawer. The ledger stays append-only in memory.pointsLedgerEntries.
+      ledger: memory.pointsLedgerEntries
+        .filter((entry) => entry.riderId === rider.id)
+        .slice(0, 30)
+        .map((entry) => ({
+          id: entry.id,
+          type: entry.type,
+          points: entry.points,
+          status: entry.status,
+          sourceType: entry.sourceType,
+          reasonCode: entry.reasonCode,
+          note: entry.note,
+          createdAt: entry.createdAt,
+          balanceAfter: entry.balanceAfter,
+        })),
     };
   }
 
@@ -230,6 +246,22 @@ export async function GET(request: Request) {
         riderId: "",
         name: partner.name,
         balance: getAvailablePartnerPoints(memory.partnerPointsLedgerEntries, partner.id),
+        // Same read-only ledger slice shape as the rider, from the Partner
+        // append-only ledger, so the storefront drawer is account-agnostic.
+        ledger: memory.partnerPointsLedgerEntries
+          .filter((entry) => entry.partnerId === partner.id)
+          .slice(0, 30)
+          .map((entry) => ({
+            id: entry.id,
+            type: entry.type,
+            points: entry.points,
+            status: entry.status,
+            sourceType: entry.sourceType,
+            reasonCode: entry.reasonCode,
+            note: entry.note,
+            createdAt: entry.createdAt,
+            balanceAfter: entry.balanceAfter,
+          })),
       };
       // Partner sees only its own redemption orders.
       orders = memory.marketplaceOrders.filter((order) => order.accountType === "partner" && order.partnerId === partner.id);
@@ -242,6 +274,13 @@ export async function GET(request: Request) {
     return rest;
   });
 
+  // HQ-only points liability & redemption reconciliation. Points are a
+  // marketing-cost liability (the standard treats `1 BRL = 10 pts` as a
+  // reference, not a cash promise), so this is a derived read model over the
+  // append-only ledgers — no new writes. Closes "earn liability ↔ expiry
+  // recovery ↔ cash redemption" for Finance.
+  const pointsLiability = isHq ? buildPointsLiability(supplierSettlement) : null;
+
   return jsonResponse({
     data: {
       config: { ...config, pixKey: undefined },
@@ -253,8 +292,56 @@ export async function GET(request: Request) {
       orders,
       me: me ? { ...me, expiringPoints } : null,
       supplierSettlement: isHq ? supplierSettlement : [],
+      pointsLiability,
     },
   });
+}
+
+const LIABILITY_POSITIVE = new Set(["earn", "refund", "release", "adjust"]);
+
+/** Derived points-liability aggregate over both append-only ledgers (HQ only). */
+function buildPointsLiability(supplierSettlement: Array<{ supplier: string; qty: number; payable: number }>) {
+  const monthPrefix = new Date().toISOString().slice(0, 7);
+  const rate = pointsRules.pointsPerBrlReference || 10;
+
+  const aggregate = (entries: Array<{ type: string; status: string; points: number; createdAt: string }>) => {
+    let outstanding = 0;
+    let earnedThisMonth = 0;
+    let spentThisMonth = 0;
+    let expiredThisMonth = 0;
+    let pending = 0;
+    for (const entry of entries) {
+      if (entry.status === "approved") {
+        outstanding += LIABILITY_POSITIVE.has(entry.type) ? entry.points : -entry.points;
+        if (entry.createdAt.startsWith(monthPrefix)) {
+          if (entry.type === "earn") earnedThisMonth += entry.points;
+          else if (entry.type === "spend") spentThisMonth += entry.points;
+          else if (entry.type === "expire") expiredThisMonth += entry.points;
+        }
+      } else if (entry.status === "pending" && entry.type === "earn") {
+        pending += entry.points;
+      }
+    }
+    return { outstanding, earnedThisMonth, spentThisMonth, expiredThisMonth, pending };
+  };
+
+  const rider = aggregate(memory.pointsLedgerEntries);
+  const partner = aggregate(memory.partnerPointsLedgerEntries);
+  const totalOutstanding = rider.outstanding + partner.outstanding;
+  const supplierPayableBRL = Math.round(supplierSettlement.reduce((sum, row) => sum + row.payable, 0) * 100) / 100;
+
+  return {
+    rate,
+    riderOutstanding: rider.outstanding,
+    partnerOutstanding: partner.outstanding,
+    totalOutstanding,
+    liabilityBRL: Math.round((totalOutstanding / rate) * 100) / 100,
+    earnedThisMonth: rider.earnedThisMonth + partner.earnedThisMonth,
+    spentThisMonth: rider.spentThisMonth + partner.spentThisMonth,
+    expiredThisMonth: rider.expiredThisMonth + partner.expiredThisMonth,
+    pendingPoints: rider.pending + partner.pending,
+    supplierPayableBRL,
+  };
 }
 
 type Body =

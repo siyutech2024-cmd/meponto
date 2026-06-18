@@ -17,6 +17,19 @@ type OpsPayload = {
   summary: { orders: number; pointsGmv: number; cashGmv: number; pendingPayments: number; reviewPending?: number; partnerOrders?: number; partnerPointsSpent?: number; topProducts?: Array<{ name: string; count: number }>; daily: Array<{ date: string; count: number }> };
 };
 
+type PointsLiability = {
+  rate: number;
+  riderOutstanding: number;
+  partnerOutstanding: number;
+  totalOutstanding: number;
+  liabilityBRL: number;
+  earnedThisMonth: number;
+  spentThisMonth: number;
+  expiredThisMonth: number;
+  pendingPoints: number;
+  supplierPayableBRL: number;
+};
+
 
 function Stat({ label, value, hint }: { label: string; value: string; hint?: string }) {
   return (
@@ -32,6 +45,7 @@ export default function MallInsightsPage() {
   const headers = useMemo(() => ({ "Content-Type": "application/json" }), []);
   const [products, setProducts] = useState<MarketplaceProduct[]>([]);
   const [settlement, setSettlement] = useState<Array<{ supplier: string; qty: number; payable: number }>>([]);
+  const [liability, setLiability] = useState<PointsLiability | null>(null);
   const [ops, setOps] = useState<OpsPayload | null>(null);
 
   const load = useCallback(async () => {
@@ -43,6 +57,7 @@ export default function MallInsightsPage() {
       const payload = await mallRes.json();
       setProducts(payload.data?.products ?? []);
       setSettlement(payload.data?.supplierSettlement ?? []);
+      setLiability(payload.data?.pointsLiability ?? null);
     }
     if (opsRes.ok) setOps((await opsRes.json()).data);
   }, [headers]);
@@ -114,6 +129,23 @@ export default function MallInsightsPage() {
           ))}
         </div>
       </div>
+
+      {liability && (
+        <div className="panel mt-5 p-5">
+          <div className="mb-1 text-xs font-black uppercase text-[var(--muted)]">积分负债与兑付对账</div>
+          <p className="mb-3 text-[11px] font-bold text-[var(--muted)]">积分为营销成本型负债;{liability.rate} 分 ≈ R$ 1(定价参考,非现金承诺)。过期回收与兑付现金共同收敛负债。</p>
+          <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+            <Stat label="未兑付积分负债" value={`R$ ${liability.liabilityBRL.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}`} hint={`${liability.totalOutstanding.toLocaleString()} 分(骑手 ${liability.riderOutstanding.toLocaleString()} · 合作方 ${liability.partnerOutstanding.toLocaleString()})`} />
+            <Stat label="本月新增赚取" value={`${liability.earnedThisMonth.toLocaleString()} 分`} hint="负债增加项" />
+            <Stat label="本月消耗 / 过期" value={`${liability.spentThisMonth.toLocaleString()} / ${liability.expiredThisMonth.toLocaleString()} 分`} hint="兑换消耗 · 过期回收(均减负债)" />
+            <Stat label="待释放积分" value={`${liability.pendingPoints.toLocaleString()} 分`} hint="未计入可用负债" />
+          </div>
+          <div className="mt-3 flex flex-wrap items-center gap-x-6 gap-y-1 text-[11px] font-bold text-[var(--muted)]">
+            <span>兑付现金支出(供应商应付):<b className="text-[var(--text)]">R$ {liability.supplierPayableBRL.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</b></span>
+            <span>口径:负债(分/{liability.rate})↔ 过期回收 ↔ 现金兑付,需 Finance 月度复核。</span>
+          </div>
+        </div>
+      )}
 
       <div className="panel mt-5 p-5">
         <div className="mb-3 text-xs font-black uppercase text-[var(--muted)]">供应商应付（履约口径）</div>

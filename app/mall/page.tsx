@@ -529,7 +529,8 @@ export default function MallAdminPage() {
           </div>
 
           <div className="panel p-5">
-            <div className="mb-3 text-xs font-black uppercase text-[var(--muted)]">补货单（PO）</div>
+            <div className="mb-1 text-xs font-black uppercase text-[var(--muted)]">补货单（PO）· 代销备货流转</div>
+            <p className="mb-3 text-[11px] font-bold text-[var(--muted)]">代销模式:补货单仅用于备货/调拨与入库流转,<b>不产生应付账款</b>。供应商货款一律以月度对账(履约订单 × 供货价)结算,补货金额仅为备货参考成本。</p>
             <div className="mb-4 rounded-[10px] border border-dashed border-[var(--line)] p-3.5">
               <div className="mb-2 flex flex-wrap items-center gap-2">
                 <select value={poSupplier} onChange={(e) => { setPoSupplier(e.target.value); setPoItems({}); }} className="h-10 rounded-[8px] border border-[var(--line)] bg-[var(--surface-raised)] px-3 text-sm font-bold outline-none">
@@ -567,7 +568,7 @@ export default function MallAdminPage() {
                     <Boxes size={15} className="text-[var(--muted)]" />
                     <span className="text-sm font-black">{po.supplierName}</span>
                     <Badge value={poStatusLabel[po.status]} />
-                    <span className="text-xs font-bold text-[var(--muted)]">{po.items.reduce((sum, item) => sum + item.qty, 0)} 件 · R$ {po.totalCost.toFixed(2)} · {po.createdAt}</span>
+                    <span className="text-xs font-bold text-[var(--muted)]">{po.items.reduce((sum, item) => sum + item.qty, 0)} 件 · 备货参考成本 R$ {po.totalCost.toFixed(2)} · {po.createdAt}</span>
                     <span className="ml-auto flex gap-1.5">
                       {po.status === "shipped" && <button type="button" onClick={() => void post("/api/mall/ops", { action: "receivePO", poId: po.id }, "已入库，库存已增加")} className="h-8 rounded-[8px] bg-[var(--accent)] px-3 text-xs font-black text-[var(--accent-ink)]">确认入库</button>}
                       {(po.status === "ordered" || po.status === "confirmed") && <button type="button" onClick={() => void post("/api/mall/ops", { action: "cancelPO", poId: po.id }, "已取消")} className="h-8 rounded-[8px] border border-[var(--line)] px-3 text-xs font-black text-[var(--muted)]">取消</button>}

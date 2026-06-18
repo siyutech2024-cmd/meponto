@@ -12,6 +12,18 @@ import type { CashTopUp, MallBanner, MallCategory, MallCoupon } from "../lib/mal
  * rider settles by transfer + receipt reference.
  */
 
+type LedgerRow = {
+  id: string;
+  type: string;
+  points: number;
+  status: string;
+  sourceType: string;
+  reasonCode: string;
+  note: string;
+  createdAt: string;
+  balanceAfter: number;
+};
+
 type Me = {
   accountType?: "rider" | "partner";
   riderId: string;
@@ -24,6 +36,34 @@ type Me = {
   cashBalance?: number;
   topUps?: CashTopUp[];
   coupons?: MallCoupon[];
+  ledger?: LedgerRow[];
+};
+
+/** Points that increase the balance vs. those that decrease it (mirrors the server). */
+const POSITIVE_LEDGER = new Set(["earn", "refund", "release", "adjust"]);
+const ledgerTypeLabel: Record<string, string> = {
+  earn: "Ganho",
+  spend: "Resgate",
+  refund: "Estorno",
+  expire: "Expirado",
+  reverse: "Revertido",
+  adjust: "Ajuste",
+  release: "Liberado",
+  hold: "Reservado",
+};
+const ledgerSourceLabel: Record<string, string> = {
+  delivery: "Entregas",
+  mission: "Missão",
+  partner_service: "Serviço a entregador",
+  marketplace_order: "Resgate na loja",
+  admin_adjustment: "Ajuste manual",
+  expiry: "Expiração",
+};
+const ledgerStatusLabel: Record<string, string> = {
+  approved: "Confirmado",
+  pending: "Pendente",
+  rejected: "Recusado",
+  reversed: "Revertido",
 };
 
 type Payload = {
@@ -74,6 +114,7 @@ export default function StorefrontPage() {
   const [busy, setBusy] = useState(false);
   const [toast, setToast] = useState<{ tone: "ok" | "err"; text: string } | null>(null);
   const [ordersOpen, setOrdersOpen] = useState(false);
+  const [extratoOpen, setExtratoOpen] = useState(false);
   const [topUpOpen, setTopUpOpen] = useState(false);
   const [topUpAmount, setTopUpAmount] = useState("");
   const [activeTopUp, setActiveTopUp] = useState<CashTopUp | null>(null);
@@ -135,11 +176,12 @@ export default function StorefrontPage() {
       if (event.key !== "Escape") return;
       if (detail) setDetail(null);
       else if (topUpOpen) { setTopUpOpen(false); setActiveTopUp(null); }
+      else if (extratoOpen) setExtratoOpen(false);
       else if (ordersOpen) setOrdersOpen(false);
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [detail, topUpOpen, ordersOpen]);
+  }, [detail, topUpOpen, ordersOpen, extratoOpen]);
 
   const me = data?.me ?? null;
   const products = useMemo(() => {
@@ -340,10 +382,16 @@ export default function StorefrontPage() {
                     </span>
                   )}
                 </button>
-                <div className="inline-flex h-10 items-center gap-2 rounded-full px-4 text-sm font-black" style={{ background: "#fff4cf" }}>
+                <button
+                  type="button"
+                  onClick={() => setExtratoOpen(true)}
+                  title="Ver extrato de pontos"
+                  className="inline-flex h-10 items-center gap-2 rounded-full px-4 text-sm font-black transition-transform hover:scale-105"
+                  style={{ background: "#fff4cf" }}
+                >
                   <Wallet size={15} style={{ color: "#9a7400" }} />
                   {me.balance.toLocaleString("pt-BR")} pts
-                </div>
+                </button>
                 {me.accountType !== "partner" && (
                   <button
                     type="button"
@@ -735,6 +783,50 @@ export default function StorefrontPage() {
                   )}
                 </div>
               ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ---- Points extract drawer (rider & partner share this) -------------------- */}
+      {extratoOpen && me && (
+        <div className="fixed inset-0 z-50 flex justify-end bg-black/45 backdrop-blur-sm" onClick={() => setExtratoOpen(false)}>
+          <div className="flex h-full w-full max-w-md flex-col bg-white shadow-2xl" onClick={(event) => event.stopPropagation()}>
+            <div className="flex items-center justify-between border-b border-black/5 px-5 py-4">
+              <div>
+                <div className="text-base font-black">Extrato de pontos</div>
+                <div className="text-xs font-bold text-black/45">Saldo atual: {me.balance.toLocaleString("pt-BR")} pts</div>
+              </div>
+              <button type="button" onClick={() => setExtratoOpen(false)} className="grid h-9 w-9 place-items-center rounded-full bg-black/5"><X size={16} /></button>
+            </div>
+            <div className="flex-1 space-y-2 overflow-y-auto p-5">
+              {(me.ledger ?? []).length === 0 && (
+                <div className="pt-10 text-center text-sm font-bold text-black/40">Nenhum movimento de pontos ainda. 🪙</div>
+              )}
+              {(me.ledger ?? []).map((row) => {
+                const positive = POSITIVE_LEDGER.has(row.type);
+                const sign = positive ? "+" : "−";
+                const color = row.status !== "approved" ? "#9a7400" : positive ? "#1d7a3e" : "#c4423b";
+                return (
+                  <div key={row.id} className="flex items-start justify-between gap-3 rounded-2xl border border-black/8 p-3.5">
+                    <div className="min-w-0">
+                      <div className="text-sm font-black">{ledgerTypeLabel[row.type] ?? row.type}</div>
+                      <div className="truncate text-xs font-bold text-black/45">
+                        {ledgerSourceLabel[row.sourceType] ?? row.sourceType} · {row.createdAt.slice(0, 10)}
+                      </div>
+                      {row.status !== "approved" && (
+                        <span className="mt-1 inline-block rounded-full px-2 py-0.5 text-[10px] font-black" style={{ background: "#fff4cf", color: "#9a7400" }}>
+                          {ledgerStatusLabel[row.status] ?? row.status}
+                        </span>
+                      )}
+                    </div>
+                    <div className="shrink-0 text-right">
+                      <div className="text-sm font-black" style={{ color }}>{sign}{row.points.toLocaleString("pt-BR")}</div>
+                      <div className="text-[11px] font-bold text-black/35">Saldo {row.balanceAfter.toLocaleString("pt-BR")}</div>
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           </div>
         </div>
