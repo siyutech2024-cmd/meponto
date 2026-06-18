@@ -23,6 +23,18 @@ export type MallConfig = {
   partnerServiceCount: number;
   /** Company PIX key shown for hybrid (points + cash) checkout transfers. */
   pixKey?: string;
+  /**
+   * Redemption guardrails — adjustable from the mall back office. `0` means
+   * "no limit" (the operator opts in by entering a positive value).
+   * `dailyRedeemCount` and `highValueReviewPoints` default to the previously
+   * hard-coded values so existing behavior is preserved.
+   */
+  dailyRedeemCount?: number;
+  dailyRedeemPoints?: number;
+  monthlyRedeemPoints?: number;
+  highValueReviewPoints?: number;
+  newAccountWindowDays?: number;
+  newAccountRedeemCap?: number;
   updatedAt: string;
   updatedBy: string;
 };
@@ -34,6 +46,12 @@ export const defaultMallConfig: MallConfig = {
   partnerServicePoints: 20,
   partnerServiceCount: 3,
   pixKey: "",
+  dailyRedeemCount: 20,
+  dailyRedeemPoints: 0,
+  monthlyRedeemPoints: 0,
+  highValueReviewPoints: 8000,
+  newAccountWindowDays: 7,
+  newAccountRedeemCap: 0,
   updatedAt: "",
   updatedBy: "seed",
 };

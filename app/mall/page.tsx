@@ -629,10 +629,40 @@ export default function MallAdminPage() {
             <label className="text-[11px] font-black text-[var(--muted)] md:col-span-2">公司 PIX 收款 Key（骑手充值时展示）
               <input value={configDraft.pixKey ?? mall?.pixKey ?? ""} onChange={(e) => setConfigDraft((prev) => ({ ...prev, pixKey: e.target.value }))} placeholder="CNPJ / e-mail / chave aleatória" className="mt-1 h-10 w-full rounded-[8px] border border-[var(--line)] bg-[var(--surface-raised)] px-3 font-mono text-sm font-bold outline-none focus:border-[var(--accent)]" />
             </label>
+
+            <div className="md:col-span-2 mt-2 border-t border-[var(--line)] pt-3 text-[11px] font-black uppercase text-[var(--muted)]">兑换限额（全局风控 · 0 = 不限）</div>
+            {[
+              { key: "dailyRedeemCount", label: "每日兑换笔数上限", value: mall?.config.dailyRedeemCount },
+              { key: "dailyRedeemPoints", label: "每日兑换积分上限", value: mall?.config.dailyRedeemPoints },
+              { key: "monthlyRedeemPoints", label: "每月兑换积分上限", value: mall?.config.monthlyRedeemPoints },
+              { key: "highValueReviewPoints", label: "高价值人工审核门槛（分）", value: mall?.config.highValueReviewPoints },
+              { key: "newAccountWindowDays", label: "新账号判定窗口（天）", value: mall?.config.newAccountWindowDays },
+              { key: "newAccountRedeemCap", label: "新账号窗口内兑换上限（分）", value: mall?.config.newAccountRedeemCap },
+            ].map((field) => (
+              <label key={field.key} className="text-[11px] font-black text-[var(--muted)]">{field.label}
+                <input value={configDraft[field.key] ?? String(field.value ?? "")} onChange={(e) => setConfigDraft((prev) => ({ ...prev, [field.key]: e.target.value }))} inputMode="numeric" className="mt-1 h-10 w-full rounded-[8px] border border-[var(--line)] bg-[var(--surface-raised)] px-3 text-sm font-bold outline-none focus:border-[var(--accent)]" />
+              </label>
+            ))}
           </div>
           <button
             type="button"
-            onClick={() => void post("/api/mall", { action: "setConfig", perOrderPoints: Number(configDraft.perOrderPoints ?? mall?.config.perOrderPoints), referralPoints: Number(configDraft.referralPoints ?? mall?.config.referralPoints), partnerServicePoints: Number(configDraft.partnerServicePoints ?? mall?.config.partnerServicePoints), partnerServiceCount: Number(configDraft.partnerServiceCount ?? mall?.config.partnerServiceCount), pixKey: configDraft.pixKey ?? mall?.pixKey ?? "" }, "配置已保存")}
+            onClick={() => {
+              const num = (key: string, fallback?: number) => Number(configDraft[key] ?? fallback ?? 0);
+              void post("/api/mall", {
+                action: "setConfig",
+                perOrderPoints: num("perOrderPoints", mall?.config.perOrderPoints),
+                referralPoints: num("referralPoints", mall?.config.referralPoints),
+                partnerServicePoints: num("partnerServicePoints", mall?.config.partnerServicePoints),
+                partnerServiceCount: num("partnerServiceCount", mall?.config.partnerServiceCount),
+                dailyRedeemCount: num("dailyRedeemCount", mall?.config.dailyRedeemCount),
+                dailyRedeemPoints: num("dailyRedeemPoints", mall?.config.dailyRedeemPoints),
+                monthlyRedeemPoints: num("monthlyRedeemPoints", mall?.config.monthlyRedeemPoints),
+                highValueReviewPoints: num("highValueReviewPoints", mall?.config.highValueReviewPoints),
+                newAccountWindowDays: num("newAccountWindowDays", mall?.config.newAccountWindowDays),
+                newAccountRedeemCap: num("newAccountRedeemCap", mall?.config.newAccountRedeemCap),
+                pixKey: configDraft.pixKey ?? mall?.pixKey ?? "",
+              }, "配置已保存");
+            }}
             className="mt-4 h-11 rounded-[8px] bg-[var(--accent)] px-6 text-sm font-black text-[var(--accent-ink)]"
           >保存配置</button>
           <p className="mt-3 text-xs font-bold text-[var(--muted)]">门面：mall.meponto.com · 后台：mall.meponto.com/admin · 供应链：supplier.meponto.com</p>

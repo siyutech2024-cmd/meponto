@@ -347,7 +347,7 @@ function buildPointsLiability(supplierSettlement: Array<{ supplier: string; qty:
 }
 
 type Body =
-  | { action: "setConfig"; perOrderPoints?: number; referralPoints?: number; partnerServicePoints?: number; partnerServiceCount?: number }
+  | { action: "setConfig"; perOrderPoints?: number; referralPoints?: number; partnerServicePoints?: number; partnerServiceCount?: number; dailyRedeemCount?: number; dailyRedeemPoints?: number; monthlyRedeemPoints?: number; highValueReviewPoints?: number; newAccountWindowDays?: number; newAccountRedeemCap?: number }
   | { action: "supplierAddProduct"; name: string; supplierName: string; supplyPrice: number; deliveryCycleDays: number; stock: number; description?: string; imageUrl?: string; category?: string; isVirtual?: boolean; audience?: "rider" | "partner" | "both"; type?: string }
   | { action: "supplierUpdateProduct"; productId: string; name?: string; supplyPrice?: number; description?: string; imageUrl?: string; category?: string; stock?: number; deliveryCycleDays?: number; isVirtual?: boolean; audience?: "rider" | "partner" | "both"; type?: string }
   | { action: "supplierDeleteProduct"; productId: string }
@@ -392,7 +392,7 @@ async function handlePost(request: Request) {
   switch (body.action) {
     case "setConfig": {
       const config = { ...getConfig() };
-      const fields = ["perOrderPoints", "referralPoints", "partnerServicePoints", "partnerServiceCount"] as const;
+      const fields = ["perOrderPoints", "referralPoints", "partnerServicePoints", "partnerServiceCount", "dailyRedeemCount", "dailyRedeemPoints", "monthlyRedeemPoints", "highValueReviewPoints", "newAccountWindowDays", "newAccountRedeemCap"] as const;
       for (const field of fields) {
         const value = Number(body[field]);
         if (Number.isFinite(value) && value >= 0) config[field] = value;
@@ -618,12 +618,14 @@ async function handlePost(request: Request) {
         appendServerAudit({ actor, action: "MALL_REDEEM_BLOCKED_RISK", entity: "Rider", entityId: rider.id, detail: `${rider.name} (status Risk) bloqueado de resgatar.`, risk: "High" });
         return jsonResponse({ error: "Sua conta está em revisão de segurança. Fale com o suporte para resgatar." }, { status: 403 });
       }
-      // Anti-abuse: per-rider daily redemption cap (guardrail against scripted abuse).
-      const DAILY_REDEEM_CAP = 20;
+      // Anti-abuse redemption guardrails — all adjustable in the mall back
+      // office (0 = unlimited). Mirrors redemptionLimitRules in the standard.
+      const limits = getConfig();
       const todayKey = nowStamp().slice(0, 10);
-      const todayRedeems = memory.marketplaceOrders.filter((o) => o.riderId === rider.id && o.status !== "cancelled" && o.createdAt.startsWith(todayKey)).length;
-      if (todayRedeems >= DAILY_REDEEM_CAP) {
-        return jsonResponse({ error: `Limite diário de resgates atingido (${DAILY_REDEEM_CAP}/dia). Tente novamente amanhã.` }, { status: 429 });
+      const todayOrders = memory.marketplaceOrders.filter((o) => o.riderId === rider.id && o.status !== "cancelled" && o.createdAt.startsWith(todayKey));
+      const dailyCountCap = limits.dailyRedeemCount ?? 20;
+      if (dailyCountCap > 0 && todayOrders.length >= dailyCountCap) {
+        return jsonResponse({ error: `Limite diário de resgates atingido (${dailyCountCap}/dia). Tente novamente amanhã.` }, { status: 429 });
       }
 
       const product = memory.marketplaceProducts.find((item) => item.id === productId && item.status === "active");
@@ -656,11 +658,38 @@ async function handlePost(request: Request) {
         return jsonResponse({ error: `积分不足：需要 ${price} 分，当前 ${available} 分`, available, required: price }, { status: 409 });
       }
 
+      // Configurable points-based caps (0 = unlimited). Daily and monthly
+      // windows count non-cancelled spend; new accounts are capped for an
+      // initial window so referral/promo points cannot be drained immediately.
+      const dailyPointsCap = limits.dailyRedeemPoints ?? 0;
+      if (dailyPointsCap > 0 && todayOrders.reduce((sum, o) => sum + o.pointsSpent, 0) + price > dailyPointsCap) {
+        return jsonResponse({ error: `Limite diário de pontos atingido (${dailyPointsCap} pts/dia).` }, { status: 429 });
+      }
+      const monthlyPointsCap = limits.monthlyRedeemPoints ?? 0;
+      if (monthlyPointsCap > 0) {
+        const monthKey = nowStamp().slice(0, 7);
+        const spentMonth = memory.marketplaceOrders.filter((o) => o.riderId === rider.id && o.status !== "cancelled" && o.createdAt.startsWith(monthKey)).reduce((sum, o) => sum + o.pointsSpent, 0);
+        if (spentMonth + price > monthlyPointsCap) {
+          return jsonResponse({ error: `Limite mensal de pontos atingido (${monthlyPointsCap} pts/mês).` }, { status: 429 });
+        }
+      }
+      const newAccountCap = limits.newAccountRedeemCap ?? 0;
+      if (newAccountCap > 0 && rider.joinDate) {
+        const windowDays = limits.newAccountWindowDays ?? 7;
+        const ageDays = (Date.now() - new Date(rider.joinDate).getTime()) / 86_400_000;
+        if (ageDays >= 0 && ageDays <= windowDays) {
+          const spentAllTime = memory.marketplaceOrders.filter((o) => o.riderId === rider.id && o.status !== "cancelled").reduce((sum, o) => sum + o.pointsSpent, 0);
+          if (spentAllTime + price > newAccountCap) {
+            return jsonResponse({ error: `Conta nova: limite de ${newAccountCap} pts nos primeiros ${windowDays} dias.` }, { status: 429 });
+          }
+        }
+      }
+
       // High-value redemptions are held for manual review before completing:
       // points are debited (held) immediately, but virtual vouchers are NOT
       // issued and fulfilment is blocked until an operator approves.
-      const HIGH_VALUE_POINTS = 8000;
-      const heldForReview = price >= HIGH_VALUE_POINTS;
+      const HIGH_VALUE_POINTS = limits.highValueReviewPoints ?? 8000;
+      const heldForReview = HIGH_VALUE_POINTS > 0 && price >= HIGH_VALUE_POINTS;
 
       const createdAt = nowStamp();
       const eta = new Date();
