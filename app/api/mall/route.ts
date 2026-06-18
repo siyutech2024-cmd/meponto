@@ -1,4 +1,5 @@
 import { appendServerAudit, jsonResponse, makeServerId, memory } from "../../lib/server/memory";
+import { appendEvent, MARKETPLACE_EVENTS, recentEvents } from "../../lib/server/events";
 import { flushPendingToDatabase, persistDeleteRecord, refreshCollectionsFromDatabase } from "../../lib/server/persistence";
 import { requirePermission, roleFromRequest } from "../../lib/server/authz";
 import { sendPushToRider } from "../../lib/server/notify";
@@ -293,6 +294,7 @@ export async function GET(request: Request) {
       me: me ? { ...me, expiringPoints } : null,
       supplierSettlement: isHq ? supplierSettlement : [],
       pointsLiability,
+      events: isHq ? recentEvents(50) : [],
     },
   });
 }
@@ -604,6 +606,7 @@ async function handlePost(request: Request) {
         const partnerProductIndex = memory.marketplaceProducts.findIndex((item) => item.id === product.id);
         if (partnerProductIndex !== -1) memory.marketplaceProducts[partnerProductIndex] = { ...product, stock: product.stock - 1 };
         appendServerAudit({ actor, action: "MALL_REDEEMED", entity: "MarketplaceOrder", entityId: order.id, detail: `${partner.name} (parceiro) resgatou ${product.name} por ${price} pts.`, risk: price >= 8000 ? "High" : "Low" });
+        appendEvent(MARKETPLACE_EVENTS.orderCreated, { orderId: order.id, accountType: "partner", partnerId: partner.id, productId: product.id, productName: product.name, pointsSpent: price }, actor);
         return jsonResponse({ data: { order, balance: available - price } }, { status: 201 });
       }
 
@@ -743,6 +746,7 @@ async function handlePost(request: Request) {
       }
 
       appendServerAudit({ actor, action: heldForReview ? "MALL_REDEEM_HELD_REVIEW" : "MALL_REDEEMED", entity: "MarketplaceOrder", entityId: order.id, detail: `${rider.name} redeemed ${product.name} for ${price} pts${heldForReview ? " — HELD for review" : `, pickup at ${order.station}, ETA ${order.etaDate}`}.`, risk: heldForReview ? "High" : "Low" });
+      appendEvent(MARKETPLACE_EVENTS.orderCreated, { orderId: order.id, accountType: "rider", riderId: rider.id, productId: product.id, productName: product.name, pointsSpent: price, station: order.station, cashDue: order.cashDue ?? 0, reviewStatus: heldForReview ? "pending" : "none" }, actor);
       return jsonResponse({ data: { order, balance: available - price, cashBalance: cashBalanceOf(rider.id), held: heldForReview, couponDiscount } }, { status: 201 });
     }
 
@@ -822,6 +826,7 @@ async function handlePost(request: Request) {
         detail: `${order.riderName} cancelou ${order.productName}: +${order.pointsSpent} pts${cashRefund > 0 ? ` e R$ ${cashRefund.toFixed(2)}` : ""} estornados.`,
         risk: "Low",
       });
+      appendEvent(MARKETPLACE_EVENTS.orderCancelled, { orderId: order.id, accountType: order.accountType, riderId: order.riderId, partnerId: order.partnerId, productId: order.productId, pointsRefunded: order.pointsSpent, cashRefunded: cashRefund }, actor);
       if (order.riderName) {
         await sendPushToRider(order.riderName, "Resgate cancelado", `Devolvemos ${order.pointsSpent} pts${cashRefund > 0 ? ` e R$ ${cashRefund.toFixed(2)}` : ""} para você.`, "/rider-app/mall");
       }
@@ -870,6 +875,7 @@ async function handlePost(request: Request) {
         memory.marketplaceOrders[index] = { ...order, status: "fulfilled", pickedUpAt: stamp };
       }
       appendServerAudit({ actor, action: body.action === "markArrived" ? "MALL_ORDER_ARRIVED" : "MALL_ORDER_PICKED_UP", entity: "MarketplaceOrder", entityId: orderId ?? "", detail: `${order.productName} for ${order.riderName} at ${order.station}.`, risk: "Low" });
+      appendEvent(body.action === "markArrived" ? MARKETPLACE_EVENTS.orderArrived : MARKETPLACE_EVENTS.orderFulfilled, { orderId: order.id, accountType: order.accountType, riderId: order.riderId, partnerId: order.partnerId, productId: order.productId, station: order.station }, actor);
       if (body.action === "markArrived" && order.riderName) {
         await sendPushToRider(order.riderName, "Seu resgate chegou! 🎁", `「${order.productName}」já está em ${order.station}. Retire quando puder.`, "/rider-app/mall");
       }
@@ -947,6 +953,7 @@ async function handlePost(request: Request) {
       }
       memory.marketplaceOrders[index] = { ...order, status: "cancelled", reviewStatus: "rejected" };
       appendServerAudit({ actor, action: "MALL_REVIEW_REJECTED", entity: "MarketplaceOrder", entityId: order.id, detail: `${order.riderName}: ${order.productName} recusado, ${order.pointsSpent} pts estornados.`, risk: "Medium" });
+      appendEvent(MARKETPLACE_EVENTS.orderRejected, { orderId: order.id, accountType: order.accountType, riderId: order.riderId, partnerId: order.partnerId, productId: order.productId, pointsRefunded: order.pointsSpent }, actor);
       if (order.riderName) {
         await sendPushToRider(order.riderName, "Resgate recusado", `Sua solicitação de ${order.productName} não foi aprovada. ${order.pointsSpent} pts foram devolvidos.`, "/rider-app/mall");
       }
