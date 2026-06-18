@@ -11,3 +11,6 @@ npm-debug.log*
 .vercel
 supabase/.temp
 .secrets
+
+# Local-only documents (contracts etc.) — never commit
+/Contrato_Credenciamento_MePonto_revisado.docx

@@ -389,9 +389,10 @@ async function handlePost(request: Request) {
           referralBonus: num(raw.referralBonus),
           pix: String(raw.pix ?? "").trim(),
           orders,
-          // Settlement comes ONLY from the source sheet's 金额 column —
-          // no formula is ever applied; missing column = 0 (preencher depois).
-          settleAmount: raw.settleAmount !== undefined ? num(raw.settleAmount) : 0,
+          // Settlement amount: use the sheet's explicit 金额 column when present;
+          // otherwise fall back to 行程收入 / Total diário (tripIncome), per the
+          // confirmed business rule (最终金额 = 行程收入).
+          settleAmount: raw.settleAmount !== undefined ? num(raw.settleAmount) : num(raw.tripIncome),
           importedAt,
         };
         const index = memory.riderDailyEarnings.findIndex((row) => row.id === record.id);

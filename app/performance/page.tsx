@@ -82,7 +82,7 @@ const EARNING_HEADERS: Record<string, string> = {
 const EARNING_PATTERNS: Array<[string, RegExp]> = [
   ["referralBonus", /推荐奖励/],
   ["bonus", /奖励/],
-  ["tripIncome", /行程收入/],
+  ["tripIncome", /行程收入|total di[aá]rio/i],
   ["total", /今日统计/],
   ["cashDebt", /现金/],
   ["mealDeduction", /餐损/],
