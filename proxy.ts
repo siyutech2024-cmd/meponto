@@ -15,6 +15,9 @@ export async function proxy(request: NextRequest) {
   if (pathname === "/robots.txt") return NextResponse.rewrite(new URL("/api/seo/robots", request.url));
   if (pathname === "/sitemap.xml") return NextResponse.rewrite(new URL("/api/seo/sitemap", request.url));
 
+  // Android TWA verification: links app.meponto.com to the Play app package.
+  if (pathname === "/.well-known/assetlinks.json") return NextResponse.rewrite(new URL("/api/assetlinks", request.url));
+
   if (marketingHosts.has(host) && pathname === "/") {
     const url = request.nextUrl.clone();
     url.pathname = "/home";

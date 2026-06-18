@@ -1,0 +1,16 @@
+# NEVER commit signing keys or build output.
+*.keystore
+*.jks
+keystore*
+twa-manifest.reference.json
+app-release-*.aab
+app-release-*.apk
+*.idsig
+.gradle/
+build/
+app/
+gradle/
+gradlew
+gradlew.bat
+target/
+store_icon.png
