@@ -7,6 +7,24 @@
 
 ---
 
+## 更新记录 / Resolution log(2026-06-18)
+
+分支 `codex/partner-mall-points-ledger`,两个提交闭合了下列缺口(编号对应下方第 2 节缺口清单):
+
+- **`d6b92b0`**
+  - **G1 ✅** 合作方闭环:`me` 下发只读积分账本;门面 `/store` 加"积分明细 / Extrato de pontos"抽屉(骑手/合作方共用);`/partner-points` 加余额卡 + 进商城入口。
+  - **G2 ✅ / G3 ✅** `/partner-points` 整页转葡语;表格用骑手/合作方名称与葡语品类 label 替原始 ID/枚举。
+  - **G5 ✅(代销决策)** 采用代销模型:`/mall`、`/mall/supplier` 补货单标注"备货流转、不产生应付,实付以履约月对账为准",`totalCost` 改"备货参考成本"。
+  - **(新增)积分负债报表** 第 4 节 P3 项:`/api/mall` 加 HQ 门禁 `pointsLiability` 聚合;`/mall-insights` 加"积分负债与兑付对账"面板(负债为营销成本,`10 分≈R$1` 仅参考)。
+- **`f6f5a6b`**
+  - **(新增)事件 outbox** 原"待核实项":`app/lib/server/events.ts` + mall 域 5 类版本化事件(`marketplace.order.created/arrived/fulfilled/cancelled/rejected.v1`),GET 对 HQ 下发 `events`,`/mall-insights` 事件流面板。补齐硬规则 #6 / 标准 §9。
+
+**仍开放**:G4(门面 zh/en —— 已决策维持葡语,面向巴西用户,见第 3.1 节,非缺口)、G6(积分↔现金统一对外折算口径,负债报表已用 `rate=10` 起步)、G7(`purchaseLimit` 服务端强校验待确认)。
+
+验证:`module:guard` 通过、`tsc --noEmit` 退出码 0(完整 `next build` 在本机/CI 跑)。下方原始清单保留以备追溯。
+
+---
+
 ## 0. 一句话结论 / TL;DR
 
 **EN.** The core economic loop (supply → price → redeem → fulfill → settle, plus earn → balance → spend)
@@ -61,15 +79,16 @@ HQ 可视 Insights (PontoSys /mall-insights, 只读)
 
 ## 2. 缺口清单(按严重度)/ Gap Register (by severity)
 
-| # | 面 / Surface | 缺口 / Gap | 严重度 | 类型 |
-|---|---|---|---|---|
-| G1 | partner-points | 合作方能赚积分却**看不到余额、无账本、无兑换入口**,赚→存→花在前端断裂 | 🔴 高 | 闭环 |
-| G2 | partner-points | **整页英文**,违反硬规则 #7(zh/en/pt) | 🔴 高 | 合规 |
-| G3 | partner-points | 表格显示原始 ID(`r-1002`/`crm-001`)与原始枚举品类,无名称/双语 label | 🟡 中 | 读模型 |
-| G4 | store 门面 | **纯葡语,无语言切换**;面向骑手的公开面缺 zh/en | 🟡 中 | 合规 |
-| G5 | supplier / mall | **双结算模型未对齐**:补货单(买断口径,有 `totalCost`)无付款路径,月对账(代销口径,履约×供货价)才是实付——模型语义不一致 | 🟡 中 | 经济/产品 |
-| G6 | 全局 | 积分↔现金缺**统一对外口径**(`pointsPerBrlReference=10` 仅风控用);GMV 用积分与现金两套,无折算总额 | 🟢 低 | 一致性 |
-| G7 | mall / store | 商品 `purchaseLimit` 月限购在 redeem 时**是否强校验**需确认(规则存在于 `redemptionLimitRules`,UI 有字段) | 🟢 低 | 待验证 |
+| # | 面 / Surface | 缺口 / Gap | 严重度 | 类型 | 状态 |
+|---|---|---|---|---|---|
+| G1 | partner-points | 合作方能赚积分却**看不到余额、无账本、无兑换入口**,赚→存→花在前端断裂 | 🔴 高 | 闭环 | ✅ `d6b92b0` |
+| G2 | partner-points | **整页英文**,违反硬规则 #7(zh/en/pt) | 🔴 高 | 合规 | ✅ `d6b92b0`(转葡语) |
+| G3 | partner-points | 表格显示原始 ID(`r-1002`/`crm-001`)与原始枚举品类,无名称/双语 label | 🟡 中 | 读模型 | ✅ `d6b92b0` |
+| G4 | store 门面 | **纯葡语,无语言切换**;面向骑手的公开面缺 zh/en | 🟡 中 | 合规 | ⏸ 维持葡语(产品决策,巴西用户) |
+| G5 | supplier / mall | **双结算模型未对齐**:补货单(买断口径,有 `totalCost`)无付款路径,月对账(代销口径,履约×供货价)才是实付——模型语义不一致 | 🟡 中 | 经济/产品 | ✅ `d6b92b0`(定为代销) |
+| G6 | 全局 | 积分↔现金缺**统一对外口径**(`pointsPerBrlReference=10` 仅风控用);GMV 用积分与现金两套,无折算总额 | 🟢 低 | 一致性 | ◻ 开放(负债表已用 rate=10 起步) |
+| G7 | mall / store | 商品 `purchaseLimit` 月限购在 redeem 时**是否强校验**需确认(规则存在于 `redemptionLimitRules`,UI 有字段) | 🟢 低 | 待验证 | ◻ 待验证 |
+| — | mall 域 | 缺版本化事件 outbox(`marketplace.order.created.v1` 未发),违反硬规则 #6 / 标准 §9 | 🟡 中 | 架构 | ✅ `f6f5a6b` |
 
 ---
 
