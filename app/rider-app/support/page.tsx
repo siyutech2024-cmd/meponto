@@ -45,6 +45,15 @@ export default function RiderSupportPage() {
         Dúvida sobre escala, pagamento, pontos ou retirada? Abra um chamado — a central responde aqui mesmo no app.
       </div>
 
+      {!session && (
+        <div className="panel space-y-2 p-4 text-center">
+          <div className="text-[12px] font-bold text-[var(--muted)]">Entre para abrir um chamado e acompanhar as respostas.</div>
+          <Link href="/rider-login?returnTo=/support" className="inline-flex h-10 w-full items-center justify-center rounded-[8px] bg-[var(--accent)] px-4 text-sm font-black text-[var(--accent-ink)]">
+            Entrar ou criar conta
+          </Link>
+        </div>
+      )}
+
       {note && (
         <div className={`rounded-[8px] border px-4 py-3 text-sm font-black ${note.tone === "ok" ? "border-[var(--ok)] bg-[var(--ok-bg)] text-[var(--ok-ink)]" : "border-[var(--danger)] bg-[var(--danger-bg)] text-[var(--danger-ink)]"}`}>
           {note.text}

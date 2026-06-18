@@ -62,6 +62,17 @@ export default function RiderAgendaPage() {
         <h1 className="flex items-center gap-2 text-lg font-black"><CalendarDays size={18} className="text-[var(--accent)]" /> Minha Agenda</h1>
       </div>
 
+      {!session && (
+        <div className="panel space-y-3 p-5 text-center">
+          <CalendarDays size={28} className="mx-auto text-[var(--accent)]" />
+          <div className="text-sm font-black">Entre para ver sua agenda</div>
+          <div className="text-[12px] font-bold text-[var(--muted)]">Seus turnos, desempenho e ranking aparecem após o login.</div>
+          <Link href="/rider-login?returnTo=/agenda" className="inline-flex h-11 w-full items-center justify-center rounded-[8px] bg-[var(--accent)] px-4 text-sm font-black text-[var(--accent-ink)]">
+            Entrar ou criar conta
+          </Link>
+        </div>
+      )}
+
       {kpi && (
         <div className="panel p-4">
           <div className="flex items-center gap-2 text-[10px] font-black uppercase text-[var(--muted)]"><TrendingUp size={12} /> Seu desempenho · {kpi.date}</div>

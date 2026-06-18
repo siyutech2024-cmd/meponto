@@ -62,7 +62,7 @@ export default function RiderMallPage() {
     if (!me) {
       // Public storefront: browsing is open, redemption requires an account.
       if (window.confirm("Para resgatar é preciso entrar na sua conta MePonto. Ir para o login?")) {
-        window.location.href = "/rider-login";
+        window.location.href = "/rider-login?returnTo=/mall";
       }
       return;
     }

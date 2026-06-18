@@ -53,7 +53,16 @@ export default function RiderWalletPage() {
         </div>
       )}
 
-      {!me ? (
+      {!session ? (
+        <div className="panel space-y-3 p-5 text-center">
+          <Wallet size={28} className="mx-auto text-[var(--accent)]" />
+          <div className="text-sm font-black">Entre para ver sua carteira</div>
+          <div className="text-[12px] font-bold text-[var(--muted)]">Saldo, saques e PIX ficam disponíveis após o login.</div>
+          <Link href="/rider-login?returnTo=/wallet" className="inline-flex h-11 w-full items-center justify-center rounded-[8px] bg-[var(--accent)] px-4 text-sm font-black text-[var(--accent-ink)]">
+            Entrar ou criar conta
+          </Link>
+        </div>
+      ) : !me ? (
         <div className="panel p-5 text-sm font-bold text-[var(--muted)]">
           Cadastro não vinculado — fale com o gestor da estação para liberar sua carteira.
         </div>

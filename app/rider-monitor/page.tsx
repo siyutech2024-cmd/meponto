@@ -4,6 +4,8 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { RefreshCcw, Search, Bike } from "lucide-react";
 import { AppShell, DataTable, PageTitle } from "../components/ui";
 import { readSession } from "../lib/session";
+import { useVentoStore } from "../lib/store";
+import { translate, type TranslationKey } from "../lib/i18n";
 
 type Cat = "delivering" | "online" | "below" | "outArea" | "other";
 type LiveRider = {
@@ -22,9 +24,8 @@ type Payload = {
   summary: { total: number; assigned: number; unassigned: number; finishedTotal: number; cats: Cats; byFranchise: AggRow[]; byPonto: AggRow[] };
 };
 
-const CAT_COLOR: Record<Cat, string> = {
-  delivering: "#16a34a", online: "#2563eb", below: "#d97706", outArea: "#dc2626", other: "#6b7280",
-};
+const CAT_COLOR: Record<Cat, string> = { delivering: "#16a34a", online: "#2563eb", below: "#d97706", outArea: "#dc2626", other: "#6b7280" };
+const CAT_KEY: Record<Cat, TranslationKey> = { delivering: "rmDelivering", online: "rmOnline", below: "rmBelow", outArea: "rmOutArea", other: "rmColStatus" };
 
 function StatCard({ label, value, color, big }: { label: string; value: number | string; color: string; big?: boolean }) {
   return (
@@ -50,6 +51,10 @@ function KpiPill({ label, value }: { label: string; value: string }) {
 
 export default function RiderMonitorPage() {
   const session = useMemo(() => readSession(), []);
+  const language = useVentoStore((s) => s.language);
+  const t = useCallback((k: TranslationKey) => translate(language, k), [language]);
+  const catLabel = useCallback((r: { cat: Cat; statusLabel: string }) => (r.cat === "other" ? r.statusLabel : t(CAT_KEY[r.cat])), [t]);
+
   const scopeFranchise = session?.portal === "franchise" ? session.franchise || session.organization : "";
   const scopeStation = session?.portal === "ponto" ? session.station || session.organization : "";
   const isHQ = !scopeFranchise && !scopeStation;
@@ -75,8 +80,8 @@ export default function RiderMonitorPage() {
 
   useEffect(() => {
     void load();
-    const t = setInterval(() => void load(), 60_000);
-    return () => clearInterval(t);
+    const timer = setInterval(() => void load(), 60_000);
+    return () => clearInterval(timer);
   }, [load]);
 
   const riders = data?.riders ?? [];
@@ -93,59 +98,60 @@ export default function RiderMonitorPage() {
   });
 
   const batchLabel = data?.capturedAt ? new Date(data.capturedAt).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" }) : "—";
-  const scopeLabel = isHQ ? "全城（总部）" : scopeFranchise ? `加盟商：${scopeFranchise}` : `站点：${scopeStation}`;
+  const scopeLabel = isHQ ? t("rmScopeCity") : scopeFranchise ? `${t("rmScopeFranchise")}: ${scopeFranchise}` : `${t("rmScopePonto")}: ${scopeStation}`;
   const kpi = data?.kpi;
   const pct = (v: number | null | undefined) => (v == null ? "—" : `${v}%`);
+
+  const catChips: Array<[Cat | "", string]> = [
+    ["", t("rmAllStatus")], ["delivering", t("rmDelivering")], ["online", t("rmOnline")], ["below", t("rmBelow")], ["outArea", t("rmOutArea")],
+  ];
 
   return (
     <AppShell>
       <PageTitle
-        title="实时骑手看板"
-        eyebrow={`Eastwind 实时 · ${scopeLabel}`}
+        title={t("rmTitle")}
+        eyebrow={`Eastwind · ${scopeLabel}`}
         action={
           <div className="flex items-center gap-3 text-xs text-[var(--muted)]">
-            <span>批次 {batchLabel}{updatedAt ? ` · 刷新 ${updatedAt}` : ""} · 每 5 分钟更新</span>
+            <span>{t("rmBatch")} {batchLabel}{updatedAt ? ` · ${t("rmRefreshedAt")} ${updatedAt}` : ""} · {t("rmEvery5")}</span>
             <button onClick={() => void load()} className="inline-flex h-9 items-center gap-2 rounded-[6px] border border-[var(--line)] px-3 font-bold text-[var(--muted-strong)] transition-colors hover:border-[var(--accent)] hover:text-[var(--accent)]">
-              <RefreshCcw size={15} /> 刷新
+              <RefreshCcw size={15} /> {t("rmRefresh")}
             </button>
           </div>
         }
       />
 
-      {/* Status summary cards (fixed categories) */}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
-        <StatCard label="在班骑手" value={data?.summary.total ?? 0} color="var(--accent)" big />
-        <StatCard label="配送中" value={cats?.delivering ?? 0} color={CAT_COLOR.delivering} />
-        <StatCard label="在线" value={cats?.online ?? 0} color={CAT_COLOR.online} />
-        <StatCard label="不及预期" value={cats?.below ?? 0} color={CAT_COLOR.below} />
-        <StatCard label="不在区域内" value={cats?.outArea ?? 0} color={CAT_COLOR.outArea} />
+        <StatCard label={t("rmOnShift")} value={data?.summary.total ?? 0} color="var(--accent)" big />
+        <StatCard label={t("rmDelivering")} value={cats?.delivering ?? 0} color={CAT_COLOR.delivering} />
+        <StatCard label={t("rmOnline")} value={cats?.online ?? 0} color={CAT_COLOR.online} />
+        <StatCard label={t("rmBelow")} value={cats?.below ?? 0} color={CAT_COLOR.below} />
+        <StatCard label={t("rmOutArea")} value={cats?.outArea ?? 0} color={CAT_COLOR.outArea} />
         {isHQ
-          ? <StatCard label="未归属" value={data?.summary.unassigned ?? 0} color="#dc2626" />
-          : <StatCard label="完单合计" value={data?.summary.finishedTotal ?? 0} color={CAT_COLOR.delivering} />}
+          ? <StatCard label={t("rmUnassigned")} value={data?.summary.unassigned ?? 0} color="#dc2626" />
+          : <StatCard label={t("rmFinishedTotal")} value={data?.summary.finishedTotal ?? 0} color={CAT_COLOR.delivering} />}
       </div>
 
-      {/* City KPI strip */}
       {kpi ? (
         <div className="mt-3 flex flex-wrap gap-2">
           <KpiPill label="AR" value={pct(kpi.ar)} />
           <KpiPill label="CAA" value={pct(kpi.caa)} />
-          <KpiPill label="接单量" value={String(kpi.acceptCnt ?? "—")} />
+          <KpiPill label={t("rmAcceptCnt")} value={String(kpi.acceptCnt ?? "—")} />
           <KpiPill label="Overtime" value={pct(kpi.overtime)} />
           <KpiPill label="%TSH" value={pct(kpi.tsh)} />
-          <KpiPill label="完单数" value={String(kpi.finishedCnt ?? "—")} />
-          <span className="ml-auto self-center text-[10px] text-[var(--muted)]">KPI 为全城口径</span>
+          <KpiPill label={t("rmFinishedCnt")} value={String(kpi.finishedCnt ?? "—")} />
+          <span className="ml-auto self-center text-[10px] text-[var(--muted)]">{t("rmKpiCityNote")}</span>
         </div>
       ) : null}
 
-      {/* Per-franchise / per-ponto breakdown (HQ only) */}
       {isHQ && data ? (
         <div className="mt-5 grid grid-cols-1 gap-5 xl:grid-cols-2">
           <div>
-            <div className="mb-2 text-[11px] font-bold uppercase tracking-wider text-[var(--muted)]">各加盟商在班分布</div>
+            <div className="mb-2 text-[11px] font-bold uppercase tracking-wider text-[var(--muted)]">{t("rmByFranchise")}</div>
             <DataTable
-              headers={["加盟商", "在班", "配送中", "在线", "不及预期", "完单"]}
+              headers={[t("rmScopeFranchise"), t("rmOnShift"), t("rmDelivering"), t("rmOnline"), t("rmBelow"), t("rmColFinished")]}
               rows={data.summary.byFranchise.map((f) => [
-                <span key="n" className={`font-bold ${f.name === "未归属" ? "text-[var(--danger-ink)]" : "text-[var(--text)]"}`}>{f.name}</span>,
+                <span key="n" className={`font-bold ${f.name === "未归属" ? "text-[var(--danger-ink)]" : "text-[var(--text)]"}`}>{f.name === "未归属" ? t("rmUnassigned") : f.name}</span>,
                 <span key="t" className="font-extrabold">{f.total}</span>,
                 <span key="d" style={{ color: CAT_COLOR.delivering }}>{f.delivering}</span>,
                 <span key="o" style={{ color: CAT_COLOR.online }}>{f.online}</span>,
@@ -155,11 +161,11 @@ export default function RiderMonitorPage() {
             />
           </div>
           <div>
-            <div className="mb-2 text-[11px] font-bold uppercase tracking-wider text-[var(--muted)]">各站点在班分布</div>
+            <div className="mb-2 text-[11px] font-bold uppercase tracking-wider text-[var(--muted)]">{t("rmByPonto")}</div>
             <DataTable
-              headers={["站点", "在班", "配送中", "在线", "不及预期", "完单"]}
+              headers={[t("rmScopePonto"), t("rmOnShift"), t("rmDelivering"), t("rmOnline"), t("rmBelow"), t("rmColFinished")]}
               rows={data.summary.byPonto.map((p) => [
-                <span key="n" className={`font-bold ${p.name === "未归属" ? "text-[var(--danger-ink)]" : "text-[var(--text)]"}`}>{p.name}</span>,
+                <span key="n" className={`font-bold ${p.name === "未归属" ? "text-[var(--danger-ink)]" : "text-[var(--text)]"}`}>{p.name === "未归属" ? t("rmUnassigned") : p.name}</span>,
                 <span key="t" className="font-extrabold">{p.total}</span>,
                 <span key="d" style={{ color: CAT_COLOR.delivering }}>{p.delivering}</span>,
                 <span key="o" style={{ color: CAT_COLOR.online }}>{p.online}</span>,
@@ -171,48 +177,45 @@ export default function RiderMonitorPage() {
         </div>
       ) : null}
 
-      {/* Filters */}
       <div className="mb-3 mt-5 flex flex-wrap items-center gap-2">
         <div className="relative">
           <Search size={15} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[var(--muted)]" />
-          <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="搜索姓名/电话/ID"
-            className="h-9 w-56 rounded-[6px] border border-[var(--line)] bg-[var(--surface-raised)] pl-8 pr-3 text-sm text-[var(--text)] outline-none focus:border-[var(--accent)]" />
+          <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder={t("rmSearch")}
+            className="h-9 w-60 rounded-[6px] border border-[var(--line)] bg-[var(--surface-raised)] pl-8 pr-3 text-sm text-[var(--text)] outline-none focus:border-[var(--accent)]" />
         </div>
-        {([["", "全部状态"], ["delivering", "配送中"], ["online", "在线"], ["below", "不及预期"], ["outArea", "不在区域内"]] as const).map(([c, label]) => (
-          <button key={c} onClick={() => setCatFilter(c as Cat | "")}
+        {catChips.map(([c, label]) => (
+          <button key={c || "all"} onClick={() => setCatFilter(c)}
             className={`h-8 rounded-full border px-3 text-xs font-bold transition-colors ${catFilter === c ? "border-[var(--accent)] bg-[rgba(255,209,0,0.12)] text-[var(--accent)]" : "border-[var(--line)] text-[var(--muted-strong)] hover:border-[var(--accent)]"}`}>
             {label}
           </button>
         ))}
         {isHQ ? (
           <label className="flex items-center gap-2 text-xs font-bold text-[var(--muted-strong)]">
-            <input type="checkbox" checked={onlyUnassigned} onChange={(e) => setOnlyUnassigned(e.target.checked)} /> 只看未归属
+            <input type="checkbox" checked={onlyUnassigned} onChange={(e) => setOnlyUnassigned(e.target.checked)} /> {t("rmOnlyUnassigned")}
           </label>
         ) : null}
-        <span className="ml-auto text-xs text-[var(--muted)]">{filtered.length} 名骑手</span>
+        <span className="ml-auto text-xs text-[var(--muted)]">{filtered.length} {t("rmRidersUnit")}</span>
       </div>
 
-      {/* Rider table */}
       <DataTable
-        headers={["骑手", "状态", "排班", "热区", "车型", "在线", "完单", "归属加盟商", "站点"]}
+        headers={[t("rmColRider"), t("rmColStatus"), t("rmColShift"), t("rmColZone"), t("rmColVehicle"), t("rmColOnlineMin"), t("rmColFinished"), t("rmScopeFranchise"), t("rmScopePonto")]}
         rows={filtered.map((r) => [
           <div key="n" className="flex flex-col">
             <span className="font-bold text-[var(--text)]">{r.name || "—"}</span>
             <span className="text-[11px] text-[var(--muted)]">{r.phone || "—"}</span>
           </div>,
-          <span key="s" className="inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-[11px] font-bold"
-            style={{ borderColor: CAT_COLOR[r.cat], color: CAT_COLOR[r.cat] }}>
+          <span key="s" className="inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-[11px] font-bold" style={{ borderColor: CAT_COLOR[r.cat], color: CAT_COLOR[r.cat] }}>
             <span className="inline-block h-1.5 w-1.5 rounded-full" style={{ background: CAT_COLOR[r.cat] }} />
-            {r.statusLabel}
+            {catLabel(r)}
           </span>,
           r.shift || "—",
           r.hotZone || "—",
           <span key="v" className="inline-flex items-center gap-1 text-[var(--text-soft)]"><Bike size={13} />{r.vehicle || "—"}</span>,
-          <span key="ol">{r.onlineMins != null ? `${r.onlineMins} 分` : "—"}</span>,
+          <span key="ol">{r.onlineMins != null ? `${r.onlineMins} ${t("rmMins")}` : "—"}</span>,
           <span key="f" className="font-bold">{r.finishedCnt ?? 0}</span>,
           r.franchise
             ? <span key="fr" className="inline-flex rounded-[6px] border border-[var(--line)] bg-[var(--surface-raised)] px-2 py-0.5 text-[11px] font-bold text-[var(--muted-strong)]">{r.franchise}</span>
-            : <span key="u" className="inline-flex rounded-[6px] border border-[var(--danger)] bg-[var(--danger-bg)] px-2 py-0.5 text-[11px] font-bold text-[var(--danger-ink)]">未归属</span>,
+            : <span key="u" className="inline-flex rounded-[6px] border border-[var(--danger)] bg-[var(--danger-bg)] px-2 py-0.5 text-[11px] font-bold text-[var(--danger-ink)]">{t("rmUnassigned")}</span>,
           r.ponto || "—",
         ])}
       />
