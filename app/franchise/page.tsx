@@ -57,10 +57,10 @@ type FranchiseCopy = {
 const franchiseCopies: Record<Language, FranchiseCopy> = {
   zh: {
     title: "加盟商合作方案",
-    eyebrow: "首店 / Quality 12 / 三个月保护期",
+    eyebrow: "首店 / 基准价 12 / 三个月保护期",
     commercialTerms: [
-      ["Quality 定价", "12", "首店基准价，作为加盟商运营和 KPI 浮动的基础。"],
-      ["KPI 浮动", "80%-120%", "围绕 Quality 定价上下 20%，奖励和扣减按月度 KPI 规则执行。"],
+      ["基准定价", "12", "首店基准价，作为加盟商运营和 KPI 浮动的基础。"],
+      ["KPI 浮动", "80%-120%", "围绕 基准定价上下 20%，奖励和扣减按月度 KPI 规则执行。"],
       ["房租支持", "50% / 3个月", "前三个月房租由 MePonto 承担一半，加盟商承担一半。"],
       ["保护期", "3个月", "三个月后加盟商可选择继续运营或退出运营。"],
     ],
@@ -148,7 +148,7 @@ const franchiseCopies: Record<Language, FranchiseCopy> = {
     cadenceEyebrow: "Operating cadence",
     cadenceCards: [
       ["每周", "同步 hotzone、分时段热区、站点问题、招聘转化、骑手表现和异常闭环。", "Weekly"],
-      ["每月底", "确定下月 Quality 定价、KPI、活动费用、骑手支持、云骑手对标和整体政策。", "Monthly"],
+      ["每月底", "确定下月 基准定价、KPI、活动费用、骑手支持、云骑手对标和整体政策。", "Monthly"],
       ["三个月", "复盘保护期结果，决定继续运营、调整模型或退出运营。", "Quarterly"],
       ["红线", "未经 MePonto 确认，不得自行对外承诺价格、收入、补贴、处罚、平台政策或产品能力。", "Control"],
     ],
@@ -166,10 +166,10 @@ const franchiseCopies: Record<Language, FranchiseCopy> = {
   },
   en: {
     title: "Franchise Cooperation Plan",
-    eyebrow: "First site / Quality 12 / 3-month protection",
+    eyebrow: "First site / Base price 12 / 3-month protection",
     commercialTerms: [
-      ["Quality price", "12", "Baseline price for the first site and the foundation for KPI-based adjustment."],
-      ["KPI range", "80%-120%", "Monthly KPI reward or deduction moves within plus or minus 20% of the Quality price."],
+      ["Base price", "12", "Baseline price for the first site and the foundation for KPI-based adjustment."],
+      ["KPI range", "80%-120%", "Monthly KPI reward or deduction moves within plus or minus 20% of the base price."],
       ["Rent support", "50% / 3 months", "For the first three months, MePonto covers half of the rent and the franchisee covers half."],
       ["Protection period", "3 months", "After three months, the franchisee may continue operations or exit."],
     ],
@@ -257,7 +257,7 @@ const franchiseCopies: Record<Language, FranchiseCopy> = {
     cadenceEyebrow: "Operating cadence",
     cadenceCards: [
       ["Weekly", "Sync hotzones, time-based zones, site issues, recruitment conversion, rider performance and exception closeout.", "Weekly"],
-      ["Month end", "Confirm next-month Quality price, KPI, activity cost, rider support, Cloud rider benchmark and policy.", "Monthly"],
+      ["Month end", "Confirm next-month base price, KPI, activity cost, rider support, Cloud rider benchmark and policy.", "Monthly"],
       ["Three months", "Review protection-period results and decide whether to continue, adjust or exit.", "Quarterly"],
       ["Red line", "No external promise on price, income, subsidy, penalty, platform policy or product capability without MePonto approval.", "Control"],
     ],
@@ -275,10 +275,10 @@ const franchiseCopies: Record<Language, FranchiseCopy> = {
   },
   pt: {
     title: "Plano de Cooperação de Franquia",
-    eyebrow: "Primeira loja / Quality 12 / Proteção de 3 meses",
+    eyebrow: "Primeira loja / Preço base 12 / Proteção de 3 meses",
     commercialTerms: [
-      ["Preço Quality", "12", "Preço base da primeira loja e referência para o ajuste por KPI."],
-      ["Faixa KPI", "80%-120%", "Bônus ou desconto mensal dentro de mais ou menos 20% do preço Quality."],
+      ["Preço base", "12", "Preço base da primeira loja e referência para o ajuste por KPI."],
+      ["Faixa KPI", "80%-120%", "Bônus ou desconto mensal dentro de mais ou menos 20% do preço base."],
       ["Apoio de aluguel", "50% / 3 meses", "Nos três primeiros meses, MePonto paga metade do aluguel e o franqueado paga metade."],
       ["Período protegido", "3 meses", "Após três meses, o franqueado pode continuar operando ou sair da operação."],
     ],
@@ -366,7 +366,7 @@ const franchiseCopies: Record<Language, FranchiseCopy> = {
     cadenceEyebrow: "Cadência operacional",
     cadenceCards: [
       ["Semanal", "Sincronizar hotzone, faixas horárias, problemas do ponto, recrutamento, performance e exceções.", "Semanal"],
-      ["Fim do mês", "Confirmar preço Quality, KPI, atividade, suporte ao motoboy, benchmark Cloud e política.", "Mensal"],
+      ["Fim do mês", "Confirmar preço base, KPI, atividade, suporte ao motoboy, benchmark Cloud e política.", "Mensal"],
       ["Três meses", "Revisar período protegido e decidir continuar, ajustar ou sair.", "Trimestral"],
       ["Linha vermelha", "Sem aprovação da MePonto, não prometer preço, renda, subsídio, penalidade, política ou produto.", "Controle"],
     ],

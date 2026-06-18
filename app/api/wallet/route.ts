@@ -134,13 +134,27 @@ export async function GET(request: Request) {
       if (p.target === "rider") paidToRider.set(p.refName, (paidToRider.get(p.refName) ?? 0) + p.amount);
       else paidToFranchise.set(p.refName, (paidToFranchise.get(p.refName) ?? 0) + p.amount);
     }
+    // A PAID PIX withdrawal IS the franchise paying the rider, so it must count
+    // as rider "已付" too — otherwise the settlement board and the rider wallet
+    // (which already deducts paid withdrawals via computeBalance) disagree.
+    // Attribute by the date the payout was confirmed (paidAt within the window).
+    for (const w of memory.riderWithdrawals) {
+      if (w.status !== "paid") continue;
+      const paidDate = (w.paidAt ?? "").slice(0, 10);
+      if (!paidDate || paidDate < win.from || paidDate > win.to) continue;
+      if (scope.franchise && (w.franchise ?? "Unassigned") !== scope.franchise) continue;
+      paidToRider.set(w.riderName, (paidToRider.get(w.riderName) ?? 0) + w.amount);
+    }
 
     // Group into franchise → riders.
     const groups = new Map<string, { franchise: string; settle: number; riders: Array<{ name: string; rider99Id: string; station: string; settle: number; orders: number; days: number; paid: number }> }>();
     for (const r of riderAgg.values()) {
+      // Round each rider's settle FIRST, then sum, so the franchise total always
+      // equals the sum of the displayed rider rows (no cent drift).
+      const riderSettle = round(r.settle);
       const g = groups.get(r.franchise) ?? { franchise: r.franchise, settle: 0, riders: [] };
-      g.settle = round(g.settle + r.settle);
-      g.riders.push({ name: r.name, rider99Id: r.rider99Id, station: r.station, settle: round(r.settle), orders: r.orders, days: r.days, paid: round(paidToRider.get(r.name) ?? 0) });
+      g.settle = round(g.settle + riderSettle);
+      g.riders.push({ name: r.name, rider99Id: r.rider99Id, station: r.station, settle: riderSettle, orders: r.orders, days: r.days, paid: round(paidToRider.get(r.name) ?? 0) });
       groups.set(r.franchise, g);
     }
     const franchises = [...groups.values()]
@@ -273,16 +287,30 @@ async function handlePost(request: Request) {
           if (p.target !== "rider" || p.weekFrom < payment.weekFrom || p.weekTo > payment.weekTo) continue;
           paidByRider.set(p.refName, (paidByRider.get(p.refName) ?? 0) + p.amount);
         }
-        for (const [name, settle] of settleByRider) {
-          const remaining = Math.round((settle - (paidByRider.get(name) ?? 0)) * 100) / 100;
-          if (remaining <= 0) continue;
+        // Distribute the ACTUAL franchise payment across riders in proportion to
+        // their unpaid settle — never more than a rider's remaining, never more
+        // than the franchise actually paid. A partial franchise payment now
+        // produces partial rider payments (previously it marked everyone full).
+        const r2c = (n: number) => Math.round(n * 100) / 100;
+        const remainingByRider = [...settleByRider.entries()]
+          .map(([name, settle]) => [name, r2c(settle - (paidByRider.get(name) ?? 0))] as [string, number])
+          .filter(([, remaining]) => remaining > 0);
+        const totalRemaining = r2c(remainingByRider.reduce((sum, [, remaining]) => sum + remaining, 0));
+        const pool = Math.min(amount, totalRemaining);
+        let distributed = 0;
+        remainingByRider.forEach(([name, remaining], index) => {
+          const isLast = index === remainingByRider.length - 1;
+          const raw = isLast ? r2c(pool - distributed) : r2c((pool * remaining) / totalRemaining);
+          const share = Math.min(raw, remaining);
+          if (share <= 0) return;
+          distributed = r2c(distributed + share);
           cascaded += 1;
           memory.walletPayments.unshift({
             id: makeServerId("pay", memory.walletPayments.length + 1),
             target: "rider",
             refName: name,
             franchise: refName.trim(),
-            amount: remaining,
+            amount: share,
             period: payment.period,
             weekFrom: payment.weekFrom,
             weekTo: payment.weekTo,
@@ -290,7 +318,7 @@ async function handlePost(request: Request) {
             paidBy: actor,
             paidAt: payment.paidAt,
           });
-        }
+        });
       }
       appendServerAudit({ actor, action: "WALLET_PAYMENT_RECORDED", entity: "WalletPayment", entityId: payment.id, detail: `${target} ${refName} R$${amount.toFixed(2)} (${payment.period}, ${weekFrom}~${weekTo})${note ? ` — ${note}` : ""}.`, risk: "Medium" });
       return jsonResponse({ data: payment }, { status: 201 });

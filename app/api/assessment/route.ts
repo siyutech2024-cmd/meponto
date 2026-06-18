@@ -34,7 +34,16 @@ type GroupActual = {
 /** Orders-weighted weekly averages per group, evaluated against the rule. */
 function buildBoard(rule: AssessmentRule, from: string, to: string, level: "franchise" | "station", onlyFranchise?: string): GroupActual[] {
   const byNinetyNine = new Map(memory.riders.filter((r) => r.ninetyNineId).map((r) => [r.ninetyNineId!, r]));
-  type Acc = { sub: string; riders: Set<string>; orders: number; dates: Set<string>; w: Record<string, { sum: number; weight: number }> };
+  // Weekly aggregation of REAL daily data per franchise (display only):
+  //  - %TSH / %TSH critical: reconstructed from real hours (Σ in-shift online ÷
+  //    Σ signed shift hours), not a flat average.
+  //  - AR / CAA: completed-order weighted average.
+  //  - orders / online hours: summed; riders / days: distinct counts.
+  type Acc = {
+    sub: string; riders: Set<string>; orders: number; dates: Set<string>;
+    inShift: number; signedHours: number; // for %TSH reconstruction
+    w: Record<string, { sum: number; weight: number }>;
+  };
   const groups = new Map<string, Acc>();
 
   for (const row of memory.riderDailyKpis) {
@@ -44,22 +53,24 @@ function buildBoard(rule: AssessmentRule, from: string, to: string, level: "fran
     if (onlyFranchise && franchise !== onlyFranchise) continue;
     const key = level === "franchise" ? franchise : rider?.ponto ?? "未关联";
     const sub = level === "station" ? franchise : "";
-    const acc = groups.get(key) ?? { sub, riders: new Set<string>(), orders: 0, dates: new Set<string>(), w: {} };
+    const acc = groups.get(key) ?? { sub, riders: new Set<string>(), orders: 0, dates: new Set<string>(), inShift: 0, signedHours: 0, w: {} };
     acc.riders.add(row.rider99Id);
     acc.orders += row.completedOrders ?? 0;
     acc.dates.add(row.date);
-    const weight = Math.max(1, row.completedOrders ?? 0);
-    const put = (metric: string, value: number | null) => {
-      if (value === null || !Number.isFinite(value)) return;
+    acc.inShift += row.inShiftOnlineHours ?? 0;
+    acc.signedHours += row.signedShiftHours ?? 0;
+    const put = (metric: string, value: number | null, weight: number) => {
+      if (value === null || !Number.isFinite(value) || weight <= 0) return;
       const cell = acc.w[metric] ?? { sum: 0, weight: 0 };
       cell.sum += value * weight;
       cell.weight += weight;
       acc.w[metric] = cell;
     };
-    put("tsh", row.tsh);
-    put("tshCritical", row.tshCritical);
-    put("ar", row.ar);
-    put("caa", row.caa);
+    const orderWeight = Math.max(1, row.completedOrders ?? 0);
+    const hourWeight = row.signedShiftHours ?? 0; // critical-shift TSH stays on the hours basis
+    put("tshCritical", row.tshCritical, hourWeight);
+    put("ar", row.ar, orderWeight);
+    put("caa", row.caa, orderWeight);
     groups.set(key, acc);
   }
 
@@ -68,8 +79,14 @@ function buildBoard(rule: AssessmentRule, from: string, to: string, level: "fran
       const metrics: GroupActual["metrics"] = {};
       let totalAdjust = 0;
       for (const metric of rule.metrics) {
-        const cell = acc.w[metric.key];
-        const actual = cell && cell.weight > 0 ? Math.round((cell.sum / cell.weight) * 10) / 10 : null;
+        let actual: number | null;
+        if (metric.key === "tsh") {
+          // True weekly %TSH from real hours.
+          actual = acc.signedHours > 0 ? Math.round((acc.inShift / acc.signedHours) * 1000) / 10 : null;
+        } else {
+          const cell = acc.w[metric.key];
+          actual = cell && cell.weight > 0 ? Math.round((cell.sum / cell.weight) * 10) / 10 : null;
+        }
         const verdict = evaluateMetric(metric, actual);
         metrics[metric.key] = { actual, status: verdict.status, adjust: verdict.adjust };
         totalAdjust += verdict.adjust;
