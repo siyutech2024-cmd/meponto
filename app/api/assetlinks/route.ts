@@ -15,11 +15,20 @@
 
 const PACKAGE_NAME = process.env.ANDROID_PACKAGE_NAME ?? "com.meponto.app";
 
+// Upload-key fingerprint from the PWABuilder package that signed MePonto.aab.
+// Kept as the built-in default so the published app verifies even before any
+// env var is set. If you enroll in Play App Signing, ADD Google's "App signing
+// key certificate" SHA-256 via the ANDROID_CERT_FINGERPRINTS env var (comma
+// separated) — both fingerprints are then served.
+const DEFAULT_FINGERPRINT = "0F:66:36:18:59:D0:18:84:68:5D:49:1E:67:F3:1B:0E:F9:3F:3A:F5:7B:79:A7:13:51:1B:C1:28:BB:80:85:6A";
+
 function fingerprints(): string[] {
-  return (process.env.ANDROID_CERT_FINGERPRINTS ?? "")
+  const fromEnv = (process.env.ANDROID_CERT_FINGERPRINTS ?? "")
     .split(/[,\s]+/)
     .map((value) => value.trim().toUpperCase())
     .filter((value) => /^([0-9A-F]{2}:){31}[0-9A-F]{2}$/.test(value));
+  // Built-in default first, then any extra keys (e.g. Play App Signing), deduped.
+  return [...new Set([DEFAULT_FINGERPRINT, ...fromEnv])];
 }
 
 export function GET() {
