@@ -6,6 +6,8 @@ import { Filter, Plus, RefreshCcw, Search, UserPlus } from "lucide-react";
 import { AppShell, Badge, PageTitle } from "../components/ui";
 import { downloadCsv } from "../lib/csv";
 import { useDialog } from "../components/dialog";
+import { useVentoStore } from "../lib/store";
+import { translate, type TranslationKey } from "../lib/i18n";
 
 type RiderRow = {
   id: string;
@@ -33,6 +35,12 @@ const isUnassigned = (value?: string) => !value || value === "Unassigned";
 
 export default function RidersPage() {
   const dialog = useDialog();
+  const language = useVentoStore((s) => s.language);
+  const t = (k: TranslationKey, vars?: Record<string, string | number>) => {
+    let s = translate(language, k);
+    if (vars) for (const [key, val] of Object.entries(vars)) s = s.replace(`{${key}}`, String(val));
+    return s;
+  };
   const [riders, setRiders] = useState<RiderRow[]>([]);
   const [network, setNetwork] = useState<Network>({ franchises: [], stations: [] });
   const [query, setQuery] = useState("");
@@ -72,10 +80,10 @@ export default function RidersPage() {
     const payload = await response.json().catch(() => ({}));
     setBusyId("");
     if (!response.ok) {
-      setMessage({ tone: "err", text: payload.error ?? `操作失败 (${response.status})` });
+      setMessage({ tone: "err", text: payload.error ?? t("rdOpFailed", { s: response.status }) });
       return;
     }
-    setMessage({ tone: "ok", text: `${rider.name} 已更新${fields.ponto ? ` → ${fields.ponto}` : ""}${fields.franchise ? ` / ${fields.franchise}` : ""}` });
+    setMessage({ tone: "ok", text: `${t("rdUpdated", { name: rider.name })}${fields.ponto ? ` → ${fields.ponto}` : ""}${fields.franchise ? ` / ${fields.franchise}` : ""}` });
     void load();
   }
 
@@ -101,7 +109,7 @@ export default function RidersPage() {
   async function savePending() {
     const entries = Object.entries(pending);
     if (entries.length === 0) return;
-    if (!(await dialog.confirm(`确认保存 ${entries.length} 项分配调整？`, { message: entries.map(([, e]) => `· ${e.name} → ${e.franchise ?? "（不变）"} / ${e.ponto || "（待定）"}`).join("\n"), confirmText: "确认保存" }))) return;
+    if (!(await dialog.confirm(t("rdConfirmSaveQ", { n: entries.length }), { message: entries.map(([, e]) => `· ${e.name} → ${e.franchise ?? t("rdUnchanged")} / ${e.ponto || t("rdPendingVal")}`).join("\n"), confirmText: t("rdConfirmSave") }))) return;
     setSaving(true);
     let failed = 0;
     for (const [riderId, entry] of entries) {

@@ -2,10 +2,11 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { ArrowLeft, Bell, Gift, Headphones, Home, MapPin, Package, Star, WalletCards, Zap } from "lucide-react";
+import { ArrowLeft, Bell, Check, Copy, Gift, Headphones, Home, MapPin, Package, Star, WalletCards, Zap } from "lucide-react";
 import { readSession } from "../../lib/session";
 import type { MarketplaceOrder, MarketplaceProduct } from "../../lib/points";
 import type { MallConfig, TierDefinition } from "../../lib/mall";
+import type { MallCoupon } from "../../lib/mall-ops";
 
 type Me = {
   riderId: string;
@@ -20,6 +21,7 @@ type Me = {
   perks: string[];
   expiringPoints?: number;
   badges?: Array<{ at: number; icon: string; label: string; achieved: boolean }>;
+  coupons?: MallCoupon[];
 };
 
 type Payload = { config: MallConfig; tiers: TierDefinition[]; products: MarketplaceProduct[]; orders: MarketplaceOrder[]; me: Me | null };
@@ -37,6 +39,18 @@ export default function RiderMallPage() {
   const [message, setMessage] = useState<{ tone: "ok" | "err"; text: string } | null>(null);
   const [busyProduct, setBusyProduct] = useState("");
   const [category, setCategory] = useState("");
+  const [copiedCode, setCopiedCode] = useState<string | null>(null);
+  const [cancelling, setCancelling] = useState("");
+
+  const copyVoucher = useCallback(async (code: string) => {
+    try {
+      await navigator.clipboard.writeText(code);
+      setCopiedCode(code);
+      setTimeout(() => setCopiedCode((current) => (current === code ? null : current)), 2500);
+    } catch {
+      setMessage({ tone: "err", text: "Não foi possível copiar — copie manualmente." });
+    }
+  }, []);
 
   const load = useCallback(async () => {
     const params = new URLSearchParams();
@@ -58,6 +72,33 @@ export default function RiderMallPage() {
   const shownProducts = category ? activeProducts.filter((p) => (p.category || "Outros") === category) : activeProducts;
   const stars = tierStars[me?.tier ?? "member"] ?? 1;
 
+  // Best applicable coupon preview (server re-applies authoritatively at redeem).
+  const bestCoupon = (product: MarketplaceProduct): { coupon: MallCoupon; discount: number } | null => {
+    const price = Math.ceil(product.pointsPrice * (me?.redeemDiscount ?? 1));
+    let best: { coupon: MallCoupon; discount: number } | null = null;
+    for (const c of me?.coupons ?? []) {
+      if (price < c.minPoints) continue;
+      const discount = c.type === "percent_off" ? Math.floor((price * c.value) / 100) : Math.min(c.value, price);
+      if (discount > 0 && (!best || discount > best.discount)) best = { coupon: c, discount };
+    }
+    return best;
+  };
+
+  async function cancelOrder(order: MarketplaceOrder) {
+    if (!me) return;
+    if (!window.confirm(`Cancelar 「${order.productName}」 e devolver ${order.pointsSpent} pts?`)) return;
+    setCancelling(order.id);
+    const response = await fetch("/api/mall", { method: "POST", headers, body: JSON.stringify({ action: "cancelOrder", orderId: order.id, riderId: me.riderId }) });
+    const payload = await response.json().catch(() => ({}));
+    setCancelling("");
+    if (!response.ok) {
+      setMessage({ tone: "err", text: payload.error ?? `Falha ao cancelar (${response.status})` });
+      return;
+    }
+    setMessage({ tone: "ok", text: `Resgate cancelado — ${order.pointsSpent} pts devolvidos.` });
+    void load();
+  }
+
   async function redeem(product: MarketplaceProduct) {
     if (!me) {
       // Public storefront: browsing is open, redemption requires an account.
@@ -67,8 +108,11 @@ export default function RiderMallPage() {
       return;
     }
     const price = Math.ceil(product.pointsPrice * (me.redeemDiscount ?? 1));
+    const cpn = bestCoupon(product);
+    const net = price - (cpn?.discount ?? 0);
     const where = product.isVirtual ? "Voucher digital instantâneo" : `Retirada na estação: ${me.station}`;
-    if (!window.confirm(`Resgatar por ${price} pts: 「${product.name}」?\n${where}`)) return;
+    const couponLine = cpn ? `\nCupom ${cpn.coupon.title}: −${cpn.discount} pts` : "";
+    if (!window.confirm(`Resgatar por ${net} pts: 「${product.name}」?${couponLine}\n${where}`)) return;
     setBusyProduct(product.id);
     const response = await fetch("/api/mall", { method: "POST", headers, body: JSON.stringify({ action: "redeem", productId: product.id, riderId: me.riderId }) });
     const payload = await response.json().catch(() => ({}));
@@ -209,6 +253,8 @@ export default function RiderMallPage() {
           <div className="grid grid-cols-2 gap-2.5">
             {shownProducts.map((product) => {
               const price = me ? Math.ceil(product.pointsPrice * (me.redeemDiscount ?? 1)) : product.pointsPrice;
+              const cpn = me ? bestCoupon(product) : null;
+              const netPrice = price - (cpn?.discount ?? 0);
               return (
                 <div key={product.id} className="flex flex-col overflow-hidden rounded-[8px] bg-white shadow-[0_12px_26px_rgba(0,0,0,0.06)]">
                   <div className="relative h-28 w-full bg-[#f3f2ee]">
@@ -225,13 +271,14 @@ export default function RiderMallPage() {
                     <div className="text-[10px] font-bold text-[#77746f]">
                       {product.isVirtual ? "Entrega imediata" : `≈ ${product.deliveryCycleDays ?? 7} dias`} · Estoque {product.stock}
                     </div>
+                    {cpn && <span className="w-fit rounded-full bg-[#e8f6ee] px-2 py-0.5 text-[9px] font-black text-[#20a65a]">🎟️ {cpn.coupon.title} −{cpn.discount}</span>}
                     <button
                       type="button"
                       disabled={busyProduct === product.id || product.stock <= 0}
                       onClick={() => void redeem(product)}
                       className="mt-auto h-9 rounded-[8px] bg-[#050505] text-xs font-black text-white disabled:opacity-40"
                     >
-                      {price !== product.pointsPrice ? <><s className="opacity-55">{product.pointsPrice}</s> {price} pts</> : `${product.pointsPrice} pts`}
+                      {netPrice !== product.pointsPrice ? <><s className="opacity-55">{product.pointsPrice}</s> {netPrice} pts</> : `${product.pointsPrice} pts`}
                     </button>
                   </div>
                 </div>
@@ -246,17 +293,38 @@ export default function RiderMallPage() {
             <h2 className="mb-2 text-lg font-black">Meus resgates</h2>
             <div className="grid gap-2">
               {myOrders.map((order) => (
-                <div key={order.id} className="grid grid-cols-[1fr_auto] items-center gap-2 rounded-[8px] bg-white p-3 shadow-[0_12px_26px_rgba(0,0,0,0.06)]">
-                  <div className="min-w-0">
-                    <div className="truncate text-sm font-black">{order.productName}</div>
-                    <div className="text-[11px] font-bold text-[#77746f]">
-                      {order.pointsSpent} pts{order.status === "created" && order.etaDate && ` · previsão ${order.etaDate}`}{!order.voucherCode && ` · ${order.station}`}
-                    </div>
-                    {order.voucherCode && <div className="mt-1 inline-block rounded bg-[#fff1e0] px-2 py-0.5 text-[11px] font-black text-[#ff7a00]" data-i18n-skip>Voucher: {order.voucherCode}</div>}
+                <div key={order.id} className="rounded-[8px] bg-white p-3 shadow-[0_12px_26px_rgba(0,0,0,0.06)]">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0 truncate text-sm font-black">{order.productName}</div>
+                    <span className={`shrink-0 rounded-full px-2.5 py-1 text-[10px] font-black ${order.reviewStatus === "pending" ? "bg-[#fff4cf] text-[#9a7400]" : order.status === "arrived" ? "bg-[#ff7a00] text-[#050505]" : order.status === "fulfilled" ? "bg-[#e8f6ee] text-[#20a65a]" : "bg-[#f3f2ee] text-[#77746f]"}`}>
+                      {order.reviewStatus === "pending" ? "Em análise" : orderStatusLabel[order.status] ?? order.status}
+                    </span>
                   </div>
-                  <span className={`shrink-0 rounded-full px-2.5 py-1 text-[10px] font-black ${order.status === "arrived" ? "bg-[#ff7a00] text-[#050505]" : order.status === "fulfilled" ? "bg-[#e8f6ee] text-[#20a65a]" : "bg-[#f3f2ee] text-[#77746f]"}`}>
-                    {orderStatusLabel[order.status] ?? order.status}
-                  </span>
+                  <div className="mt-1 text-[11px] font-bold text-[#77746f]">
+                    {order.pointsSpent} pts{order.status === "created" && order.etaDate && ` · previsão ${order.etaDate}`}{!order.voucherCode && ` · ${order.station}`}
+                  </div>
+                  {order.voucherCode && (
+                    <button
+                      type="button"
+                      onClick={() => void copyVoucher(order.voucherCode!)}
+                      title="Toque para copiar"
+                      className="mt-2 flex w-full items-center justify-center gap-2 rounded-[8px] bg-[#fff1e0] px-3 py-1.5 font-mono text-sm font-black text-[#ff7a00]"
+                      data-i18n-skip
+                    >
+                      {order.voucherCode}
+                      {copiedCode === order.voucherCode ? <Check size={14} className="text-[#20a65a]" /> : <Copy size={14} className="opacity-50" />}
+                    </button>
+                  )}
+                  {order.status === "created" && !order.voucherCode && (
+                    <button
+                      type="button"
+                      disabled={cancelling === order.id}
+                      onClick={() => void cancelOrder(order)}
+                      className="mt-2 w-full rounded-[8px] border border-[#e9e7e1] px-3 py-1.5 text-xs font-black text-[#77746f] disabled:opacity-45"
+                    >
+                      {cancelling === order.id ? "Cancelando..." : "Cancelar e devolver pontos"}
+                    </button>
+                  )}
                 </div>
               ))}
             </div>
