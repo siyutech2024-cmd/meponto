@@ -6,12 +6,19 @@ import { AppShell, Badge, PageTitle } from "../components/ui";
 import { readSession } from "../lib/session";
 import type { SupportTicket } from "../lib/support";
 import { useDialog } from "../components/dialog";
-
-const channelLabel: Record<string, string> = { rider: "骑手", franchise: "加盟商", station: "站点", partner: "Partner", web: "官网" };
-const statusBadge: Record<string, string> = { open: "待处理", answered: "已回复", resolved: "已解决" };
+import { useVentoStore } from "../lib/store";
+import { translate, type TranslationKey } from "../lib/i18n";
 
 export default function SupportAdminPage() {
   const dialog = useDialog();
+  const language = useVentoStore((s) => s.language);
+  const t = (k: TranslationKey, vars?: Record<string, string | number | undefined>) => {
+    let s = translate(language, k);
+    if (vars) for (const [key, val] of Object.entries(vars)) s = s.replace(`{${key}}`, String(val ?? ""));
+    return s;
+  };
+  const channelLabel = (ch: string) => (({ rider: t("spChRider"), franchise: t("spChFranchise"), station: t("spChStation"), web: t("spChWeb"), partner: "Partner" } as Record<string, string>)[ch] ?? ch);
+  const statusBadge = (st: string) => (({ open: t("spStOpen"), answered: t("spStAnswered"), resolved: t("spStResolved") } as Record<string, string>)[st] ?? st);
   const session = useMemo(() => readSession(), []);
   const isHq = !session || session.portal === "pontosys" || session.role === "Super Admin";
   const headers = useMemo(() => ({ "Content-Type": "application/json", "x-vento-role": session?.role ?? "Super Admin" }), [session]);
@@ -34,11 +41,11 @@ export default function SupportAdminPage() {
   }, [load]);
 
   async function act(action: "reply" | "resolve", ticketId: string) {
-    const reply = action === "reply" ? (await dialog.prompt("回复工单", { message: "回复内容（提交人会在自己端看到）" })) ?? "" : "";
+    const reply = action === "reply" ? (await dialog.prompt(t("spReplyTitle"), { message: t("spReplyMsg") })) ?? "" : "";
     if (action === "reply" && !reply.trim()) return;
     const response = await fetch("/api/support", { method: "POST", headers, body: JSON.stringify({ action, ticketId, reply }) });
     if (response.ok) {
-      setNote({ tone: "ok", text: action === "reply" ? "已回复。" : "已标记解决。" });
+      setNote({ tone: "ok", text: action === "reply" ? t("spReplied") : t("spResolvedMsg") });
       void load();
     }
   }
@@ -49,9 +56,9 @@ export default function SupportAdminPage() {
   return (
     <AppShell>
       <PageTitle
-        title={isHq ? "客服工单中心" : "联系总部"}
-        eyebrow={isHq ? `待处理 ${open.length} 条` : "提交工单，总部统一回复"}
-        action={<button type="button" onClick={() => void load()} className="tag inline-flex items-center gap-1"><RefreshCcw size={13} /> 刷新</button>}
+        title={isHq ? t("spTitleHq") : t("spTitleSub")}
+        eyebrow={isHq ? t("spEyebrowHq", { n: open.length }) : t("spEyebrowSub")}
+        action={<button type="button" onClick={() => void load()} className="tag inline-flex items-center gap-1"><RefreshCcw size={13} /> {t("spRefresh")}</button>}
       />
 
       {note && (
@@ -60,9 +67,9 @@ export default function SupportAdminPage() {
 
       {isHq && (
         <div className="panel mb-4 max-w-xl space-y-3 p-4">
-          <div className="flex items-center gap-2 text-xs font-black uppercase text-[var(--accent)]"><Headset size={14} /> 推送公告（发送到骑手APP）</div>
-          <input value={pushTitle} onChange={(e) => setPushTitle(e.target.value)} placeholder="标题（如：Novos turnos abertos）" className="h-11 w-full rounded-[8px] border border-[var(--line)] bg-[var(--surface)] px-3 text-sm font-bold outline-none focus:border-[var(--accent)]" />
-          <textarea value={pushBody} onChange={(e) => setPushBody(e.target.value)} placeholder="内容（葡语，骑手看到的通知正文）" className="min-h-20 w-full rounded-[8px] border border-[var(--line)] bg-[var(--surface)] p-3 text-sm font-bold outline-none focus:border-[var(--accent)]" />
+          <div className="flex items-center gap-2 text-xs font-black uppercase text-[var(--accent)]"><Headset size={14} /> {t("spPushTitle")}</div>
+          <input value={pushTitle} onChange={(e) => setPushTitle(e.target.value)} placeholder={t("spPushTitlePh")} className="h-11 w-full rounded-[8px] border border-[var(--line)] bg-[var(--surface)] px-3 text-sm font-bold outline-none focus:border-[var(--accent)]" />
+          <textarea value={pushBody} onChange={(e) => setPushBody(e.target.value)} placeholder={t("spPushBodyPh")} className="min-h-20 w-full rounded-[8px] border border-[var(--line)] bg-[var(--surface)] p-3 text-sm font-bold outline-none focus:border-[var(--accent)]" />
           <button
             type="button"
             disabled={!pushTitle.trim() || !pushBody.trim()}
@@ -70,25 +77,25 @@ export default function SupportAdminPage() {
               const response = await fetch("/api/push", { method: "POST", headers, body: JSON.stringify({ action: "send", title: pushTitle, body: pushBody }) });
               const payload = await response.json().catch(() => ({}));
               if (response.ok) {
-                setNote({ tone: "ok", text: `推送已发送：${payload.data.sent}/${payload.data.targets} 台设备。` });
+                setNote({ tone: "ok", text: t("spPushSent", { sent: payload.data.sent, targets: payload.data.targets }) });
                 setPushTitle("");
                 setPushBody("");
               } else {
-                setNote({ tone: "ok", text: payload.error ?? "发送失败" });
+                setNote({ tone: "ok", text: payload.error ?? t("spSendFailed") });
               }
             }}
             className="inline-flex h-11 items-center gap-2 rounded-[8px] bg-[var(--accent)] px-5 text-sm font-black uppercase text-[var(--accent-ink)] disabled:opacity-50"
           >
-            <Send size={15} /> 发送推送
+            <Send size={15} /> {t("spSendPush")}
           </button>
         </div>
       )}
 
       {!isHq && (
         <div className="panel mb-4 max-w-xl space-y-3 p-4">
-          <div className="flex items-center gap-2 text-xs font-black uppercase text-[var(--accent)]"><Headset size={14} /> 新建工单</div>
-          <input value={subject} onChange={(e) => setSubject(e.target.value)} placeholder="主题" className="h-11 w-full rounded-[8px] border border-[var(--line)] bg-[var(--surface)] px-3 text-sm font-bold outline-none focus:border-[var(--accent)]" />
-          <textarea value={message} onChange={(e) => setMessage(e.target.value)} placeholder="详细说明问题..." className="min-h-24 w-full rounded-[8px] border border-[var(--line)] bg-[var(--surface)] p-3 text-sm font-bold outline-none focus:border-[var(--accent)]" />
+          <div className="flex items-center gap-2 text-xs font-black uppercase text-[var(--accent)]"><Headset size={14} /> {t("spNewTicket")}</div>
+          <input value={subject} onChange={(e) => setSubject(e.target.value)} placeholder={t("spSubject")} className="h-11 w-full rounded-[8px] border border-[var(--line)] bg-[var(--surface)] px-3 text-sm font-bold outline-none focus:border-[var(--accent)]" />
+          <textarea value={message} onChange={(e) => setMessage(e.target.value)} placeholder={t("spMsgPh")} className="min-h-24 w-full rounded-[8px] border border-[var(--line)] bg-[var(--surface)] p-3 text-sm font-bold outline-none focus:border-[var(--accent)]" />
           <button
             type="button"
             disabled={!subject.trim() || !message.trim()}
@@ -109,13 +116,13 @@ export default function SupportAdminPage() {
               if (response.ok) {
                 setSubject("");
                 setMessage("");
-                setNote({ tone: "ok", text: "工单已提交，总部会尽快回复。" });
+                setNote({ tone: "ok", text: t("spCreated") });
                 void load();
               }
             }}
             className="inline-flex h-11 items-center gap-2 rounded-[8px] bg-[var(--accent)] px-5 text-sm font-black uppercase text-[var(--accent-ink)] disabled:opacity-50"
           >
-            <Send size={15} /> 提交
+            <Send size={15} /> {t("spSubmit")}
           </button>
         </div>
       )}
@@ -125,29 +132,29 @@ export default function SupportAdminPage() {
           <div key={ticket.id} className="panel p-4">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div className="flex items-center gap-2">
-                <span className="tag">{channelLabel[ticket.channel] ?? ticket.channel}</span>
+                <span className="tag">{channelLabel(ticket.channel)}</span>
                 <span className="text-sm font-black">{ticket.subject}</span>
-                <Badge value={statusBadge[ticket.status] ?? ticket.status} />
+                <Badge value={statusBadge(ticket.status)} />
               </div>
               {isHq && ticket.status !== "resolved" && (
                 <div className="flex gap-2">
-                  <button type="button" onClick={() => void act("reply", ticket.id)} className="inline-flex h-9 items-center gap-1 rounded-[8px] bg-[var(--accent)] px-3 text-xs font-black uppercase text-[var(--accent-ink)]"><Reply size={13} /> 回复</button>
-                  <button type="button" onClick={() => void act("resolve", ticket.id)} className="inline-flex h-9 items-center gap-1 rounded-[8px] border border-[var(--line)] px-3 text-xs font-black uppercase text-[var(--ok-ink)]"><CheckCircle2 size={13} /> 解决</button>
+                  <button type="button" onClick={() => void act("reply", ticket.id)} className="inline-flex h-9 items-center gap-1 rounded-[8px] bg-[var(--accent)] px-3 text-xs font-black uppercase text-[var(--accent-ink)]"><Reply size={13} /> {t("spReply")}</button>
+                  <button type="button" onClick={() => void act("resolve", ticket.id)} className="inline-flex h-9 items-center gap-1 rounded-[8px] border border-[var(--line)] px-3 text-xs font-black uppercase text-[var(--ok-ink)]"><CheckCircle2 size={13} /> {t("spResolve")}</button>
                 </div>
               )}
             </div>
             <div className="mt-1 text-[11px] font-bold text-[var(--muted)]">
-              {ticket.authorName}{ticket.organization && `（${ticket.organization}）`} ｜ {ticket.createdAt}{ticket.contact && ` ｜ 联系: ${ticket.contact}`}
+              {ticket.authorName}{ticket.organization && `（${ticket.organization}）`} ｜ {ticket.createdAt}{ticket.contact && ` ｜ ${t("spContact")}: ${ticket.contact}`}
             </div>
             <p className="mt-2 text-sm font-bold leading-6 text-[var(--muted-strong)]">{ticket.message}</p>
             {ticket.reply && (
               <div className="mt-2 rounded-[8px] bg-[var(--accent-soft)] p-3 text-sm font-bold leading-6">
-                <span className="text-[var(--accent)]">总部回复（{ticket.repliedAt}）：</span>{ticket.reply}
+                <span className="text-[var(--accent)]">{t("spHqReply", { date: ticket.repliedAt })}</span>{ticket.reply}
               </div>
             )}
           </div>
         ))}
-        {tickets.length === 0 && <div className="panel p-6 text-sm font-bold text-[var(--muted)]">暂无工单。</div>}
+        {tickets.length === 0 && <div className="panel p-6 text-sm font-bold text-[var(--muted)]">{t("spNoTickets")}</div>}
       </div>
     </AppShell>
   );
