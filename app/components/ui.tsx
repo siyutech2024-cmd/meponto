@@ -24,7 +24,6 @@ import {
   Moon,
   Plus,
   RadioTower,
-  RotateCcw,
   Settings,
   ShieldAlert,
   ShieldCheck,
@@ -124,7 +123,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const setTheme = useVentoStore((state) => state.setTheme);
   const currentRole = useVentoStore((state) => state.currentRole);
   const setRole = useVentoStore((state) => state.setRole);
-  const resetDemoData = useVentoStore((state) => state.resetDemoData);
   const notifications = useVentoStore((state) => state.notifications);
   const markNotificationRead = useVentoStore((state) => state.markNotificationRead);
   const acknowledgeNotification = useVentoStore((state) => state.acknowledgeNotification);
@@ -133,7 +131,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const t = (key: TranslationKey) => translate(language, key);
   const nextTheme = theme === "dark" ? "light" : "dark";
   const activeRole = sessionUser?.role ?? currentRole;
-  const canReset = can(activeRole, "reset_demo");
   const portal = sessionUser ? portalConfigs[sessionUser.portal] : portalForRole(activeRole) ?? portalForPath(pathname ?? "/dashboard");
   const portalModuleHrefs = new Set(portal.modules.map((module) => module.href));
   const visibleGroups = navGroups
@@ -238,9 +235,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             </div>
             <IconButton label={nextTheme === "dark" ? "Switch to dark mode" : "Switch to light mode"} onClick={() => setTheme(nextTheme)}>
               {theme === "dark" ? <Sun size={18} /> : <Moon size={18} />}
-            </IconButton>
-            <IconButton label={canReset ? t("resetDemoData") : t("resetRequiresSuperAdmin")} onClick={canReset ? () => { if (typeof window !== "undefined" && window.confirm("⚠️ 确认重置为演示数据？将清空骑手等真实数据且不可恢复！\n（生产环境已在服务端禁用此操作）")) resetDemoData(); } : undefined} disabled={!canReset}>
-              <RotateCcw size={18} />
             </IconButton>
             <select
               data-i18n-skip
