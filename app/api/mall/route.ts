@@ -1,8 +1,9 @@
 import { appendServerAudit, jsonResponse, makeServerId, memory } from "../../lib/server/memory";
+import { appendEvent, MARKETPLACE_EVENTS, recentEvents } from "../../lib/server/events";
 import { flushPendingToDatabase, persistDeleteRecord, refreshCollectionsFromDatabase } from "../../lib/server/persistence";
 import { requirePermission, roleFromRequest } from "../../lib/server/authz";
 import { sendPushToRider } from "../../lib/server/notify";
-import { getAvailablePoints, getAvailablePartnerPoints, type MarketplaceOrder, type MarketplaceProduct, type PartnerPointsLedgerEntry, type PointsLedgerEntry } from "../../lib/points";
+import { getAvailablePoints, getAvailablePartnerPoints, pointsRules, type MarketplaceOrder, type MarketplaceProduct, type PartnerPointsLedgerEntry, type PointsLedgerEntry } from "../../lib/points";
 import { defaultMallConfig, resolveTier, tierDefinitions, type MallConfig } from "../../lib/mall";
 import type { CashLedgerEntry, MallCoupon } from "../../lib/mall-ops";
 
@@ -180,6 +181,22 @@ export async function GET(request: Request) {
       cashBalance: cashBalanceOf(rider.id),
       topUps: memory.cashTopUps.filter((t) => t.riderId === rider.id).slice(0, 10),
       coupons: eligibleCouponsForRider(rider.id, tier.tier),
+      // Read-only points ledger slice (newest 30) for the storefront extract
+      // drawer. The ledger stays append-only in memory.pointsLedgerEntries.
+      ledger: memory.pointsLedgerEntries
+        .filter((entry) => entry.riderId === rider.id)
+        .slice(0, 30)
+        .map((entry) => ({
+          id: entry.id,
+          type: entry.type,
+          points: entry.points,
+          status: entry.status,
+          sourceType: entry.sourceType,
+          reasonCode: entry.reasonCode,
+          note: entry.note,
+          createdAt: entry.createdAt,
+          balanceAfter: entry.balanceAfter,
+        })),
     };
   }
 
@@ -230,6 +247,22 @@ export async function GET(request: Request) {
         riderId: "",
         name: partner.name,
         balance: getAvailablePartnerPoints(memory.partnerPointsLedgerEntries, partner.id),
+        // Same read-only ledger slice shape as the rider, from the Partner
+        // append-only ledger, so the storefront drawer is account-agnostic.
+        ledger: memory.partnerPointsLedgerEntries
+          .filter((entry) => entry.partnerId === partner.id)
+          .slice(0, 30)
+          .map((entry) => ({
+            id: entry.id,
+            type: entry.type,
+            points: entry.points,
+            status: entry.status,
+            sourceType: entry.sourceType,
+            reasonCode: entry.reasonCode,
+            note: entry.note,
+            createdAt: entry.createdAt,
+            balanceAfter: entry.balanceAfter,
+          })),
       };
       // Partner sees only its own redemption orders.
       orders = memory.marketplaceOrders.filter((order) => order.accountType === "partner" && order.partnerId === partner.id);
@@ -242,6 +275,13 @@ export async function GET(request: Request) {
     return rest;
   });
 
+  // HQ-only points liability & redemption reconciliation. Points are a
+  // marketing-cost liability (the standard treats `1 BRL = 10 pts` as a
+  // reference, not a cash promise), so this is a derived read model over the
+  // append-only ledgers — no new writes. Closes "earn liability ↔ expiry
+  // recovery ↔ cash redemption" for Finance.
+  const pointsLiability = isHq ? buildPointsLiability(supplierSettlement) : null;
+
   return jsonResponse({
     data: {
       config: { ...config, pixKey: undefined },
@@ -253,12 +293,61 @@ export async function GET(request: Request) {
       orders,
       me: me ? { ...me, expiringPoints } : null,
       supplierSettlement: isHq ? supplierSettlement : [],
+      pointsLiability,
+      events: isHq ? recentEvents(50) : [],
     },
   });
 }
 
+const LIABILITY_POSITIVE = new Set(["earn", "refund", "release", "adjust"]);
+
+/** Derived points-liability aggregate over both append-only ledgers (HQ only). */
+function buildPointsLiability(supplierSettlement: Array<{ supplier: string; qty: number; payable: number }>) {
+  const monthPrefix = new Date().toISOString().slice(0, 7);
+  const rate = pointsRules.pointsPerBrlReference || 10;
+
+  const aggregate = (entries: Array<{ type: string; status: string; points: number; createdAt: string }>) => {
+    let outstanding = 0;
+    let earnedThisMonth = 0;
+    let spentThisMonth = 0;
+    let expiredThisMonth = 0;
+    let pending = 0;
+    for (const entry of entries) {
+      if (entry.status === "approved") {
+        outstanding += LIABILITY_POSITIVE.has(entry.type) ? entry.points : -entry.points;
+        if (entry.createdAt.startsWith(monthPrefix)) {
+          if (entry.type === "earn") earnedThisMonth += entry.points;
+          else if (entry.type === "spend") spentThisMonth += entry.points;
+          else if (entry.type === "expire") expiredThisMonth += entry.points;
+        }
+      } else if (entry.status === "pending" && entry.type === "earn") {
+        pending += entry.points;
+      }
+    }
+    return { outstanding, earnedThisMonth, spentThisMonth, expiredThisMonth, pending };
+  };
+
+  const rider = aggregate(memory.pointsLedgerEntries);
+  const partner = aggregate(memory.partnerPointsLedgerEntries);
+  const totalOutstanding = rider.outstanding + partner.outstanding;
+  const supplierPayableBRL = Math.round(supplierSettlement.reduce((sum, row) => sum + row.payable, 0) * 100) / 100;
+
+  return {
+    rate,
+    riderOutstanding: rider.outstanding,
+    partnerOutstanding: partner.outstanding,
+    totalOutstanding,
+    liabilityBRL: Math.round((totalOutstanding / rate) * 100) / 100,
+    earnedThisMonth: rider.earnedThisMonth + partner.earnedThisMonth,
+    spentThisMonth: rider.spentThisMonth + partner.spentThisMonth,
+    expiredThisMonth: rider.expiredThisMonth + partner.expiredThisMonth,
+    pendingPoints: rider.pending + partner.pending,
+    supplierPayableBRL,
+  };
+}
+
 type Body =
-  | { action: "setConfig"; perOrderPoints?: number; referralPoints?: number; partnerServicePoints?: number; partnerServiceCount?: number }
+  | { action: "setConfig"; perOrderPoints?: number; referralPoints?: number; partnerServicePoints?: number; partnerServiceCount?: number; dailyRedeemCount?: number; dailyRedeemPoints?: number; monthlyRedeemPoints?: number; highValueReviewPoints?: number; newAccountWindowDays?: number; newAccountRedeemCap?: number }
   | { action: "supplierAddProduct"; name: string; supplierName: string; supplyPrice: number; deliveryCycleDays: number; stock: number; description?: string; imageUrl?: string; category?: string; isVirtual?: boolean; audience?: "rider" | "partner" | "both"; type?: string }
   | { action: "supplierUpdateProduct"; productId: string; name?: string; supplyPrice?: number; description?: string; imageUrl?: string; category?: string; stock?: number; deliveryCycleDays?: number; isVirtual?: boolean; audience?: "rider" | "partner" | "both"; type?: string }
   | { action: "supplierDeleteProduct"; productId: string }
@@ -303,7 +392,7 @@ async function handlePost(request: Request) {
   switch (body.action) {
     case "setConfig": {
       const config = { ...getConfig() };
-      const fields = ["perOrderPoints", "referralPoints", "partnerServicePoints", "partnerServiceCount"] as const;
+      const fields = ["perOrderPoints", "referralPoints", "partnerServicePoints", "partnerServiceCount", "dailyRedeemCount", "dailyRedeemPoints", "monthlyRedeemPoints", "highValueReviewPoints", "newAccountWindowDays", "newAccountRedeemCap"] as const;
       for (const field of fields) {
         const value = Number(body[field]);
         if (Number.isFinite(value) && value >= 0) config[field] = value;
@@ -517,6 +606,7 @@ async function handlePost(request: Request) {
         const partnerProductIndex = memory.marketplaceProducts.findIndex((item) => item.id === product.id);
         if (partnerProductIndex !== -1) memory.marketplaceProducts[partnerProductIndex] = { ...product, stock: product.stock - 1 };
         appendServerAudit({ actor, action: "MALL_REDEEMED", entity: "MarketplaceOrder", entityId: order.id, detail: `${partner.name} (parceiro) resgatou ${product.name} por ${price} pts.`, risk: price >= 8000 ? "High" : "Low" });
+        appendEvent(MARKETPLACE_EVENTS.orderCreated, { orderId: order.id, accountType: "partner", partnerId: partner.id, productId: product.id, productName: product.name, pointsSpent: price }, actor);
         return jsonResponse({ data: { order, balance: available - price } }, { status: 201 });
       }
 
@@ -528,12 +618,14 @@ async function handlePost(request: Request) {
         appendServerAudit({ actor, action: "MALL_REDEEM_BLOCKED_RISK", entity: "Rider", entityId: rider.id, detail: `${rider.name} (status Risk) bloqueado de resgatar.`, risk: "High" });
         return jsonResponse({ error: "Sua conta está em revisão de segurança. Fale com o suporte para resgatar." }, { status: 403 });
       }
-      // Anti-abuse: per-rider daily redemption cap (guardrail against scripted abuse).
-      const DAILY_REDEEM_CAP = 20;
+      // Anti-abuse redemption guardrails — all adjustable in the mall back
+      // office (0 = unlimited). Mirrors redemptionLimitRules in the standard.
+      const limits = getConfig();
       const todayKey = nowStamp().slice(0, 10);
-      const todayRedeems = memory.marketplaceOrders.filter((o) => o.riderId === rider.id && o.status !== "cancelled" && o.createdAt.startsWith(todayKey)).length;
-      if (todayRedeems >= DAILY_REDEEM_CAP) {
-        return jsonResponse({ error: `Limite diário de resgates atingido (${DAILY_REDEEM_CAP}/dia). Tente novamente amanhã.` }, { status: 429 });
+      const todayOrders = memory.marketplaceOrders.filter((o) => o.riderId === rider.id && o.status !== "cancelled" && o.createdAt.startsWith(todayKey));
+      const dailyCountCap = limits.dailyRedeemCount ?? 20;
+      if (dailyCountCap > 0 && todayOrders.length >= dailyCountCap) {
+        return jsonResponse({ error: `Limite diário de resgates atingido (${dailyCountCap}/dia). Tente novamente amanhã.` }, { status: 429 });
       }
 
       const product = memory.marketplaceProducts.find((item) => item.id === productId && item.status === "active");
@@ -566,11 +658,38 @@ async function handlePost(request: Request) {
         return jsonResponse({ error: `积分不足：需要 ${price} 分，当前 ${available} 分`, available, required: price }, { status: 409 });
       }
 
+      // Configurable points-based caps (0 = unlimited). Daily and monthly
+      // windows count non-cancelled spend; new accounts are capped for an
+      // initial window so referral/promo points cannot be drained immediately.
+      const dailyPointsCap = limits.dailyRedeemPoints ?? 0;
+      if (dailyPointsCap > 0 && todayOrders.reduce((sum, o) => sum + o.pointsSpent, 0) + price > dailyPointsCap) {
+        return jsonResponse({ error: `Limite diário de pontos atingido (${dailyPointsCap} pts/dia).` }, { status: 429 });
+      }
+      const monthlyPointsCap = limits.monthlyRedeemPoints ?? 0;
+      if (monthlyPointsCap > 0) {
+        const monthKey = nowStamp().slice(0, 7);
+        const spentMonth = memory.marketplaceOrders.filter((o) => o.riderId === rider.id && o.status !== "cancelled" && o.createdAt.startsWith(monthKey)).reduce((sum, o) => sum + o.pointsSpent, 0);
+        if (spentMonth + price > monthlyPointsCap) {
+          return jsonResponse({ error: `Limite mensal de pontos atingido (${monthlyPointsCap} pts/mês).` }, { status: 429 });
+        }
+      }
+      const newAccountCap = limits.newAccountRedeemCap ?? 0;
+      if (newAccountCap > 0 && rider.joinDate) {
+        const windowDays = limits.newAccountWindowDays ?? 7;
+        const ageDays = (Date.now() - new Date(rider.joinDate).getTime()) / 86_400_000;
+        if (ageDays >= 0 && ageDays <= windowDays) {
+          const spentAllTime = memory.marketplaceOrders.filter((o) => o.riderId === rider.id && o.status !== "cancelled").reduce((sum, o) => sum + o.pointsSpent, 0);
+          if (spentAllTime + price > newAccountCap) {
+            return jsonResponse({ error: `Conta nova: limite de ${newAccountCap} pts nos primeiros ${windowDays} dias.` }, { status: 429 });
+          }
+        }
+      }
+
       // High-value redemptions are held for manual review before completing:
       // points are debited (held) immediately, but virtual vouchers are NOT
       // issued and fulfilment is blocked until an operator approves.
-      const HIGH_VALUE_POINTS = 8000;
-      const heldForReview = price >= HIGH_VALUE_POINTS;
+      const HIGH_VALUE_POINTS = limits.highValueReviewPoints ?? 8000;
+      const heldForReview = HIGH_VALUE_POINTS > 0 && price >= HIGH_VALUE_POINTS;
 
       const createdAt = nowStamp();
       const eta = new Date();
@@ -656,6 +775,7 @@ async function handlePost(request: Request) {
       }
 
       appendServerAudit({ actor, action: heldForReview ? "MALL_REDEEM_HELD_REVIEW" : "MALL_REDEEMED", entity: "MarketplaceOrder", entityId: order.id, detail: `${rider.name} redeemed ${product.name} for ${price} pts${heldForReview ? " — HELD for review" : `, pickup at ${order.station}, ETA ${order.etaDate}`}.`, risk: heldForReview ? "High" : "Low" });
+      appendEvent(MARKETPLACE_EVENTS.orderCreated, { orderId: order.id, accountType: "rider", riderId: rider.id, productId: product.id, productName: product.name, pointsSpent: price, station: order.station, cashDue: order.cashDue ?? 0, reviewStatus: heldForReview ? "pending" : "none" }, actor);
       return jsonResponse({ data: { order, balance: available - price, cashBalance: cashBalanceOf(rider.id), held: heldForReview, couponDiscount } }, { status: 201 });
     }
 
@@ -735,6 +855,7 @@ async function handlePost(request: Request) {
         detail: `${order.riderName} cancelou ${order.productName}: +${order.pointsSpent} pts${cashRefund > 0 ? ` e R$ ${cashRefund.toFixed(2)}` : ""} estornados.`,
         risk: "Low",
       });
+      appendEvent(MARKETPLACE_EVENTS.orderCancelled, { orderId: order.id, accountType: order.accountType, riderId: order.riderId, partnerId: order.partnerId, productId: order.productId, pointsRefunded: order.pointsSpent, cashRefunded: cashRefund }, actor);
       if (order.riderName) {
         await sendPushToRider(order.riderName, "Resgate cancelado", `Devolvemos ${order.pointsSpent} pts${cashRefund > 0 ? ` e R$ ${cashRefund.toFixed(2)}` : ""} para você.`, "/rider-app/mall");
       }
@@ -783,6 +904,7 @@ async function handlePost(request: Request) {
         memory.marketplaceOrders[index] = { ...order, status: "fulfilled", pickedUpAt: stamp };
       }
       appendServerAudit({ actor, action: body.action === "markArrived" ? "MALL_ORDER_ARRIVED" : "MALL_ORDER_PICKED_UP", entity: "MarketplaceOrder", entityId: orderId ?? "", detail: `${order.productName} for ${order.riderName} at ${order.station}.`, risk: "Low" });
+      appendEvent(body.action === "markArrived" ? MARKETPLACE_EVENTS.orderArrived : MARKETPLACE_EVENTS.orderFulfilled, { orderId: order.id, accountType: order.accountType, riderId: order.riderId, partnerId: order.partnerId, productId: order.productId, station: order.station }, actor);
       if (body.action === "markArrived" && order.riderName) {
         await sendPushToRider(order.riderName, "Seu resgate chegou! 🎁", `「${order.productName}」já está em ${order.station}. Retire quando puder.`, "/rider-app/mall");
       }
@@ -860,6 +982,7 @@ async function handlePost(request: Request) {
       }
       memory.marketplaceOrders[index] = { ...order, status: "cancelled", reviewStatus: "rejected" };
       appendServerAudit({ actor, action: "MALL_REVIEW_REJECTED", entity: "MarketplaceOrder", entityId: order.id, detail: `${order.riderName}: ${order.productName} recusado, ${order.pointsSpent} pts estornados.`, risk: "Medium" });
+      appendEvent(MARKETPLACE_EVENTS.orderRejected, { orderId: order.id, accountType: order.accountType, riderId: order.riderId, partnerId: order.partnerId, productId: order.productId, pointsRefunded: order.pointsSpent }, actor);
       if (order.riderName) {
         await sendPushToRider(order.riderName, "Resgate recusado", `Sua solicitação de ${order.productName} não foi aprovada. ${order.pointsSpent} pts foram devolvidos.`, "/rider-app/mall");
       }

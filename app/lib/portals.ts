@@ -72,7 +72,8 @@ export const portalConfigs: Record<PortalId, PortalConfig> = {
     loginHint: "Partner 账号",
     allowedRoles: ["Partner Operator", "Super Admin"],
     vercelPath: "/partner-app",
-    futureDomain: "partner.meponto.com",
+    // Consolidated under the mall hub — partners log in at mall.meponto.com.
+    futureDomain: "mall.meponto.com",
     modules: [
       { href: "/partner-points", label: "服务与积分", description: "服务确认、核销记录与 Partner 积分。", permission: "manage_partner_services" },
     ],
@@ -86,7 +87,8 @@ export const portalConfigs: Record<PortalId, PortalConfig> = {
     loginHint: "供应商账号",
     allowedRoles: ["Supplier Admin", "Super Admin"],
     vercelPath: "/supplier-admin",
-    futureDomain: "supplier.meponto.com",
+    // Consolidated under the mall hub — suppliers log in at mall.meponto.com.
+    futureDomain: "mall.meponto.com",
     modules: [
       { href: "/mall/supplier", label: "供应链工作台", description: "商品与报价、调价申请、补货单、月度对账与数据看板。", permission: "manage_supplier_catalog" },
     ],
@@ -287,6 +289,24 @@ export const portalHostMap: Record<string, PortalId> = {
   "meponto-partner.vercel.app": "partner",
   "meponto-supplier.vercel.app": "supplier",
 };
+
+/**
+ * Mall hub — the operator console, the supplier workspace and the partner
+ * workspace all live under one domain (mall.meponto.com), role-routed. The
+ * legacy supplier./partner. subdomains redirect here, and these three portals
+ * share the same login (see /api/auth/login hub relaxation + proxy binding).
+ */
+export const mallHubPortals: PortalId[] = ["pontomall", "supplier", "partner"];
+
+/**
+ * Legacy mall-related subdomains that funnel into the mall hub. Only the
+ * `.meponto.com` vanity domains redirect — the `meponto-*.vercel.app` aliases
+ * stay independently usable as a fallback while custom-domain DNS settles.
+ */
+export const mallHubLegacyHosts = new Set([
+  "partner.meponto.com",
+  "supplier.meponto.com",
+]);
 
 export function findTestAccount(identifier: string, password: string) {
   // Kill switch for demo seed logins. Set MEPONTO_DISABLE_DEMO_LOGIN=1 (Vercel

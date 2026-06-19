@@ -316,7 +316,8 @@ export default function SupplierWorkspacePage() {
       {/* ============ 补货单 ============ */}
       {tab === "pos" && (
         <div className="panel p-5">
-          <div className="mb-3 text-xs font-black uppercase text-[var(--muted)]">商城下达的补货单 · 确认 → 发货 → 商城入库</div>
+          <div className="mb-1 text-xs font-black uppercase text-[var(--muted)]">商城下达的补货单 · 确认 → 发货 → 商城入库</div>
+          <p className="mb-3 text-[11px] font-bold text-[var(--muted)]">代销模式:补货单仅为备货/调拨流转,<b>不产生货款</b>。结算以月度对账(履约订单 × 供货价)为准,下方金额仅为备货参考成本。</p>
           <div className="space-y-2">
             {(ops?.purchaseOrders ?? []).map((po) => (
               <div key={po.id} className="rounded-[10px] border border-[var(--line)] bg-[var(--surface-raised)] px-3.5 py-2.5">
@@ -324,7 +325,7 @@ export default function SupplierWorkspacePage() {
                   <Boxes size={15} className="text-[var(--muted)]" />
                   <span className="text-sm font-black">{po.id}</span>
                   <Badge value={poStatusLabel[po.status]} />
-                  <span className="text-xs font-bold text-[var(--muted)]">{po.items.reduce((sum, item) => sum + item.qty, 0)} 件 · R$ {po.totalCost.toFixed(2)} · {po.createdAt}</span>
+                  <span className="text-xs font-bold text-[var(--muted)]">{po.items.reduce((sum, item) => sum + item.qty, 0)} 件 · 备货参考成本 R$ {po.totalCost.toFixed(2)} · {po.createdAt}</span>
                   <span className="ml-auto flex gap-1.5">
                     {po.status === "ordered" && <button type="button" onClick={() => void post("/api/mall/ops", { action: "confirmPO", poId: po.id }, "已确认，请按周期发货")} className="h-8 rounded-[8px] bg-[var(--accent)] px-3 text-xs font-black text-[var(--accent-ink)]">确认接单</button>}
                     {po.status === "confirmed" && <button type="button" onClick={() => { const note = prompt("物流/送货备注（可空）") ?? ""; void post("/api/mall/ops", { action: "shipPO", poId: po.id, shipNote: note }, "已标记发货"); }} className="h-8 rounded-[8px] bg-[var(--accent)] px-3 text-xs font-black text-[var(--accent-ink)]">标记发货</button>}

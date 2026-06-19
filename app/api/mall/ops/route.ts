@@ -2,6 +2,7 @@ import { appendServerAudit, jsonResponse, makeServerId, memory } from "../../../
 import { flushPendingToDatabase, persistDeleteRecord, refreshCollectionsFromDatabase } from "../../../lib/server/persistence";
 import { requirePermission, roleFromRequest } from "../../../lib/server/authz";
 import { sessionFromRequest } from "../../../lib/auth-session";
+import { pointsRules } from "../../../lib/points";
 import type { CashLedgerEntry, CashTopUp, MallBanner, MallCategory, MallCoupon, MallCouponType, PriceChangeRequest, PurchaseOrder, PurchaseOrderItem, SupplierStatement, SupplierStatementLine } from "../../../lib/mall-ops";
 
 /**
@@ -87,6 +88,13 @@ export async function GET(request: Request) {
   }
   const topProducts = [...topMap.entries()].sort((a, b) => b[1] - a[1]).slice(0, 5).map(([name, count]) => ({ name, count }));
 
+  // Unified external GMV in BRL — single canonical conversion: points are
+  // valued at the reference rate (`pointsPerBrlReference` pts ≈ R$1) and added
+  // to the cash actually collected. Gives one comparable figure across the
+  // points + PIX split (G6). Reference value only, not a cash-out promise.
+  const pointsToBrlRate = pointsRules.pointsPerBrlReference || 10;
+  const gmvBRL = Math.round((cashGmv + (pointsGmv + partnerPointsSpent) / pointsToBrlRate) * 100) / 100;
+
   return jsonResponse({
     data: {
       categories: [...memory.mallCategories].sort((a, b) => a.sort - b.sort),
@@ -102,6 +110,8 @@ export async function GET(request: Request) {
         orders: scopedOrders.length,
         pointsGmv,
         cashGmv: Math.round(cashGmv * 100) / 100,
+        gmvBRL,
+        pointsToBrlRate,
         pendingPayments: isOffice ? memory.mallPayments.filter((p) => p.status === "submitted").length + memory.cashTopUps.filter((t) => t.status === "submitted").length : 0,
         reviewPending,
         partnerOrders,

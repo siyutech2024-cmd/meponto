@@ -14,7 +14,20 @@ import type { MallPayment, SupplierStatement } from "../lib/mall-ops";
 type OpsPayload = {
   statements: SupplierStatement[];
   payments: MallPayment[];
-  summary: { orders: number; pointsGmv: number; cashGmv: number; pendingPayments: number; reviewPending?: number; partnerOrders?: number; partnerPointsSpent?: number; topProducts?: Array<{ name: string; count: number }>; daily: Array<{ date: string; count: number }> };
+  summary: { orders: number; pointsGmv: number; cashGmv: number; gmvBRL?: number; pointsToBrlRate?: number; pendingPayments: number; reviewPending?: number; partnerOrders?: number; partnerPointsSpent?: number; topProducts?: Array<{ name: string; count: number }>; daily: Array<{ date: string; count: number }> };
+};
+
+type PointsLiability = {
+  rate: number;
+  riderOutstanding: number;
+  partnerOutstanding: number;
+  totalOutstanding: number;
+  liabilityBRL: number;
+  earnedThisMonth: number;
+  spentThisMonth: number;
+  expiredThisMonth: number;
+  pendingPoints: number;
+  supplierPayableBRL: number;
 };
 
 
@@ -32,6 +45,8 @@ export default function MallInsightsPage() {
   const headers = useMemo(() => ({ "Content-Type": "application/json" }), []);
   const [products, setProducts] = useState<MarketplaceProduct[]>([]);
   const [settlement, setSettlement] = useState<Array<{ supplier: string; qty: number; payable: number }>>([]);
+  const [liability, setLiability] = useState<PointsLiability | null>(null);
+  const [events, setEvents] = useState<Array<{ id: string; type: string; occurredAt: string; payload: Record<string, unknown> }>>([]);
   const [ops, setOps] = useState<OpsPayload | null>(null);
 
   const load = useCallback(async () => {
@@ -43,6 +58,8 @@ export default function MallInsightsPage() {
       const payload = await mallRes.json();
       setProducts(payload.data?.products ?? []);
       setSettlement(payload.data?.supplierSettlement ?? []);
+      setLiability(payload.data?.pointsLiability ?? null);
+      setEvents(payload.data?.events ?? []);
     }
     if (opsRes.ok) setOps((await opsRes.json()).data);
   }, [headers]);
@@ -73,8 +90,8 @@ export default function MallInsightsPage() {
       </div>
 
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-        <Stat label="兑换单数" value={String(summary?.orders ?? 0)} hint="非取消订单累计" />
-        <Stat label="积分 GMV" value={`${(summary?.pointsGmv ?? 0).toLocaleString()} 分`} hint="累计消耗" />
+        <Stat label="GMV 折算（R$）" value={`R$ ${(summary?.gmvBRL ?? 0).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}`} hint={`统一口径:现金 + 积分÷${summary?.pointsToBrlRate ?? 10}`} />
+        <Stat label="积分 GMV" value={`${(summary?.pointsGmv ?? 0).toLocaleString()} 分`} hint="骑手累计消耗" />
         <Stat label="现金 GMV" value={`R$ ${(summary?.cashGmv ?? 0).toFixed(2)}`} hint="PIX 补差实收" />
         <Stat label="待核销收款" value={String(summary?.pendingPayments ?? 0)} hint="商城后台处理" />
       </div>
@@ -114,6 +131,39 @@ export default function MallInsightsPage() {
           ))}
         </div>
       </div>
+
+      {liability && (
+        <div className="panel mt-5 p-5">
+          <div className="mb-1 text-xs font-black uppercase text-[var(--muted)]">积分负债与兑付对账</div>
+          <p className="mb-3 text-[11px] font-bold text-[var(--muted)]">积分为营销成本型负债;{liability.rate} 分 ≈ R$ 1(定价参考,非现金承诺)。过期回收与兑付现金共同收敛负债。</p>
+          <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+            <Stat label="未兑付积分负债" value={`R$ ${liability.liabilityBRL.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}`} hint={`${liability.totalOutstanding.toLocaleString()} 分(骑手 ${liability.riderOutstanding.toLocaleString()} · 合作方 ${liability.partnerOutstanding.toLocaleString()})`} />
+            <Stat label="本月新增赚取" value={`${liability.earnedThisMonth.toLocaleString()} 分`} hint="负债增加项" />
+            <Stat label="本月消耗 / 过期" value={`${liability.spentThisMonth.toLocaleString()} / ${liability.expiredThisMonth.toLocaleString()} 分`} hint="兑换消耗 · 过期回收(均减负债)" />
+            <Stat label="待释放积分" value={`${liability.pendingPoints.toLocaleString()} 分`} hint="未计入可用负债" />
+          </div>
+          <div className="mt-3 flex flex-wrap items-center gap-x-6 gap-y-1 text-[11px] font-bold text-[var(--muted)]">
+            <span>兑付现金支出(供应商应付):<b className="text-[var(--text)]">R$ {liability.supplierPayableBRL.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</b></span>
+            <span>口径:负债(分/{liability.rate})↔ 过期回收 ↔ 现金兑付,需 Finance 月度复核。</span>
+          </div>
+        </div>
+      )}
+
+      {events.length > 0 && (
+        <div className="panel mt-5 p-5">
+          <div className="mb-1 text-xs font-black uppercase text-[var(--muted)]">商城事件流（版本化事件 outbox）</div>
+          <p className="mb-3 text-[11px] font-bold text-[var(--muted)]">每次兑换/到货/取货/取消/驳回都追加版本化领域事件,供下游(对账、风控、通知)消费。</p>
+          <div className="max-h-60 space-y-1.5 overflow-y-auto">
+            {events.slice(0, 30).map((event) => (
+              <div key={event.id} className="flex items-center gap-3 text-xs font-bold">
+                <span className="text-[var(--muted)]">{event.occurredAt.slice(5, 16)}</span>
+                <span className="rounded-full bg-[var(--accent)]/15 px-2 py-0.5 font-mono text-[10px] font-black text-[var(--accent)]">{event.type}</span>
+                <span className="truncate text-[var(--muted)]">{String(event.payload.productName ?? event.payload.orderId ?? "")}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       <div className="panel mt-5 p-5">
         <div className="mb-3 text-xs font-black uppercase text-[var(--muted)]">供应商应付（履约口径）</div>
