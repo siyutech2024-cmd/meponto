@@ -90,7 +90,13 @@ export default function PartnerPointsPage() {
 
   return (
     <AppShell>
-      <PageTitle title="Pontos do parceiro" eyebrow="Escaneie o QR de membro do entregador para conceder descontos e ganhar pontos" />
+      <PageTitle title="Pontos do parceiro" eyebrow="Registrar serviço ao entregador (escaneie o QR de membro) e creditar pontos ao parceiro" />
+
+      {/* Cadastro, aprovação e contas de login dos parceiros vivem no CRM. */}
+      <div className="mb-4 flex flex-wrap items-center gap-2 rounded-[10px] border border-dashed border-[var(--line)] p-3 text-xs font-bold text-[var(--muted)]">
+        <span>合作方的入驻 / 审核 / 开通登录账号在「合作伙伴 CRM」。本页只用于<b className="text-[var(--text)]">给骑手核销一笔合作方服务</b>。</span>
+        <a href="/crm" className="ml-auto inline-flex h-8 items-center gap-1.5 rounded-[8px] bg-[var(--accent)] px-3 font-black text-[var(--accent-ink)]">管理 / 审核合作方 → CRM</a>
+      </div>
 
       {/* Saldo do parceiro logado + entrada na loja (fecha o ciclo ganhar → ver → gastar). */}
       {me?.accountType === "partner" && (
@@ -141,24 +147,35 @@ export default function PartnerPointsPage() {
       </section>
 
       <form onSubmit={submitService} className="panel my-4 grid gap-3 p-4 lg:grid-cols-6">
-        <select value={riderId} onChange={(event) => setRiderId(event.target.value)} className="h-11 rounded border border-[var(--line)] bg-[var(--surface)] px-3 outline-none">
-          {riders.map((rider) => (
-            <option key={rider.id} value={rider.id}>{rider.name}</option>
-          ))}
-        </select>
-        <select value={partnerId} onChange={(event) => setPartnerId(event.target.value)} className="h-11 rounded border border-[var(--line)] bg-[var(--surface)] px-3 outline-none">
-          {partners.map((partner) => (
-            <option key={partner.id} value={partner.id}>{partner.name}</option>
-          ))}
-        </select>
-        <select value={category} onChange={(event) => setCategory(event.target.value as PartnerServiceCategory)} className="h-11 rounded border border-[var(--line)] bg-[var(--surface)] px-3 outline-none">
-          {categories.map((item) => (
-            <option key={item} value={item}>{categoryLabel[item]}</option>
-          ))}
-        </select>
-        <input type="number" min="1" value={amount} onChange={(event) => setAmount(Number(event.target.value))} className="h-11 rounded border border-[var(--line)] bg-[var(--surface)] px-3 outline-none" />
-        <input value={receiptRef} onChange={(event) => setReceiptRef(event.target.value)} placeholder="Nº do recibo / NF" className="h-11 rounded border border-[var(--line)] bg-[var(--surface)] px-3 outline-none" />
-        <button disabled={!riderId || !partnerId || !receiptRef.trim() || !(amount > 0)} className="h-11 rounded border border-[var(--accent)] bg-[var(--accent)] px-4 text-sm font-black text-[var(--accent-ink)] disabled:opacity-50">Registrar</button>
+        <div className="text-[11px] font-black uppercase text-[var(--muted)] lg:col-span-6">Registrar serviço · 核销合作方服务</div>
+        <label className="text-[11px] font-black text-[var(--muted)] lg:col-span-2">Parceiro 合作方
+          <select value={partnerId} onChange={(event) => setPartnerId(event.target.value)} className="mt-1 h-11 w-full rounded border border-[var(--line)] bg-[var(--surface)] px-3 outline-none">
+            {partners.map((partner) => (
+              <option key={partner.id} value={partner.id}>{partner.name}</option>
+            ))}
+          </select>
+        </label>
+        <label className="text-[11px] font-black text-[var(--muted)] lg:col-span-2">Entregador 骑手（会员码）
+          <select value={riderId} onChange={(event) => setRiderId(event.target.value)} className="mt-1 h-11 w-full rounded border border-[var(--line)] bg-[var(--surface)] px-3 outline-none">
+            {riders.map((rider) => (
+              <option key={rider.id} value={rider.id}>{rider.name}</option>
+            ))}
+          </select>
+        </label>
+        <label className="text-[11px] font-black text-[var(--muted)] lg:col-span-2">Categoria 品类
+          <select value={category} onChange={(event) => setCategory(event.target.value as PartnerServiceCategory)} className="mt-1 h-11 w-full rounded border border-[var(--line)] bg-[var(--surface)] px-3 outline-none">
+            {categories.map((item) => (
+              <option key={item} value={item}>{categoryLabel[item]}</option>
+            ))}
+          </select>
+        </label>
+        <label className="text-[11px] font-black text-[var(--muted)] lg:col-span-2">Valor R$
+          <input type="number" min="1" value={amount} onChange={(event) => setAmount(Number(event.target.value))} className="mt-1 h-11 w-full rounded border border-[var(--line)] bg-[var(--surface)] px-3 outline-none" />
+        </label>
+        <label className="text-[11px] font-black text-[var(--muted)] lg:col-span-2">Recibo / NF
+          <input value={receiptRef} onChange={(event) => setReceiptRef(event.target.value)} placeholder="Nº do comprovante" className="mt-1 h-11 w-full rounded border border-[var(--line)] bg-[var(--surface)] px-3 outline-none" />
+        </label>
+        <button disabled={!riderId || !partnerId || !receiptRef.trim() || !(amount > 0)} className="h-11 self-end rounded border border-[var(--accent)] bg-[var(--accent)] px-4 text-sm font-black text-[var(--accent-ink)] disabled:opacity-50 lg:col-span-2">Registrar serviço</button>
         {message ? <div className="text-sm font-bold text-[var(--text-soft)] lg:col-span-6">{message}</div> : null}
       </form>
 

@@ -1,6 +1,20 @@
-import { makeServerId, memory, jsonResponse } from "../../lib/server/memory";
+import { createHash, randomBytes } from "node:crypto";
+import { appendServerAudit, makeServerId, memory, jsonResponse } from "../../lib/server/memory";
 import { requirePermission } from "../../lib/server/authz";
-import type { CrmPartner, CrmPartnerCategory, CrmPartnerRisk } from "../../lib/crm";
+import type { CrmPartner, CrmPartnerCategory, CrmPartnerRisk, CrmPartnerStatus } from "../../lib/crm";
+import type { AppUser } from "../../lib/users";
+import type { PortalId } from "../../lib/portals";
+import type { Role } from "../../lib/rbac";
+
+/** Suppliers get the supplier portal/workspace; everyone else is a Partner. */
+function accountShapeForCategory(category: CrmPartnerCategory): { portal: PortalId; role: Role; defaultPath: string } {
+  if (category === "Supplier") return { portal: "supplier", role: "Supplier Admin", defaultPath: "/mall/supplier" };
+  return { portal: "partner", role: "Partner Operator", defaultPath: "/partner-points" };
+}
+
+function hashPassword(salt: string, password: string): string {
+  return createHash("sha256").update(`${salt}:${password}`).digest("hex");
+}
 
 export function GET() {
   const summary = memory.crmPartners.reduce(
@@ -54,5 +68,72 @@ export async function POST(request: Request) {
   };
 
   memory.crmPartners.unshift(partner);
+  appendServerAudit({ actor: "Mall Console", action: "CRM_PARTNER_CREATED", entity: "CrmPartner", entityId: partner.id, detail: `${partner.name} (${partner.category}, ${partner.status})`, risk: "Low" });
   return jsonResponse({ data: partner }, { status: 201 });
+}
+
+/**
+ * Review + onboarding actions on a partner/supplier:
+ *  - setStatus  : approve (→ Active), put under review, or suspend.
+ *  - provisionAccount : create a login account (supplier or partner portal,
+ *    scoped by organization = partner name) so they can self-manage. Returns a
+ *    one-time temporary password the operator hands over.
+ */
+export async function PATCH(request: Request) {
+  const forbidden = requirePermission(request, "view_analytics");
+  if (forbidden) return forbidden;
+
+  const body = (await request.json().catch(() => ({}))) as {
+    action?: "setStatus" | "provisionAccount";
+    id?: string;
+    status?: CrmPartnerStatus;
+    identifier?: string;
+  };
+  const partner = memory.crmPartners.find((item) => item.id === body.id);
+  if (!partner) return jsonResponse({ error: "partner not found" }, { status: 404 });
+
+  if (body.action === "setStatus") {
+    const allowed: CrmPartnerStatus[] = ["Active", "Prospect", "Review", "Suspended"];
+    if (!body.status || !allowed.includes(body.status)) return jsonResponse({ error: "invalid status" }, { status: 400 });
+    const index = memory.crmPartners.findIndex((item) => item.id === partner.id);
+    memory.crmPartners[index] = { ...partner, status: body.status };
+    appendServerAudit({ actor: "Mall Console", action: "CRM_PARTNER_STATUS", entity: "CrmPartner", entityId: partner.id, detail: `${partner.name} → ${body.status}`, risk: body.status === "Suspended" ? "High" : "Low" });
+    return jsonResponse({ data: memory.crmPartners[index] });
+  }
+
+  if (body.action === "provisionAccount") {
+    const identifier = (body.identifier ?? "").trim().toLowerCase();
+    if (!identifier) return jsonResponse({ error: "identifier (e-mail or phone) is required" }, { status: 400 });
+    if (memory.appUsers.some((user) => user.identifier === identifier)) {
+      return jsonResponse({ error: "An account with this identifier already exists." }, { status: 409 });
+    }
+    const shape = accountShapeForCategory(partner.category);
+    const tempPassword = randomBytes(5).toString("hex"); // 10-char one-time password
+    const salt = randomBytes(8).toString("hex");
+    const account: AppUser = {
+      id: makeServerId("usr", memory.appUsers.length + 1),
+      name: partner.contactName || partner.name,
+      identifier,
+      phone: partner.phone ?? "",
+      passwordHash: hashPassword(salt, tempPassword),
+      salt,
+      role: shape.role,
+      portal: shape.portal,
+      organization: partner.name,
+      tenantId: partner.id,
+      defaultPath: shape.defaultPath,
+      franchise: "",
+      station: "",
+      status: "active",
+      createdAt: new Date().toISOString().slice(0, 16).replace("T", " "),
+    };
+    memory.appUsers.unshift(account);
+    // Activating the account also moves a pending partner live.
+    const index = memory.crmPartners.findIndex((item) => item.id === partner.id);
+    if (memory.crmPartners[index].status !== "Active") memory.crmPartners[index] = { ...memory.crmPartners[index], status: "Active" };
+    appendServerAudit({ actor: "Mall Console", action: "CRM_ACCOUNT_PROVISIONED", entity: "AppUser", entityId: account.id, detail: `${shape.portal} login for ${partner.name} (${identifier})`, risk: "Medium" });
+    return jsonResponse({ data: { identifier, portal: shape.portal, defaultPath: shape.defaultPath, tempPassword } }, { status: 201 });
+  }
+
+  return jsonResponse({ error: "unknown action" }, { status: 400 });
 }

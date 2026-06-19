@@ -95,9 +95,45 @@ export default function CrmPage() {
     setIsSaving(false);
   }
 
+  const [notice, setNotice] = useState<string | null>(null);
+
+  async function setStatus(partner: CrmPartner, status: CrmPartnerStatus) {
+    const response = await fetch("/api/crm", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "setStatus", id: partner.id, status }),
+    });
+    const payload = (await response.json()) as { data?: CrmPartner; error?: string };
+    if (payload.data) setPartners((current) => current.map((item) => (item.id === partner.id ? (payload.data as CrmPartner) : item)));
+    else setNotice(payload.error ?? "Failed to update status");
+  }
+
+  async function provisionAccount(partner: CrmPartner) {
+    const identifier = window.prompt(`Login (e-mail or phone) for ${partner.name}:`, partner.phone || "");
+    if (!identifier?.trim()) return;
+    const response = await fetch("/api/crm", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "provisionAccount", id: partner.id, identifier: identifier.trim() }),
+    });
+    const payload = (await response.json()) as { data?: { identifier: string; portal: string; tempPassword: string }; error?: string };
+    if (payload.data) {
+      setPartners((current) => current.map((item) => (item.id === partner.id ? { ...item, status: "Active" as CrmPartnerStatus } : item)));
+      setNotice(`Conta criada — ${payload.data.identifier} · portal ${payload.data.portal} · senha temporária: ${payload.data.tempPassword}. Entregue com segurança; o parceiro troca no primeiro acesso.`);
+    } else {
+      setNotice(payload.error ?? "Failed to create account");
+    }
+  }
+
   return (
     <AppShell>
       <PageTitle title="Partner CRM" eyebrow="Repair, fleet, supplier network" action={<AddButton label="Add Partner" onClick={() => setFormOpen((open) => !open)} />} />
+      {notice ? (
+        <div className="panel mb-3 flex items-start justify-between gap-3 border-l-4 border-[var(--accent)] p-3 text-sm font-bold">
+          <span className="break-all">{notice}</span>
+          <button type="button" onClick={() => setNotice(null)} className="shrink-0 text-[var(--muted)]">✕</button>
+        </div>
+      ) : null}
       <section className="grid gap-3 md:grid-cols-4">
         <Field label="Active Partners" value={String(activeCount)} />
         <Field label="Monthly Cases" value={String(monthlyVolume)} />
@@ -174,11 +210,11 @@ export default function CrmPage() {
       </div>
 
       <DataTable
-        headers={["Partner", "Category", "Contact", "Bairro", "Owner", "SLA", "Volume", "Vehicles", "Status", "Risk", "Services"]}
+        headers={["Partner", "Category", "Contact", "Bairro", "Status", "Risk", "Services", "Ações"]}
         rows={filteredPartners.map((partner) => [
           <div key="partner">
             <div className="font-black">{partner.name}</div>
-            <div className="text-xs text-[var(--muted)]">{partner.tier}</div>
+            <div className="text-xs text-[var(--muted)]">{partner.tier} · {partner.category === "Supplier" ? "供应商" : "合作方"}</div>
           </div>,
           partner.category,
           <div key="contact">
@@ -186,16 +222,20 @@ export default function CrmPage() {
             <div className="text-xs text-[var(--muted)]">{partner.phone}</div>
           </div>,
           partner.bairro,
-          partner.owner,
-          `${partner.slaHours}h`,
-          partner.monthlyVolume,
-          partner.vehiclesAvailable,
           <Badge key="status" value={partner.status} />,
           <Badge key="risk" value={partner.risk} />,
           <div key="services" className="flex flex-wrap gap-1">
             {partner.services.map((service) => (
               <span className="tag" key={service}>{service}</span>
             ))}
+          </div>,
+          <div key="actions" className="flex flex-wrap gap-1.5">
+            {partner.status !== "Active" ? (
+              <button type="button" onClick={() => void setStatus(partner, "Active")} className="h-8 rounded-[7px] bg-[var(--accent)] px-2.5 text-xs font-black text-[var(--accent-ink)]">批准</button>
+            ) : (
+              <button type="button" onClick={() => void setStatus(partner, "Suspended")} className="h-8 rounded-[7px] border border-[var(--line)] px-2.5 text-xs font-black text-[var(--muted)]">挂起</button>
+            )}
+            <button type="button" onClick={() => void provisionAccount(partner)} className="h-8 rounded-[7px] border border-[var(--accent)] px-2.5 text-xs font-black text-[var(--accent)]">开通账号</button>
           </div>,
         ])}
       />
