@@ -10,7 +10,10 @@ export async function sendPushToRider(riderName: string, title: string, body: st
   try {
     const targets = memory.pushSubscriptions.filter((sub) => sub.riderName === riderName);
     if (targets.length === 0) return 0;
-    const webpush = (await import("web-push")).default;
+    // web-push is an optional runtime capability. The ignore comments keep the
+    // bundler from resolving it at build time, so a missing dependency degrades
+    // to "no push" (the outer try/catch returns 0) instead of failing the build.
+    const webpush = (await import(/* webpackIgnore: true */ /* turbopackIgnore: true */ "web-push")).default;
     webpush.setVapidDetails(VAPID_SUBJECT, VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY);
     const payload = JSON.stringify({ title: title.slice(0, 80), body: body.slice(0, 300), url });
     let sent = 0;

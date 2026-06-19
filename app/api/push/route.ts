@@ -60,7 +60,14 @@ async function handlePost(request: Request) {
       const { title, body: text, url = "/rider-app", riderName } = body as { title?: string; body?: string; url?: string; riderName?: string };
       if (!title?.trim() || !text?.trim()) return jsonResponse({ error: "title and body are required" }, { status: 400 });
 
-      const webpush = (await import("web-push")).default;
+      // Optional runtime capability — see notify.ts. Build never resolves it;
+      // runtime returns 503 cleanly when the dependency is not installed.
+      let webpush: typeof import("web-push").default;
+      try {
+        webpush = (await import(/* webpackIgnore: true */ /* turbopackIgnore: true */ "web-push")).default;
+      } catch {
+        return jsonResponse({ error: "Push indisponível: dependência web-push não instalada." }, { status: 503 });
+      }
       webpush.setVapidDetails(VAPID_SUBJECT, VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY);
 
       let targets = memory.pushSubscriptions;
