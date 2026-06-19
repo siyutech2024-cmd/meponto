@@ -1,5 +1,5 @@
 import { jsonResponse } from "../../../lib/server/memory";
-import { findTestAccount, portalConfigs, type PortalId, type TestAccount } from "../../../lib/portals";
+import { findTestAccount, mallHubPortals, portalConfigs, type PortalId, type TestAccount } from "../../../lib/portals";
 import { getSupabaseServerClient } from "../../../lib/supabase/server";
 import type { Role } from "../../../lib/rbac";
 import { createSessionToken, sessionCookie } from "../../../lib/auth-session";
@@ -28,7 +28,11 @@ export async function POST(request: Request) {
     return jsonResponse({ error: "Invalid account or password" }, { status: 401 });
   }
 
-  if (body.portal && account.portal !== body.portal) {
+  // The mall hub (operator + supplier + partner) shares one login at
+  // mall.meponto.com, so an account is accepted when it belongs to the same
+  // hub as the selected portal — otherwise the strict per-system check stands.
+  const sameMallHub = !!body.portal && mallHubPortals.includes(body.portal) && mallHubPortals.includes(account.portal);
+  if (body.portal && account.portal !== body.portal && !sameMallHub) {
     return jsonResponse({ error: "This account does not belong to the selected system." }, { status: 403 });
   }
 

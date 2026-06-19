@@ -665,7 +665,7 @@ export default function MallAdminPage() {
             }}
             className="mt-4 h-11 rounded-[8px] bg-[var(--accent)] px-6 text-sm font-black text-[var(--accent-ink)]"
           >保存配置</button>
-          <p className="mt-3 text-xs font-bold text-[var(--muted)]">门面：mall.meponto.com · 后台：mall.meponto.com/admin · 供应链：supplier.meponto.com</p>
+          <p className="mt-3 text-xs font-bold text-[var(--muted)]">门面：mall.meponto.com · 统一控制台：mall.meponto.com/admin（运营 / 供应商 / 合作方按角色进入，同一登录）</p>
         </div>
       )}
     </AppShell>

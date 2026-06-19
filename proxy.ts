@@ -1,5 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { portalConfigs, portalHostMap } from "./app/lib/portals";
+import { mallHubLegacyHosts, mallHubPortals, portalConfigs, portalHostMap } from "./app/lib/portals";
 import { SESSION_COOKIE, verifySessionToken } from "./app/lib/auth-session";
 
 // Brand site hosts: the root path serves the public marketing page.
@@ -17,6 +17,12 @@ export async function proxy(request: NextRequest) {
 
   // Android TWA verification: links app.meponto.com to the Play app package.
   if (pathname === "/.well-known/assetlinks.json") return NextResponse.rewrite(new URL("/api/assetlinks", request.url));
+
+  // Mall hub consolidation: the legacy supplier./partner. subdomains funnel into
+  // mall.meponto.com (same path + query). One domain, role-routed after login.
+  if (mallHubLegacyHosts.has(host)) {
+    return NextResponse.redirect(new URL(`https://mall.meponto.com${pathname}${request.nextUrl.search}`));
+  }
 
   if (marketingHosts.has(host) && pathname === "/") {
     const url = request.nextUrl.clone();
@@ -36,8 +42,13 @@ export async function proxy(request: NextRequest) {
       url.pathname = "/store";
       return NextResponse.rewrite(url);
     }
-    // Mall back office entrance: mall.meponto.com/admin → workspace (login-gated).
+    // Mall back office entrance: role-route the hub — operator → /mall,
+    // supplier → /mall/supplier, partner → /partner-points. No session → login.
     if (pathname === "/admin" || pathname.startsWith("/admin/")) {
+      if (session && mallHubPortals.includes(session.portal)) {
+        return NextResponse.redirect(new URL(portalConfigs[session.portal].homePath, request.url));
+      }
+      if (!session) return NextResponse.redirect(new URL("/login", request.url));
       return NextResponse.redirect(new URL("/mall", request.url));
     }
     if (pathname === "/rider-app/mall") {
@@ -125,13 +136,15 @@ export async function proxy(request: NextRequest) {
   // regardless of who is logged in.
   const publicPaths = ["/rider-login", "/scan", "/privacy", "/home", "/store", "/llms.txt", "/og.png", "/480d2d55480284b1ce870c54bf62e21a.txt"];
   if (hostPortalId && !publicPaths.some((p) => pathname === p || pathname.startsWith(`${p}/`))) {
-    const hostPortal = portalConfigs[hostPortalId];
     const belongsTo = (portal: (typeof portalConfigs)[keyof typeof portalConfigs]) =>
       pathname === portal.homePath ||
       pathname.startsWith(`${portal.homePath}/`) ||
       portal.modules.some((module) => pathname === module.href || pathname.startsWith(`${module.href}/`));
-    if (!belongsTo(hostPortal)) {
-      const owner = Object.values(portalConfigs).find((portal) => portal.id !== hostPortalId && belongsTo(portal));
+    // The mall hub host (mall.meponto.com / its alias → "pontomall") serves the
+    // operator console, the supplier workspace AND the partner workspace.
+    const hostPortalIds = hostPortalId === "pontomall" ? mallHubPortals : [hostPortalId];
+    if (!hostPortalIds.some((id) => belongsTo(portalConfigs[id]))) {
+      const owner = Object.values(portalConfigs).find((portal) => !hostPortalIds.includes(portal.id) && belongsTo(portal));
       if (owner?.futureDomain) {
         return NextResponse.redirect(new URL(`https://${owner.futureDomain}${pathname}`));
       }
