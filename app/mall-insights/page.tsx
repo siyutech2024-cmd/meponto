@@ -14,7 +14,7 @@ import type { MallPayment, SupplierStatement } from "../lib/mall-ops";
 type OpsPayload = {
   statements: SupplierStatement[];
   payments: MallPayment[];
-  summary: { orders: number; pointsGmv: number; cashGmv: number; pendingPayments: number; reviewPending?: number; partnerOrders?: number; partnerPointsSpent?: number; topProducts?: Array<{ name: string; count: number }>; daily: Array<{ date: string; count: number }> };
+  summary: { orders: number; pointsGmv: number; cashGmv: number; gmvBRL?: number; pointsToBrlRate?: number; pendingPayments: number; reviewPending?: number; partnerOrders?: number; partnerPointsSpent?: number; topProducts?: Array<{ name: string; count: number }>; daily: Array<{ date: string; count: number }> };
 };
 
 type PointsLiability = {
@@ -90,8 +90,8 @@ export default function MallInsightsPage() {
       </div>
 
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-        <Stat label="兑换单数" value={String(summary?.orders ?? 0)} hint="非取消订单累计" />
-        <Stat label="积分 GMV" value={`${(summary?.pointsGmv ?? 0).toLocaleString()} 分`} hint="累计消耗" />
+        <Stat label="GMV 折算（R$）" value={`R$ ${(summary?.gmvBRL ?? 0).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}`} hint={`统一口径:现金 + 积分÷${summary?.pointsToBrlRate ?? 10}`} />
+        <Stat label="积分 GMV" value={`${(summary?.pointsGmv ?? 0).toLocaleString()} 分`} hint="骑手累计消耗" />
         <Stat label="现金 GMV" value={`R$ ${(summary?.cashGmv ?? 0).toFixed(2)}`} hint="PIX 补差实收" />
         <Stat label="待核销收款" value={String(summary?.pendingPayments ?? 0)} hint="商城后台处理" />
       </div>

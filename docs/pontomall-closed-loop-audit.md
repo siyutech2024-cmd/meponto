@@ -19,7 +19,13 @@
 - **`f6f5a6b`**
   - **(新增)事件 outbox** 原"待核实项":`app/lib/server/events.ts` + mall 域 5 类版本化事件(`marketplace.order.created/arrived/fulfilled/cancelled/rejected.v1`),GET 对 HQ 下发 `events`,`/mall-insights` 事件流面板。补齐硬规则 #6 / 标准 §9。
 
-**仍开放**:G4(门面 zh/en —— 已决策维持葡语,面向巴西用户,见第 3.1 节,非缺口)、G6(积分↔现金统一对外折算口径,负债报表已用 `rate=10` 起步)、G7(`purchaseLimit` 服务端强校验待确认)。
+**后续补充(2026-06-18 续)**:
+- **后台可调兑换限额**(`b1080bd`):`MallConfig` 扩日笔数/日积分/月积分/高价值门槛/新账号上限,`/mall` 设置页可调,redeem 服务端强校验(0=不限,默认不改现有行为)。
+- **G6 ✅** 统一 GMV 折算:`/api/mall/ops` summary 加 `gmvBRL = 现金 + 积分÷pointsToBrlRate`,`/mall-insights` 头条卡展示。
+- **G7 ✅** 已确认 redeem 强校验 `purchaseLimit`(route.ts 633–643),后台「编辑」可调,标记关闭。
+- **web-push**(`cfd389e`/`ae09c1a`):补装依赖 + 同步 lockfile,并把推送做成可选构建依赖(`turbopackIgnore`)。
+
+**仍开放**:G4(门面 zh/en —— 已决策维持葡语,面向巴西用户,见第 3.1 节,非缺口);事件 outbox 的下游消费者/中继(目前为内存 outbox,待接事件总线)。
 
 验证:`module:guard` 通过、`tsc --noEmit` 退出码 0(完整 `next build` 在本机/CI 跑)。下方原始清单保留以备追溯。
 
@@ -86,8 +92,8 @@ HQ 可视 Insights (PontoSys /mall-insights, 只读)
 | G3 | partner-points | 表格显示原始 ID(`r-1002`/`crm-001`)与原始枚举品类,无名称/双语 label | 🟡 中 | 读模型 | ✅ `d6b92b0` |
 | G4 | store 门面 | **纯葡语,无语言切换**;面向骑手的公开面缺 zh/en | 🟡 中 | 合规 | ⏸ 维持葡语(产品决策,巴西用户) |
 | G5 | supplier / mall | **双结算模型未对齐**:补货单(买断口径,有 `totalCost`)无付款路径,月对账(代销口径,履约×供货价)才是实付——模型语义不一致 | 🟡 中 | 经济/产品 | ✅ `d6b92b0`(定为代销) |
-| G6 | 全局 | 积分↔现金缺**统一对外口径**(`pointsPerBrlReference=10` 仅风控用);GMV 用积分与现金两套,无折算总额 | 🟢 低 | 一致性 | ◻ 开放(负债表已用 rate=10 起步) |
-| G7 | mall / store | 商品 `purchaseLimit` 月限购在 redeem 时**是否强校验**需确认(规则存在于 `redemptionLimitRules`,UI 有字段) | 🟢 低 | 待验证 | ◻ 待验证 |
+| G6 | 全局 | 积分↔现金缺**统一对外口径**(`pointsPerBrlReference=10` 仅风控用);GMV 用积分与现金两套,无折算总额 | 🟢 低 | 一致性 | ✅ ops summary 加 `gmvBRL`(现金+积分÷rate);`/mall-insights` 头条卡 |
+| G7 | mall / store | 商品 `purchaseLimit` 月限购在 redeem 时**是否强校验**需确认(规则存在于 `redemptionLimitRules`,UI 有字段) | 🟢 低 | 待验证 | ✅ 已确认强校验(route.ts 633–643;后台「编辑」可调) |
 | — | mall 域 | 缺版本化事件 outbox(`marketplace.order.created.v1` 未发),违反硬规则 #6 / 标准 §9 | 🟡 中 | 架构 | ✅ `f6f5a6b` |
 
 ---
