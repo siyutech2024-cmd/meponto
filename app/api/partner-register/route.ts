@@ -1,5 +1,11 @@
 import { appendServerAudit, makeServerId, memory, jsonResponse } from "../../lib/server/memory";
+import { flushPendingToDatabase, refreshCollectionsFromDatabase } from "../../lib/server/persistence";
+import { getAvailablePoints, type PointsLedgerEntry } from "../../lib/points";
 import type { CrmPartner, CrmPartnerCategory } from "../../lib/crm";
+
+/** Points awarded to a member who invited a partner that registers. */
+const PARTNER_INVITE_POINTS = 500;
+const nowStamp = () => new Date().toISOString().slice(0, 16).replace("T", " ");
 
 /**
  * PUBLIC self-onboarding endpoint — a supplier or partner submits an
@@ -19,7 +25,9 @@ export async function POST(request: Request) {
     notes?: string;
     lat?: number;
     lng?: number;
+    inviterId?: string;
   };
+  await refreshCollectionsFromDatabase(["riders", "pointsLedgerEntries"]);
 
   const name = (body.name ?? "").trim();
   const contactName = (body.contactName ?? "").trim();
@@ -59,5 +67,31 @@ export async function POST(request: Request) {
   };
   memory.crmPartners.unshift(partner);
   appendServerAudit({ actor: "Self-registration", action: "CRM_SELF_REGISTER", entity: "CrmPartner", entityId: partner.id, detail: `${name} (${category}) aguardando análise`, risk: "Low" });
-  return jsonResponse({ data: { id: partner.id, status: partner.status } }, { status: 201 });
+
+  // Referral: a member (公开用户) who invited this partner earns points.
+  const inviter = body.inviterId ? memory.riders.find((r) => r.id === body.inviterId) : undefined;
+  let referral: { inviter: string; points: number } | null = null;
+  if (inviter) {
+    const available = getAvailablePoints(memory.pointsLedgerEntries, inviter.id);
+    const entry: PointsLedgerEntry = {
+      id: makeServerId("pts", memory.pointsLedgerEntries.length + 1),
+      riderId: inviter.id,
+      accountId: `pts-${inviter.id}`,
+      type: "earn",
+      points: PARTNER_INVITE_POINTS,
+      status: "approved",
+      sourceType: "admin_adjustment",
+      sourceId: `refp-${partner.id}`,
+      balanceAfter: available + PARTNER_INVITE_POINTS,
+      reasonCode: "REFERRAL_PARTNER",
+      note: `Convidou o parceiro ${name}`,
+      createdBy: "PontoMall",
+      createdAt: nowStamp(),
+    };
+    memory.pointsLedgerEntries.unshift(entry);
+    referral = { inviter: inviter.name, points: PARTNER_INVITE_POINTS };
+  }
+
+  await flushPendingToDatabase();
+  return jsonResponse({ data: { id: partner.id, status: partner.status, referral } }, { status: 201 });
 }

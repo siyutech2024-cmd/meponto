@@ -13,7 +13,12 @@ const CATEGORY_LABELS: Record<CrmPartnerCategory, string> = {
 const CATEGORIES = Object.keys(CATEGORY_LABELS) as CrmPartnerCategory[];
 
 export default function PartnerRegisterPage() {
-  const [form, setForm] = useState({ name: "", category: "Repair Shop" as CrmPartnerCategory, contactName: "", phone: "", bairro: "", notes: "", lat: 0, lng: 0 });
+  const [form, setForm] = useState({ name: "", category: "Repair Shop" as CrmPartnerCategory, contactName: "", phone: "", bairro: "", notes: "", lat: 0, lng: 0, inviterId: "" });
+
+  useEffect(() => {
+    const ref = new URLSearchParams(window.location.search).get("ref");
+    if (ref) setForm((f) => ({ ...f, inviterId: ref }));
+  }, []);
   const [state, setState] = useState<"idle" | "sending" | "done">("idle");
   const [error, setError] = useState("");
   const mapDiv = useRef<HTMLDivElement>(null);

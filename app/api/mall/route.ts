@@ -197,7 +197,9 @@ function accrueRevenueShare(order: MarketplaceOrder, actor: string) {
     franchiseShareBRL,
     stationShareBRL,
     franchiseNetBRL,
-    month: (order.createdAt || nowStamp()).slice(0, 7),
+    // Attribute to the PICKUP month (accrual happens at pickup), so a late
+    // pickup of an older order can't become an orphan in an already-closed month.
+    month: nowStamp().slice(0, 7),
     status: "accrued",
     createdAt: nowStamp(),
   });
@@ -427,7 +429,7 @@ type Body =
   | { action: "deleteProduct"; productId: string }
   | { action: "redeem"; productId: string; riderId?: string; riderName?: string; accountType?: "rider" | "partner" }
   | { action: "cancelOrder"; orderId: string; riderId?: string }
-  | { action: "markMessagesRead"; riderId?: string; riderName?: string }
+  | { action: "markMessagesRead"; riderId?: string; riderName?: string; messageId?: string }
   | { action: "confirmReceipt"; orderId: string }
   | { action: "markArrived"; orderId: string }
   | { action: "markPickedUp"; orderId: string }
@@ -696,7 +698,14 @@ async function handlePost(request: Request) {
         return jsonResponse({ data: { order, balance: available - price } }, { status: 201 });
       }
 
-      const rider = memory.riders.find((item) => (riderId && item.id === riderId) || (riderName && item.name === riderName));
+      // Identity: prefer the AUTHENTICATED session (closes IDOR — a logged-in
+      // user can only redeem as themselves). Fall back to client-supplied
+      // id/name only when there's no session (demo / x-vento-role).
+      const { sessionFromRequest: sessionFromRequestR } = await import("../../lib/auth-session");
+      const sessionR = await sessionFromRequestR(request);
+      const rider = sessionR
+        ? memory.riders.find((item) => item.id === sessionR.userId || item.name === sessionR.name)
+        : memory.riders.find((item) => (riderId && item.id === riderId) || (riderName && item.name === riderName));
       if (!rider) return jsonResponse({ error: "骑手档案未找到，请先注册建档" }, { status: 404 });
 
       // Risk control: fraud-held riders cannot self-redeem (manual review required).
@@ -884,8 +893,12 @@ async function handlePost(request: Request) {
       const index = memory.marketplaceOrders.findIndex((item) => item.id === orderId);
       if (index === -1) return jsonResponse({ error: "Resgate não encontrado." }, { status: 404 });
       const order = memory.marketplaceOrders[index];
-      // Ownership check (mirrors the redeem trust model: rider acts on own order).
-      if (riderId && order.riderId && order.riderId !== riderId) {
+      // Ownership: derive the actor from the SESSION when present (a logged-in
+      // user can only cancel their OWN order). Fall back to client id (demo).
+      const { sessionFromRequest: sessionFromRequestC } = await import("../../lib/auth-session");
+      const sessionC = await sessionFromRequestC(request);
+      const ownerId = sessionC ? memory.riders.find((r) => r.id === sessionC.userId || r.name === sessionC.name)?.id : riderId;
+      if (ownerId && order.riderId && order.riderId !== ownerId) {
         return jsonResponse({ error: "Você só pode cancelar seus próprios resgates." }, { status: 403 });
       }
       if (order.accountType !== "rider" || !order.riderId) {
@@ -1107,7 +1120,12 @@ async function handlePost(request: Request) {
       // Anti-fraud: rider must have completed orders (Eastwind-verified),
       // one scan per rider/partner/day, and a daily cap per partner.
       const { riderId: scannerId, partnerId } = body as { riderId?: string; partnerId?: string };
-      const rider = memory.riders.find((item) => item.id === scannerId);
+      // Scanner identity from the session when present (demo fallback to body).
+      const { sessionFromRequest: sessionFromRequestS } = await import("../../lib/auth-session");
+      const sessionS = await sessionFromRequestS(request);
+      const rider = sessionS
+        ? memory.riders.find((item) => item.id === sessionS.userId || item.name === sessionS.name)
+        : memory.riders.find((item) => item.id === scannerId);
       if (!rider) return jsonResponse({ error: "Cadastro do entregador não encontrado." }, { status: 404 });
       const partner = memory.crmPartners.find((item) => item.id === partnerId);
       if (!partner) return jsonResponse({ error: "Parceiro não encontrado." }, { status: 404 });
@@ -1182,13 +1200,19 @@ async function handlePost(request: Request) {
     }
 
     case "markMessagesRead": {
-      const { riderName: rn, riderId: ri } = body as { riderName?: string; riderId?: string };
-      const rider = memory.riders.find((r) => (ri && r.id === ri) || (rn && r.name === rn));
+      const { riderName: rn, riderId: ri, messageId } = body as { riderName?: string; riderId?: string; messageId?: string };
+      // Identity from session when present (consistent with redeem/cancel).
+      const { sessionFromRequest: sessionFromRequestM } = await import("../../lib/auth-session");
+      const sessionM = await sessionFromRequestM(request);
+      const rider = sessionM
+        ? memory.riders.find((r) => r.id === sessionM.userId || r.name === sessionM.name)
+        : memory.riders.find((r) => (ri && r.id === ri) || (rn && r.name === rn));
       if (!rider) return jsonResponse({ error: "rider not found" }, { status: 404 });
       const stamp = nowStamp();
       for (let i = 0; i < memory.memberMessages.length; i += 1) {
         const m = memory.memberMessages[i];
-        if (m.riderName === rider.name && !m.readAt) memory.memberMessages[i] = { ...m, readAt: stamp };
+        // messageId set → mark just that one; otherwise mark all unread.
+        if (m.riderName === rider.name && !m.readAt && (!messageId || m.id === messageId)) memory.memberMessages[i] = { ...m, readAt: stamp };
       }
       return jsonResponse({ data: { ok: true } });
     }
