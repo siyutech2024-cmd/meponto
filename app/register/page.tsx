@@ -1,14 +1,32 @@
 "use client";
 
 import { FormEvent, useEffect, useState } from "react";
+import { writeSession } from "../lib/session";
 
-/** Public member self-registration (公开用户 → 会员一级). */
+/** Public member self-registration + phone login (公开用户 → 会员一级). */
 export default function RegisterPage() {
+  const [mode, setMode] = useState<"register" | "login">("register");
   const [form, setForm] = useState({ name: "", phone: "", cpf: "", inviterId: "" });
   const [state, setState] = useState<"idle" | "sending" | "done">("idle");
   const [error, setError] = useState("");
   const [memberId, setMemberId] = useState("");
   const [copied, setCopied] = useState(false);
+  const [loginPhone, setLoginPhone] = useState("");
+
+  async function loginByPhone(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setError("");
+    setState("sending");
+    const response = await fetch("/api/member-login", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ phone: loginPhone }) });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      setError(payload.error ?? "Não foi possível entrar.");
+      setState("idle");
+      return;
+    }
+    writeSession({ name: payload.data.name, role: "Rider", portal: "rider", organization: "" });
+    window.location.href = "/";
+  }
 
   useEffect(() => {
     const ref = new URLSearchParams(window.location.search).get("ref");
@@ -42,6 +60,13 @@ export default function RegisterPage() {
           <p className="mt-2 text-sm font-bold text-black/55">Cadastre-se grátis, acumule pontos e troque por produtos — retirada em qualquer Ponto.</p>
         </div>
 
+        {state !== "done" && (
+          <div className="mb-3 flex gap-1 rounded-full bg-white p-1 shadow-md">
+            <button type="button" onClick={() => { setMode("register"); setError(""); }} className={`h-9 flex-1 rounded-full text-sm font-black ${mode === "register" ? "bg-[#ff7a00] text-[#050505]" : "text-black/45"}`}>Criar conta</button>
+            <button type="button" onClick={() => { setMode("login"); setError(""); }} className={`h-9 flex-1 rounded-full text-sm font-black ${mode === "login" ? "bg-[#ff7a00] text-[#050505]" : "text-black/45"}`}>Entrar</button>
+          </div>
+        )}
+
         {state === "done" ? (
           <div className="space-y-3 rounded-2xl bg-white p-6 text-center shadow-xl">
             <div className="text-2xl">🎉</div>
@@ -59,6 +84,17 @@ export default function RegisterPage() {
             </div>
             <a href="/" className="inline-block rounded-[10px] bg-[#19202c] px-5 py-3 text-sm font-black text-white">Ir para a Loja</a>
           </div>
+        ) : mode === "login" ? (
+          <form onSubmit={loginByPhone} className="space-y-3 rounded-2xl bg-white p-5 shadow-xl">
+            <label className="block text-xs font-black uppercase text-black/45">Telefone cadastrado
+              <input required value={loginPhone} onChange={(e) => setLoginPhone(e.target.value)} className={`${input} mt-1`} placeholder="+55 11 9...." />
+            </label>
+            {error ? <div className="rounded-[10px] bg-[#fdeceb] px-3 py-2 text-sm font-bold text-[#c4423b]">{error}</div> : null}
+            <button disabled={state === "sending"} className="h-12 w-full rounded-[10px] bg-[#ff7a00] text-sm font-black text-[#19202c] disabled:opacity-50">
+              {state === "sending" ? "Entrando..." : "Entrar com telefone"}
+            </button>
+            <p className="text-center text-[11px] font-bold text-black/40">Entramos pelo telefone do seu cadastro.</p>
+          </form>
         ) : (
           <form onSubmit={submit} className="space-y-3 rounded-2xl bg-white p-5 shadow-xl">
             <label className="block text-xs font-black uppercase text-black/45">Nome completo

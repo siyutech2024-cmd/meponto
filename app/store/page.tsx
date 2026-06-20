@@ -441,6 +441,25 @@ export default function StorefrontPage() {
       </header>
 
       <div className="mx-auto max-w-7xl px-4 pb-24 md:px-8">
+        {(() => {
+          const msgs = ((me as { messages?: Array<{ id: string; title: string; body: string; readAt?: string }> } | null)?.messages) ?? [];
+          const unread = msgs.filter((m) => !m.readAt);
+          if (unread.length === 0) return null;
+          return (
+            <div className="mt-4 rounded-2xl border border-black/5 bg-white p-4 shadow-sm">
+              <div className="mb-1 flex items-center justify-between">
+                <span className="text-xs font-black uppercase tracking-wide" style={{ color: "#9a7400" }}>📬 Mensagens ({unread.length})</span>
+                <button type="button" onClick={async () => { if (!me) return; await fetch("/api/mall", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "markMessagesRead", riderId: me.riderId }) }); await load(riderName); }} className="text-[11px] font-black text-black/45">Marcar lidas</button>
+              </div>
+              {unread.slice(0, 3).map((m) => (
+                <div key={m.id} className="mt-1">
+                  <div className="text-sm font-black">{m.title}</div>
+                  <div className="text-xs font-bold text-black/55">{m.body}</div>
+                </div>
+              ))}
+            </div>
+          );
+        })()}
         {/* ---- Hero banner ---------------------------------------------------- */}
         <section className="relative mt-4 overflow-hidden rounded-3xl md:mt-6" style={{ background: `linear-gradient(115deg, ${INK} 38%, #2c3648 75%, #3b475e)` }}>
           {banners.length > 0 ? (

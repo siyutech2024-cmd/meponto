@@ -260,3 +260,17 @@ export const revShareStatementStatusLabel: Record<StatementStatus, string> = {
   confirmed: "待付款",
   paid: "已付款",
 };
+
+/** In-app message (站内信) delivered to a member/rider — shown in the storefront
+ *  and rider app inbox. Used for arrival notices etc. (no SMS/WhatsApp). */
+export type MemberMessage = {
+  id: string;
+  /** Recipient member/rider (by name, matching the storefront identity). */
+  riderName: string;
+  riderId?: string;
+  title: string;
+  body: string;
+  href?: string;
+  createdAt: string;
+  readAt?: string;
+};

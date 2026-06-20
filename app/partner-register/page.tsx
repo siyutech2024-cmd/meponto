@@ -1,6 +1,7 @@
 "use client";
+/* eslint-disable @typescript-eslint/no-explicit-any */
 
-import { FormEvent, useState } from "react";
+import { FormEvent, useEffect, useRef, useState } from "react";
 import type { CrmPartnerCategory } from "../lib/crm";
 
 const CATEGORY_LABELS: Record<CrmPartnerCategory, string> = {
@@ -15,6 +16,42 @@ export default function PartnerRegisterPage() {
   const [form, setForm] = useState({ name: "", category: "Repair Shop" as CrmPartnerCategory, contactName: "", phone: "", bairro: "", notes: "", lat: 0, lng: 0 });
   const [state, setState] = useState<"idle" | "sending" | "done">("idle");
   const [error, setError] = useState("");
+  const mapDiv = useRef<HTMLDivElement>(null);
+  const mapRef = useRef<any>(null);
+  const markerRef = useRef<any>(null);
+
+  useEffect(() => {
+    let disposed = false;
+    function render() {
+      const L = (window as any).L;
+      if (!L || disposed || !mapDiv.current || mapRef.current) return;
+      const start: [number, number] = [-23.55, -46.63];
+      const map = L.map(mapDiv.current).setView(start, 12);
+      mapRef.current = map;
+      L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 19, attribution: "© OpenStreetMap" }).addTo(map);
+      const marker = L.marker(start, { draggable: true }).addTo(map);
+      markerRef.current = marker;
+      const set = (ll: any) => setForm((f) => ({ ...f, lat: Math.round(ll.lat * 1e6) / 1e6, lng: Math.round(ll.lng * 1e6) / 1e6 }));
+      marker.on("dragend", () => set(marker.getLatLng()));
+      map.on("click", (e: any) => { marker.setLatLng(e.latlng); set(e.latlng); });
+    }
+    if (!(window as any).L) {
+      if (!document.getElementById("leaflet-css")) {
+        const css = document.createElement("link");
+        css.id = "leaflet-css";
+        css.rel = "stylesheet";
+        css.href = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.css";
+        document.head.appendChild(css);
+      }
+      const js = document.createElement("script");
+      js.src = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.js";
+      js.onload = render;
+      document.body.appendChild(js);
+    } else {
+      render();
+    }
+    return () => { disposed = true; };
+  }, []);
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -72,25 +109,29 @@ export default function PartnerRegisterPage() {
             </label>
             <div>
               <div className="text-xs font-black uppercase text-black/45">Localização do ponto de serviço</div>
-              <p className="mb-1 mt-0.5 text-[11px] font-bold text-black/45">Usada no mapa para entregadores acharem você (a retirada de produtos é sempre num Ponto).</p>
-              <div className="flex items-center gap-2">
+              <p className="mb-1.5 mt-0.5 text-[11px] font-bold text-black/45">Toque no mapa ou arraste o pino. (A retirada de produtos é sempre num Ponto — isto é só seu ponto de serviço.)</p>
+              <div ref={mapDiv} className="h-56 w-full overflow-hidden rounded-[12px] border border-black/10" style={{ background: "#dfe7ef" }} />
+              <div className="mt-2 flex items-center gap-2">
                 <button
                   type="button"
                   onClick={() => {
                     if (!navigator.geolocation) { setError("Geolocalização indisponível neste dispositivo."); return; }
                     navigator.geolocation.getCurrentPosition(
-                      (pos) => setForm((f) => ({ ...f, lat: Math.round(pos.coords.latitude * 1e6) / 1e6, lng: Math.round(pos.coords.longitude * 1e6) / 1e6 })),
-                      () => setError("Não foi possível obter sua localização. Preencha manualmente."),
+                      (pos) => {
+                        const lat = Math.round(pos.coords.latitude * 1e6) / 1e6;
+                        const lng = Math.round(pos.coords.longitude * 1e6) / 1e6;
+                        setForm((f) => ({ ...f, lat, lng }));
+                        if (mapRef.current && markerRef.current) { mapRef.current.setView([lat, lng], 15); markerRef.current.setLatLng([lat, lng]); }
+                      },
+                      () => setError("Não foi possível obter sua localização."),
                     );
                   }}
-                  className="h-11 shrink-0 rounded-[10px] bg-[#f5b301] px-4 text-sm font-black text-[#19202c]"
+                  className="h-10 shrink-0 rounded-[10px] bg-[#f5b301] px-4 text-sm font-black text-[#19202c]"
                 >
-                  📍 Usar minha localização
+                  📍 Minha localização
                 </button>
-                <input type="number" step="0.000001" value={form.lat || ""} onChange={(e) => setForm({ ...form, lat: Number(e.target.value) })} className={input} placeholder="Latitude" />
-                <input type="number" step="0.000001" value={form.lng || ""} onChange={(e) => setForm({ ...form, lng: Number(e.target.value) })} className={input} placeholder="Longitude" />
+                {form.lat !== 0 && form.lng !== 0 ? <span className="text-[11px] font-bold text-[#1d7a3e]">✓ {form.lat.toFixed(5)}, {form.lng.toFixed(5)}</span> : <span className="text-[11px] font-bold text-black/40">Selecione no mapa</span>}
               </div>
-              {form.lat !== 0 && form.lng !== 0 && <div className="mt-1 text-[11px] font-bold text-[#1d7a3e]">✓ Localização: {form.lat.toFixed(5)}, {form.lng.toFixed(5)}</div>}
             </div>
             <label className="block text-xs font-black uppercase text-black/45">Observações
               <textarea value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} className={`${input} mt-1 h-20 py-2`} placeholder="Serviços/produtos que oferece (opcional)" />

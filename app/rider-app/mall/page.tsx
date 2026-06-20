@@ -156,6 +156,28 @@ export default function RiderMallPage() {
           </div>
         )}
 
+        {(() => {
+          const msgs = ((me as { messages?: Array<{ id: string; title: string; body: string; readAt?: string }> } | null)?.messages) ?? [];
+          const unread = msgs.filter((m) => !m.readAt);
+          if (unread.length === 0) return null;
+          return (
+            <section className="px-4 pb-2">
+              <div className="rounded-[8px] bg-white p-3 shadow-[0_12px_26px_rgba(0,0,0,0.06)]">
+                <div className="mb-1 flex items-center justify-between">
+                  <div className="flex items-center gap-1.5 text-xs font-black uppercase text-[#ff7a00]"><Bell size={14} /> Mensagens ({unread.length})</div>
+                  <button type="button" onClick={async () => { if (!me) return; await fetch("/api/mall", { method: "POST", headers, body: JSON.stringify({ action: "markMessagesRead", riderId: me.riderId }) }); void load(); }} className="text-[11px] font-black text-[#77746f]">Marcar lidas</button>
+                </div>
+                {unread.slice(0, 3).map((m) => (
+                  <div key={m.id} className="mt-1">
+                    <div className="text-sm font-black">{m.title}</div>
+                    <div className="text-[11px] font-bold text-[#77746f]">{m.body}</div>
+                  </div>
+                ))}
+              </div>
+            </section>
+          );
+        })()}
+
         {arrivals.length > 0 && (
           <section className="px-4 pb-2">
             <div className="rounded-[8px] bg-[#ff7a00] p-3 text-[#050505]">

@@ -50,7 +50,7 @@ function cashBalanceOf(riderId: string): number {
   return Math.round(balance * 100) / 100;
 }
 
-const COLLECTIONS = ["mallConfigs", "marketplaceProducts", "marketplaceOrders", "pointsLedgerEntries", "partnerPointsLedgerEntries", "riders", "riderDailyKpis", "mallCategories", "mallBanners", "mallCoupons", "mallPayments", "cashTopUps", "cashLedgerEntries"];
+const COLLECTIONS = ["mallConfigs", "marketplaceProducts", "marketplaceOrders", "pointsLedgerEntries", "partnerPointsLedgerEntries", "riders", "riderDailyKpis", "mallCategories", "mallBanners", "mallCoupons", "mallPayments", "cashTopUps", "cashLedgerEntries", "memberMessages", "franchises", "pontos", "mallRevenueShareEntries"];
 
 const PRODUCT_TYPES = ["equipment", "fuel_coupon", "maintenance_coupon", "phone_data", "safety_item", "partner_voucher"] as const;
 
@@ -246,6 +246,8 @@ export async function GET(request: Request) {
       redeemDiscount: tier.redeemDiscount,
       perks: tier.perks,
       pickupStores: pickupCandidatesForRider(rider).map(slimStore),
+      messages: memory.memberMessages.filter((m) => m.riderName === rider.name).slice(0, 20),
+      unreadMessages: memory.memberMessages.filter((m) => m.riderName === rider.name && !m.readAt).length,
       cashBalance: cashBalanceOf(rider.id),
       topUps: memory.cashTopUps.filter((t) => t.riderId === rider.id).slice(0, 10),
       coupons: eligibleCouponsForRider(rider.id, tier.tier),
@@ -425,6 +427,7 @@ type Body =
   | { action: "deleteProduct"; productId: string }
   | { action: "redeem"; productId: string; riderId?: string; riderName?: string; accountType?: "rider" | "partner" }
   | { action: "cancelOrder"; orderId: string; riderId?: string }
+  | { action: "markMessagesRead"; riderId?: string; riderName?: string }
   | { action: "confirmReceipt"; orderId: string }
   | { action: "markArrived"; orderId: string }
   | { action: "markPickedUp"; orderId: string }
@@ -445,7 +448,7 @@ async function handlePost(request: Request) {
       ? requirePermission(request, peek.accountType === "partner" ? "manage_partner_services" : "use_rider_app")
       : peek.action === "confirmReceipt"
       ? requirePermission(request, "manage_partner_services")
-      : peek.action === "scanPartner" || peek.action === "cancelOrder"
+      : peek.action === "scanPartner" || peek.action === "cancelOrder" || peek.action === "markMessagesRead"
         ? requirePermission(request, "use_rider_app")
         : peek.action === "markArrived" || peek.action === "markPickedUp"
         ? requirePermission(request, "manage_slots")
@@ -1003,7 +1006,11 @@ async function handlePost(request: Request) {
       appendServerAudit({ actor, action: body.action === "markArrived" ? "MALL_ORDER_ARRIVED" : "MALL_ORDER_PICKED_UP", entity: "MarketplaceOrder", entityId: orderId ?? "", detail: `${order.productName} for ${order.riderName} at ${order.station}.`, risk: "Low" });
       appendEvent(body.action === "markArrived" ? MARKETPLACE_EVENTS.orderArrived : MARKETPLACE_EVENTS.orderFulfilled, { orderId: order.id, accountType: order.accountType, riderId: order.riderId, partnerId: order.partnerId, productId: order.productId, station: order.station }, actor);
       if (body.action === "markArrived" && order.riderName) {
-        await sendPushToRider(order.riderName, "Seu resgate chegou! 🎁", `「${order.productName}」já está em ${order.station}. Retire quando puder.`, "/rider-app/mall");
+        const title = "Seu resgate chegou! 🎁";
+        const msgBody = `「${order.productName}」já está em ${order.station}. Retire quando puder.`;
+        // 站内信 (in-app inbox) — reaches members even without the app/push.
+        memory.memberMessages.unshift({ id: makeServerId("msg", memory.memberMessages.length + 1), riderName: order.riderName, riderId: order.riderId, title, body: msgBody, href: "/mall", createdAt: nowStamp() });
+        await sendPushToRider(order.riderName, title, msgBody, "/rider-app/mall");
       }
       return jsonResponse({ data: memory.marketplaceOrders[index] });
     }
@@ -1172,6 +1179,18 @@ async function handlePost(request: Request) {
       const config = getConfig();
       const entry = creditPoints(rider.id, config.partnerServicePoints, "PARTNER_SERVICE_REWARD", note || `完成 ${config.partnerServiceCount} 次 Partner 服务`, `psr-${Date.now()}`, actor);
       return jsonResponse({ data: { entry, balance: entry.balanceAfter } }, { status: 201 });
+    }
+
+    case "markMessagesRead": {
+      const { riderName: rn, riderId: ri } = body as { riderName?: string; riderId?: string };
+      const rider = memory.riders.find((r) => (ri && r.id === ri) || (rn && r.name === rn));
+      if (!rider) return jsonResponse({ error: "rider not found" }, { status: 404 });
+      const stamp = nowStamp();
+      for (let i = 0; i < memory.memberMessages.length; i += 1) {
+        const m = memory.memberMessages[i];
+        if (m.riderName === rider.name && !m.readAt) memory.memberMessages[i] = { ...m, readAt: stamp };
+      }
+      return jsonResponse({ data: { ok: true } });
     }
 
     default:

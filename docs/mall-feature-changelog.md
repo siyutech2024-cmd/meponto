@@ -40,10 +40,26 @@
 
 ---
 
+## 补充批次（缺口修复 — 公开用户登录 / 地图选点 / 站内信）
+
+> 修复自查发现的 3 个缺口。当前未提交文件：见 `git status`。
+
+- **app/api/member-login/route.ts**（新）— 公开会员**手机号登录**（签发会话），让注册后的公开用户能回来用积分兑换。
+- **app/register/page.tsx** — 加「Criar conta / Entrar」双模式（注册 + 手机登录）。
+- **app/partner-register/page.tsx** — 升级为 **Leaflet 交互地图选点**（点/拖拽落点 + 定位按钮），替换手动填坐标。
+- **站内信（in-app message）系统**（替代 WhatsApp）：
+  - **app/lib/mall-ops.ts** — 新增 `MemberMessage` 类型。
+  - **app/lib/server/memory.ts** — 注册 `memberMessages` collection。
+  - **app/api/mall/route.ts** — `markArrived` 生成到货站内信；GET `me.messages`/未读数；新增 `markMessagesRead`；并把 `franchises/pontos/mallRevenueShareEntries/memberMessages` 补进 `COLLECTIONS` 刷新列表（分成计提正确性修正）。
+  - **app/store/page.tsx** + **app/rider-app/mall/page.tsx** — 顶部「📬 Mensagens」未读横幅 + 「Marcar lidas」；兑换带 `pickupStoreId`。
+- **app/mall/station/page.tsx** — 撤掉 WhatsApp 按钮（净回退）。
+
+---
+
 提交（一次性）：
 ```bash
-cd ~/Documents/MePonto && npm run build   # 终验
-git add app/ proxy.ts docs/mall-pickup-store-revshare-map-plan.md docs/system-business-loop-audit.md docs/mall-feature-changelog.md
-git commit -m "feat(mall): pickup-store rules + two-level revenue share + public members + service map"
+cd ~/Documents/MePonto && npm run build
+git add app/ proxy.ts docs/
+git commit -m "feat(mall): pickup-store rules + two-level revenue share + public members + service map + in-app messages"
 git push
 ```
