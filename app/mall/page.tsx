@@ -67,7 +67,7 @@ export default function MallAdminPage() {
   const [mall, setMall] = useState<MallPayload | null>(null);
   const [ops, setOps] = useState<OpsPayload | null>(null);
   const [message, setMessage] = useState<{ tone: "ok" | "err"; text: string } | null>(null);
-  const [priceDrafts, setPriceDrafts] = useState<Record<string, { points: string; cash: string }>>({});
+  const [priceDrafts, setPriceDrafts] = useState<Record<string, { points: string; cash: string; share: string }>>({});
   const [editOpen, setEditOpen] = useState("");
   const [editDraft, setEditDraft] = useState<Record<string, string>>({});
   const [categoryName, setCategoryName] = useState("");
@@ -225,7 +225,7 @@ export default function MallAdminPage() {
         <div className="space-y-3">
           {products.length === 0 && <div className="panel p-10 text-center text-sm font-bold text-[var(--muted)]">还没有商品——等供应商在供应链后台提报。</div>}
           {products.map((product) => {
-            const draft = priceDrafts[product.id] ?? { points: String(product.pointsPrice || ""), cash: product.cashPriceBRL ? String(product.cashPriceBRL) : "" };
+            const draft = priceDrafts[product.id] ?? { points: String(product.pointsPrice || ""), cash: product.cashPriceBRL ? String(product.cashPriceBRL) : "", share: product.franchiseShareBRL ? String(product.franchiseShareBRL) : "" };
             const editing = editOpen === product.id;
             return (
               <div key={product.id} className="panel p-4">
@@ -253,7 +253,10 @@ export default function MallAdminPage() {
                     <label className="text-[11px] font-black text-[var(--muted)]">+R$ 现金
                       <input value={draft.cash} onChange={(e) => setPriceDrafts((prev) => ({ ...prev, [product.id]: { ...draft, cash: e.target.value } }))} placeholder="0" className="ml-1.5 h-9 w-20 rounded-[8px] border border-[var(--line)] bg-[var(--surface-raised)] px-2 text-sm font-bold outline-none focus:border-[var(--accent)]" />
                     </label>
-                    <button type="button" onClick={() => void post("/api/mall", { action: "priceProduct", productId: product.id, pointsPrice: Number(draft.points) || 0, cashPriceBRL: Number(draft.cash) || 0, status: "active" }, "已定价上架")} className="h-9 rounded-[8px] bg-[var(--accent)] px-3 text-xs font-black text-[var(--accent-ink)]">定价上架</button>
+                    <label className="text-[11px] font-black text-[var(--muted)]" title="每次成功取货付给取货门店加盟商的固定 R$（销售分成）">加盟商分成 R$
+                      <input value={draft.share} onChange={(e) => setPriceDrafts((prev) => ({ ...prev, [product.id]: { ...draft, share: e.target.value } }))} placeholder="0" className="ml-1.5 h-9 w-20 rounded-[8px] border border-[var(--line)] bg-[var(--surface-raised)] px-2 text-sm font-bold outline-none focus:border-[var(--accent)]" />
+                    </label>
+                    <button type="button" onClick={() => void post("/api/mall", { action: "priceProduct", productId: product.id, pointsPrice: Number(draft.points) || 0, cashPriceBRL: Number(draft.cash) || 0, franchiseShareBRL: Number(draft.share) || 0, status: "active" }, "已定价上架")} className="h-9 rounded-[8px] bg-[var(--accent)] px-3 text-xs font-black text-[var(--accent-ink)]">定价上架</button>
                     {product.status === "active" && (
                       <button type="button" onClick={() => void post("/api/mall", { action: "priceProduct", productId: product.id, pointsPrice: product.pointsPrice, cashPriceBRL: product.cashPriceBRL ?? 0, status: "paused" }, "已下架")} className="h-9 rounded-[8px] border border-[var(--line)] px-3 text-xs font-black text-[var(--muted)]">下架</button>
                     )}
@@ -606,6 +609,31 @@ export default function MallAdminPage() {
                 </div>
               ))}
               {(ops?.statements ?? []).length === 0 && <div className="py-4 text-center text-xs font-bold text-[var(--muted)]">选择月份生成对账单：按「履约订单 × 供货价」自动汇总每个供应商。</div>}
+            </div>
+          </div>
+
+          <div className="panel p-5">
+            <div className="mb-3 flex flex-wrap items-center gap-2">
+              <span className="text-xs font-black uppercase text-[var(--muted)]">销售分成 · 月度对账（加盟商）</span>
+              <input type="month" value={statementMonth} onChange={(e) => setStatementMonth(e.target.value)} className="ml-auto h-9 rounded-[8px] border border-[var(--line)] bg-[var(--surface-raised)] px-2 text-sm font-bold outline-none" />
+              <button type="button" onClick={() => void post("/api/mall/ops", { action: "generateRevShareStatement", month: statementMonth }, `已生成 ${statementMonth} 分成对账单`)} className="h-9 rounded-[8px] bg-[var(--accent)] px-3.5 text-xs font-black text-[var(--accent-ink)]">生成分成对账单</button>
+            </div>
+            <div className="space-y-2">
+              {(((ops as { revShareStatements?: Array<{ id: string; franchise: string; month: string; status: "draft" | "confirmed" | "paid"; total: number; orders: number; stationShareTotal: number; franchiseNetTotal: number; paidAt?: string }> } | null)?.revShareStatements) ?? []).map((s) => (
+                <div key={s.id} className="rounded-[10px] border border-[var(--line)] bg-[var(--surface-raised)] px-3.5 py-2.5">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <CircleDollarSign size={15} className="text-[var(--muted)]" />
+                    <span className="text-sm font-black">{s.franchise} · {s.month}</span>
+                    <Badge value={{ draft: "待加盟商确认", confirmed: "待付款", paid: "已付款" }[s.status]} />
+                    <span className="text-xs font-bold text-[var(--muted)]">{s.orders} 单 · 加盟商净 R$ {s.franchiseNetTotal.toFixed(2)} · 站点 R$ {s.stationShareTotal.toFixed(2)} · 合计 <b>R$ {s.total.toFixed(2)}</b></span>
+                    {s.status === "confirmed" && (
+                      <button type="button" onClick={() => { const note = prompt("付款凭证备注（可空）") ?? ""; void post("/api/mall/ops", { action: "payRevShareStatement", statementId: s.id, note }, "已标记付款"); }} className="ml-auto h-8 rounded-[8px] bg-[var(--accent)] px-3 text-xs font-black text-[var(--accent-ink)]">标记已付款</button>
+                    )}
+                  </div>
+                  {s.paidAt && <div className="mt-1 text-xs font-bold text-[var(--muted)]">付款于 {s.paidAt}</div>}
+                </div>
+              ))}
+              {(((ops as { revShareStatements?: unknown[] } | null)?.revShareStatements) ?? []).length === 0 && <div className="py-4 text-center text-xs font-bold text-[var(--muted)]">按「已取货订单 × 产品加盟商分成」自动汇总。加盟商在自己后台确认后，这里可标记付款。</div>}
             </div>
           </div>
         </div>

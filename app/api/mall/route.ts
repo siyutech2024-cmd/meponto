@@ -69,6 +69,42 @@ function lifetimeOrders(rider99Id: string | undefined): number | null {
   return rows.reduce((sum, row) => sum + (row.completedOrders ?? 0), 0);
 }
 
+// ---- Pickup stores (ALL pickups happen at a Ponto station) ----------------
+type PickupStore = { id: string; name: string; bairro: string; franchise?: string; lat: number; lng: number; address?: string };
+const slimStore = (p: PickupStore): PickupStore => ({ id: p.id, name: p.name, bairro: p.bairro, franchise: p.franchise, lat: p.lat, lng: p.lng, address: p.address });
+
+function haversineKm(aLat: number, aLng: number, bLat: number, bLng: number): number {
+  const R = 6371;
+  const dLat = ((bLat - aLat) * Math.PI) / 180;
+  const dLng = ((bLng - aLng) * Math.PI) / 180;
+  const s = Math.sin(dLat / 2) ** 2 + Math.cos((aLat * Math.PI) / 180) * Math.cos((bLat * Math.PI) / 180) * Math.sin(dLng / 2) ** 2;
+  return 2 * R * Math.asin(Math.sqrt(s));
+}
+
+function enabledPontos(): PickupStore[] {
+  return memory.pontos.filter((p) => p.pickupEnabled !== false && (p.status ?? "approved") === "approved");
+}
+
+/** Allowed pickup stores for a rider/public user:
+ *  有归属站点→锁定该站点；否则有加盟商→本加盟商站点；否则(公开用户)→任一站点。 */
+function pickupCandidatesForRider(rider: { ponto?: string; franchise?: string }): PickupStore[] {
+  const enabled = enabledPontos();
+  const home = rider.ponto ? enabled.find((p) => p.name === rider.ponto) : undefined;
+  if (home) return [home];
+  if (rider.franchise && rider.franchise !== "Unassigned") return enabled.filter((p) => p.franchise === rider.franchise);
+  return enabled;
+}
+
+/** Partner pickup = the nearest N pickup-enabled Ponto to its SERVICE point
+ *  (partner service points are NOT pickup points — Ponto only). */
+function pickupCandidatesForPartner(partner: { lat?: number; lng?: number }, n = 10): PickupStore[] {
+  const enabled = enabledPontos();
+  if (partner.lat == null || partner.lng == null) return enabled.slice(0, n);
+  return [...enabled]
+    .sort((a, b) => haversineKm(partner.lat!, partner.lng!, a.lat, a.lng) - haversineKm(partner.lat!, partner.lng!, b.lat, b.lng))
+    .slice(0, n);
+}
+
 const MONTH_MS = 30 * 24 * 3600 * 1000;
 
 /**
@@ -137,6 +173,37 @@ function creditPoints(riderId: string, points: number, reasonCode: string, note:
   return entry;
 }
 
+/** Accrue the two-level sales revenue share when an order is PICKED UP at a
+ *  Ponto (fulfilled). Once per order; only physical orders with a pickup store. */
+function accrueRevenueShare(order: MarketplaceOrder, actor: string) {
+  if (!order.pickupStoreId) return; // virtual / no pickup store → no share
+  if (memory.mallRevenueShareEntries.some((e) => e.orderId === order.id)) return; // idempotent
+  const product = memory.marketplaceProducts.find((p) => p.id === order.productId);
+  const round2 = (n: number) => Math.round((n ?? 0) * 100) / 100;
+  const franchiseShareBRL = round2(product?.franchiseShareBRL ?? 0);
+  if (franchiseShareBRL <= 0) return; // no share configured for this product
+  const franchise = order.franchise ?? "Unassigned";
+  const fr = memory.franchises.find((f) => f.name === franchise);
+  const stationShareBRL = Math.min(franchiseShareBRL, round2(fr?.stationShareBRL ?? 0));
+  const franchiseNetBRL = round2(franchiseShareBRL - stationShareBRL);
+  memory.mallRevenueShareEntries.unshift({
+    id: `rev-${order.id}`,
+    orderId: order.id,
+    productId: order.productId,
+    productName: order.productName ?? order.productId,
+    pickupStoreId: order.pickupStoreId,
+    pickupStoreName: order.pickupStoreName ?? order.station ?? "",
+    franchise,
+    franchiseShareBRL,
+    stationShareBRL,
+    franchiseNetBRL,
+    month: (order.createdAt || nowStamp()).slice(0, 7),
+    status: "accrued",
+    createdAt: nowStamp(),
+  });
+  appendServerAudit({ actor, action: "MALL_REVSHARE_ACCRUED", entity: "MarketplaceOrder", entityId: order.id, detail: `${franchise} 净 R$${franchiseNetBRL} · 站点 ${order.pickupStoreName ?? order.station} R$${stationShareBRL}（产品分成 R$${franchiseShareBRL}）`, risk: "Low" });
+}
+
 export async function GET(request: Request) {
   const url = new URL(request.url);
   const scopeStation = url.searchParams.get("station") ?? "";
@@ -178,6 +245,7 @@ export async function GET(request: Request) {
       tierLabel: tier.label,
       redeemDiscount: tier.redeemDiscount,
       perks: tier.perks,
+      pickupStores: pickupCandidatesForRider(rider).map(slimStore),
       cashBalance: cashBalanceOf(rider.id),
       topUps: memory.cashTopUps.filter((t) => t.riderId === rider.id).slice(0, 10),
       coupons: eligibleCouponsForRider(rider.id, tier.tier),
@@ -247,6 +315,7 @@ export async function GET(request: Request) {
         riderId: "",
         name: partner.name,
         balance: getAvailablePartnerPoints(memory.partnerPointsLedgerEntries, partner.id),
+        pickupStores: pickupCandidatesForPartner(partner).map(slimStore),
         // Same read-only ledger slice shape as the rider, from the Partner
         // append-only ledger, so the storefront drawer is account-agnostic.
         ledger: memory.partnerPointsLedgerEntries
@@ -495,11 +564,14 @@ async function handlePost(request: Request) {
       const marginPct = Number(body.marginPct);
       const status = body.status === "paused" ? "paused" : "active";
       const cashPriceBRL = Number(body.cashPriceBRL);
+      const franchiseShareBRL = Number(body.franchiseShareBRL);
       memory.marketplaceProducts[index] = {
         ...memory.marketplaceProducts[index],
         pointsPrice,
         marginPct: Number.isFinite(marginPct) ? marginPct : memory.marketplaceProducts[index].marginPct,
         cashPriceBRL: Number.isFinite(cashPriceBRL) && cashPriceBRL > 0 ? Math.round(cashPriceBRL * 100) / 100 : undefined,
+        // Level-1 sales revenue share to the pickup store's franchise (fixed R$).
+        franchiseShareBRL: Number.isFinite(franchiseShareBRL) && franchiseShareBRL >= 0 ? Math.round(franchiseShareBRL * 100) / 100 : memory.marketplaceProducts[index].franchiseShareBRL,
         status: pointsPrice > 0 || (Number.isFinite(cashPriceBRL) && cashPriceBRL > 0) ? status : "pending_pricing",
       };
       appendServerAudit({ actor, action: "MALL_PRODUCT_PRICED", entity: "MarketplaceProduct", entityId: productId ?? "", detail: `pointsPrice=${pointsPrice} margin=${marginPct}% status=${status}.`, risk: "Low" });
@@ -568,20 +640,31 @@ async function handlePost(request: Request) {
         const eta = new Date();
         eta.setDate(eta.getDate() + (product.deliveryCycleDays ?? 7));
         const voucherCode = isVirtual ? `MP-${Date.now().toString(36).toUpperCase()}-${Math.random().toString(36).slice(2, 6).toUpperCase()}` : undefined;
+        // Physical partner goods are picked up at a Ponto (NOT the partner's own
+        // service point): choose from the nearest-10 pickup stores. Virtual = none.
+        let partnerPickup: PickupStore | undefined;
+        if (!isVirtual) {
+          const partnerCandidates = pickupCandidatesForPartner(partner);
+          partnerPickup = partnerCandidates.find((p) => p.id === (body as { pickupStoreId?: string }).pickupStoreId);
+          if (!partnerPickup) {
+            return jsonResponse({ error: "选择取货门店（离您最近的 Ponto）。", pickupStores: partnerCandidates.map(slimStore) }, { status: 400 });
+          }
+        }
         const order: MarketplaceOrder = {
           id: makeServerId("mko", memory.marketplaceOrders.length + 1),
           accountType: "partner",
           partnerId: partner.id,
           productId: product.id,
           pointsSpent: price,
-          // Virtual: instant. Physical: shipped to the partner's shop, partner
-          // self-confirms receipt (confirmReceipt) to complete.
+          // Virtual: instant voucher. Physical: picked up at the chosen Ponto
+          // (station handles markArrived → markPickedUp).
           status: isVirtual ? "fulfilled" : "created",
           createdAt,
           productName: product.name,
           riderName: partner.name,
-          // Reuse "station" to carry the partner's delivery location (its bairro).
-          station: isVirtual ? undefined : partner.bairro ?? "Loja do parceiro",
+          station: isVirtual ? undefined : partnerPickup!.name,
+          franchise: isVirtual ? undefined : partnerPickup!.franchise ?? "Unassigned",
+          ...(partnerPickup ? { pickupStoreId: partnerPickup.id, pickupStoreName: partnerPickup.name } : {}),
           etaDate: isVirtual ? createdAt.slice(0, 10) : eta.toISOString().slice(0, 10),
           ...(isVirtual ? { pickedUpAt: createdAt, voucherCode } : {}),
         };
@@ -713,6 +796,16 @@ async function handlePost(request: Request) {
           );
         }
       }
+      // Resolve pickup store (always a Ponto). Locked for riders with a home
+      // station; otherwise chosen from the allowed set (本商站点 / 公开用户任一).
+      const riderCandidates = pickupCandidatesForRider(rider);
+      const pickupStore = riderCandidates.length === 1
+        ? riderCandidates[0]
+        : riderCandidates.find((p) => p.id === (body as { pickupStoreId?: string }).pickupStoreId);
+      if (!pickupStore) {
+        return jsonResponse({ error: "请选择取货门店。", pickupStores: riderCandidates.map(slimStore) }, { status: 400 });
+      }
+
       const order: MarketplaceOrder = {
         id: makeServerId("mko", memory.marketplaceOrders.length + 1),
         accountType: "rider",
@@ -723,8 +816,10 @@ async function handlePost(request: Request) {
         createdAt,
         productName: product.name,
         riderName: rider.name,
-        station: rider.ponto ?? "Unassigned",
-        franchise: rider.franchise ?? "Unassigned",
+        station: pickupStore.name,
+        franchise: pickupStore.franchise ?? "Unassigned",
+        pickupStoreId: pickupStore.id,
+        pickupStoreName: pickupStore.name,
         etaDate: isVirtual ? createdAt.slice(0, 10) : eta.toISOString().slice(0, 10),
         ...(issueNow ? { pickedUpAt: createdAt, voucherCode } : {}),
         ...(heldForReview ? { reviewStatus: "pending" as const } : {}),
@@ -880,6 +975,7 @@ async function handlePost(request: Request) {
       }
       const stamp = nowStamp();
       memory.marketplaceOrders[index] = { ...order, status: "fulfilled", pickedUpAt: stamp };
+      accrueRevenueShare(memory.marketplaceOrders[index], actor);
       appendServerAudit({ actor, action: "MALL_PARTNER_RECEIPT_CONFIRMED", entity: "MarketplaceOrder", entityId: order.id, detail: `${partner.name} confirmou recebimento de ${order.productName}.`, risk: "Low" });
       return jsonResponse({ data: memory.marketplaceOrders[index] });
     }
@@ -902,6 +998,7 @@ async function handlePost(request: Request) {
           return jsonResponse({ error: "现金部分尚未核销，不能交付（先在商城后台确认收款）。" }, { status: 409 });
         }
         memory.marketplaceOrders[index] = { ...order, status: "fulfilled", pickedUpAt: stamp };
+        accrueRevenueShare(memory.marketplaceOrders[index], actor);
       }
       appendServerAudit({ actor, action: body.action === "markArrived" ? "MALL_ORDER_ARRIVED" : "MALL_ORDER_PICKED_UP", entity: "MarketplaceOrder", entityId: orderId ?? "", detail: `${order.productName} for ${order.riderName} at ${order.station}.`, risk: "Low" });
       appendEvent(body.action === "markArrived" ? MARKETPLACE_EVENTS.orderArrived : MARKETPLACE_EVENTS.orderFulfilled, { orderId: order.id, accountType: order.accountType, riderId: order.riderId, partnerId: order.partnerId, productId: order.productId, station: order.station }, actor);

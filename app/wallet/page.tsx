@@ -31,6 +31,16 @@ export default function WalletAdminPage() {
   const [payAmount, setPayAmount] = useState("");
   const [payPeriod, setPayPeriod] = useState<"weekly" | "daily">("weekly");
   const [payNote, setPayNote] = useState("");
+  type RevStatement = { id: string; franchise: string; month: string; status: "draft" | "confirmed" | "paid"; total: number; orders: number; stationShareTotal: number; franchiseNetTotal: number };
+  const [revStatements, setRevStatements] = useState<RevStatement[]>([]);
+  const [stationShare, setStationShare] = useState("");
+
+  const loadRevShare = useCallback(async () => {
+    if (!scopeFranchise) return;
+    const r = await fetch("/api/mall/ops", { headers, cache: "no-store" }).catch(() => null);
+    if (r && r.ok) setRevStatements(((await r.json()).data?.revShareStatements ?? []) as RevStatement[]);
+  }, [headers, scopeFranchise]);
+  useEffect(() => { void loadRevShare(); }, [loadRevShare]);
 
   const load = useCallback(async () => {
     const [weeklyResponse, listResponse] = await Promise.all([
@@ -164,6 +174,29 @@ export default function WalletAdminPage() {
         <button type="button" className="tag" onClick={() => shiftWeek(7)}>下一周 →</button>
         <div className="ml-auto text-sm font-black text-[var(--accent)]">本周应结 {weekly ? money(weekly.grandTotal) : "—"}</div>
       </div>
+
+      {scopeFranchise && (
+        <div className="panel mb-4 p-4">
+          <div className="mb-2 flex flex-wrap items-center gap-2">
+            <span className="text-xs font-black uppercase text-[var(--muted)]">销售分成 · {scopeFranchise}</span>
+            <input value={stationShare} onChange={(e) => setStationShare(e.target.value.replace(/[^\d.]/g, ""))} placeholder="站点分成 R$/单" className="ml-auto h-9 w-32 rounded-[8px] border border-[var(--line)] bg-[var(--surface-raised)] px-2 text-sm font-bold outline-none" />
+            <button type="button" onClick={async () => { const res = await fetch("/api/mall/ops", { method: "POST", headers, body: JSON.stringify({ action: "setStationShare", stationShareBRL: Number(stationShare) || 0 }) }); setMessage(res.ok ? { tone: "ok", text: `站点分成已设为 R$ ${Number(stationShare) || 0}/单` } : { tone: "err", text: "设置失败" }); }} className="h-9 rounded-[8px] bg-[var(--accent)] px-3 text-xs font-black text-[var(--accent-ink)]">设置站点分成</button>
+          </div>
+          <div className="space-y-2">
+            {revStatements.map((s) => (
+              <div key={s.id} className="flex flex-wrap items-center gap-2 rounded-[8px] border border-[var(--line)] bg-[var(--surface-raised)] px-3 py-2 text-sm">
+                <span className="font-black">{s.month}</span>
+                <Badge value={{ draft: "待确认", confirmed: "待总部付款", paid: "已付款" }[s.status]} />
+                <span className="text-xs font-bold text-[var(--muted)]">{s.orders} 单 · 净 R$ {s.franchiseNetTotal.toFixed(2)} · 站点 R$ {s.stationShareTotal.toFixed(2)} · 合计 <b>R$ {s.total.toFixed(2)}</b></span>
+                {s.status === "draft" && (
+                  <button type="button" onClick={async () => { const res = await fetch("/api/mall/ops", { method: "POST", headers, body: JSON.stringify({ action: "confirmRevShareStatement", statementId: s.id }) }); if (res.ok) { setMessage({ tone: "ok", text: "已确认对账单" }); void loadRevShare(); } }} className="ml-auto h-8 rounded-[8px] bg-[var(--accent)] px-3 text-xs font-black text-[var(--accent-ink)]">确认对账单</button>
+                )}
+              </div>
+            ))}
+            {revStatements.length === 0 && <div className="py-2 text-center text-xs font-bold text-[var(--muted)]">暂无分成对账单（总部按月生成后在此确认）。</div>}
+          </div>
+        </div>
+      )}
 
       {/* Franchise → rider fold */}
       <div className="space-y-2">

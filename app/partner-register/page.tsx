@@ -12,7 +12,7 @@ const CATEGORY_LABELS: Record<CrmPartnerCategory, string> = {
 const CATEGORIES = Object.keys(CATEGORY_LABELS) as CrmPartnerCategory[];
 
 export default function PartnerRegisterPage() {
-  const [form, setForm] = useState({ name: "", category: "Repair Shop" as CrmPartnerCategory, contactName: "", phone: "", bairro: "", notes: "" });
+  const [form, setForm] = useState({ name: "", category: "Repair Shop" as CrmPartnerCategory, contactName: "", phone: "", bairro: "", notes: "", lat: 0, lng: 0 });
   const [state, setState] = useState<"idle" | "sending" | "done">("idle");
   const [error, setError] = useState("");
 
@@ -70,6 +70,28 @@ export default function PartnerRegisterPage() {
             <label className="block text-xs font-black uppercase text-black/45">Bairro / região
               <input value={form.bairro} onChange={(e) => setForm({ ...form, bairro: e.target.value })} className={`${input} mt-1`} placeholder="Opcional" />
             </label>
+            <div>
+              <div className="text-xs font-black uppercase text-black/45">Localização do ponto de serviço</div>
+              <p className="mb-1 mt-0.5 text-[11px] font-bold text-black/45">Usada no mapa para entregadores acharem você (a retirada de produtos é sempre num Ponto).</p>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (!navigator.geolocation) { setError("Geolocalização indisponível neste dispositivo."); return; }
+                    navigator.geolocation.getCurrentPosition(
+                      (pos) => setForm((f) => ({ ...f, lat: Math.round(pos.coords.latitude * 1e6) / 1e6, lng: Math.round(pos.coords.longitude * 1e6) / 1e6 })),
+                      () => setError("Não foi possível obter sua localização. Preencha manualmente."),
+                    );
+                  }}
+                  className="h-11 shrink-0 rounded-[10px] bg-[#f5b301] px-4 text-sm font-black text-[#19202c]"
+                >
+                  📍 Usar minha localização
+                </button>
+                <input type="number" step="0.000001" value={form.lat || ""} onChange={(e) => setForm({ ...form, lat: Number(e.target.value) })} className={input} placeholder="Latitude" />
+                <input type="number" step="0.000001" value={form.lng || ""} onChange={(e) => setForm({ ...form, lng: Number(e.target.value) })} className={input} placeholder="Longitude" />
+              </div>
+              {form.lat !== 0 && form.lng !== 0 && <div className="mt-1 text-[11px] font-bold text-[#1d7a3e]">✓ Localização: {form.lat.toFixed(5)}, {form.lng.toFixed(5)}</div>}
+            </div>
             <label className="block text-xs font-black uppercase text-black/45">Observações
               <textarea value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} className={`${input} mt-1 h-20 py-2`} placeholder="Serviços/produtos que oferece (opcional)" />
             </label>

@@ -79,7 +79,7 @@ export async function proxy(request: NextRequest) {
       url.pathname = "/rider-app";
       return NextResponse.rewrite(url);
     }
-    const riderSections = new Set(["wallet", "shifts", "agenda", "mall", "support", "scan"]);
+    const riderSections = new Set(["wallet", "shifts", "agenda", "mall", "map", "support", "scan"]);
     const firstSegment = pathname.split("/")[1] ?? "";
     // /scan?partner=… and /scan?ref=… are the PUBLIC QR validation page; the
     // bare /scan is the in-app camera scanner.
@@ -134,7 +134,7 @@ export async function proxy(request: NextRequest) {
   // Each portal domain only serves ITS OWN pages. Opening another system's
   // path (e.g. franchise.meponto.com/pontosys) bounces to the owning domain —
   // regardless of who is logged in.
-  const publicPaths = ["/rider-login", "/scan", "/privacy", "/home", "/store", "/partner-register", "/llms.txt", "/og.png", "/480d2d55480284b1ce870c54bf62e21a.txt"];
+  const publicPaths = ["/rider-login", "/register", "/scan", "/privacy", "/home", "/store", "/partner-register", "/llms.txt", "/og.png", "/480d2d55480284b1ce870c54bf62e21a.txt"];
   if (hostPortalId && !publicPaths.some((p) => pathname === p || pathname.startsWith(`${p}/`))) {
     const belongsTo = (portal: (typeof portalConfigs)[keyof typeof portalConfigs]) =>
       pathname === portal.homePath ||

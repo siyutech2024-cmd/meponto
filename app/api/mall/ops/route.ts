@@ -1,9 +1,9 @@
 import { appendServerAudit, jsonResponse, makeServerId, memory } from "../../../lib/server/memory";
 import { flushPendingToDatabase, persistDeleteRecord, refreshCollectionsFromDatabase } from "../../../lib/server/persistence";
-import { requirePermission, roleFromRequest } from "../../../lib/server/authz";
+import { requirePermission, roleFromRequest, scopeFromRequest } from "../../../lib/server/authz";
 import { sessionFromRequest } from "../../../lib/auth-session";
 import { pointsRules } from "../../../lib/points";
-import type { CashLedgerEntry, CashTopUp, MallBanner, MallCategory, MallCoupon, MallCouponType, PriceChangeRequest, PurchaseOrder, PurchaseOrderItem, SupplierStatement, SupplierStatementLine } from "../../../lib/mall-ops";
+import type { CashLedgerEntry, CashTopUp, MallBanner, MallCategory, MallCoupon, MallCouponType, PriceChangeRequest, PurchaseOrder, PurchaseOrderItem, RevenueShareEntry, RevenueShareStatement, SupplierStatement, SupplierStatementLine } from "../../../lib/mall-ops";
 
 /**
  * PontoMall operations API — mall back office + supplier supply chain.
@@ -26,6 +26,10 @@ const COLLECTIONS = [
   "mallPayments",
   "marketplaceProducts",
   "marketplaceOrders",
+  "mallRevenueShareEntries",
+  "revenueShareStatements",
+  "franchises",
+  "pontos",
 ];
 
 export function cashBalanceOf(riderId: string): number {
@@ -46,9 +50,19 @@ export async function GET(request: Request) {
   if (!session) return jsonResponse({ error: "login required" }, { status: 401 });
   const isOffice = session.portal === "pontomall" || session.portal === "pontosys";
   const supplierName = session.portal === "supplier" ? session.organization || "" : "";
-  if (!isOffice && !supplierName) return jsonResponse({ error: "forbidden" }, { status: 403 });
+  const scope = await scopeFromRequest(request);
+  if (!isOffice && !supplierName && !scope.franchise && !scope.station) return jsonResponse({ error: "forbidden" }, { status: 403 });
 
   await refreshCollectionsFromDatabase(COLLECTIONS);
+
+  // Franchise / station portals: read-only sales revenue-share view. Franchise
+  // sees its own entries + monthly statements (can confirm); station sees only
+  // the entries for its own Ponto.
+  if (!isOffice && (scope.franchise || scope.station)) {
+    const entries = memory.mallRevenueShareEntries.filter((e) => (scope.franchise ? e.franchise === scope.franchise : e.pickupStoreName === scope.station));
+    const statements = scope.franchise ? memory.revenueShareStatements.filter((s) => s.franchise === scope.franchise) : [];
+    return jsonResponse({ data: { scope: scope.franchise ? "franchise" : "station", revShareEntries: entries.slice(0, 500), revShareStatements: statements } });
+  }
 
   const own = <T extends { supplierName: string }>(rows: T[]) => (isOffice ? rows : rows.filter((row) => row.supplierName === supplierName));
 
@@ -106,6 +120,8 @@ export async function GET(request: Request) {
       payments: isOffice ? memory.mallPayments : [],
       topUps: isOffice ? memory.cashTopUps : [],
       cashLedger: isOffice ? memory.cashLedgerEntries.slice(0, 300) : [],
+      revShareEntries: isOffice ? memory.mallRevenueShareEntries.slice(0, 500) : [],
+      revShareStatements: isOffice ? memory.revenueShareStatements : [],
       summary: {
         orders: scopedOrders.length,
         pointsGmv,
@@ -138,6 +154,8 @@ const OFFICE_ACTIONS = new Set([
   "receivePO",
   "generateStatement",
   "payStatement",
+  "generateRevShareStatement",
+  "payRevShareStatement",
   "confirmPayment",
   "rejectPayment",
   "confirmTopUp",
@@ -166,6 +184,11 @@ async function handlePost(request: Request) {
   } else if (action === "submitPaymentRef" || action === "requestTopUp" || action === "submitTopUpRef") {
     const forbidden = requirePermission(request, "use_rider_app");
     if (forbidden) return forbidden;
+  } else if (action === "setStationShare" || action === "confirmRevShareStatement") {
+    // Franchise (or HQ) actions: set station share / confirm the share statement.
+    if (!session || (session.portal !== "franchise" && session.portal !== "pontomall" && session.portal !== "pontosys")) {
+      return jsonResponse({ error: "仅加盟商或总部可执行此操作" }, { status: 403 });
+    }
   } else {
     return jsonResponse({ error: "unknown action" }, { status: 400 });
   }
@@ -555,6 +578,86 @@ async function handlePost(request: Request) {
       memory.cashLedgerEntries.unshift(entry);
       appendServerAudit({ actor, action: "MALL_CASH_ADJUSTED", entity: "CashLedger", entityId: entry.id, detail: `${rider.name} ${amount > 0 ? "+" : ""}${amount.toFixed(2)} · ${note}`, risk: "Medium" });
       return jsonResponse({ data: entry });
+    }
+
+    // ---- Sales revenue share (two-level: product → 加盟商 → 站点) ----------
+    case "setStationShare": {
+      const franchiseName = session?.portal === "franchise" ? (session.franchise || session.organization || "") : String(body.franchise ?? "");
+      if (!franchiseName) return jsonResponse({ error: "加盟商未识别" }, { status: 400 });
+      const value = Math.max(0, Math.round((Number(body.stationShareBRL) || 0) * 100) / 100);
+      const index = memory.franchises.findIndex((f) => f.name === franchiseName);
+      if (index === -1) return jsonResponse({ error: "加盟商不存在" }, { status: 404 });
+      memory.franchises[index] = { ...memory.franchises[index], stationShareBRL: value };
+      appendServerAudit({ actor, action: "MALL_STATION_SHARE_SET", entity: "Franchise", entityId: memory.franchises[index].id, detail: `${franchiseName} 站点分成 R$${value}/单`, risk: "Low" });
+      return jsonResponse({ data: memory.franchises[index] });
+    }
+    case "generateRevShareStatement": {
+      const month = /^\d{4}-\d{2}$/.test(String(body.month)) ? String(body.month) : new Date().toISOString().slice(0, 7);
+      const r2 = (n: number) => Math.round(n * 100) / 100;
+      const byFranchise = new Map<string, RevenueShareEntry[]>();
+      for (const e of memory.mallRevenueShareEntries) {
+        if (e.month !== month) continue;
+        const arr = byFranchise.get(e.franchise) ?? [];
+        arr.push(e);
+        byFranchise.set(e.franchise, arr);
+      }
+      const created: RevenueShareStatement[] = [];
+      for (const [franchise, entries] of byFranchise) {
+        const id = `rst-${month}-${franchise.toLowerCase().replace(/[^a-z0-9]+/g, "-").slice(0, 30)}`;
+        const existingIndex = memory.revenueShareStatements.findIndex((s) => s.id === id);
+        if (existingIndex !== -1 && memory.revenueShareStatements[existingIndex].status !== "draft") continue;
+        const stationMap = new Map<string, { orders: number; stationShareBRL: number }>();
+        let franchiseNetTotal = 0;
+        let stationShareTotal = 0;
+        for (const e of entries) {
+          const st = stationMap.get(e.pickupStoreName) ?? { orders: 0, stationShareBRL: 0 };
+          st.orders += 1;
+          st.stationShareBRL = r2(st.stationShareBRL + e.stationShareBRL);
+          stationMap.set(e.pickupStoreName, st);
+          franchiseNetTotal = r2(franchiseNetTotal + e.franchiseNetBRL);
+          stationShareTotal = r2(stationShareTotal + e.stationShareBRL);
+        }
+        const statement: RevenueShareStatement = {
+          id,
+          franchise,
+          month,
+          stations: [...stationMap.entries()].map(([store, v]) => ({ store, orders: v.orders, stationShareBRL: v.stationShareBRL })),
+          orders: entries.length,
+          franchiseNetTotal,
+          stationShareTotal,
+          total: r2(franchiseNetTotal + stationShareTotal),
+          status: "draft",
+          createdAt: nowStamp(),
+        };
+        if (existingIndex !== -1) memory.revenueShareStatements[existingIndex] = statement;
+        else memory.revenueShareStatements.unshift(statement);
+        created.push(statement);
+      }
+      appendServerAudit({ actor, action: "MALL_REVSHARE_STATEMENTS_GENERATED", entity: "RevenueShareStatement", entityId: month, detail: `${created.length} 加盟商, ${month}`, risk: "Low" });
+      return jsonResponse({ data: { created: created.length, statements: created } });
+    }
+    case "confirmRevShareStatement": {
+      const index = memory.revenueShareStatements.findIndex((s) => s.id === body.statementId);
+      if (index === -1) return jsonResponse({ error: "对账单不存在" }, { status: 404 });
+      const st = memory.revenueShareStatements[index];
+      const franchiseName = session?.portal === "franchise" ? (session.franchise || session.organization || "") : st.franchise;
+      if (st.franchise !== franchiseName) return jsonResponse({ error: "只能确认本加盟商对账单" }, { status: 403 });
+      if (st.status !== "draft") return jsonResponse({ error: "对账单已确认" }, { status: 409 });
+      memory.revenueShareStatements[index] = { ...st, status: "confirmed", confirmedAt: nowStamp() };
+      return jsonResponse({ data: memory.revenueShareStatements[index] });
+    }
+    case "payRevShareStatement": {
+      const index = memory.revenueShareStatements.findIndex((s) => s.id === body.statementId);
+      if (index === -1) return jsonResponse({ error: "对账单不存在" }, { status: 404 });
+      const st = memory.revenueShareStatements[index];
+      if (st.status !== "confirmed") return jsonResponse({ error: "加盟商确认后才能付款" }, { status: 409 });
+      for (let i = 0; i < memory.mallRevenueShareEntries.length; i += 1) {
+        const e = memory.mallRevenueShareEntries[i];
+        if (e.franchise === st.franchise && e.month === st.month) memory.mallRevenueShareEntries[i] = { ...e, status: "settled" };
+      }
+      memory.revenueShareStatements[index] = { ...st, status: "paid", paidAt: nowStamp(), paidBy: actor, note: String(body.note ?? "").slice(0, 200) || undefined };
+      appendServerAudit({ actor, action: "MALL_REVSHARE_PAID", entity: "RevenueShareStatement", entityId: st.id, detail: `${st.franchise} ${st.month}: R$${st.total}`, risk: "Medium" });
+      return jsonResponse({ data: memory.revenueShareStatements[index] });
     }
 
     default:

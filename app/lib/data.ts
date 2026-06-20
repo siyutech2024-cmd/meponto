@@ -70,6 +70,8 @@ export type Ponto = {
   mapUrl?: string;
   /** New stations created by franchises wait for HQ approval. */
   status?: "pending" | "approved";
+  /** Whether this Ponto is selectable as a mall pickup point (default: yes). */
+  pickupEnabled?: boolean;
 };
 export type Leader = {
   id: string;

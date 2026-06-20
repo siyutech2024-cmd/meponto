@@ -12,6 +12,10 @@ export type Franchise = {
   createdAt: string;
   /** Prepaid balance the franchise holds with HQ (R$). */
   depositBalance?: number;
+  /** Fixed R$ this franchise passes to the pickup station per fulfilled mall
+   *  order (sales revenue share, level 2). Capped at the product's
+   *  franchiseShareBRL. 0/undefined = franchise keeps the whole share. */
+  stationShareBRL?: number;
 };
 
 export const franchises: Franchise[] = [];

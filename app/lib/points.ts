@@ -95,6 +95,9 @@ export type MarketplaceProduct = {
   purchaseLimit?: number;
   /** Hybrid checkout: cash difference in R$ paid via PIX on top of points (0 = points only). */
   cashPriceBRL?: number;
+  /** Sales revenue share (level 1): fixed R$ paid to the pickup store's franchise
+   *  per fulfilled order. HQ sets this per product in the mall back office. */
+  franchiseShareBRL?: number;
 };
 
 export type MarketplaceOrderStatus = "created" | "arrived" | "fulfilled" | "cancelled";
@@ -130,6 +133,10 @@ export type MarketplaceOrder = {
   /** Storefront coupon applied at redeem and the points it discounted. */
   couponId?: string;
   couponDiscount?: number;
+  /** Chosen pickup Ponto (all pickups happen at a Ponto station). For riders
+   *  with a home station this is locked to it; partners/public users choose. */
+  pickupStoreId?: string;
+  pickupStoreName?: string;
 };
 
 export type PointsRuleSummary = {

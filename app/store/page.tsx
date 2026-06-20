@@ -121,6 +121,7 @@ export default function StorefrontPage() {
   const [topUpRef, setTopUpRef] = useState("");
   const [bannerIndex, setBannerIndex] = useState(0);
   const [copiedCode, setCopiedCode] = useState<string | null>(null);
+  const [pickupStoreId, setPickupStoreId] = useState("");
 
   const copyVoucher = useCallback(async (code: string) => {
     try {
@@ -234,9 +235,13 @@ export default function StorefrontPage() {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(
-        me.accountType === "partner"
-          ? { action: "redeem", productId: product.id, accountType: "partner" }
-          : { action: "redeem", productId: product.id, riderId: me.riderId },
+        (() => {
+          const stores = (me as { pickupStores?: Array<{ id: string }> }).pickupStores ?? [];
+          const pickupStoreId2 = pickupStoreId || stores[0]?.id;
+          return me.accountType === "partner"
+            ? { action: "redeem", productId: product.id, accountType: "partner", pickupStoreId: pickupStoreId2 }
+            : { action: "redeem", productId: product.id, riderId: me.riderId, pickupStoreId: pickupStoreId2 };
+        })(),
       ),
     });
     const payload = await response.json().catch(() => ({}));
@@ -405,14 +410,19 @@ export default function StorefrontPage() {
                 )}
               </>
             ) : (
-              <a
-                href="https://app.meponto.com/rider-login"
-                onClick={(event) => { event.preventDefault(); window.location.href = loginUrlWithReturn(); }}
-                className="inline-flex h-10 items-center gap-2 rounded-full px-5 text-sm font-black transition-transform hover:scale-105"
-                style={{ background: INK, color: "#fff" }}
-              >
-                <LogIn size={15} /> Entrar
-              </a>
+              <div className="flex items-center gap-2">
+                <a href="/register" className="inline-flex h-10 items-center gap-2 rounded-full border px-4 text-sm font-black transition-transform hover:scale-105" style={{ borderColor: "rgba(0,0,0,.15)", color: INK }}>
+                  Criar conta
+                </a>
+                <a
+                  href="https://app.meponto.com/rider-login"
+                  onClick={(event) => { event.preventDefault(); window.location.href = loginUrlWithReturn(); }}
+                  className="inline-flex h-10 items-center gap-2 rounded-full px-5 text-sm font-black transition-transform hover:scale-105"
+                  style={{ background: INK, color: "#fff" }}
+                >
+                  <LogIn size={15} /> Entrar
+                </a>
+              </div>
             )}
           </div>
         </div>
@@ -599,6 +609,22 @@ export default function StorefrontPage() {
                   {!detail.isVirtual && <span className="inline-flex items-center gap-1 rounded-full bg-black/5 px-2.5 py-1"><MapPin size={12} /> Retirada no seu ponto</span>}
                   {detail.isVirtual && <span className="inline-flex items-center gap-1 rounded-full bg-black/5 px-2.5 py-1"><Sparkles size={12} /> Código instantâneo</span>}
                 </div>
+                {!detail.isVirtual && (() => {
+                  const stores = ((me as { pickupStores?: Array<{ id: string; name: string; bairro?: string }> } | null)?.pickupStores) ?? [];
+                  if (stores.length === 0) return null;
+                  return (
+                    <div className="mt-4">
+                      <div className="mb-1 text-[11px] font-black uppercase tracking-wide text-black/45">Retirar no Ponto</div>
+                      {stores.length === 1 ? (
+                        <div className="inline-flex items-center gap-1.5 rounded-lg bg-black/5 px-3 py-2 text-sm font-bold"><MapPin size={14} /> {stores[0].name}{stores[0].bairro ? ` · ${stores[0].bairro}` : ""}</div>
+                      ) : (
+                        <select value={pickupStoreId || stores[0]?.id} onChange={(e) => setPickupStoreId(e.target.value)} className="w-full rounded-lg border border-black/10 bg-white px-3 py-2 text-sm font-bold">
+                          {stores.map((s) => <option key={s.id} value={s.id}>{s.name}{s.bairro ? ` · ${s.bairro}` : ""}</option>)}
+                        </select>
+                      )}
+                    </div>
+                  );
+                })()}
                 <div className="mt-auto pt-6">
                   {(() => {
                     const cpn = bestCoupon(detail);

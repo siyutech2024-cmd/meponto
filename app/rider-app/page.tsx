@@ -174,6 +174,13 @@ export default function RiderAppPage() {
                   <span className="text-sm font-black">Turnos</span>
                   <span className="text-[11px] font-bold text-[#77746f]">Veja os turnos do seu ponto</span>
                 </a>
+                <a href="/map" style={{ color: "#050505" }} className="col-span-2 flex items-center gap-3 rounded-[8px] bg-white p-4 shadow-[0_10px_22px_rgba(0,0,0,0.06)]">
+                  <span className="grid h-11 w-11 place-items-center rounded-[8px] bg-[#fff4cf] text-[#ff7a00]"><MapPin size={22} /></span>
+                  <div>
+                    <div className="text-sm font-black">Mapa de serviços</div>
+                    <div className="text-[11px] font-bold text-[#77746f]">Parceiros e Pontos de retirada perto de você</div>
+                  </div>
+                </a>
               </div>
             </>
           )}
@@ -626,7 +633,7 @@ function PartnerMapSection({ partners, compact = false }: { partners: typeof rid
     <section className="px-4 pt-4">
       <div className="mb-2 flex items-center justify-between">
         <h2 className="text-lg font-black">Pontos de serviço</h2>
-        <span className="text-xs font-black text-[#ff7a00]">{visiblePartners.length} locais</span>
+        <a href="/map" style={{ color: "#ff7a00" }} className="text-xs font-black">{visiblePartners.length} locais · Ver mapa ›</a>
       </div>
 
       {!compact && categories.length > 1 && (

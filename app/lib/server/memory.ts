@@ -51,7 +51,7 @@ import { dispatchShifts, shiftQuotas, shiftSignups, type DispatchShift, type Shi
 import { appUsers, type AppUser } from "../users";
 import { riderDailyEarnings, riderDailyKpis, type RiderDailyEarning, type RiderDailyKpi } from "../performance";
 import { mallConfigs, type MallConfig } from "../mall";
-import type { CashLedgerEntry, CashTopUp, MallBanner, MallCategory, MallCoupon, MallPayment, PriceChangeRequest, PurchaseOrder, SupplierStatement } from "../mall-ops";
+import type { CashLedgerEntry, CashTopUp, MallBanner, MallCategory, MallCoupon, MallPayment, PriceChangeRequest, PurchaseOrder, RevenueShareEntry, RevenueShareStatement, SupplierStatement } from "../mall-ops";
 import { riderWithdrawals, walletPayments, type RiderWithdrawal, type WalletPayment } from "../finance";
 import { assessmentRules, type AssessmentRule } from "../assessment";
 import { supportTickets, type SupportTicket } from "../support";
@@ -119,6 +119,8 @@ const globalState = globalThis as typeof globalThis & {
     mallPayments: MallPayment[];
     cashTopUps: CashTopUp[];
     cashLedgerEntries: CashLedgerEntry[];
+    mallRevenueShareEntries: RevenueShareEntry[];
+    revenueShareStatements: RevenueShareStatement[];
   };
 };
 
@@ -167,6 +169,8 @@ export const memory =
     mallPayments: trackCollection("mallPayments", []),
     cashTopUps: trackCollection("cashTopUps", []),
     cashLedgerEntries: trackCollection("cashLedgerEntries", []),
+    mallRevenueShareEntries: trackCollection("mallRevenueShareEntries", []),
+    revenueShareStatements: trackCollection("revenueShareStatements", []),
   });
 
 // Restore persisted data from the database (no-op when USE_SUPABASE is off).
@@ -250,6 +254,10 @@ memory.cashTopUps ??= [];
 memory.cashTopUps = trackCollection("cashTopUps", memory.cashTopUps);
 memory.cashLedgerEntries ??= [];
 memory.cashLedgerEntries = trackCollection("cashLedgerEntries", memory.cashLedgerEntries);
+memory.mallRevenueShareEntries ??= [];
+memory.mallRevenueShareEntries = trackCollection("mallRevenueShareEntries", memory.mallRevenueShareEntries);
+memory.revenueShareStatements ??= [];
+memory.revenueShareStatements = trackCollection("revenueShareStatements", memory.revenueShareStatements);
 memory.walletPayments ??= [];
 memory.walletPayments = trackCollection("walletPayments", memory.walletPayments);
 memory.assessmentRules ??= [];

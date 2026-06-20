@@ -212,3 +212,51 @@ export const topUpStatusLabel: Record<CashTopUpStatus, string> = {
   confirmed: "已入账",
   rejected: "已驳回",
 };
+
+/**
+ * Two-level sales revenue share, accrued once per FULFILLED mall order:
+ *  - franchiseShareBRL: fixed R$ to the pickup store's franchise (HQ sets per product).
+ *  - stationShareBRL:   fixed R$ the franchise passes to the pickup station.
+ *  - franchiseNetBRL = franchiseShareBRL − stationShareBRL.
+ * Append-only; settled via monthly RevenueShareStatement.
+ */
+export type RevenueShareEntry = {
+  id: string; // rev-<orderId>
+  orderId: string;
+  productId: string;
+  productName: string;
+  pickupStoreId: string;
+  pickupStoreName: string;
+  franchise: string;
+  franchiseShareBRL: number;
+  stationShareBRL: number;
+  franchiseNetBRL: number;
+  /** Natural month of the order, e.g. "2026-06". */
+  month: string;
+  status: "accrued" | "settled";
+  createdAt: string;
+};
+
+export type RevenueShareStatement = {
+  id: string; // rst-<month>-<franchise>
+  franchise: string;
+  month: string;
+  /** Per-station breakdown for the franchise. */
+  stations: Array<{ store: string; orders: number; stationShareBRL: number }>;
+  orders: number;
+  franchiseNetTotal: number;
+  stationShareTotal: number;
+  total: number; // franchiseNetTotal + stationShareTotal = Σ franchiseShareBRL
+  status: StatementStatus;
+  createdAt: string;
+  confirmedAt?: string;
+  paidAt?: string;
+  paidBy?: string;
+  note?: string;
+};
+
+export const revShareStatementStatusLabel: Record<StatementStatus, string> = {
+  draft: "待加盟商确认",
+  confirmed: "待付款",
+  paid: "已付款",
+};

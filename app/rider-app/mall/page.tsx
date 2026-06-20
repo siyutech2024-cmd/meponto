@@ -114,7 +114,8 @@ export default function RiderMallPage() {
     const couponLine = cpn ? `\nCupom ${cpn.coupon.title}: −${cpn.discount} pts` : "";
     if (!window.confirm(`Resgatar por ${net} pts: 「${product.name}」?${couponLine}\n${where}`)) return;
     setBusyProduct(product.id);
-    const response = await fetch("/api/mall", { method: "POST", headers, body: JSON.stringify({ action: "redeem", productId: product.id, riderId: me.riderId }) });
+    const pickupStoreId = (me as { pickupStores?: Array<{ id: string }> }).pickupStores?.[0]?.id;
+    const response = await fetch("/api/mall", { method: "POST", headers, body: JSON.stringify({ action: "redeem", productId: product.id, riderId: me.riderId, pickupStoreId }) });
     const payload = await response.json().catch(() => ({}));
     setBusyProduct("");
     if (!response.ok) {

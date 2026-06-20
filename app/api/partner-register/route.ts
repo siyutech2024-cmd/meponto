@@ -17,6 +17,8 @@ export async function POST(request: Request) {
     phone?: string;
     bairro?: string;
     notes?: string;
+    lat?: number;
+    lng?: number;
   };
 
   const name = (body.name ?? "").trim();
@@ -50,8 +52,10 @@ export async function POST(request: Request) {
     risk: "Medium",
     notes: (body.notes ?? "").slice(0, 300),
     services: [],
-    lat: -23.5505,
-    lng: -46.6333,
+    // Real service-point location from the registration map (NOT a pickup point
+    // — pickups happen at Ponto stations). Falls back to São Paulo centre.
+    lat: Number.isFinite(Number(body.lat)) ? Number(body.lat) : -23.5505,
+    lng: Number.isFinite(Number(body.lng)) ? Number(body.lng) : -46.6333,
   };
   memory.crmPartners.unshift(partner);
   appendServerAudit({ actor: "Self-registration", action: "CRM_SELF_REGISTER", entity: "CrmPartner", entityId: partner.id, detail: `${name} (${category}) aguardando análise`, risk: "Low" });
