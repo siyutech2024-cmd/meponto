@@ -50,7 +50,7 @@ const navItems: Array<{
   { href: "/dashboard", labelKey: "navDashboard", icon: LayoutDashboard, permission: "view_dashboard" },
   { href: "/rider-monitor", labelKey: "navRiderMonitor", icon: Bike, permission: "manage_riders" },
   { href: "/riders", labelKey: "navRiders", icon: Bike, permission: "manage_riders" },
-  { href: "/members", labelKey: "navMembers", icon: Users, permission: "manage_riders" },
+  { href: "/members", labelKey: "navMembers", icon: Users, permission: "manage_points" },
   { href: "/rider-app", labelKey: "navRiderApp", icon: Bike, permission: "use_rider_app" },
   { href: "/pontos", labelKey: "navPontos", icon: MapPinned, permission: "manage_pontos" },
   { href: "/incidents", labelKey: "navIncidents", icon: ShieldAlert, permission: "create_incidents" },

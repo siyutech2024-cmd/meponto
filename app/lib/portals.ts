@@ -52,6 +52,7 @@ export const portalConfigs: Record<PortalId, PortalConfig> = {
       { href: "/dashboard", label: "总部仪表盘", description: "全网运营、风险和排班汇总。", permission: "view_dashboard" },
       { href: "/rider-monitor", label: "实时骑手看板", description: "Eastwind 实时在线骑手、状态分布、按加盟商/站点汇总。", permission: "manage_riders" },
       { href: "/riders", label: "骑手档案", description: "维护骑手、敏感资料和状态。", permission: "manage_riders" },
+      { href: "/members", label: "用户 / 会员", description: "公开用户 + 骑手统一会员表，等级与积分。", permission: "manage_points" },
       { href: "/pontos", label: "站点网络", description: "维护 Ponto 站点、负责人和容量。", permission: "manage_pontos" },
       { href: "/franchise", label: "加盟治理", description: "合作条款、SOP 和加盟商管理口径。", permission: "view_analytics" },
       { href: "/mall-insights", label: "商城关键数据", description: "商城 GMV、兑换、收款与供应商结算关键指标（操作在独立商城后台）。", permission: "view_analytics" },
@@ -172,6 +173,7 @@ export const portalConfigs: Record<PortalId, PortalConfig> = {
     futureDomain: "mall.meponto.com",
     modules: [
       { href: "/mall", label: "商城工作台", description: "商品定价、库存和兑换订单。", permission: "manage_marketplace" },
+      { href: "/members", label: "用户 / 会员", description: "公开用户与骑手会员、等级与积分账户。", permission: "manage_points" },
       { href: "/points-economy", label: "积分经济", description: "积分规则、发放、扣减和核算模型。", permission: "manage_points" },
       { href: "/partner-points", label: "Partner 积分", description: "合作伙伴积分服务与权益。", permission: "manage_partner_points" },
       { href: "/crm", label: "合作伙伴 CRM", description: "供应商和合作伙伴运营。", permission: "view_analytics" },
