@@ -329,6 +329,11 @@ async function handlePost(request: Request) {
       const rider = memory.riders.find((item) => (riderId && item.id === riderId) || (riderName && item.name === riderName));
       if (!rider || !rider.ninetyNineId) return jsonResponse({ error: "Cadastro não encontrado." }, { status: 404 });
 
+      // Profile gate: PIX payouts require a complete CPF + PIX on file.
+      if (!rider.cpf || !rider.pix) {
+        return jsonResponse({ error: "Complete CPF e chave PIX no seu perfil para solicitar saque.", code: "profile_incomplete" }, { status: 422 });
+      }
+
       const balance = computeBalance(memory.riderDailyEarnings, memory.riderWithdrawals, rider.ninetyNineId, today());
       const amount = Math.round(Number(body.amount) * 100) / 100;
       if (!Number.isFinite(amount) || amount <= 0) return jsonResponse({ error: "Valor inválido." }, { status: 400 });

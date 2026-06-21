@@ -72,10 +72,17 @@ export async function POST(request: Request) {
     return jsonResponse({ error: "Only rider accounts can submit slot applications." }, { status: 403 });
   }
   const body = (await request.json().catch(() => null)) as {
+    action?: string;
     slotId?: string;
+    enrollmentId?: string;
     riderTier?: number;
     note?: string;
   } | null;
+
+  // Rider self-cancel of an own (still-pending) enrollment → frees the seat.
+  if (body?.action === "cancelEnrollment") {
+    return cancelRiderEnrollment(session, body.enrollmentId);
+  }
 
   if (!body?.slotId) {
     return jsonResponse({ error: "slotId is required." }, { status: 400 });
@@ -146,6 +153,42 @@ export async function POST(request: Request) {
   });
 
   return jsonResponse({ data: enrollment }, { status: 201 });
+}
+
+async function cancelRiderEnrollment(session: Parameters<typeof riderIdForSession>[0], enrollmentId?: string) {
+  if (!enrollmentId) return jsonResponse({ error: "enrollmentId is required.", code: "bad_request" }, { status: 400 });
+  const targetWeekStart = await weekStartForEnrollment(enrollmentId);
+  if (!targetWeekStart) return jsonResponse({ error: "Enrollment not found.", code: "not_found" }, { status: 404 });
+  const state = scopeSlotState(await loadSlotState(targetWeekStart, true), session);
+  const enrollment = state.enrollments.find((item) => item.id === enrollmentId);
+  if (!enrollment) return jsonResponse({ error: "Enrollment not found.", code: "not_found" }, { status: 404 });
+  // Ownership — a rider may only cancel their OWN enrollment (no IDOR).
+  if (enrollment.riderId !== riderIdForSession(session)) {
+    return jsonResponse({ error: "Você só pode cancelar sua própria inscrição.", code: "forbidden" }, { status: 403 });
+  }
+  // Only still-pending (审核中) enrollments can be self-cancelled; confirmed /
+  // HQ-reviewed slots must go through support.
+  if (!["submitted", "ponto_approved"].includes(enrollment.status)) {
+    return jsonResponse({ error: "Inscrição confirmada não pode ser cancelada no app.", code: "not_cancellable" }, { status: 409 });
+  }
+  const slot = state.slots.find((item) => item.id === enrollment.slotId);
+  enrollment.status = "cancelled";
+  enrollment.note = "Cancelado pelo entregador.";
+  if (slot) slot.enrolled = Math.max(0, slot.enrolled - 1);
+  if (state.source === "supabase") {
+    // DB path: release the seat (closest supported RPC action).
+    const saved = await updateSupabaseEnrollment(enrollment, "reject");
+    if (!saved.ok) return jsonResponse({ error: saved.error, code: "conflict" }, { status: 409 });
+  }
+  appendServerAudit({
+    actor: session.name,
+    action: "slot.enrollment.cancelled.v1",
+    entity: "SlotEnrollment",
+    entityId: enrollment.id,
+    detail: `${session.name} cancelou ${slot ? `${slot.date} ${slot.startTime}-${slot.endTime}` : enrollment.slotId}.`,
+    risk: "Low",
+  });
+  return jsonResponse({ data: { ...enrollment, enrolled: slot?.enrolled } });
 }
 
 export async function PUT(request: Request) {
