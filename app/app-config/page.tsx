@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { BellRing, RefreshCcw, Send, Smartphone } from "lucide-react";
+import { BellRing, ListChecks, RefreshCcw, Send, Smartphone, Trash2 } from "lucide-react";
 import { AppShell, PageTitle } from "../components/ui";
 import { readSession } from "../lib/session";
 
@@ -36,6 +36,12 @@ export default function AppConfigPage() {
   const [pushUrl, setPushUrl] = useState("/rider-app");
   const [subs, setSubs] = useState<{ count: number; riders: string[] }>({ count: 0, riders: [] });
 
+  // Tasks (任务) config.
+  type TaskRow = { id: string; title: string; metric: string; target: number; rewardPoints: number; period: string; audience: string; enabled: boolean };
+  const [tasks, setTasks] = useState<TaskRow[]>([]);
+  const [tForm, setTForm] = useState({ title: "", metric: "completed_orders", target: "100", rewardPoints: "500", period: "weekly" });
+  const metricLabel: Record<string, string> = { completed_orders: "完单数", checkins: "签到次数", redemptions: "兑换次数", slot_enrollments: "报名数" };
+
   const loadSplash = useCallback(async () => {
     const r = await fetch("/api/app/rider/splash", { cache: "no-store" }).catch(() => null);
     if (r && r.ok) setCfg({ ...DEFAULT_CFG, ...((await r.json()).data as SplashCfg) });
@@ -44,7 +50,19 @@ export default function AppConfigPage() {
     const r = await fetch("/api/push", { headers, cache: "no-store" }).catch(() => null);
     if (r && r.ok) setSubs(((await r.json()).data as { count: number; riders: string[] }) ?? { count: 0, riders: [] });
   }, [headers]);
-  useEffect(() => { void loadSplash(); void loadSubs(); }, [loadSplash, loadSubs]);
+  const loadTasks = useCallback(async () => {
+    const r = await fetch("/api/tasks", { headers, cache: "no-store" }).catch(() => null);
+    if (r && r.ok) setTasks((((await r.json()).data?.tasks ?? []) as TaskRow[]));
+  }, [headers]);
+  useEffect(() => { void loadSplash(); void loadSubs(); void loadTasks(); }, [loadSplash, loadSubs, loadTasks]);
+
+  async function taskPost(payload: Record<string, unknown>, ok: string) {
+    const r = await fetch("/api/tasks", { method: "POST", headers, body: JSON.stringify(payload) }).catch(() => null);
+    const p = r ? await r.json().catch(() => ({})) : {};
+    if (!r || !r.ok) { setNote({ tone: "err", text: p.error ?? "操作失败" }); return; }
+    setNote({ tone: "ok", text: ok });
+    void loadTasks();
+  }
 
   const set = <K extends keyof SplashCfg>(k: K, v: SplashCfg[K]) => setCfg((c) => ({ ...c, [k]: v }));
 
@@ -143,6 +161,35 @@ export default function AppConfigPage() {
         <div className="mt-3 flex items-center gap-3">
           <button type="button" disabled={!pushTitle.trim() || !pushBody.trim()} onClick={() => void sendPush()} className="inline-flex h-11 items-center gap-2 rounded-[8px] bg-[var(--accent)] px-5 text-sm font-black uppercase text-[var(--accent-ink)] disabled:opacity-50"><Send size={15} /> 发送推送</button>
           <span className="text-[11px] font-bold text-[var(--muted)]">通过 Web Push 下发；骑手需先在 App 内「开启通知」授权。</span>
+        </div>
+      </div>
+
+      {/* Tasks config */}
+      <div className="panel mt-4 p-4">
+        <div className="mb-3 flex items-center gap-2 text-xs font-black uppercase text-[var(--accent)]"><ListChecks size={14} /> 任务配置（目标 + 奖励 + 周期，骑手 App 展示进度并领取）</div>
+        <div className="mb-3 grid gap-2 lg:grid-cols-[2fr_1.2fr_0.8fr_1fr_1fr_auto]">
+          <input value={tForm.title} onChange={(e) => setTForm({ ...tForm, title: e.target.value })} placeholder="任务标题" className={field} />
+          <select value={tForm.metric} onChange={(e) => setTForm({ ...tForm, metric: e.target.value })} className={field}>
+            {Object.entries(metricLabel).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+          </select>
+          <input value={tForm.target} onChange={(e) => setTForm({ ...tForm, target: e.target.value.replace(/[^\d]/g, "") })} placeholder="目标" className={field} />
+          <input value={tForm.rewardPoints} onChange={(e) => setTForm({ ...tForm, rewardPoints: e.target.value.replace(/[^\d]/g, "") })} placeholder="奖励 pts" className={field} />
+          <select value={tForm.period} onChange={(e) => setTForm({ ...tForm, period: e.target.value })} className={field}>
+            <option value="weekly">每周</option>
+            <option value="monthly">每月</option>
+          </select>
+          <button type="button" onClick={() => { if (!tForm.title.trim()) return; void taskPost({ action: "create", ...tForm, target: Number(tForm.target) || 1, rewardPoints: Number(tForm.rewardPoints) || 0 }, "任务已创建"); setTForm({ ...tForm, title: "" }); }} className="h-11 rounded-[8px] bg-[var(--accent)] px-4 text-sm font-black text-[var(--accent-ink)]">添加</button>
+        </div>
+        <div className="space-y-2">
+          {tasks.map((t) => (
+            <div key={t.id} className="flex flex-wrap items-center gap-2 rounded-[8px] border border-[var(--line)] bg-[var(--surface-raised)] px-3 py-2 text-sm">
+              <span className="font-black">{t.title}</span>
+              <span className="text-[11px] font-bold text-[var(--muted)]">{metricLabel[t.metric] ?? t.metric} ≥ {t.target} · {t.rewardPoints} pts · {t.period === "weekly" ? "每周" : "每月"}</span>
+              <button type="button" onClick={() => void taskPost({ action: "toggle", taskId: t.id, enabled: !t.enabled }, t.enabled ? "已停用" : "已启用")} className={`ml-auto h-8 rounded-[8px] px-3 text-xs font-black ${t.enabled ? "bg-[var(--ok-bg)] text-[var(--ok-ink)]" : "border border-[var(--line)] text-[var(--muted)]"}`}>{t.enabled ? "启用中" : "已停用"}</button>
+              <button type="button" onClick={() => void taskPost({ action: "delete", taskId: t.id }, "已删除")} className="inline-flex h-8 items-center gap-1 rounded-[8px] border border-[var(--line)] px-2.5 text-xs font-black text-[var(--danger-ink)]"><Trash2 size={12} /> 删除</button>
+            </div>
+          ))}
+          {tasks.length === 0 && <div className="py-4 text-center text-xs font-bold text-[var(--muted)]">暂无任务。上面添加一个:目标达成后骑手在 App 内领取,奖励自动入积分账本。</div>}
         </div>
       </div>
     </AppShell>

@@ -57,6 +57,7 @@ import { assessmentRules, type AssessmentRule } from "../assessment";
 import { supportTickets, type SupportTicket } from "../support";
 import { pushSubscriptions, type PushSubscriptionRecord } from "../push";
 import { appSplashConfigs, type AppSplashRecord } from "../app-config";
+import { appTasks, taskClaims, type AppTask, type TaskClaim } from "../tasks";
 import { franchises, type Franchise } from "../network";
 
 type Reward = (typeof rewards)[number];
@@ -111,6 +112,8 @@ const globalState = globalThis as typeof globalThis & {
     supportTickets: SupportTicket[];
     pushSubscriptions: PushSubscriptionRecord[];
     appSplashConfigs: AppSplashRecord[];
+    appTasks: AppTask[];
+    taskClaims: TaskClaim[];
     franchises: Franchise[];
     mallCategories: MallCategory[];
     mallBanners: MallBanner[];
@@ -163,6 +166,8 @@ export const memory =
     supportTickets: trackCollection("supportTickets", [...supportTickets]),
     pushSubscriptions: trackCollection("pushSubscriptions", [...pushSubscriptions]),
     appSplashConfigs: trackCollection("appSplashConfigs", [...appSplashConfigs]),
+    appTasks: trackCollection("appTasks", [...appTasks]),
+    taskClaims: trackCollection("taskClaims", [...taskClaims]),
     franchises: trackCollection("franchises", [...franchises]),
     mallCategories: trackCollection("mallCategories", []),
     mallBanners: trackCollection("mallBanners", []),
@@ -242,6 +247,10 @@ memory.pushSubscriptions = trackCollection("pushSubscriptions", memory.pushSubsc
 memory.appSplashConfigs ??= [...appSplashConfigs];
 if (memory.appSplashConfigs.length === 0) memory.appSplashConfigs.push({ ...appSplashConfigs[0] });
 memory.appSplashConfigs = trackCollection("appSplashConfigs", memory.appSplashConfigs);
+memory.appTasks ??= [...appTasks];
+memory.appTasks = trackCollection("appTasks", memory.appTasks);
+memory.taskClaims ??= [];
+memory.taskClaims = trackCollection("taskClaims", memory.taskClaims);
 memory.franchises ??= [];
 memory.franchises = trackCollection("franchises", memory.franchises);
 memory.mallCategories ??= [];

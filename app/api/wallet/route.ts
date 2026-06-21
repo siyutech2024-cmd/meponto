@@ -176,7 +176,7 @@ export async function GET(request: Request) {
       .filter((w) => w.rider99Id === rider.ninetyNineId)
       .sort((a, b) => b.requestedAt.localeCompare(a.requestedAt));
     return jsonResponse({
-      data: { me: { riderId: rider.id, name: rider.name, pix: rider.pix, station: rider.ponto, franchise: rider.franchise, ...balance }, withdrawals },
+      data: { me: { riderId: rider.id, name: rider.name, cpf: rider.cpf ?? "", pix: rider.pix ?? "", phone: rider.phone ?? "", isComplete: !!rider.cpf && !!rider.pix && !!rider.phone, station: rider.ponto, franchise: rider.franchise, ...balance }, withdrawals },
     });
   }
 
@@ -326,7 +326,13 @@ async function handlePost(request: Request) {
 
     case "requestWithdrawal": {
       const { riderId, riderName } = body as { riderId?: string; riderName?: string };
-      const rider = memory.riders.find((item) => (riderId && item.id === riderId) || (riderName && item.name === riderName));
+      // Identity from the AUTHENTICATED session when present (closes IDOR — a
+      // rider can only withdraw their own balance); body fallback for demo only.
+      const { sessionFromRequest } = await import("../../lib/auth-session");
+      const session = await sessionFromRequest(request);
+      const rider = session
+        ? memory.riders.find((item) => item.id === session.userId || item.name === session.name)
+        : memory.riders.find((item) => (riderId && item.id === riderId) || (riderName && item.name === riderName));
       if (!rider || !rider.ninetyNineId) return jsonResponse({ error: "Cadastro não encontrado." }, { status: 404 });
 
       // Profile gate: PIX payouts require a complete CPF + PIX on file.

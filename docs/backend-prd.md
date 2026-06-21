@@ -12,7 +12,10 @@
 > - ✅ `POST /api/checkin`(站点签到 +50 积分/天/站,earn 账本,事件 `ponto.checkin.recorded.v1`)
 > - ✅ `POST /api/wallet {requestWithdrawal}` 补强:缺 CPF/PIX → `422 profile_incomplete`
 > - ✅ `POST /api/member-login {request-otp|verify-otp}`(OTP 加固,限频+有效期+尝试次数;`MEMBER_LOGIN_OTP=1` 强制,`sendOtp` 待接 SMS 通道;旧手机号登录默认保留兼容)
-> - 🔶 待办(下一轮):机器错误码全量回填、写操作幂等键、积分/库存乐观锁、任务(P1)、商户折扣可配(P1)、提现身份会话派生。
+> - ✅ `GET/POST /api/tasks`(任务体系:HQ 配置目标/奖励/周期 + 骑手按真实指标算进度 + 达标领取入积分账本,事件 `task.created.v1`/`task.reward.granted.v1`;主后台「App 配置/推送」页含任务配置)
+> - ✅ `GET /api/points?riderId=` 隐私修复:按 riderId 过滤账本(不再返回全网)
+> - ✅ `wallet.me` 补 `cpf/phone/isComplete`;`requestWithdrawal` 身份改**会话派生**(堵 IDOR)
+> - 🔶 待办(下一轮):机器错误码全量回填(老接口)、写操作幂等键、积分/库存乐观锁(上 Supabase 多实例)、积分待定期/释放窗口、OTP 短信通道接入、商户折扣规则可配(P1)。
 
 ---
 
