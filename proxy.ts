@@ -57,9 +57,14 @@ export async function proxy(request: NextRequest) {
     if (pathname.startsWith("/rider-app/")) {
       return NextResponse.redirect(new URL(`https://app.meponto.com${pathname.slice("/rider-app".length)}`));
     }
-    // Rider APP sections opened on the mall host belong to app.meponto.com.
+    // Rider APP sections opened on the mall host belong to app.meponto.com —
+    // EXCEPT when the logged-in back-office session (operator/supplier/partner)
+    // owns this path as one of its OWN modules (e.g. /wallet = 商城财务). Without
+    // this guard the mall operator's "结算与提现" is hijacked to the rider wallet.
     const mallFirstSegment = pathname.split("/")[1] ?? "";
-    if (["wallet", "shifts", "agenda", "support", "scan"].includes(mallFirstSegment)) {
+    const sessionOwnsMallPath = !!session && mallHubPortals.includes(session.portal) &&
+      portalConfigs[session.portal].modules.some((m) => pathname === m.href || pathname.startsWith(`${m.href}/`));
+    if (!sessionOwnsMallPath && ["wallet", "shifts", "agenda", "support", "scan"].includes(mallFirstSegment)) {
       return NextResponse.redirect(new URL(`https://app.meponto.com${pathname}`));
     }
   }
