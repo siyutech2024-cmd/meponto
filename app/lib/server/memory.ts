@@ -56,6 +56,7 @@ import { riderWithdrawals, walletPayments, type RiderWithdrawal, type WalletPaym
 import { assessmentRules, type AssessmentRule } from "../assessment";
 import { supportTickets, type SupportTicket } from "../support";
 import { pushSubscriptions, type PushSubscriptionRecord } from "../push";
+import { appSplashConfigs, type AppSplashRecord } from "../app-config";
 import { franchises, type Franchise } from "../network";
 
 type Reward = (typeof rewards)[number];
@@ -109,6 +110,7 @@ const globalState = globalThis as typeof globalThis & {
     assessmentRules: AssessmentRule[];
     supportTickets: SupportTicket[];
     pushSubscriptions: PushSubscriptionRecord[];
+    appSplashConfigs: AppSplashRecord[];
     franchises: Franchise[];
     mallCategories: MallCategory[];
     mallBanners: MallBanner[];
@@ -160,6 +162,7 @@ export const memory =
     assessmentRules: trackCollection("assessmentRules", [...assessmentRules]),
     supportTickets: trackCollection("supportTickets", [...supportTickets]),
     pushSubscriptions: trackCollection("pushSubscriptions", [...pushSubscriptions]),
+    appSplashConfigs: trackCollection("appSplashConfigs", [...appSplashConfigs]),
     franchises: trackCollection("franchises", [...franchises]),
     mallCategories: trackCollection("mallCategories", []),
     mallBanners: trackCollection("mallBanners", []),
@@ -236,6 +239,9 @@ memory.supportTickets ??= [];
 memory.supportTickets = trackCollection("supportTickets", memory.supportTickets);
 memory.pushSubscriptions ??= [];
 memory.pushSubscriptions = trackCollection("pushSubscriptions", memory.pushSubscriptions);
+memory.appSplashConfigs ??= [...appSplashConfigs];
+if (memory.appSplashConfigs.length === 0) memory.appSplashConfigs.push({ ...appSplashConfigs[0] });
+memory.appSplashConfigs = trackCollection("appSplashConfigs", memory.appSplashConfigs);
 memory.franchises ??= [];
 memory.franchises = trackCollection("franchises", memory.franchises);
 memory.mallCategories ??= [];

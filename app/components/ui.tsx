@@ -67,6 +67,7 @@ const navItems: Array<{
   { href: "/franchise", labelKey: "navFranchise", icon: Store, permission: "view_analytics" },
   { href: "/reports", labelKey: "navReports", icon: FileBarChart2, permission: "view_analytics" },
   { href: "/access-control", labelKey: "navAccessControl", icon: ShieldCheck, permission: "view_audit" },
+  { href: "/app-config", labelKey: "navAppConfig", icon: Smartphone, permission: "view_audit" },
 ];
 
 const navGroups: Array<{
@@ -103,7 +104,7 @@ const navGroups: Array<{
   {
     // Accounts, permissions, tickets, audit.
     title: "System",
-    items: navItems.filter((item) => ["/users", "/support", "/access-control"].includes(item.href)),
+    items: navItems.filter((item) => ["/users", "/support", "/access-control", "/app-config"].includes(item.href)),
   },
 ];
 

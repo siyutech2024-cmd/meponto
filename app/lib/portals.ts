@@ -60,6 +60,7 @@ export const portalConfigs: Record<PortalId, PortalConfig> = {
       { href: "/support", label: "客服工单中心", description: "骑手/加盟商/站点/官网工单统一处理。", permission: "view_audit" },
       { href: "/users", label: "用户与权限", description: "创建多用户账号、分配角色与系统归属。", permission: "view_audit" },
       { href: "/access-control", label: "权限矩阵", description: "账号、角色和功能权限分离。", permission: "view_audit" },
+      { href: "/app-config", label: "App 配置 / 推送", description: "骑手 App 启动页(开屏)与推送通知,主后台统一管理、实时生效。", permission: "view_audit" },
       { href: "/reports", label: "报表导出", description: "运营、站点、骑手和排班报表。", permission: "view_analytics" },
       { href: "/assessment", label: "考核规则", description: "服务质量阈值与抽佣调整规则。", permission: "view_analytics" },
     ],
