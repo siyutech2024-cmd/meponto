@@ -58,6 +58,7 @@ import { supportTickets, type SupportTicket } from "../support";
 import { pushSubscriptions, type PushSubscriptionRecord } from "../push";
 import { appSplashConfigs, type AppSplashRecord } from "../app-config";
 import { appTasks, taskClaims, type AppTask, type TaskClaim } from "../tasks";
+import { partnerReviews, type PartnerReview } from "../partner-reviews";
 import { franchises, type Franchise } from "../network";
 
 type Reward = (typeof rewards)[number];
@@ -114,6 +115,7 @@ const globalState = globalThis as typeof globalThis & {
     appSplashConfigs: AppSplashRecord[];
     appTasks: AppTask[];
     taskClaims: TaskClaim[];
+    partnerReviews: PartnerReview[];
     franchises: Franchise[];
     mallCategories: MallCategory[];
     mallBanners: MallBanner[];
@@ -168,6 +170,7 @@ export const memory =
     appSplashConfigs: trackCollection("appSplashConfigs", [...appSplashConfigs]),
     appTasks: trackCollection("appTasks", [...appTasks]),
     taskClaims: trackCollection("taskClaims", [...taskClaims]),
+    partnerReviews: trackCollection("partnerReviews", [...partnerReviews]),
     franchises: trackCollection("franchises", [...franchises]),
     mallCategories: trackCollection("mallCategories", []),
     mallBanners: trackCollection("mallBanners", []),
@@ -251,6 +254,8 @@ memory.appTasks ??= [...appTasks];
 memory.appTasks = trackCollection("appTasks", memory.appTasks);
 memory.taskClaims ??= [];
 memory.taskClaims = trackCollection("taskClaims", memory.taskClaims);
+memory.partnerReviews ??= [];
+memory.partnerReviews = trackCollection("partnerReviews", memory.partnerReviews);
 memory.franchises ??= [];
 memory.franchises = trackCollection("franchises", memory.franchises);
 memory.mallCategories ??= [];
