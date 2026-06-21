@@ -84,6 +84,7 @@ const navGroups: Array<{
         "/performance",
         "/assessment",
         "/riders",
+        "/members",
         "/pontos",
         "/franchise",
         ].includes(item.href),
@@ -92,7 +93,7 @@ const navGroups: Array<{
   {
     // Mall & partner ecosystem.
     title: "PontoMall",
-    items: navItems.filter((item) => ["/mall", "/partner-points", "/crm"].includes(item.href)),
+    items: navItems.filter((item) => ["/mall", "/points-economy", "/partner-points", "/crm"].includes(item.href)),
   },
   {
     // Money: ledgers, settlement, exports.
