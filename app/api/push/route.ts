@@ -64,7 +64,7 @@ async function handlePost(request: Request) {
       // runtime returns 503 cleanly when the dependency is not installed.
       let webpush: typeof import("web-push").default;
       try {
-        webpush = (await import(/* webpackIgnore: true */ /* turbopackIgnore: true */ "web-push")).default;
+        webpush = (await import("web-push")).default;
       } catch {
         return jsonResponse({ error: "Push indisponível: dependência web-push não instalada." }, { status: 503 });
       }
