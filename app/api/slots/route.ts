@@ -293,15 +293,24 @@ export async function PUT(request: Request) {
 
 async function loadSlotState(requestedWeekStart?: string, openOnly = false): Promise<SlotState> {
   if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
-    return {
-      slots: memory.riderSlots,
-      enrollments: memory.slotEnrollments,
-      source: "memory",
-      weekStart: "2026-06-01",
-      weekEnd: "2026-06-07",
-      weekStatus: "open",
-      weeks: [{ id: "memory-week", weekStart: "2026-06-01", weekEnd: "2026-06-07", status: "open" }],
-    };
+    // Rolling two-week window generated from TODAY (São Paulo), not a fixed
+    // seed. Deterministic ids keep enrollments valid and capacity persistent.
+    const today = todayInSaoPaulo();
+    const thisWeek = startOfBusinessWeek(today) ?? today;
+    const nextWeek = addDays(thisWeek, 7);
+    ensureMemoryWeek(thisWeek);
+    ensureMemoryWeek(nextWeek);
+    refreshMemoryStatuses();
+    const weeks = [
+      { id: `week-${thisWeek}`, weekStart: thisWeek, weekEnd: addDays(thisWeek, 6), status: "open" },
+      { id: `week-${nextWeek}`, weekStart: nextWeek, weekEnd: addDays(nextWeek, 6), status: "open" },
+    ];
+    const selectedStart = requestedWeekStart && weeks.some((w) => w.weekStart === requestedWeekStart) ? requestedWeekStart : thisWeek;
+    const weekEnd = addDays(selectedStart, 6);
+    const slots = memory.riderSlots
+      .filter((s) => s.date >= selectedStart && s.date <= weekEnd)
+      .sort((a, b) => (a.date + a.startTime).localeCompare(b.date + b.startTime));
+    return { slots, enrollments: memory.slotEnrollments, source: "memory", weekStart: selectedStart, weekEnd, weekStatus: "open", weeks };
   }
 
   try {
@@ -442,6 +451,82 @@ function startOfBusinessWeek(date?: string) {
   return value.toISOString().slice(0, 10);
 }
 
+// ---- Memory-mode slot generation (dynamic rolling weeks) ------------------
+const WEEKDAY_ZH: Record<RiderSlot["dayKey"], string> = { mon: "周一", tue: "周二", wed: "周三", thu: "周四", fri: "周五", sat: "周六", sun: "周日" };
+
+// Station × time-window template used to generate each business week. Station
+// ids/names match the real Ponto network so a rider's home-Ponto filter works.
+const SLOT_PONTOS = [
+  { pontoId: "p-001", pontoName: "Ponto Paulista Garage", franchiseId: "fr-sp-01", franchiseName: "SP Core Franchise" },
+  { pontoId: "p-002", pontoName: "Ponto Liberdade Sul", franchiseId: "fr-sp-01", franchiseName: "SP Core Franchise" },
+  { pontoId: "p-003", pontoName: "Ponto Tatuape Norte", franchiseId: "fr-sp-02", franchiseName: "Tatuape Growth Franchise" },
+  { pontoId: "p-004", pontoName: "Ponto Pinheiros Base", franchiseId: "fr-sp-03", franchiseName: "Pinheiros Partner Franchise" },
+] as const;
+const SLOT_WINDOWS = [
+  { startTime: "11:00", endTime: "14:00", capacity: 18, priority: false, quotaNote: "Cota de pico do almoço." },
+  { startTime: "14:00", endTime: "18:00", capacity: 12, priority: false, quotaNote: "Cota da tarde." },
+  { startTime: "18:00", endTime: "22:00", capacity: 20, priority: true, quotaNote: "Cota de pico da noite." },
+] as const;
+
+/** Generate the 7 days of a business week into memory if missing. Ids are
+ *  deterministic (slot-YYYYMMDD-HHMM-pontoId) so enrollments + capacity persist. */
+function ensureMemoryWeek(weekStart: string) {
+  for (let d = 0; d < 7; d += 1) {
+    const date = addDays(weekStart, d);
+    const ymd = date.replace(/-/g, "");
+    const dayKey = dayKeyFromDate(date);
+    for (const ponto of SLOT_PONTOS) {
+      for (const win of SLOT_WINDOWS) {
+        const id = `slot-${ymd}-${win.startTime.replace(":", "")}-${ponto.pontoId}`;
+        if (memory.riderSlots.some((s) => s.id === id)) continue;
+        memory.riderSlots.push({
+          id, dayKey, date, weekday: WEEKDAY_ZH[dayKey],
+          startTime: win.startTime, endTime: win.endTime,
+          capacity: win.capacity, enrolled: 0, status: "open", priority: win.priority,
+          pontoId: ponto.pontoId, pontoName: ponto.pontoName,
+          franchiseId: ponto.franchiseId, franchiseName: ponto.franchiseName,
+          quotaNote: win.quotaNote,
+        });
+      }
+    }
+  }
+}
+
+/** Recompute display status from "today" in place (keeps object identity so
+ *  enrolled++/-- on the same references persist). */
+function refreshMemoryStatuses() {
+  for (const slot of memory.riderSlots) {
+    if (hasSlotStarted(slot.date, slot.startTime)) slot.status = "ended";
+    else if (slot.enrolled >= slot.capacity) slot.status = "full";
+    else slot.status = "open";
+  }
+}
+
+function lifetimeOrdersForRider(rider99Id?: string): number | null {
+  if (!rider99Id) return null;
+  const rows = memory.riderDailyKpis.filter((row) => row.rider99Id === rider99Id);
+  if (!rows.length) return null;
+  return rows.reduce((sum, row) => sum + (row.completedOrders ?? 0), 0);
+}
+
+/** OL operating tier from the real profile: public members (no 99 id) = tier 1
+ *  (cannot apply for production slots); any onboarded 99 rider is tier 2+,
+ *  scaling with lifetime completed orders. */
+function olTierForRider(rider: { ninetyNineId?: string }): number {
+  if (!rider.ninetyNineId) return 1;
+  const orders = lifetimeOrdersForRider(rider.ninetyNineId) ?? 0;
+  if (orders >= 1500) return 5;
+  if (orders >= 800) return 4;
+  if (orders >= 300) return 3;
+  return 2;
+}
+
+function homePontoIdForRider(rider: { ponto?: string }): string | null {
+  if (!rider.ponto) return null;
+  const p = memory.pontos.find((pp) => pp.name === rider.ponto || pp.id === rider.ponto);
+  return p?.id ?? null;
+}
+
 async function seedSupabaseSlots() {
   const client = getSupabaseServerClient();
   await client.from("rider_slots").upsert(riderSlots.map(slotToSupabaseRow), { onConflict: "id" });
@@ -521,9 +606,17 @@ function scopeSlotState(state: SlotState, session: AuthSession): SlotState {
     const franchiseId = franchiseIdForTenant(session.tenantId);
     slots = slots.filter((slot) => slot.franchiseId === franchiseId);
   }
-  if (session.portal === "ponto" || session.portal === "rider") {
+  if (session.portal === "ponto") {
     const pontoId = pontoIdForTenant(session.tenantId);
     slots = slots.filter((slot) => slot.pontoId === pontoId);
+  }
+  if (session.portal === "rider") {
+    // Bind to the rider's REAL home Ponto (by name/id), not a tenant stub.
+    // Public members without a home Ponto see all open slots and may choose one.
+    const rider = memory.riders.find((r) => r.id === session.userId || r.name === session.name);
+    const fallback = pontoIdForTenant(session.tenantId);
+    const pontoId = (rider ? homePontoIdForRider(rider) : null) ?? (fallback !== session.tenantId ? fallback : null);
+    if (pontoId) slots = slots.filter((slot) => slot.pontoId === pontoId);
   }
 
   const slotIds = new Set(slots.map((slot) => slot.id));
@@ -560,9 +653,11 @@ function riderIdForSession(session: AuthSession) {
 }
 
 function riderTierForSession(session: AuthSession) {
-  const map: Record<string, number> = {
-    "acct-rider": 3,
-  };
+  // Derive the OL tier from the rider's REAL profile (99 onboarding + lifetime
+  // orders). Falls back to the demo map only when no rider record is found.
+  const rider = memory.riders.find((r) => r.id === session.userId || r.name === session.name);
+  if (rider) return olTierForRider(rider);
+  const map: Record<string, number> = { "acct-rider": 3 };
   return map[session.userId] ?? 1;
 }
 
