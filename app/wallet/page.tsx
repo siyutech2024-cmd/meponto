@@ -1,10 +1,11 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Banknote, Building2, CheckCircle2, ChevronRight, RefreshCcw, XCircle } from "lucide-react";
+import { Banknote, Building2, CheckCircle2, ChevronRight, RefreshCcw, Store, Wallet, XCircle } from "lucide-react";
 import { AppShell, Badge, PageTitle } from "../components/ui";
 import { downloadCsv } from "../lib/csv";
 import { readSession } from "../lib/session";
+import { mallHubPortals } from "../lib/portals";
 import { useDialog } from "../components/dialog";
 import type { RiderWithdrawal } from "../lib/finance";
 
@@ -15,7 +16,7 @@ type Weekly = { week: { from: string; to: string }; franchises: WeeklyGroup[]; g
 const money = (v: number) => `R$ ${v.toFixed(2)}`;
 const md = (iso: string) => `${Number(iso.slice(5, 7))}.${Number(iso.slice(8, 10))}`;
 
-export default function WalletAdminPage() {
+function RiderPayrollWallet() {
   const dialog = useDialog();
   const session = useMemo(() => readSession(), []);
   const scopeFranchise = session?.portal === "franchise" ? session.franchise || session.organization : "";
@@ -321,4 +322,185 @@ export default function WalletAdminPage() {
       )}
     </AppShell>
   );
+}
+
+// ---------------------------------------------------------------------------
+// Mall back-office finance view (商城财务). Shown on the PontoMall hub instead
+// of the rider-payroll settlement above — mall scope only: GMV/收款, sales
+// revenue-share statements, supplier statements, hybrid-payment & top-up
+// review. No rider payroll here (that lives in the HQ/franchise portals).
+// ---------------------------------------------------------------------------
+
+type FinanceSummary = { orders: number; pointsGmv: number; cashGmv: number; gmvBRL: number; pointsToBrlRate: number; pendingPayments: number };
+type SupplierStmt = { id: string; supplierName: string; month: string; total: number; status: "draft" | "confirmed" | "paid"; paidAt?: string };
+type RevShareStmt = { id: string; franchise: string; month: string; status: "draft" | "confirmed" | "paid"; total: number; orders: number; stationShareTotal: number; franchiseNetTotal: number; paidAt?: string };
+type HybridPayment = { id: string; orderId: string; riderName: string; productName: string; amountBRL: number; status: string; reference?: string; createdAt?: string };
+type TopUpRow = { id: string; riderName: string; amountBRL: number; reference?: string; status: string; createdAt: string };
+type OfficeFinance = { summary?: FinanceSummary; statements?: SupplierStmt[]; revShareStatements?: RevShareStmt[]; payments?: HybridPayment[]; topUps?: TopUpRow[] };
+
+const stmtStatusLabel = (s: "draft" | "confirmed" | "paid", who: "供应商" | "加盟商") =>
+  ({ draft: `待${who}确认`, confirmed: "待付款", paid: "已付款" }[s]);
+
+function MallFinanceWallet() {
+  const session = useMemo(() => readSession(), []);
+  const headers = useMemo(() => ({ "Content-Type": "application/json", "x-vento-role": session?.role ?? "Mall Operator" }), [session]);
+  const [data, setData] = useState<OfficeFinance | null>(null);
+  const [message, setMessage] = useState<{ tone: "ok" | "err"; text: string } | null>(null);
+  const [month, setMonth] = useState(() => new Date().toISOString().slice(0, 7));
+
+  const load = useCallback(async () => {
+    const r = await fetch("/api/mall/ops", { headers, cache: "no-store" }).catch(() => null);
+    if (r && r.ok) setData(((await r.json()).data ?? {}) as OfficeFinance);
+  }, [headers]);
+  useEffect(() => { void load(); }, [load]);
+
+  async function post(body: Record<string, unknown>, ok: string) {
+    const r = await fetch("/api/mall/ops", { method: "POST", headers, body: JSON.stringify(body) }).catch(() => null);
+    const payload = r ? await r.json().catch(() => ({})) : {};
+    if (!r || !r.ok) { setMessage({ tone: "err", text: payload.error ?? "操作失败" }); return; }
+    setMessage({ tone: "ok", text: ok });
+    void load();
+  }
+
+  const sum = data?.summary;
+  const supplierStmts = data?.statements ?? [];
+  const revStmts = data?.revShareStatements ?? [];
+  const pendingPayments = (data?.payments ?? []).filter((p) => p.status === "submitted");
+  const pendingTopUps = (data?.topUps ?? []).filter((t) => t.status === "submitted");
+  const supplierPayable = supplierStmts.filter((s) => s.status === "confirmed").reduce((a, b) => a + b.total, 0);
+  const revPayable = revStmts.filter((s) => s.status === "confirmed").reduce((a, b) => a + b.total, 0);
+
+  const Stat = ({ label, value, hint }: { label: string; value: string; hint: string }) => (
+    <div className="panel p-4">
+      <div className="text-[10px] font-black uppercase text-[var(--muted)]">{label}</div>
+      <div className="mt-1 text-2xl font-black">{value}</div>
+      <div className="mt-0.5 text-[11px] font-bold text-[var(--muted)]">{hint}</div>
+    </div>
+  );
+
+  return (
+    <AppShell>
+      <PageTitle
+        title="结算与提现"
+        eyebrow="商城财务 · 收款 / 销售分成对账 / 供应商对账 / 付款核销"
+        action={<button type="button" onClick={() => void load()} className="tag inline-flex items-center gap-1"><RefreshCcw size={13} /> 刷新</button>}
+      />
+
+      {message && (
+        <div className={`mb-4 rounded-[8px] border px-4 py-3 text-sm font-black ${message.tone === "ok" ? "border-[var(--ok)] bg-[var(--ok-bg)] text-[var(--ok-ink)]" : "border-[var(--danger)] bg-[var(--danger-bg)] text-[var(--danger-ink)]"}`}>
+          {message.text}
+        </div>
+      )}
+
+      <div className="mb-4 grid grid-cols-2 gap-3 lg:grid-cols-4">
+        <Stat label="综合 GMV" value={money(sum?.gmvBRL ?? 0)} hint={`积分按 ${sum?.pointsToBrlRate ?? 10} pts≈R$1 折算`} />
+        <Stat label="现金收款" value={money(sum?.cashGmv ?? 0)} hint="已收 PIX / 混合付款" />
+        <Stat label="积分 GMV" value={`${(sum?.pointsGmv ?? 0).toLocaleString()} pts`} hint={`${sum?.orders ?? 0} 笔兑换`} />
+        <Stat label="待付合计" value={money(supplierPayable + revPayable)} hint={`供应商 ${money(supplierPayable)} · 分成 ${money(revPayable)}`} />
+      </div>
+
+      {/* Month picker (shared by both generate actions) */}
+      <div className="panel mb-4 flex flex-wrap items-center gap-3 p-3">
+        <span className="text-xs font-black uppercase text-[var(--muted)]">对账月份</span>
+        <input type="month" value={month} onChange={(e) => setMonth(e.target.value)} className="h-9 rounded-[8px] border border-[var(--line)] bg-[var(--surface-raised)] px-2 text-sm font-bold outline-none" />
+        <span className="ml-auto text-[11px] font-bold text-[var(--muted)]">对账单按月生成；加盟商 / 供应商在各自后台确认后,这里标记付款。</span>
+      </div>
+
+      {/* Sales revenue-share statements (加盟商) */}
+      <div className="panel mb-4 p-4">
+        <div className="mb-3 flex flex-wrap items-center gap-2">
+          <Store size={14} className="text-[var(--accent)]" />
+          <span className="text-xs font-black uppercase text-[var(--muted)]">销售分成 · 月度对账（加盟商 / 站点)</span>
+          <button type="button" onClick={() => void post({ action: "generateRevShareStatement", month }, `已生成 ${month} 分成对账单`)} className="ml-auto h-9 rounded-[8px] bg-[var(--accent)] px-3.5 text-xs font-black text-[var(--accent-ink)]">生成分成对账单</button>
+        </div>
+        <div className="space-y-2">
+          {revStmts.map((s) => (
+            <div key={s.id} className="flex flex-wrap items-center gap-2 rounded-[8px] border border-[var(--line)] bg-[var(--surface-raised)] px-3 py-2 text-sm">
+              <span className="font-black">{s.franchise}</span>
+              <span className="text-[11px] font-bold text-[var(--muted)]">{s.month}</span>
+              <Badge value={stmtStatusLabel(s.status, "加盟商")} />
+              <span className="text-xs font-bold text-[var(--muted)]">{s.orders} 单 · 净 {money(s.franchiseNetTotal)} · 站点 {money(s.stationShareTotal)} · 合计 <b>{money(s.total)}</b></span>
+              {s.status === "confirmed" && (
+                <button type="button" onClick={() => void post({ action: "payRevShareStatement", statementId: s.id }, "已标记付款")} className="ml-auto h-8 rounded-[8px] bg-[var(--accent)] px-3 text-xs font-black text-[var(--accent-ink)]">标记已付款</button>
+              )}
+              {s.status === "paid" && <span className="ml-auto text-[11px] font-bold text-[var(--ok-ink)]">已付 {s.paidAt ?? ""}</span>}
+            </div>
+          ))}
+          {revStmts.length === 0 && <div className="py-4 text-center text-xs font-bold text-[var(--muted)]">暂无分成对账单。选择月份后点「生成分成对账单」:按「已取货订单 × 产品加盟商分成」自动汇总。</div>}
+        </div>
+      </div>
+
+      {/* Supplier monthly statements */}
+      <div className="panel mb-4 p-4">
+        <div className="mb-3 flex flex-wrap items-center gap-2">
+          <Building2 size={14} className="text-[var(--accent)]" />
+          <span className="text-xs font-black uppercase text-[var(--muted)]">供应商 · 月度对账</span>
+          <button type="button" onClick={() => void post({ action: "generateStatement", month }, `已生成 ${month} 供应商对账单`)} className="ml-auto h-9 rounded-[8px] bg-[var(--accent)] px-3.5 text-xs font-black text-[var(--accent-ink)]">生成对账单</button>
+        </div>
+        <div className="space-y-2">
+          {supplierStmts.map((s) => (
+            <div key={s.id} className="flex flex-wrap items-center gap-2 rounded-[8px] border border-[var(--line)] bg-[var(--surface-raised)] px-3 py-2 text-sm">
+              <span className="font-black">{s.supplierName}</span>
+              <span className="text-[11px] font-bold text-[var(--muted)]">{s.month}</span>
+              <Badge value={stmtStatusLabel(s.status, "供应商")} />
+              <span className="text-xs font-bold text-[var(--muted)]">应付 <b>{money(s.total)}</b></span>
+              {s.status === "confirmed" && (
+                <button type="button" onClick={() => void post({ action: "payStatement", statementId: s.id }, "已标记付款")} className="ml-auto h-8 rounded-[8px] bg-[var(--accent)] px-3 text-xs font-black text-[var(--accent-ink)]">标记已付款</button>
+              )}
+              {s.status === "paid" && <span className="ml-auto text-[11px] font-bold text-[var(--ok-ink)]">已付 {s.paidAt ?? ""}</span>}
+            </div>
+          ))}
+          {supplierStmts.length === 0 && <div className="py-4 text-center text-xs font-bold text-[var(--muted)]">暂无供应商对账单。按「履约订单 × 供货价」自动汇总每个供应商。</div>}
+        </div>
+      </div>
+
+      {/* Hybrid-payment review queue */}
+      {pendingPayments.length > 0 && (
+        <div className="panel mb-4 p-4">
+          <div className="mb-3 flex items-center gap-2 text-xs font-black uppercase text-[var(--accent)]"><Banknote size={14} /> 混合付款待核销（{pendingPayments.length}）</div>
+          <div className="space-y-2">
+            {pendingPayments.map((p) => (
+              <div key={p.id} className="flex flex-wrap items-center justify-between gap-2 rounded-[8px] border border-[var(--line)] bg-[var(--surface-raised)] p-3">
+                <div>
+                  <div className="text-sm font-black">{p.riderName} · {p.productName} · {money(p.amountBRL)}</div>
+                  <div className="text-[11px] font-bold text-[var(--muted)]">凭证 {p.reference ?? "—"} ｜ {p.createdAt ?? ""}</div>
+                </div>
+                <div className="flex gap-2">
+                  <button type="button" onClick={() => void post({ action: "confirmPayment", paymentId: p.id }, "已核销该付款")} className="inline-flex h-9 items-center gap-1 rounded-[8px] bg-[var(--accent)] px-3 text-xs font-black uppercase text-[var(--accent-ink)]"><CheckCircle2 size={13} /> 确认</button>
+                  <button type="button" onClick={() => void post({ action: "rejectPayment", paymentId: p.id }, "已驳回该付款")} className="inline-flex h-9 items-center gap-1 rounded-[8px] border border-[var(--line)] px-3 text-xs font-black uppercase text-[var(--danger-ink)]"><XCircle size={13} /> 驳回</button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Cash top-up review queue */}
+      {pendingTopUps.length > 0 && (
+        <div className="panel mb-4 p-4">
+          <div className="mb-3 flex items-center gap-2 text-xs font-black uppercase text-[var(--accent)]"><Wallet size={14} /> 余额充值待核销（{pendingTopUps.length}）</div>
+          <div className="space-y-2">
+            {pendingTopUps.map((t) => (
+              <div key={t.id} className="flex flex-wrap items-center justify-between gap-2 rounded-[8px] border border-[var(--line)] bg-[var(--surface-raised)] p-3">
+                <div>
+                  <div className="text-sm font-black">{t.riderName} · {money(t.amountBRL)}</div>
+                  <div className="text-[11px] font-bold text-[var(--muted)]">凭证 {t.reference ?? "—"} ｜ {t.createdAt}</div>
+                </div>
+                <div className="flex gap-2">
+                  <button type="button" onClick={() => void post({ action: "confirmTopUp", topUpId: t.id }, "已确认到账,余额已入账")} className="inline-flex h-9 items-center gap-1 rounded-[8px] bg-[var(--accent)] px-3 text-xs font-black uppercase text-[var(--accent-ink)]"><CheckCircle2 size={13} /> 确认到账</button>
+                  <button type="button" onClick={() => void post({ action: "rejectTopUp", topUpId: t.id }, "已驳回")} className="inline-flex h-9 items-center gap-1 rounded-[8px] border border-[var(--line)] px-3 text-xs font-black uppercase text-[var(--danger-ink)]"><XCircle size={13} /> 驳回</button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </AppShell>
+  );
+}
+
+export default function WalletPage() {
+  const session = useMemo(() => readSession(), []);
+  const isMallOffice = !!session && session.portal === "pontomall" && mallHubPortals.includes(session.portal);
+  return isMallOffice ? <MallFinanceWallet /> : <RiderPayrollWallet />;
 }
