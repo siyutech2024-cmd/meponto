@@ -30,6 +30,12 @@ function profileView(r: (typeof memory.riders)[number]) {
     ponto: r.ponto ?? "",
     leader: r.leader ?? "",
     nineId: r.ninetyNineId ?? "",
+    // Alias matching the native apps' DTO field name.
+    ninetyNineId: r.ninetyNineId ?? "",
+    // Tier metrics — drive the membership tier shown on the rider Home.
+    ar: r.ar ?? 0,
+    nightShiftCount: r.nightShiftCount ?? 0,
+    incidentCount: r.incidentCount ?? 0,
     isComplete: !!cpf && !!pix && !!phone,
   };
 }
