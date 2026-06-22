@@ -23,6 +23,10 @@ export type CrmPartner = {
   services: string[];
   lat: number;
   lng: number;
+  // Rider-facing benefit (shown in the rider app). Optional — only partners
+  // with an active offer surface under "合作权益 / Benefits".
+  riderDiscountBRL?: number;
+  riderRewardPoints?: number;
 };
 
 export const crmPartners: CrmPartner[] = [
@@ -46,6 +50,8 @@ export const crmPartners: CrmPartner[] = [
     services: ["Tires", "Emergency repair", "Tow handoff"],
     lat: -23.5589,
     lng: -46.6446,
+    riderDiscountBRL: 20,
+    riderRewardPoints: 100,
   },
   {
     id: "crm-002",
@@ -67,6 +73,8 @@ export const crmPartners: CrmPartner[] = [
     services: ["Vehicle sourcing", "Trade-in", "Inspection"],
     lat: -23.5572,
     lng: -46.6351,
+    riderDiscountBRL: 15,
+    riderRewardPoints: 80,
   },
   {
     id: "crm-003",
@@ -109,6 +117,8 @@ export const crmPartners: CrmPartner[] = [
     services: ["Rental fleet", "Swap routing", "Damage review"],
     lat: -23.5421,
     lng: -46.5794,
+    riderDiscountBRL: 30,
+    riderRewardPoints: 120,
   },
   {
     id: "crm-005",

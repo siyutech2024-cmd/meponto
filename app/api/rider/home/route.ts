@@ -100,20 +100,30 @@ export async function GET(request: Request) {
     .slice(0, 12)
     .map(({ title, subtitle, amount, status, tone }) => ({ title, subtitle, amount, status, tone }));
 
-  // --- Partners (real geo + services; offer/discount not modelled yet → 0) ---
-  const partners = memory.crmPartners
-    .filter((p) => p.status === "Active")
+  // --- Partners (real geo + services + rider offer) ---
+  const activePartners = memory.crmPartners.filter((p) => p.status === "Active");
+  const partners = activePartners.map((p) => ({
+    id: p.id,
+    name: p.name,
+    neighborhood: p.bairro ?? "",
+    category: p.category ?? "",
+    services: (p.services ?? []).join(" / "),
+    discountBRL: p.riderDiscountBRL ?? 0,
+    partnerPoints: p.riderRewardPoints ?? 0,
+    distance: "",
+    latitude: p.lat ?? 0,
+    longitude: p.lng ?? 0,
+  }));
+
+  // --- Partner benefits (only partners with an active rider offer) ---
+  const partnerBenefits = activePartners
+    .filter((p) => (p.riderDiscountBRL ?? 0) > 0 || (p.riderRewardPoints ?? 0) > 0)
     .map((p) => ({
-      id: p.id,
-      name: p.name,
-      neighborhood: p.bairro ?? "",
-      category: p.category ?? "",
-      services: (p.services ?? []).join(" / "),
-      discountBRL: 0,
-      partnerPoints: 0,
-      distance: "",
-      latitude: p.lat ?? 0,
-      longitude: p.lng ?? 0,
+      partner: p.name,
+      service: p.services?.[0] ?? p.category ?? "",
+      discount: (p.riderDiscountBRL ?? 0) > 0 ? brl(p.riderDiscountBRL as number) : "",
+      status: (p.riderRewardPoints ?? 0) > 0 ? `+${p.riderRewardPoints} pts` : "Ativo",
+      tone: "OK",
     }));
 
   // --- Missions (rider/all enabled tasks; progress from claim state) ---
@@ -135,6 +145,6 @@ export async function GET(request: Request) {
     .map((n) => ({ title: n.title, detail: n.body, time: relativeTime(n.createdAt) }));
 
   return jsonResponse({
-    data: { performance, weeklyGoalProgress, cashLedger, partners, missions, inbox },
+    data: { performance, weeklyGoalProgress, cashLedger, partners, partnerBenefits, missions, inbox },
   });
 }
