@@ -55,7 +55,7 @@ import type { CashLedgerEntry, CashTopUp, MallBanner, MallCategory, MallCoupon, 
 import { riderWithdrawals, walletPayments, type RiderWithdrawal, type WalletPayment } from "../finance";
 import { assessmentRules, type AssessmentRule } from "../assessment";
 import { supportTickets, type SupportTicket } from "../support";
-import { pushSubscriptions, type PushSubscriptionRecord } from "../push";
+import { pushSubscriptions, fcmTokens, type PushSubscriptionRecord, type FcmTokenRecord } from "../push";
 import { appSplashConfigs, type AppSplashRecord } from "../app-config";
 import { appTasks, taskClaims, type AppTask, type TaskClaim } from "../tasks";
 import { partnerReviews, type PartnerReview } from "../partner-reviews";
@@ -112,6 +112,7 @@ const globalState = globalThis as typeof globalThis & {
     assessmentRules: AssessmentRule[];
     supportTickets: SupportTicket[];
     pushSubscriptions: PushSubscriptionRecord[];
+    fcmTokens: FcmTokenRecord[];
     appSplashConfigs: AppSplashRecord[];
     appTasks: AppTask[];
     taskClaims: TaskClaim[];
@@ -167,6 +168,7 @@ export const memory =
     assessmentRules: trackCollection("assessmentRules", [...assessmentRules]),
     supportTickets: trackCollection("supportTickets", [...supportTickets]),
     pushSubscriptions: trackCollection("pushSubscriptions", [...pushSubscriptions]),
+    fcmTokens: trackCollection("fcmTokens", [...fcmTokens]),
     appSplashConfigs: trackCollection("appSplashConfigs", [...appSplashConfigs]),
     appTasks: trackCollection("appTasks", [...appTasks]),
     taskClaims: trackCollection("taskClaims", [...taskClaims]),
@@ -247,6 +249,8 @@ memory.supportTickets ??= [];
 memory.supportTickets = trackCollection("supportTickets", memory.supportTickets);
 memory.pushSubscriptions ??= [];
 memory.pushSubscriptions = trackCollection("pushSubscriptions", memory.pushSubscriptions);
+memory.fcmTokens ??= [];
+memory.fcmTokens = trackCollection("fcmTokens", memory.fcmTokens);
 memory.appSplashConfigs ??= [...appSplashConfigs];
 if (memory.appSplashConfigs.length === 0) memory.appSplashConfigs.push({ ...appSplashConfigs[0] });
 memory.appSplashConfigs = trackCollection("appSplashConfigs", memory.appSplashConfigs);

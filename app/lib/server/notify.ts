@@ -1,15 +1,21 @@
 import { memory } from "./memory";
 import { VAPID_PRIVATE_KEY, VAPID_PUBLIC_KEY, VAPID_SUBJECT } from "../push";
+import { sendFcmToRider } from "./fcm";
 
 /**
- * Fire-and-forget web push to one rider's devices (by registered name).
+ * Fire-and-forget push to one rider's devices (by registered name). Delivers to
+ * BOTH Web Push subscriptions (PWA) and native FCM tokens (Android/iOS app).
  * Used by business events: mall arrival, withdrawal paid, signup approved.
  * Never throws — push failures must not break the business mutation.
+ * Returns the combined count of devices reached.
  */
 export async function sendPushToRider(riderName: string, title: string, body: string, url = "/rider-app"): Promise<number> {
+  // Native FCM (no-op when the FCM credential is absent). Runs in parallel with
+  // the web-push path below; either side failing must not break the mutation.
+  const fcmPromise = sendFcmToRider(riderName, title, body, { url }).catch(() => 0);
   try {
     const targets = memory.pushSubscriptions.filter((sub) => sub.riderName === riderName);
-    if (targets.length === 0) return 0;
+    if (targets.length === 0) return await fcmPromise;
     // web-push is an optional runtime capability. The ignore comments keep the
     // bundler from resolving it at build time, so a missing dependency degrades
     // to "no push" (the outer try/catch returns 0) instead of failing the build.
@@ -31,8 +37,8 @@ export async function sendPushToRider(riderName: string, title: string, body: st
         }
       }),
     );
-    return sent;
+    return sent + (await fcmPromise);
   } catch {
-    return 0;
+    return await fcmPromise;
   }
 }

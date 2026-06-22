@@ -1,9 +1,10 @@
 import { appendServerAudit, jsonResponse, makeServerId, memory } from "../../lib/server/memory";
 import { flushPendingToDatabase, refreshCollectionsFromDatabase } from "../../lib/server/persistence";
 import { requirePermission, roleFromRequest } from "../../lib/server/authz";
-import { VAPID_PRIVATE_KEY, VAPID_PUBLIC_KEY, VAPID_SUBJECT, type PushSubscriptionRecord } from "../../lib/push";
+import { VAPID_PRIVATE_KEY, VAPID_PUBLIC_KEY, VAPID_SUBJECT, type PushSubscriptionRecord, type FcmTokenRecord } from "../../lib/push";
+import { sendFcmToTokens } from "../../lib/server/fcm";
 
-const COLLECTIONS = ["pushSubscriptions"];
+const COLLECTIONS = ["pushSubscriptions", "fcmTokens"];
 const nowStamp = () => new Date().toISOString().slice(0, 16).replace("T", " ");
 
 export async function GET(request: Request) {
@@ -20,6 +21,8 @@ export async function GET(request: Request) {
 type Body =
   | { action: "subscribe"; riderName: string; subscription: { endpoint: string; keys: { p256dh: string; auth: string } } }
   | { action: "unsubscribe"; endpoint: string }
+  | { action: "registerToken"; token: string; riderName?: string; platform?: string }
+  | { action: "unregisterToken"; token: string }
   | { action: "send"; title: string; body: string; url?: string; riderName?: string };
 
 async function handlePost(request: Request) {
@@ -52,6 +55,30 @@ async function handlePost(request: Request) {
       const index = memory.pushSubscriptions.findIndex((s) => s.endpoint === endpoint);
       if (index !== -1) memory.pushSubscriptions.splice(index, 1);
       return jsonResponse({ data: { ok: true } });
+    }
+
+    case "registerToken": {
+      // Open endpoint — native apps (Android/iOS) register their FCM token.
+      const { token, riderName, platform } = body as { token?: string; riderName?: string; platform?: string };
+      if (!token?.trim()) return jsonResponse({ error: "token is required" }, { status: 400 });
+      const existing = memory.fcmTokens.findIndex((t) => t.token === token);
+      const record: FcmTokenRecord = {
+        id: existing !== -1 ? memory.fcmTokens[existing].id : makeServerId("fcm", memory.fcmTokens.length + 1),
+        riderName: (riderName ?? "").trim().slice(0, 80),
+        token: token.trim(),
+        platform: (platform ?? "android").trim().slice(0, 16),
+        createdAt: existing !== -1 ? memory.fcmTokens[existing].createdAt : nowStamp(),
+      };
+      if (existing !== -1) memory.fcmTokens[existing] = record;
+      else memory.fcmTokens.unshift(record);
+      return jsonResponse({ data: { id: record.id, status: "ok" } }, { status: 201 });
+    }
+
+    case "unregisterToken": {
+      const { token } = body as { token?: string };
+      const index = memory.fcmTokens.findIndex((t) => t.token === token);
+      if (index !== -1) memory.fcmTokens.splice(index, 1);
+      return jsonResponse({ data: { status: "ok" } });
     }
 
     case "send": {
@@ -92,8 +119,20 @@ async function handlePost(request: Request) {
         if (index !== -1) memory.pushSubscriptions.splice(index, 1);
       }
 
-      appendServerAudit({ actor, action: "PUSH_SENT", entity: "PushNotification", entityId: nowStamp(), detail: `"${title}" → ${sent} devices${riderName ? ` (rider ${riderName})` : ""}.`, risk: "Low" });
-      return jsonResponse({ data: { sent, removed: dead.length, targets: targets.length } });
+      // Also deliver to native FCM tokens (no-op when the FCM credential is
+      // absent — see app/lib/server/fcm.ts). Pruning of dead tokens is handled
+      // inside sendFcmToTokens.
+      let fcmTargets = memory.fcmTokens;
+      if (riderName?.trim()) fcmTargets = fcmTargets.filter((t) => t.riderName === riderName.trim());
+      const fcmSent = await sendFcmToTokens(
+        fcmTargets.map((t) => t.token),
+        title,
+        text,
+        { url },
+      );
+
+      appendServerAudit({ actor, action: "PUSH_SENT", entity: "PushNotification", entityId: nowStamp(), detail: `"${title}" → ${sent} web + ${fcmSent} fcm devices${riderName ? ` (rider ${riderName})` : ""}.`, risk: "Low" });
+      return jsonResponse({ data: { sent, fcmSent, removed: dead.length, targets: targets.length + fcmTargets.length } });
     }
 
     default:
