@@ -101,7 +101,7 @@ function ProductImage({ product, big = false }: { product: MarketplaceProduct; b
 /** Rider login on app.meponto.com, returning to the current mall page after. */
 function loginUrlWithReturn() {
   const back = typeof window !== "undefined" ? window.location.href : "https://mall.meponto.com/";
-  return `https://app.meponto.com/rider-login?returnTo=${encodeURIComponent(back)}`;
+  return `https://app.meponto.com/register?returnTo=${encodeURIComponent(back)}`;
 }
 
 export default function StorefrontPage() {
@@ -415,7 +415,7 @@ export default function StorefrontPage() {
                   Criar conta
                 </a>
                 <a
-                  href="https://app.meponto.com/rider-login"
+                  href="https://app.meponto.com/register"
                   onClick={(event) => { event.preventDefault(); window.location.href = loginUrlWithReturn(); }}
                   className="inline-flex h-10 items-center gap-2 rounded-full px-5 text-sm font-black transition-transform hover:scale-105"
                   style={{ background: INK, color: "#fff" }}

@@ -157,7 +157,7 @@ export default function RiderAppPage() {
                 <div className="text-[11px] font-black uppercase tracking-[0.14em] text-[#ff7a00]">Bem-vindo</div>
                 <h2 className="mt-2 text-2xl font-black leading-7">Cada entrega vira <span className="text-[#ff7a00]">benefício</span></h2>
                 <p className="mt-2 text-sm font-bold text-white/60">Entre para ver seu saldo, pontos, turnos e a Loja de Pontos.</p>
-                <a href="/rider-login?returnTo=/" className="mt-4 flex h-12 w-full items-center justify-center gap-2 rounded-[8px] bg-[#ff7a00] text-sm font-black text-[#050505]">
+                <a href="/register?returnTo=/" className="mt-4 flex h-12 w-full items-center justify-center gap-2 rounded-[8px] bg-[#ff7a00] text-sm font-black text-[#050505]">
                   Entrar ou criar conta <ChevronRight size={18} />
                 </a>
               </div>

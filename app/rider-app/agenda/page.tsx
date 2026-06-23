@@ -67,7 +67,7 @@ export default function RiderAgendaPage() {
           <CalendarDays size={28} className="mx-auto text-[var(--accent)]" />
           <div className="text-sm font-black">Entre para ver sua agenda</div>
           <div className="text-[12px] font-bold text-[var(--muted)]">Seus turnos, desempenho e ranking aparecem após o login.</div>
-          <Link href="/rider-login?returnTo=/agenda" className="inline-flex h-11 w-full items-center justify-center rounded-[8px] bg-[var(--accent)] px-4 text-sm font-black text-[var(--accent-ink)]">
+          <Link href="/register?returnTo=/agenda" className="inline-flex h-11 w-full items-center justify-center rounded-[8px] bg-[var(--accent)] px-4 text-sm font-black text-[var(--accent-ink)]">
             Entrar ou criar conta
           </Link>
         </div>

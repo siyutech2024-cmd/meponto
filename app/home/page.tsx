@@ -35,7 +35,7 @@ const copy: Record<Lang, {
         tag: "Turnos",
         title: ["Escala", "transparente,", "renda real"],
         text: "Turnos semanais direto no app, regras claras e acerto na conta. Você escolhe quando rodar — a gente organiza o resto.",
-        cta: { label: "Quero entregar", href: "https://app.meponto.com/rider-login" },
+        cta: { label: "Quero entregar", href: "https://app.meponto.com/register" },
       },
       {
         tag: "PontoMall",
@@ -72,7 +72,7 @@ const copy: Record<Lang, {
     pontos: "个站点",
     chapters: [
       { tag: "网络", title: ["我们构建", "最后一公里", "服务网络"], text: "实体服务点遍布圣保罗：本地站长、饮水、卫生间、安全保障，网络每天都在生长。", cta: { label: "了解网络", href: "https://app.meponto.com" } },
-      { tag: "排班", title: ["透明排班", "真实收入"], text: "每周班次 App 直达，规则清晰、结算到账。你选择何时上线——其余交给我们。", cta: { label: "我要跑单", href: "https://app.meponto.com/rider-login" } },
+      { tag: "排班", title: ["透明排班", "真实收入"], text: "每周班次 App 直达，规则清晰、结算到账。你选择何时上线——其余交给我们。", cta: { label: "我要跑单", href: "https://app.meponto.com/register" } },
       { tag: "积分商城", title: ["每一单", "都变成权益"], text: "订单变积分，积分换商品、服务和街区合作伙伴的真实折扣。没有套路。", cta: { label: "逛逛商城", href: "https://mall.meponto.com" } },
       { tag: "合作", title: ["用系统", "运营一片区域"], text: "加盟商获得验证过的模型、完整的运营/排班/财务系统，以及 MePonto 网络的支持。", cta: { label: "我要加盟", href: "https://franchise.meponto.com" } },
     ],
@@ -93,7 +93,7 @@ const copy: Record<Lang, {
     pontos: "PONTOS",
     chapters: [
       { tag: "Network", title: ["We build", "the last-mile", "network"], text: "Physical support points across São Paulo: local leaders, water, restrooms, safety — a network growing every day.", cta: { label: "Explore the network", href: "https://app.meponto.com" } },
-      { tag: "Shifts", title: ["Transparent", "shifts,", "real income"], text: "Weekly shifts in the app, clear rules, payouts on time. You choose when to ride — we handle the rest.", cta: { label: "I want to deliver", href: "https://app.meponto.com/rider-login" } },
+      { tag: "Shifts", title: ["Transparent", "shifts,", "real income"], text: "Weekly shifts in the app, clear rules, payouts on time. You choose when to ride — we handle the rest.", cta: { label: "I want to deliver", href: "https://app.meponto.com/register" } },
       { tag: "PontoMall", title: ["Every delivery", "becomes", "a benefit"], text: "Orders become points; points become products, services and real discounts at neighborhood partners.", cta: { label: "Visit PontoMall", href: "https://mall.meponto.com" } },
       { tag: "Partnership", title: ["Run a", "territory", "with a system"], text: "Franchisees get a validated model, full operations, scheduling and finance systems, plus MePonto network support.", cta: { label: "Become a franchisee", href: "https://franchise.meponto.com" } },
     ],
@@ -418,7 +418,7 @@ export default function HomePage() {
               </h2>
               <p className="mp-rise-2 mx-auto mt-6 max-w-xl text-base font-medium leading-7 md:text-lg" style={{ color: "rgba(255,255,255,.65)" }}>{t.finale.text}</p>
               <div className="mp-rise-3 mt-10 flex flex-wrap items-center justify-center gap-4">
-                <a href="https://app.meponto.com/rider-login" className="rounded-full px-8 py-4 text-sm font-black uppercase tracking-wider transition-transform hover:scale-105" style={{ background: "#f5b301", color: "#0b0e14" }}>
+                <a href="https://app.meponto.com/register" className="rounded-full px-8 py-4 text-sm font-black uppercase tracking-wider transition-transform hover:scale-105" style={{ background: "#f5b301", color: "#0b0e14" }}>
                   {t.finale.rider}
                 </a>
                 <a href="https://franchise.meponto.com" className="rounded-full border px-8 py-4 text-sm font-black uppercase tracking-wider transition-transform hover:scale-105" style={{ borderColor: "rgba(245,179,1,.65)", color: "#f5b301" }}>

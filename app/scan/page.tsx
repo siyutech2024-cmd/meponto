@@ -36,7 +36,7 @@ function ScanInner() {
 
       {ref && !session?.name && (
         <Link
-          href={`/rider-login?ref=${encodeURIComponent(ref)}${station ? `&station=${encodeURIComponent(station)}` : ""}`}
+          href={`/register?ref=${encodeURIComponent(ref)}${station ? `&station=${encodeURIComponent(station)}` : ""}`}
           className="inline-flex h-12 w-full items-center justify-center gap-2 rounded-[8px] bg-[var(--accent)] text-sm font-black uppercase text-[var(--accent-ink)]"
         >
           <CheckCircle2 size={16} /> Criar minha conta

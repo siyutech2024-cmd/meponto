@@ -48,7 +48,7 @@ export default function RiderSupportPage() {
       {!session && (
         <div className="panel space-y-2 p-4 text-center">
           <div className="text-[12px] font-bold text-[var(--muted)]">Entre para abrir um chamado e acompanhar as respostas.</div>
-          <Link href="/rider-login?returnTo=/support" className="inline-flex h-10 w-full items-center justify-center rounded-[8px] bg-[var(--accent)] px-4 text-sm font-black text-[var(--accent-ink)]">
+          <Link href="/register?returnTo=/support" className="inline-flex h-10 w-full items-center justify-center rounded-[8px] bg-[var(--accent)] px-4 text-sm font-black text-[var(--accent-ink)]">
             Entrar ou criar conta
           </Link>
         </div>

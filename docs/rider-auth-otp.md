@@ -42,11 +42,12 @@ TWILIO_FROM=+1xxxxxxxxxx        # 你的 Twilio 发送号(或 messaging service 
 > 巴西建议用 WhatsApp 优先 + SMS 兜底(Twilio 同账号可扩展)。想换 Zenvia/Infobip 时,
 > 只改 `sendOtp` 一个函数即可。
 
-## 网页登录页替换
+## 网页登录页:统一到 /register
 
-`/rider-login` 旧版是**邮箱/手机号 + 密码 + Google** 的并行登录(走 `/api/auth/*`),与新身份模型冲突。
-已替换为**纯 OTP 落地页**:手机号 → 验证码 → 验证(号不在库时补 CPF 重绑),成功后写本地会话并跳 `/rider-app`。
-统一到 `member-login`,不再有第二套登录。自助注册(旧 register/邀请码)按新模型移除——骑手来自日报导入。
+会员登录/注册统一在 **`/register`**(骑手也是会员)。登录改为**手机验证码**(手机号 → 验证码 →
+号不在库时补 CPF 重绑),走同一套 `member-login` OTP;注册仍走 `/api/register`。
+**`/rider-login` 已废弃 → 301 重定向到 `/register`**(旧链接/二维码/书签继续可用),
+全站内部链接已改指 `/register`。不再有第二套骑手登录页。
 
 ## 灰度与原生 App
 
