@@ -182,6 +182,8 @@ function RiderPayrollWallet() {
         <div className="ml-auto text-sm font-black text-[var(--accent)]">本周应结 {weekly ? money(weekly.grandTotal) : "—"}</div>
       </div>
 
+      <p className="mb-4 -mt-2 px-1 text-[11px] font-bold text-[var(--muted)]">两段结算:加盟商行的「已付」是<b>总部→加盟商</b>;展开后骑手行的「已付」是<b>加盟商→骑手</b>(含已付 PIX)。两者是不同的钱,表头不等于明细之和属正常。「本周应结」为全网各加盟商应结之和。</p>
+
       {scopeFranchise && (
         <div className="panel mb-4 p-4">
           <div className="mb-2 flex flex-wrap items-center gap-2">
@@ -209,7 +211,9 @@ function RiderPayrollWallet() {
       <div className="space-y-2">
         {(weekly?.franchises ?? []).length === 0 && <div className="panel p-6 text-center text-sm font-bold text-[var(--muted)]">本周暂无结算数据。</div>}
         {weekly?.franchises.map((g) => {
-          const pendingAmt = Math.max(0, Math.round((g.settle - g.franchisePaid) * 100) / 100);
+          const net = Math.round((g.settle - g.franchisePaid) * 100) / 100;
+          const pendingAmt = Math.max(0, net);
+          const overpaid = net < 0 ? -net : 0;
           const expanded = open.has(g.franchise);
           return (
             <div key={g.franchise} className="panel overflow-hidden p-0">
@@ -222,8 +226,8 @@ function RiderPayrollWallet() {
                 </button>
                 <div className="flex items-center gap-4 text-sm">
                   <div className="text-right"><div className="text-[10px] font-black uppercase text-[var(--muted)]">应结</div><div className="font-black">{money(g.settle)}</div></div>
-                  <div className="text-right"><div className="text-[10px] font-black uppercase text-[var(--muted)]">已付</div><div className="font-black text-[var(--ok-ink)]">{money(g.franchisePaid)}</div></div>
-                  <div className="text-right"><div className="text-[10px] font-black uppercase text-[var(--muted)]">待付</div><div className={`font-black ${pendingAmt > 0 ? "text-[var(--warning-ink)]" : "text-[var(--muted)]"}`}>{money(pendingAmt)}</div></div>
+                  <div className="text-right"><div className="text-[10px] font-black uppercase text-[var(--muted)]" title="总部付给加盟商">已付·总部→商</div><div className="font-black text-[var(--ok-ink)]">{money(g.franchisePaid)}</div></div>
+                  <div className="text-right"><div className="text-[10px] font-black uppercase text-[var(--muted)]">{overpaid > 0 ? "超付" : "待付"}</div><div className={`font-black ${overpaid > 0 ? "text-[var(--danger-ink)]" : pendingAmt > 0 ? "text-[var(--warning-ink)]" : "text-[var(--muted)]"}`}>{overpaid > 0 ? `+${money(overpaid)}` : money(pendingAmt)}</div></div>
                 </div>
                 <div className="flex gap-1.5">
                   {!scopeFranchise && <button type="button" className="inline-flex h-9 items-center rounded-[8px] bg-[var(--accent)] px-3 text-xs font-black uppercase text-[var(--accent-ink)]" onClick={() => openPay("franchise", g.franchise, g.franchise, pendingAmt)}>标记付加盟商</button>}
@@ -236,7 +240,7 @@ function RiderPayrollWallet() {
                   <table className="w-full text-sm">
                     <thead>
                       <tr className="text-left text-[10px] font-black uppercase text-[var(--muted)]">
-                        <th className="pb-2">骑手</th><th className="pb-2">站点</th><th className="pb-2 text-right">完单</th><th className="pb-2 text-right">天数</th><th className="pb-2 text-right">应结</th><th className="pb-2 text-right">已付</th><th className="pb-2 text-right">操作</th>
+                        <th className="pb-2">骑手</th><th className="pb-2">站点</th><th className="pb-2 text-right">完单</th><th className="pb-2 text-right">天数</th><th className="pb-2 text-right">应结</th><th className="pb-2 text-right" title="加盟商付给骑手 + 已付 PIX 提现">已付·→骑手</th><th className="pb-2 text-right">操作</th>
                       </tr>
                     </thead>
                     <tbody>

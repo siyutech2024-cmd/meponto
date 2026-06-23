@@ -255,6 +255,41 @@ async function handlePost(request: Request) {
       if (target !== "franchise" && target !== "rider") return jsonResponse({ error: "target inválido" }, { status: 400 });
       if (!refName?.trim() || !Number.isFinite(amount) || amount <= 0) return jsonResponse({ error: "请填写有效的对象与金额" }, { status: 400 });
       if (!/^\d{4}-\d{2}-\d{2}$/.test(weekFrom ?? "") || !/^\d{4}-\d{2}-\d{2}$/.test(weekTo ?? "")) return jsonResponse({ error: "结算周期无效" }, { status: 400 });
+
+      // Over-payment guard: a payment may not exceed what is still owed for this
+      // target in the window (应结 − 已付). Keeps 已付 ≤ 应结.
+      {
+        const r2 = (n: number) => Math.round(n * 100) / 100;
+        const byNN = new Map(memory.riders.filter((r) => r.ninetyNineId).map((r) => [r.ninetyNineId!, r]));
+        let settleTotal = 0;
+        for (const row of memory.riderDailyEarnings) {
+          if (row.date < weekFrom! || row.date > weekTo!) continue;
+          const rider = byNN.get(row.rider99Id);
+          const fname = rider?.franchise ?? "Unassigned";
+          const rname = rider?.name ?? row.riderName ?? row.rider99Id;
+          if (target === "franchise" && fname !== refName.trim()) continue;
+          if (target === "rider" && rname !== refName.trim()) continue;
+          settleTotal = r2(settleTotal + (row.settleAmount ?? 0));
+        }
+        let alreadyPaid = 0;
+        for (const p of memory.walletPayments) {
+          if (p.target !== target || p.refName !== refName.trim()) continue;
+          if (p.weekFrom < weekFrom! || p.weekTo > weekTo!) continue;
+          alreadyPaid = r2(alreadyPaid + p.amount);
+        }
+        if (target === "rider") {
+          for (const w of memory.riderWithdrawals) {
+            if (w.status !== "paid" || w.riderName !== refName.trim()) continue;
+            const pd = (w.paidAt ?? "").slice(0, 10);
+            if (pd < weekFrom! || pd > weekTo!) continue;
+            alreadyPaid = r2(alreadyPaid + w.amount);
+          }
+        }
+        const outstanding = r2(settleTotal - alreadyPaid);
+        if (amount > outstanding + 0.01) {
+          return jsonResponse({ error: `金额超过待付 R$ ${outstanding.toFixed(2)}（应结 ${settleTotal.toFixed(2)} − 已付 ${alreadyPaid.toFixed(2)}）。`, code: "amount_exceeds_due", outstanding, settle: settleTotal, alreadyPaid }, { status: 409 });
+        }
+      }
       const payment: WalletPayment = {
         id: makeServerId("pay", memory.walletPayments.length + 1),
         target,
