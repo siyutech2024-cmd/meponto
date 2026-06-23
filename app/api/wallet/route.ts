@@ -104,7 +104,13 @@ export async function GET(request: Request) {
 
   // Weekly settlement, folded franchise → rider (the main HQ wallet view).
   if (url.searchParams.get("view") === "weekly") {
-    const anchor = url.searchParams.get("week") || today();
+    // No explicit week → anchor to the MOST RECENT week that has settlement
+    // data (T+1 imports lag the calendar), so the default view is never blank.
+    let anchor = url.searchParams.get("week") || "";
+    if (!anchor) {
+      const dates = memory.riderDailyEarnings.map((e) => e.date).filter(Boolean).sort();
+      anchor = dates.length ? dates[dates.length - 1] : today();
+    }
     const win = weekWindow(anchor);
     const scope = await scopeFromRequest(request);
     const byNinetyNine = new Map(memory.riders.filter((r) => r.ninetyNineId).map((r) => [r.ninetyNineId!, r]));

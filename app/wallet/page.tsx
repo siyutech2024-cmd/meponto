@@ -22,7 +22,7 @@ function RiderPayrollWallet() {
   const scopeFranchise = session?.portal === "franchise" ? session.franchise || session.organization : "";
   const headers = useMemo(() => ({ "Content-Type": "application/json", "x-vento-role": session?.role ?? "Super Admin" }), [session]);
 
-  const [anchor, setAnchor] = useState(() => new Date().toISOString().slice(0, 10));
+  const [anchor, setAnchor] = useState(""); // "" → backend picks the latest week with data
   const [weekly, setWeekly] = useState<Weekly | null>(null);
   const [withdrawals, setWithdrawals] = useState<RiderWithdrawal[]>([]);
   const [open, setOpen] = useState<Set<string>>(new Set());
@@ -45,10 +45,15 @@ function RiderPayrollWallet() {
 
   const load = useCallback(async () => {
     const [weeklyResponse, listResponse] = await Promise.all([
-      fetch(`/api/wallet?view=weekly&week=${anchor}`, { headers, cache: "no-store" }),
+      fetch(`/api/wallet?view=weekly${anchor ? `&week=${anchor}` : ""}`, { headers, cache: "no-store" }),
       fetch(`/api/wallet?${scopeFranchise ? `franchise=${encodeURIComponent(scopeFranchise)}` : ""}`, { headers, cache: "no-store" }),
     ]);
-    if (weeklyResponse.ok) setWeekly((await weeklyResponse.json()).data);
+    if (weeklyResponse.ok) {
+      const w = (await weeklyResponse.json()).data as Weekly;
+      setWeekly(w);
+      // Lock the picker to the data week the backend chose (so navigation works).
+      if (!anchor && w?.week?.from) setAnchor(w.week.from);
+    }
     if (listResponse.ok) setWithdrawals((await listResponse.json()).data.withdrawals ?? []);
   }, [headers, anchor, scopeFranchise]);
 
@@ -57,7 +62,8 @@ function RiderPayrollWallet() {
   }, [load]);
 
   const shiftWeek = (deltaDays: number) => {
-    const d = new Date(`${anchor}T12:00:00Z`);
+    const base = anchor || weekly?.week.from || new Date().toISOString().slice(0, 10);
+    const d = new Date(`${base}T12:00:00Z`);
     d.setUTCDate(d.getUTCDate() + deltaDays);
     setAnchor(d.toISOString().slice(0, 10));
   };
