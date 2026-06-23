@@ -179,10 +179,10 @@ function RiderPayrollWallet() {
           <span className="ml-2 text-[11px] font-bold text-[var(--muted)]">自然周（周一至周日）</span>
         </div>
         <button type="button" className="tag" onClick={() => shiftWeek(7)}>下一周 →</button>
-        <div className="ml-auto text-sm font-black text-[var(--accent)]">本周应结 {weekly ? money(weekly.grandTotal) : "—"}</div>
+        <div className="ml-auto text-sm font-black text-[var(--accent)]">该周应结 {weekly ? money(weekly.grandTotal) : "—"}</div>
       </div>
 
-      <p className="mb-4 -mt-2 px-1 text-[11px] font-bold text-[var(--muted)]">两段结算:加盟商行的「已付」是<b>总部→加盟商</b>;展开后骑手行的「已付」是<b>加盟商→骑手</b>(含已付 PIX)。两者是不同的钱,表头不等于明细之和属正常。「本周应结」为全网各加盟商应结之和。</p>
+      <p className="mb-4 -mt-2 px-1 text-[11px] font-bold text-[var(--muted)]">应结/已付/待付均按<b>所选周</b>计算,切换周即重算。两段结算:加盟商行的「已付」是<b>总部→加盟商</b>;展开后骑手行的「已付」是<b>加盟商→骑手</b>(含已付 PIX)。两者是不同的钱,表头不等于明细之和属正常。「该周应结」为全网各加盟商应结之和。</p>
 
       {scopeFranchise && (
         <div className="panel mb-4 p-4">
