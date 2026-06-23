@@ -14,13 +14,25 @@ const COLLECTIONS = ["riders", "pointsLedgerEntries", "mallConfigs"];
 
 const nowStamp = () => new Date().toISOString().slice(0, 16).replace("T", " ");
 
+const onlyDigits = (s: string) => s.replace(/\D/g, "");
+/** Normalize a BR phone to digits with country code 55 — must match member-login. */
+function normalizeBR(raw: string): string {
+  const d = onlyDigits(raw);
+  if (d.startsWith("55") && d.length >= 12) return d;
+  if (d.length === 10 || d.length === 11) return "55" + d;
+  return d;
+}
+
 export async function POST(request: Request) {
   await refreshCollectionsFromDatabase(COLLECTIONS);
   const body = (await request.json().catch(() => ({}))) as { name?: string; phone?: string; cpf?: string; inviterId?: string };
   const name = (body.name ?? "").trim();
   const phone = (body.phone ?? "").trim();
   if (!name || !phone) return jsonResponse({ error: "Nome e telefone são obrigatórios." }, { status: 400 });
-  if (memory.riders.some((r) => r.phone && r.phone === phone)) {
+  // Normalized dedup — same number in any format maps to one account (matches
+  // member-login), so "11 9..." and "+55 11 9..." can't create duplicates.
+  const normalizedPhone = normalizeBR(phone);
+  if (memory.riders.some((r) => r.phone && normalizeBR(r.phone) === normalizedPhone)) {
     return jsonResponse({ error: "Este telefone já está cadastrado." }, { status: 409 });
   }
 
