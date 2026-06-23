@@ -170,10 +170,20 @@ async function flushDirtyCollections() {
         }
       }
 
-      const records = collection.filter((record) => record && typeof record.id === "string");
-      const rows = records.map((record) => ({
+      // Dedupe by id (last wins). A collection can transiently hold two records
+      // with the same id (seed + runtime, or a double-register). Postgres rejects
+      // an upsert whose batch touches the same (collection,record_id) twice
+      // ("ON CONFLICT DO UPDATE command cannot affect row a second time"), which
+      // would drop the entire app into memory-only mode and lose all writes
+      // (FCM tokens, push subscriptions, etc.). Collapsing duplicates first keeps
+      // persistence healthy.
+      const byId = new Map<string, AnyRecord>();
+      for (const record of collection) {
+        if (record && typeof record.id === "string") byId.set(record.id, record);
+      }
+      const rows = Array.from(byId, ([recordId, record]) => ({
         collection: name,
-        record_id: record.id,
+        record_id: recordId,
         data: record,
         updated_at: new Date().toISOString(),
       }));
