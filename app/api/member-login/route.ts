@@ -106,8 +106,17 @@ export async function POST(request: Request) {
   const normalized = normalizeBR(phoneRaw);
   if (normalized.length < 10) return jsonResponse({ error: "Informe um telefone válido.", code: "invalid_phone" }, { status: 400 });
 
+  // Play review / demo login: a fixed phone + code that bypasses SMS so app-store
+  // reviewers (and demos) can sign in. Off unless PLAY_DEMO_PHONE + PLAY_DEMO_CODE
+  // are set. Point PLAY_DEMO_PHONE at a dedicated TEST rider (no real data).
+  const demoPhone = process.env.PLAY_DEMO_PHONE;
+  const demoCode = process.env.PLAY_DEMO_CODE;
+  const isDemo = !!demoPhone && !!demoCode && normalized === normalizeBR(demoPhone);
+
   // ---- Request OTP --------------------------------------------------------
   if (action === "request-otp") {
+    // Demo/review phone: pretend a code was sent (verify uses the fixed code).
+    if (isDemo) return jsonResponse({ data: { sent: true, rebind: false } });
     let member = findMemberByPhone(phoneRaw);
     let rebindRiderId: string | undefined;
     if (!member && body.cpf) {
@@ -135,6 +144,12 @@ export async function POST(request: Request) {
 
   // ---- Verify OTP ---------------------------------------------------------
   if (action === "verify-otp") {
+    // Demo/review login: fixed code, no SMS challenge.
+    if (isDemo && String(body.code ?? "").trim() === demoCode) {
+      const member = findMemberByPhone(phoneRaw);
+      if (member) return issueSession(member, phoneRaw, request);
+      return jsonResponse({ error: "Cadastro de demonstração não encontrado.", code: "not_found" }, { status: 404 });
+    }
     const challenge = otpStore.get(normalized);
     if (!challenge || Date.now() > challenge.expiresAt) {
       otpStore.delete(normalized);
