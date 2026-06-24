@@ -29,6 +29,8 @@ export type Rider = {
   franchise?: string;
   /** Birth date collected at registration (YYYY-MM-DD). */
   birthday?: string;
+  /** Google account id (sub) linked for "Sign in with Google" → same rider.id. */
+  googleSub?: string;
 };
 export type Incident = {
   id: string;

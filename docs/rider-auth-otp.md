@@ -57,7 +57,25 @@ TWILIO_FROM=+1xxxxxxxxxx        # 你的 Twilio 发送号(或 messaging service 
   在没配 `TWILIO_*` 之前,可先用 `OTP_DEV_RETURN=1` 让验证码回传前端做联调。
 - 原生 OTP 界面在 `AuthSheet`(手机号/验证码/CPF 三步),控制器 `AuthController.requestOtp/verifyOtp`。
 
-## 二期:Google 登录
+## Google 登录(已落地:后端 + 网页)
 
-Google 登录后做一次绑定(输 CPF + 手机验证码)→ 把 `googleSub` 写到骑手记录 →
-之后 Google 一键登录按 `googleSub` 命中 `rider.id`。本期未做,接口位已预留。
+单一身份:Google 只是认证方式,最终都解析到 `rider.id`(`Rider.googleSub`)。
+
+- 后端 `member-login`:
+  - `action:"google"` `{credential}` → 校验 Google ID token(`oauth2.googleapis.com/tokeninfo`,校验 `aud`==`NEXT_PUBLIC_GOOGLE_CLIENT_ID`)→ 已绑定(`googleSub` 命中)直接发会话;未绑定返回 `{needsLink:true,email}`。
+  - `verify-otp` 增加可选 `googleCredential`:手机/CPF 验证通过后,把该 Google `sub` 写到骑手记录(`googleSub`),完成绑定。
+- 网页 `/register`:登录页显示「Continuar com Google」按钮;已绑定直登 `/store`,未绑定切到手机+CPF 流程并在 verify 时带上 `googleCredential` 完成绑定。
+- 配置:Vercel 已有 `NEXT_PUBLIC_GOOGLE_CLIENT_ID`(网页用)。
+
+### 原生 App(代码已落地,需 OAuth 配置 + 本机编译验证)
+
+已实现:`AuthSheet` 加「用 Google 继续」按钮(Credential Manager 取 Google ID token)→ `RiderRepository.googleLogin` → `action:"google"`;未绑定走手机+CPF,`verifyOtp` 带 `googleCredential` 完成绑定。依赖已加(`androidx.credentials` + `googleid`)。
+
+**按钮做了门控**:`BuildConfig.GOOGLE_WEB_CLIENT_ID` 为空时按钮隐藏,不配也不影响。
+
+启用需要:
+1. `gradle.properties` 加 `GOOGLE_WEB_CLIENT_ID=xxxxx.apps.googleusercontent.com`(= `NEXT_PUBLIC_GOOGLE_CLIENT_ID` 那个 Web 客户端 ID)。
+2. Google Cloud 控制台:把原生应用(包名 `com.meponto.rider` + release/上传证书 SHA-1)注册为 Android OAuth 客户端,与该 Web 客户端同一项目。
+3. **在 Android Studio 编译验证**(Credential Manager 代码沙箱无法编译验证)。
+
+> 仍建议首版可先不配(按钮隐藏)、过审后再启用 Google;不影响上架。

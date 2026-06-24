@@ -98,10 +98,54 @@ async function sendOtp(phone: string, code: string) {
   console.log(`[member-login] OTP for ${phone}: ${code} (set TWILIO_* env to send real SMS)`);
 }
 
+// ---- Sign in with Google (rider identity, not a separate account) ----
+type GoogleClaims = { aud?: string; email?: string; email_verified?: string | boolean; sub?: string; exp?: string };
+
+/** Verify a Google ID token against Google. Returns {sub,email} or null. */
+async function verifyGoogleToken(credential: string): Promise<{ sub: string; email: string } | null> {
+  const clientId = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID;
+  if (!clientId || !credential) return null;
+  try {
+    const res = await fetch(`https://oauth2.googleapis.com/tokeninfo?id_token=${encodeURIComponent(credential)}`);
+    if (!res.ok) return null;
+    const c = (await res.json()) as GoogleClaims;
+    if (c.aud !== clientId || !c.sub) return null;
+    if (c.exp && Number(c.exp) * 1000 < Date.now()) return null;
+    return { sub: c.sub, email: (c.email ?? "").trim().toLowerCase() };
+  } catch {
+    return null;
+  }
+}
+
+/** On a successful phone/OTP login, bind the Google account to this rider. */
+async function linkGoogleIfPresent(riderId: string, googleCredential?: string) {
+  if (!googleCredential) return;
+  const g = await verifyGoogleToken(googleCredential);
+  if (!g) return;
+  const idx = memory.riders.findIndex((r) => r.id === riderId);
+  if (idx !== -1 && memory.riders[idx].googleSub !== g.sub) {
+    memory.riders[idx] = { ...memory.riders[idx], googleSub: g.sub };
+    await flushPendingToDatabase();
+  }
+}
+
 export async function POST(request: Request) {
   await refreshCollectionsFromDatabase(["riders"]);
-  const body = (await request.json().catch(() => ({}))) as { action?: string; phone?: string; code?: string; cpf?: string };
+  const body = (await request.json().catch(() => ({}))) as {
+    action?: string; phone?: string; code?: string; cpf?: string; credential?: string; googleCredential?: string;
+  };
   const action = body.action ?? "";
+
+  // ---- Sign in with Google: linked → straight in; unlinked → ask to link. ----
+  if (action === "google") {
+    const g = await verifyGoogleToken(body.credential ?? "");
+    if (!g) return jsonResponse({ error: "Não foi possível validar com o Google.", code: "google_invalid" }, { status: 401 });
+    const member = memory.riders.find((r) => !!r.googleSub && r.googleSub === g.sub);
+    if (member) return issueSession(member, member.phone ?? "", request);
+    // Not linked yet → client collects CPF + phone OTP, then verify-otp with googleCredential.
+    return jsonResponse({ data: { needsLink: true, email: g.email } });
+  }
+
   const phoneRaw = body.phone ?? "";
   const normalized = normalizeBR(phoneRaw);
   if (normalized.length < 10) return jsonResponse({ error: "Informe um telefone válido.", code: "invalid_phone" }, { status: 400 });
@@ -147,7 +191,10 @@ export async function POST(request: Request) {
     // Demo/review login: fixed code, no SMS challenge.
     if (isDemo && String(body.code ?? "").trim() === demoCode) {
       const member = findMemberByPhone(phoneRaw);
-      if (member) return issueSession(member, phoneRaw, request);
+      if (member) {
+        await linkGoogleIfPresent(member.id, body.googleCredential);
+        return issueSession(member, phoneRaw, request);
+      }
       return jsonResponse({ error: "Cadastro de demonstração não encontrado.", code: "not_found" }, { status: 404 });
     }
     const challenge = otpStore.get(normalized);
@@ -177,6 +224,7 @@ export async function POST(request: Request) {
       }
     }
     if (!member) return jsonResponse({ error: "Cadastro não encontrado.", code: "not_found" }, { status: 404 });
+    await linkGoogleIfPresent(member.id, body.googleCredential);
     return issueSession(member, phoneRaw, request);
   }
 

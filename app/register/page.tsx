@@ -5,6 +5,8 @@ import { writeSession } from "../lib/session";
 
 type LoginStep = "phone" | "cpf" | "code";
 
+const GOOGLE_CLIENT_ID = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID;
+
 /** Public member self-registration + phone-OTP login (公开用户 → 会员一级). */
 export default function RegisterPage() {
   const [mode, setMode] = useState<"register" | "login">("login");
@@ -21,11 +23,75 @@ export default function RegisterPage() {
   const [loginCode, setLoginCode] = useState("");
   const [loginInfo, setLoginInfo] = useState("");
   const [resendIn, setResendIn] = useState(0);
+  const [googleCred, setGoogleCred] = useState("");
 
   useEffect(() => {
     const ref = new URLSearchParams(window.location.search).get("ref");
     if (ref) setForm((f) => ({ ...f, inviterId: ref }));
   }, []);
+
+  // Sign in with Google → linked rider logs straight in; first time, fall into
+  // the phone+CPF flow to bind this Google account to the rider (one identity).
+  async function googleLogin(credential?: string) {
+    if (!credential) return;
+    setError("");
+    setLoginInfo("");
+    setState("sending");
+    try {
+      const res = await fetch("/api/member-login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "google", credential }),
+      });
+      const payload = (await res.json().catch(() => ({}))) as { error?: string; data?: { name?: string; needsLink?: boolean; email?: string } };
+      if (!res.ok) throw new Error(payload.error ?? "Não foi possível entrar com o Google.");
+      if (payload.data?.needsLink) {
+        setGoogleCred(credential);
+        setMode("login");
+        setLoginStep("phone");
+        setLoginInfo(`Vincule sua conta Google${payload.data.email ? ` (${payload.data.email})` : ""}: confirme seu telefone para concluir.`);
+        setState("idle");
+        return;
+      }
+      if (payload.data?.name) {
+        writeSession({ name: payload.data.name, role: "Rider", portal: "rider", organization: "", identifier: payload.data.email ?? "" });
+        window.location.href = "/store";
+        return;
+      }
+      throw new Error("Resposta inesperada do servidor.");
+    } catch (err) {
+      setError((err as Error).message);
+      setState("idle");
+    }
+  }
+
+  // Load Google Identity Services and render the button (login mode only).
+  useEffect(() => {
+    if (!GOOGLE_CLIENT_ID || mode !== "login") return;
+    type GsiId = {
+      initialize: (o: { client_id: string; callback: (r: { credential?: string }) => void }) => void;
+      renderButton: (el: HTMLElement, o: Record<string, unknown>) => void;
+    };
+    const render = () => {
+      const gid = (window as unknown as { google?: { accounts?: { id?: GsiId } } }).google?.accounts?.id;
+      const el = document.getElementById("gsi-btn");
+      if (!gid || !el) return;
+      gid.initialize({ client_id: GOOGLE_CLIENT_ID, callback: (r) => void googleLogin(r.credential) });
+      gid.renderButton(el, { theme: "outline", size: "large", shape: "pill", text: "continue_with", width: 300 });
+    };
+    if ((window as unknown as { google?: unknown }).google) {
+      render();
+      return;
+    }
+    const script = document.createElement("script");
+    script.src = "https://accounts.google.com/gsi/client";
+    script.async = true;
+    script.defer = true;
+    script.onload = render;
+    document.body.appendChild(script);
+    return () => { script.remove(); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mode]);
 
   useEffect(() => {
     if (resendIn <= 0) return;
@@ -72,12 +138,14 @@ export default function RegisterPage() {
       const res = await fetch("/api/member-login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "verify-otp", phone: loginPhone, code: loginCode }),
+        body: JSON.stringify({ action: "verify-otp", phone: loginPhone, code: loginCode, ...(googleCred ? { googleCredential: googleCred } : {}) }),
       });
       const payload = (await res.json().catch(() => ({}))) as { error?: string; data?: { name: string; role: string; portal: string; organization: string } };
       if (!res.ok || !payload.data) throw new Error(payload.error ?? "Código inválido.");
       writeSession({ name: payload.data.name, role: payload.data.role || "Rider", portal: payload.data.portal || "rider", organization: payload.data.organization || "", identifier: loginPhone });
-      window.location.href = "/";
+      // Land on a real page (the mall storefront) — NOT "/", which on
+      // app.meponto.com redirects back to the deprecated rider web → /register loop.
+      window.location.href = "/store";
     } catch (err) {
       setError((err as Error).message);
       setState("idle");
@@ -140,6 +208,15 @@ export default function RegisterPage() {
           <div className="space-y-3 rounded-2xl bg-white p-5 shadow-xl">
             {error ? <div className="rounded-[10px] bg-[#fdeceb] px-3 py-2 text-sm font-bold text-[#c4423b]">{error}</div> : null}
             {loginInfo && !error ? <div className="rounded-[10px] bg-[#fff4cf] px-3 py-2 text-sm font-bold text-[#9a7400]">{loginInfo}</div> : null}
+
+            {GOOGLE_CLIENT_ID && loginStep === "phone" && !googleCred && (
+              <>
+                <div id="gsi-btn" className="flex justify-center" />
+                <div className="flex items-center gap-3 text-[11px] font-black uppercase text-black/30">
+                  <span className="h-px flex-1 bg-black/10" /> ou <span className="h-px flex-1 bg-black/10" />
+                </div>
+              </>
+            )}
 
             {loginStep === "phone" && (
               <form onSubmit={(e) => { e.preventDefault(); void requestOtp(false); }} className="space-y-3">
