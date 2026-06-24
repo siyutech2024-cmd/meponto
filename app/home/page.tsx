@@ -340,7 +340,7 @@ export default function HomePage() {
       {/* ---- Top bar -------------------------------------------------------- */}
       <header className="fixed inset-x-0 top-0 z-40 flex items-center justify-between px-5 py-4 md:px-10">
         {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src="/meponto-logo.png" alt="MePonto" className="h-14 w-auto" style={{ filter: "drop-shadow(0 0 14px rgba(245,179,1,.35))" }} />
+        <img src="/meponto-app-icon.png" alt="MePonto" className="h-14 w-14 rounded-2xl" style={{ filter: "drop-shadow(0 0 14px rgba(245,179,1,.35))" }} />
         <div className="flex items-center gap-2">
           {(["pt", "zh", "en"] as Lang[]).map((code) => (
             <button
