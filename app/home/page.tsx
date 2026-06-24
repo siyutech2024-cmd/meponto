@@ -29,7 +29,7 @@ const copy: Record<Lang, {
         tag: "Rede",
         title: ["Construímos", "a rede da", "última milha"],
         text: "Pontos de apoio físicos espalhados por São Paulo: líder local, água, banheiro, segurança — uma rede que cresce todos os dias.",
-        cta: { label: "Conhecer a rede", href: "https://app.meponto.com" },
+        cta: { label: "Conhecer a rede", href: "https://play.google.com/store/apps/details?id=com.meponto.rider" },
       },
       {
         tag: "Turnos",
@@ -59,7 +59,7 @@ const copy: Record<Lang, {
     footer: {
       tagline: "Conectar · Apoiar · Entregar",
       systems: [
-        { label: "App do Entregador", href: "https://app.meponto.com" },
+        { label: "App do Entregador", href: "https://play.google.com/store/apps/details?id=com.meponto.rider" },
         { label: "PontoMall", href: "https://mall.meponto.com" },
         { label: "Painel da Franquia", href: "https://franchise.meponto.com" },
         { label: "Painel do Ponto", href: "https://ponto.meponto.com" },
@@ -71,7 +71,7 @@ const copy: Record<Lang, {
     loading: "网络加载中",
     pontos: "个站点",
     chapters: [
-      { tag: "网络", title: ["我们构建", "最后一公里", "服务网络"], text: "实体服务点遍布圣保罗：本地站长、饮水、卫生间、安全保障，网络每天都在生长。", cta: { label: "了解网络", href: "https://app.meponto.com" } },
+      { tag: "网络", title: ["我们构建", "最后一公里", "服务网络"], text: "实体服务点遍布圣保罗：本地站长、饮水、卫生间、安全保障，网络每天都在生长。", cta: { label: "了解网络", href: "https://play.google.com/store/apps/details?id=com.meponto.rider" } },
       { tag: "排班", title: ["透明排班", "真实收入"], text: "每周班次 App 直达，规则清晰、结算到账。你选择何时上线——其余交给我们。", cta: { label: "我要跑单", href: "https://app.meponto.com/register" } },
       { tag: "积分商城", title: ["每一单", "都变成权益"], text: "订单变积分，积分换商品、服务和街区合作伙伴的真实折扣。没有套路。", cta: { label: "逛逛商城", href: "https://mall.meponto.com" } },
       { tag: "合作", title: ["用系统", "运营一片区域"], text: "加盟商获得验证过的模型、完整的运营/排班/财务系统，以及 MePonto 网络的支持。", cta: { label: "我要加盟", href: "https://franchise.meponto.com" } },
@@ -80,7 +80,7 @@ const copy: Record<Lang, {
     footer: {
       tagline: "连接 · 支持 · 送达",
       systems: [
-        { label: "骑手 App", href: "https://app.meponto.com" },
+        { label: "骑手 App", href: "https://play.google.com/store/apps/details?id=com.meponto.rider" },
         { label: "积分商城", href: "https://mall.meponto.com" },
         { label: "加盟商后台", href: "https://franchise.meponto.com" },
         { label: "站点后台", href: "https://ponto.meponto.com" },
@@ -92,7 +92,7 @@ const copy: Record<Lang, {
     loading: "Loading the network",
     pontos: "PONTOS",
     chapters: [
-      { tag: "Network", title: ["We build", "the last-mile", "network"], text: "Physical support points across São Paulo: local leaders, water, restrooms, safety — a network growing every day.", cta: { label: "Explore the network", href: "https://app.meponto.com" } },
+      { tag: "Network", title: ["We build", "the last-mile", "network"], text: "Physical support points across São Paulo: local leaders, water, restrooms, safety — a network growing every day.", cta: { label: "Explore the network", href: "https://play.google.com/store/apps/details?id=com.meponto.rider" } },
       { tag: "Shifts", title: ["Transparent", "shifts,", "real income"], text: "Weekly shifts in the app, clear rules, payouts on time. You choose when to ride — we handle the rest.", cta: { label: "I want to deliver", href: "https://app.meponto.com/register" } },
       { tag: "PontoMall", title: ["Every delivery", "becomes", "a benefit"], text: "Orders become points; points become products, services and real discounts at neighborhood partners.", cta: { label: "Visit PontoMall", href: "https://mall.meponto.com" } },
       { tag: "Partnership", title: ["Run a", "territory", "with a system"], text: "Franchisees get a validated model, full operations, scheduling and finance systems, plus MePonto network support.", cta: { label: "Become a franchisee", href: "https://franchise.meponto.com" } },
@@ -101,7 +101,7 @@ const copy: Record<Lang, {
     footer: {
       tagline: "Connect · Support · Deliver",
       systems: [
-        { label: "Rider App", href: "https://app.meponto.com" },
+        { label: "Rider App", href: "https://play.google.com/store/apps/details?id=com.meponto.rider" },
         { label: "PontoMall", href: "https://mall.meponto.com" },
         { label: "Franchise Panel", href: "https://franchise.meponto.com" },
         { label: "Ponto Panel", href: "https://ponto.meponto.com" },
@@ -353,7 +353,7 @@ export default function HomePage() {
               {code === "zh" ? "中" : code}
             </button>
           ))}
-          <a href="https://app.meponto.com" className="ml-2 rounded-full px-4 py-1.5 text-[12px] font-black uppercase tracking-wider" style={{ background: "#f5b301", color: "#0b0e14" }}>
+          <a href="https://play.google.com/store/apps/details?id=com.meponto.rider" className="ml-2 rounded-full px-4 py-1.5 text-[12px] font-black uppercase tracking-wider" style={{ background: "#f5b301", color: "#0b0e14" }}>
             App
           </a>
         </div>
