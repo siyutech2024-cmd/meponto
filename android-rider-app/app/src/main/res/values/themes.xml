@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Base theme for a pure-Compose app: no ActionBar. Colors are driven by
+         MePontoTheme in Compose; this just provides a sane launch background. -->
+    <style name="Theme.MePontoRider" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@color/me_background</item>
+        <item name="android:statusBarColor">@color/me_background</item>
+        <item name="android:navigationBarColor">@color/me_background</item>
+    </style>
+</resources>
