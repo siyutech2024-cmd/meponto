@@ -144,6 +144,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       ),
     }))
     .filter((group) => group.items.length > 0);
+  // Single-area portals (e.g. the supplier console) have no sidebar nav — drop
+  // the empty 260px gutter and run the workspace full-width instead.
+  const hasNav = visibleGroups.length > 0;
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
@@ -178,7 +181,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   }, [setRole]);
 
   return (
-    <div className="min-h-screen overflow-x-hidden bg-[var(--background)] text-[var(--text)] lg:grid lg:grid-cols-[260px_1fr]">
+    <div className={`min-h-screen overflow-x-hidden bg-[var(--background)] text-[var(--text)] ${hasNav ? "lg:grid lg:grid-cols-[260px_1fr]" : ""}`}>
+      {hasNav && (
       <aside className="border-b border-[var(--line)] bg-[var(--surface)] lg:sticky lg:top-0 lg:h-screen lg:border-b-0 lg:border-r">
         <div className="flex h-[64px] items-center border-b border-[var(--line)] px-4">
           <Link href={portal.homePath} className="flex min-w-0 items-center gap-2.5">
@@ -219,11 +223,21 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           ))}
         </nav>
       </aside>
+      )}
       <main className="min-w-0">
         <header className="flex min-h-16 flex-wrap items-center justify-between gap-4 border-b border-[var(--line)] bg-[var(--surface)] px-5">
-          <div>
-            <div className="text-[10px] font-bold uppercase tracking-wider text-[var(--muted)]">{t("currentRegion")}</div>
-            <div className="text-lg font-black text-[var(--text)]">{t("regionName")}</div>
+          <div className="flex items-center gap-3">
+            {!hasNav && (
+              <Link href={portal.homePath} className="flex items-center gap-2 border-r border-[var(--line)] pr-3">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src="/meponto-logo.png" alt="MePonto" className="h-7 w-auto rounded-[6px] object-contain" />
+                <span className="hidden text-[11px] font-black uppercase tracking-[0.14em] text-[var(--muted)] sm:block">{portal.productName}</span>
+              </Link>
+            )}
+            <div>
+              <div className="text-[10px] font-bold uppercase tracking-wider text-[var(--muted)]">{t("currentRegion")}</div>
+              <div className="text-lg font-black text-[var(--text)]">{t("regionName")}</div>
+            </div>
           </div>
           <div className="flex items-center gap-2">
             <div className="relative">

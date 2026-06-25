@@ -484,19 +484,19 @@ export default function SupplierWorkspacePage() {
 
       {/* ============ 公司资料 ============ */}
       {tab === "company" && (
-        <div className="panel max-w-3xl p-5">
+        <div className="panel p-5">
           <div className="mb-3 flex items-center gap-2 text-xs font-black uppercase text-[var(--muted)]"><Building2 size={14} /> 公司 / 品牌资料</div>
-          <div className="grid gap-3 md:grid-cols-2">
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
             {[{ k: "companyName", l: "公司名称" }, { k: "brand", l: "品牌名" }, { k: "cnpj", l: "CNPJ" }, { k: "contactName", l: "联系人" }, { k: "contactEmail", l: "联系邮箱" }, { k: "contactPhone", l: "联系电话" }, { k: "pixKey", l: "收款 PIX Key" }, { k: "logoUrl", l: "Logo URL" }].map((f) => (
               <label key={f.k} className="text-[11px] font-black text-[var(--muted)]">{f.l}
                 <input value={(profileForm as unknown as Record<string, string>)[f.k] ?? ""} onChange={(e) => setProfileForm((p) => ({ ...p, [f.k]: e.target.value }))} className="mt-1 h-10 w-full rounded-[8px] border border-[var(--line)] bg-[var(--surface-raised)] px-3 text-sm font-bold outline-none focus:border-[var(--accent)]" />
               </label>
             ))}
-            <label className="text-[11px] font-black text-[var(--muted)] md:col-span-2">地址
+            <label className="text-[11px] font-black text-[var(--muted)] sm:col-span-2 lg:col-span-2">地址
               <input value={profileForm.address} onChange={(e) => setProfileForm((p) => ({ ...p, address: e.target.value }))} className="mt-1 h-10 w-full rounded-[8px] border border-[var(--line)] bg-[var(--surface-raised)] px-3 text-sm font-bold outline-none focus:border-[var(--accent)]" />
             </label>
-            <label className="text-[11px] font-black text-[var(--muted)] md:col-span-2">公司简介
-              <textarea value={profileForm.about} onChange={(e) => setProfileForm((p) => ({ ...p, about: e.target.value }))} className="mt-1 min-h-20 w-full rounded-[8px] border border-[var(--line)] bg-[var(--surface-raised)] p-3 text-sm font-bold outline-none focus:border-[var(--accent)]" />
+            <label className="text-[11px] font-black text-[var(--muted)] sm:col-span-2 lg:col-span-2">公司简介
+              <textarea value={profileForm.about} onChange={(e) => setProfileForm((p) => ({ ...p, about: e.target.value }))} className="mt-1 h-10 min-h-10 w-full rounded-[8px] border border-[var(--line)] bg-[var(--surface-raised)] p-2.5 text-sm font-bold outline-none focus:border-[var(--accent)]" />
             </label>
           </div>
           <div className="mt-4 flex items-center gap-3">
