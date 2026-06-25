@@ -206,41 +206,45 @@ export default function SupplierWorkspacePage() {
 
   return (
     <AppShell>
-      {/* Branded company header */}
-      <div className="mb-5 flex flex-wrap items-center gap-4 rounded-[14px] border border-[var(--line)] bg-[var(--surface-raised)] p-4">
-        <div className="grid h-14 w-14 shrink-0 place-items-center overflow-hidden rounded-[12px] border border-[var(--line)] bg-[var(--surface)]">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          {sup?.profile.logoUrl ? <img src={sup.profile.logoUrl} alt="" className="h-full w-full object-cover" /> : <span className="text-2xl font-black text-[var(--accent)]">{(sup?.profile.companyName || supplierName || "S").slice(0, 1).toUpperCase()}</span>}
-        </div>
-        <div className="min-w-0">
-          <div className="text-[11px] font-black uppercase tracking-wider text-[var(--accent)]">供应链门户 · Portal do Fornecedor</div>
-          <div className="truncate text-xl font-black">{sup?.profile.companyName || supplierName || "供应商"}</div>
-          <div className="text-xs font-bold text-[var(--muted)]">{sup?.profile.cnpj ? `CNPJ ${sup.profile.cnpj}` : "公司资料未完善 — 去「公司资料」补全"}{sup?.profile.brand && sup.profile.brand !== (sup?.profile.companyName || "") ? ` · 品牌 ${sup.profile.brand}` : ""}</div>
-        </div>
-        <div className="ml-auto text-right">
-          <div className="text-[11px] font-black uppercase text-[var(--muted)]">待收货款</div>
-          <div className="text-lg font-black text-[var(--accent)]">R$ {payableTotal.toFixed(2)}</div>
-        </div>
-      </div>
-
       {message && (
         <div className="mb-4 rounded-[10px] border px-4 py-3 text-sm font-bold" style={message.tone === "ok" ? { borderColor: "rgba(29,122,62,.4)", background: "rgba(29,122,62,.08)", color: "#1d7a3e" } : { borderColor: "rgba(196,66,59,.4)", background: "rgba(196,66,59,.08)", color: "#c4423b" }}>
           {message.text}
         </div>
       )}
 
-      <div className="mb-5 flex flex-wrap gap-2">
-        {TABS.map(({ id, label, icon: Icon }) => (
-          <button key={id} type="button" onClick={() => setTab(id)} className={`inline-flex h-10 items-center gap-2 rounded-[10px] border px-4 text-[13px] font-black transition-colors ${tab === id ? "border-[var(--accent)] bg-[var(--accent)] text-[var(--accent-ink)]" : "border-[var(--line)] bg-[var(--surface)] text-[var(--muted)] hover:border-[var(--accent)]"}`}>
-            <Icon size={15} /> {label}
-            {id === "pos" && (ops?.purchaseOrders ?? []).some((po) => po.status === "ordered") && <span className="h-2 w-2 rounded-full bg-[#e2554d]" />}
-            {id === "statements" && (ops?.statements ?? []).some((s) => s.status === "draft") && <span className="h-2 w-2 rounded-full bg-[#e2554d]" />}
+      <div className="lg:grid lg:grid-cols-[220px_1fr] lg:items-start lg:gap-6">
+        {/* Left rail — company card + vertical section nav */}
+        <aside className="mb-5 space-y-3 lg:mb-0 lg:sticky lg:top-[84px]">
+          <div className="rounded-[14px] border border-[var(--line)] bg-[var(--surface-raised)] p-4">
+            <div className="grid h-12 w-12 place-items-center overflow-hidden rounded-[12px] border border-[var(--line)] bg-[var(--surface)]">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              {sup?.profile.logoUrl ? <img src={sup.profile.logoUrl} alt="" className="h-full w-full object-cover" /> : <span className="text-xl font-black text-[var(--accent)]">{(sup?.profile.companyName || supplierName || "S").slice(0, 1).toUpperCase()}</span>}
+            </div>
+            <div className="mt-2.5 text-[10px] font-black uppercase tracking-[0.14em] text-[var(--accent)]">供应商</div>
+            <div className="truncate text-base font-black leading-tight">{sup?.profile.companyName || supplierName || "供应商"}</div>
+            <div className="mt-0.5 text-[11px] font-bold text-[var(--muted)]">{sup?.profile.cnpj ? `CNPJ ${sup.profile.cnpj}` : "资料未完善"}</div>
+            <div className="mt-3 flex items-center justify-between border-t border-[var(--line)] pt-2.5">
+              <span className="text-[10px] font-black uppercase text-[var(--muted)]">待收货款</span>
+              <span className="text-sm font-black text-[var(--accent)]">R$ {payableTotal.toFixed(2)}</span>
+            </div>
+          </div>
+
+          <nav className="flex gap-1.5 overflow-x-auto pb-1 lg:flex-col lg:gap-1 lg:overflow-visible lg:pb-0">
+            {TABS.map(({ id, label, icon: Icon }) => (
+              <button key={id} type="button" onClick={() => setTab(id)} className={`inline-flex h-10 shrink-0 items-center gap-2.5 rounded-[10px] px-3.5 text-[13px] font-black transition-colors lg:w-full ${tab === id ? "bg-[var(--accent)] text-[var(--accent-ink)]" : "text-[var(--muted)] hover:bg-[var(--surface-hover)] hover:text-[var(--text)]"}`}>
+                <Icon size={16} /> <span className="whitespace-nowrap">{label}</span>
+                {id === "pos" && (ops?.purchaseOrders ?? []).some((po) => po.status === "ordered") && <span className="ml-auto h-2 w-2 rounded-full bg-[#e2554d]" />}
+                {id === "statements" && (ops?.statements ?? []).some((s) => s.status === "draft") && <span className="ml-auto h-2 w-2 rounded-full bg-[#e2554d]" />}
+              </button>
+            ))}
+          </nav>
+
+          <button type="button" onClick={() => void load()} className="hidden h-9 w-full items-center justify-center gap-2 rounded-[10px] border border-[var(--line)] text-[12px] font-black text-[var(--muted)] hover:border-[var(--accent)] lg:inline-flex">
+            <RefreshCcw size={13} /> 刷新
           </button>
-        ))}
-        <button type="button" onClick={() => void load()} className="ml-auto inline-flex h-10 items-center gap-2 rounded-[10px] border border-[var(--line)] px-4 text-[13px] font-black text-[var(--muted)] hover:border-[var(--accent)]">
-          <RefreshCcw size={14} /> 刷新
-        </button>
-      </div>
+        </aside>
+
+        <div className="min-w-0 space-y-5">
 
       {/* ============ 商品与报价 ============ */}
       {tab === "catalog" && (
@@ -535,6 +539,8 @@ export default function SupplierWorkspacePage() {
           </div>
         </div>
       )}
+        </div>
+      </div>
     </AppShell>
   );
 }

@@ -235,8 +235,17 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               </Link>
             )}
             <div>
-              <div className="text-[10px] font-bold uppercase tracking-wider text-[var(--muted)]">{t("currentRegion")}</div>
-              <div className="text-lg font-black text-[var(--text)]">{t("regionName")}</div>
+              {hasNav ? (
+                <>
+                  <div className="text-[10px] font-bold uppercase tracking-wider text-[var(--muted)]">{t("currentRegion")}</div>
+                  <div className="text-lg font-black text-[var(--text)]">{t("regionName")}</div>
+                </>
+              ) : (
+                <>
+                  <div className="text-[10px] font-bold uppercase tracking-wider text-[var(--accent)]">供应商 · Fornecedor</div>
+                  <div className="text-lg font-black text-[var(--text)]">{sessionUser?.organization || sessionUser?.name || portal.productName}</div>
+                </>
+              )}
             </div>
           </div>
           <div className="flex items-center gap-2">
