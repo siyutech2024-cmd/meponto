@@ -338,9 +338,17 @@ export default function HomePage() {
       </div>
 
       {/* ---- Top bar -------------------------------------------------------- */}
+      <style>{`
+        .me-wordmark{font-weight:800;letter-spacing:-.5px;line-height:1;background:linear-gradient(100deg,#fff 28%,#f5b301 50%,#fff 72%);background-size:220% auto;-webkit-background-clip:text;background-clip:text;color:transparent;-webkit-text-fill-color:transparent;animation:meShine 2.6s linear infinite}
+        @keyframes meShine{to{background-position:-220% center}}
+        @media (prefers-reduced-motion:reduce){.me-wordmark{animation:none;color:#fff;-webkit-text-fill-color:#fff}}
+      `}</style>
       <header className="fixed inset-x-0 top-0 z-40 flex items-center justify-between px-5 py-4 md:px-10">
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src="/meponto-app-icon.png" alt="MePonto" className="h-14 w-14 rounded-2xl" style={{ filter: "drop-shadow(0 0 14px rgba(245,179,1,.35))" }} />
+        <div className="flex items-center gap-3">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src="/meponto-app-icon.png" alt="MePonto" className="h-12 w-12 rounded-2xl md:h-14 md:w-14" style={{ filter: "drop-shadow(0 0 14px rgba(245,179,1,.35))" }} />
+          <span aria-hidden="true" className="me-wordmark select-none text-[26px] md:text-[30px]">MePonto</span>
+        </div>
         <div className="flex items-center gap-2">
           {(["pt", "zh", "en"] as Lang[]).map((code) => (
             <button
