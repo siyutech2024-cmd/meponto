@@ -1,11 +1,17 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { BarChart3, Boxes, CircleDollarSign, PackagePlus, RefreshCcw, Tags, Truck } from "lucide-react";
-import { AppShell, Badge, PageTitle } from "../../components/ui";
+import { Boxes, Building2, ChevronRight, CircleDollarSign, ClipboardList, Download, LayoutDashboard, PackagePlus, RefreshCcw, Tags, Truck, UserPlus, Users } from "lucide-react";
+import { AppShell, Badge } from "../../components/ui";
+import { downloadCsv } from "../../lib/csv";
 import type { MarketplaceProduct } from "../../lib/points";
 import type { PriceChangeRequest, PurchaseOrder, SupplierStatement } from "../../lib/mall-ops";
 import { poStatusLabel, statementStatusLabel } from "../../lib/mall-ops";
+
+type SupplierProfileT = { id: string; companyName: string; brand: string; cnpj: string; contactName: string; contactEmail: string; contactPhone: string; address: string; pixKey: string; logoUrl: string; about: string; updatedAt?: string };
+type TeamMember = { id: string; name: string; identifier: string; phone: string; role: string; status: string; createdAt: string; lastLoginAt?: string };
+type SupplierOrder = { id: string; productName: string; createdAt: string; status: string; accountType: string; supplyPrice: number; station: string; franchise: string };
+type SupplierData = { profile: SupplierProfileT; team: TeamMember[]; orders: SupplierOrder[] };
 
 /**
  * Supplier supply-chain workspace (supplier.meponto.com): catalog + quotes,
@@ -23,12 +29,17 @@ type OpsPayload = {
 };
 
 const TABS = [
+  { id: "overview", label: "概览", icon: LayoutDashboard },
   { id: "catalog", label: "商品与报价", icon: Tags },
+  { id: "orders", label: "订单", icon: ClipboardList },
+  { id: "pos", label: "物流·补货", icon: Boxes },
+  { id: "statements", label: "账单·对账", icon: Truck },
   { id: "prices", label: "调价申请", icon: CircleDollarSign },
-  { id: "pos", label: "补货单", icon: Boxes },
-  { id: "statements", label: "对账单", icon: Truck },
-  { id: "board", label: "数据看板", icon: BarChart3 },
+  { id: "company", label: "公司资料", icon: Building2 },
+  { id: "team", label: "团队账户", icon: Users },
 ] as const;
+
+const orderStatusLabel: Record<string, string> = { created: "待履约", arrived: "已到站", fulfilled: "已完成", held: "审核中" };
 
 
 function Stat({ label, value, hint }: { label: string; value: string; hint?: string }) {
@@ -43,8 +54,14 @@ function Stat({ label, value, hint }: { label: string; value: string; hint?: str
 
 export default function SupplierWorkspacePage() {
   const headers = useMemo(() => ({ "Content-Type": "application/json" }), []);
-  const [tab, setTab] = useState<(typeof TABS)[number]["id"]>("catalog");
+  const [tab, setTab] = useState<(typeof TABS)[number]["id"]>("overview");
   const [supplierName, setSupplierName] = useState("");
+  const [sup, setSup] = useState<SupplierData | null>(null);
+  const emptyProfile: SupplierProfileT = { id: "", companyName: "", brand: "", cnpj: "", contactName: "", contactEmail: "", contactPhone: "", address: "", pixKey: "", logoUrl: "", about: "" };
+  const [profileForm, setProfileForm] = useState<SupplierProfileT>(emptyProfile);
+  const [member, setMember] = useState({ name: "", identifier: "", phone: "" });
+  const [newCred, setNewCred] = useState<{ identifier: string; tempPassword: string } | null>(null);
+  const [openStmt, setOpenStmt] = useState<Set<string>>(new Set());
   const [products, setProducts] = useState<MarketplaceProduct[]>([]);
   const [ops, setOps] = useState<OpsPayload | null>(null);
   const [message, setMessage] = useState<{ tone: "ok" | "err"; text: string } | null>(null);
@@ -137,6 +154,13 @@ export default function SupplierWorkspacePage() {
       setProducts(organization ? rows.filter((product) => product.supplierName === organization) : rows);
     }
     if (opsRes.ok) setOps((await opsRes.json()).data);
+    const supRes = await fetch("/api/supplier", { headers, cache: "no-store" }).catch(() => null);
+    if (supRes && supRes.ok) {
+      const d = (await supRes.json()).data as SupplierData;
+      setSup(d);
+      setProfileForm({ ...emptyProfile, ...d.profile });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [headers]);
 
   useEffect(() => {
@@ -161,14 +185,43 @@ export default function SupplierWorkspacePage() {
     return payload.data;
   }
 
+  async function supplierPost(body: Record<string, unknown>, okText?: string) {
+    const response = await fetch("/api/supplier", { method: "POST", headers, body: JSON.stringify(body) });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) { setMessage({ tone: "err", text: payload.error ?? `请求失败 (${response.status})` }); return null; }
+    if (okText) setMessage({ tone: "ok", text: okText });
+    void load();
+    return payload.data;
+  }
+
+  function exportStatement(statement: SupplierStatement) {
+    const rows = statement.lines.map((l) => [l.date, l.productName, l.orderId, l.supplyPrice.toFixed(2)]);
+    rows.push(["合计", "", "", statement.total.toFixed(2)]);
+    downloadCsv(`extrato-${supplierName}-${statement.month}`, ["日期", "商品", "订单号", "供货价 R$"], rows);
+  }
+
   const payableTotal = (ops?.statements ?? []).filter((statement) => statement.status !== "paid").reduce((sum, statement) => sum + statement.total, 0);
   const paidTotal = (ops?.statements ?? []).filter((statement) => statement.status === "paid").reduce((sum, statement) => sum + statement.total, 0);
   const maxDaily = Math.max(1, ...(ops?.summary.daily ?? []).map((day) => day.count));
 
   return (
     <AppShell>
-      <PageTitle title={`供应链工作台${supplierName ? ` · ${supplierName}` : ""}`} eyebrow="Supply Chain" />
-      <p className="-mt-3 mb-5 text-sm font-bold text-[var(--muted)]">商品报价、调价、补货与月度对账——与 PontoMall 商城后台直连。</p>
+      {/* Branded company header */}
+      <div className="mb-5 flex flex-wrap items-center gap-4 rounded-[14px] border border-[var(--line)] bg-[var(--surface-raised)] p-4">
+        <div className="grid h-14 w-14 shrink-0 place-items-center overflow-hidden rounded-[12px] border border-[var(--line)] bg-[var(--surface)]">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          {sup?.profile.logoUrl ? <img src={sup.profile.logoUrl} alt="" className="h-full w-full object-cover" /> : <span className="text-2xl font-black text-[var(--accent)]">{(sup?.profile.companyName || supplierName || "S").slice(0, 1).toUpperCase()}</span>}
+        </div>
+        <div className="min-w-0">
+          <div className="text-[11px] font-black uppercase tracking-wider text-[var(--accent)]">供应链门户 · Portal do Fornecedor</div>
+          <div className="truncate text-xl font-black">{sup?.profile.companyName || supplierName || "供应商"}</div>
+          <div className="text-xs font-bold text-[var(--muted)]">{sup?.profile.cnpj ? `CNPJ ${sup.profile.cnpj}` : "公司资料未完善 — 去「公司资料」补全"}{sup?.profile.brand && sup.profile.brand !== (sup?.profile.companyName || "") ? ` · 品牌 ${sup.profile.brand}` : ""}</div>
+        </div>
+        <div className="ml-auto text-right">
+          <div className="text-[11px] font-black uppercase text-[var(--muted)]">待收货款</div>
+          <div className="text-lg font-black text-[var(--accent)]">R$ {payableTotal.toFixed(2)}</div>
+        </div>
+      </div>
 
       {message && (
         <div className="mb-4 rounded-[10px] border px-4 py-3 text-sm font-bold" style={message.tone === "ok" ? { borderColor: "rgba(29,122,62,.4)", background: "rgba(29,122,62,.08)", color: "#1d7a3e" } : { borderColor: "rgba(196,66,59,.4)", background: "rgba(196,66,59,.08)", color: "#c4423b" }}>
@@ -350,8 +403,11 @@ export default function SupplierWorkspacePage() {
                   <CircleDollarSign size={15} className="text-[var(--muted)]" />
                   <span className="text-sm font-black">{statement.month}</span>
                   <Badge value={statementStatusLabel[statement.status]} />
-                  <span className="text-xs font-bold text-[var(--muted)]">{statement.lines.length} 笔 · <b className="text-[var(--text)]">R$ {statement.total.toFixed(2)}</b></span>
+                  <button type="button" onClick={() => setOpenStmt((prev) => { const n = new Set(prev); n.has(statement.id) ? n.delete(statement.id) : n.add(statement.id); return n; })} className="inline-flex items-center gap-1 text-xs font-bold text-[var(--muted)] hover:text-[var(--accent)]">
+                    <ChevronRight size={13} className={`transition-transform ${openStmt.has(statement.id) ? "rotate-90" : ""}`} />{statement.lines.length} 笔 · <b className="text-[var(--text)]">R$ {statement.total.toFixed(2)}</b>
+                  </button>
                   <span className="ml-auto flex items-center gap-1.5">
+                    <button type="button" onClick={() => exportStatement(statement)} className="inline-flex h-8 items-center gap-1 rounded-[8px] border border-[var(--line)] px-2.5 text-xs font-black text-[var(--muted)] hover:border-[var(--accent)]"><Download size={12} /> CSV</button>
                     {statement.status === "draft" && (
                       <>
                         <input value={pixDraft} onChange={(e) => setPixDraft(e.target.value)} placeholder="收款 PIX Key" className="h-8 w-44 rounded-[8px] border border-[var(--line)] bg-[var(--surface)] px-2 font-mono text-xs font-bold outline-none focus:border-[var(--accent)]" />
@@ -360,6 +416,18 @@ export default function SupplierWorkspacePage() {
                     )}
                   </span>
                 </div>
+                {openStmt.has(statement.id) && (
+                  <div className="mt-2 overflow-hidden rounded-[8px] border border-[var(--line)]">
+                    <table className="w-full text-xs">
+                      <thead><tr className="bg-[var(--surface)] text-left font-black uppercase text-[var(--muted)]"><th className="px-3 py-1.5">日期</th><th className="px-3 py-1.5">商品</th><th className="px-3 py-1.5">订单号</th><th className="px-3 py-1.5 text-right">供货价</th></tr></thead>
+                      <tbody>
+                        {statement.lines.map((l, i) => (
+                          <tr key={`${l.orderId}-${i}`} className="border-t border-[var(--line)] font-bold"><td className="px-3 py-1.5">{l.date}</td><td className="px-3 py-1.5">{l.productName}</td><td className="px-3 py-1.5 font-mono text-[var(--muted)]">{l.orderId}</td><td className="px-3 py-1.5 text-right">R$ {l.supplyPrice.toFixed(2)}</td></tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
                 {statement.paidAt && <div className="mt-1 text-xs font-bold" style={{ color: "#1d7a3e" }}>已付款 · {statement.paidAt}{statement.receiptNote ? ` · ${statement.receiptNote}` : ""}</div>}
               </div>
             ))}
@@ -368,8 +436,8 @@ export default function SupplierWorkspacePage() {
         </div>
       )}
 
-      {/* ============ 数据看板 ============ */}
-      {tab === "board" && (
+      {/* ============ 概览 ============ */}
+      {tab === "overview" && (
         <div className="space-y-5">
           <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
             <Stat label="累计售出（件）" value={String(ops?.summary.orders ?? 0)} hint="兑换订单数" />
@@ -385,6 +453,84 @@ export default function SupplierWorkspacePage() {
                   <span className="pointer-events-none absolute -top-7 left-1/2 hidden -translate-x-1/2 whitespace-nowrap rounded bg-black/80 px-1.5 py-0.5 text-[10px] font-bold text-white group-hover:block">{day.date.slice(5)} · {day.count}</span>
                 </div>
               ))}
+            </div>
+          </div>
+        </div>
+      )}
+      {/* ============ 订单 ============ */}
+      {tab === "orders" && (
+        <div className="panel p-5">
+          <div className="mb-3 text-xs font-black uppercase text-[var(--muted)]">本供应商履约订单 · 计入月度对账</div>
+          <div className="overflow-x-auto rounded-[8px] border border-[var(--line)]">
+            <table className="w-full text-sm">
+              <thead><tr className="bg-[var(--surface-raised)] text-left text-[11px] font-black uppercase text-[var(--muted)]"><th className="px-3 py-2">订单号</th><th className="px-3 py-2">商品</th><th className="px-3 py-2">日期</th><th className="px-3 py-2">类型</th><th className="px-3 py-2">状态</th><th className="px-3 py-2 text-right">供货价</th></tr></thead>
+              <tbody>
+                {(sup?.orders ?? []).map((o) => (
+                  <tr key={o.id} className="border-t border-[var(--line)] font-bold">
+                    <td className="px-3 py-2 font-mono text-xs text-[var(--muted)]">{o.id}</td>
+                    <td className="px-3 py-2">{o.productName}</td>
+                    <td className="px-3 py-2 text-[var(--muted)]">{o.createdAt.slice(0, 10)}</td>
+                    <td className="px-3 py-2"><span className="tag">{o.accountType === "partner" ? "Partner" : "骑手"}</span></td>
+                    <td className="px-3 py-2"><Badge value={orderStatusLabel[o.status] ?? o.status} /></td>
+                    <td className="px-3 py-2 text-right">R$ {o.supplyPrice.toFixed(2)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            {(sup?.orders ?? []).length === 0 && <div className="py-8 text-center text-xs font-bold text-[var(--muted)]">暂无履约订单。骑手/合作方兑换你的商品并完成后,会计入对账并出现在这里。</div>}
+          </div>
+        </div>
+      )}
+
+      {/* ============ 公司资料 ============ */}
+      {tab === "company" && (
+        <div className="panel max-w-3xl p-5">
+          <div className="mb-3 flex items-center gap-2 text-xs font-black uppercase text-[var(--muted)]"><Building2 size={14} /> 公司 / 品牌资料</div>
+          <div className="grid gap-3 md:grid-cols-2">
+            {[{ k: "companyName", l: "公司名称" }, { k: "brand", l: "品牌名" }, { k: "cnpj", l: "CNPJ" }, { k: "contactName", l: "联系人" }, { k: "contactEmail", l: "联系邮箱" }, { k: "contactPhone", l: "联系电话" }, { k: "pixKey", l: "收款 PIX Key" }, { k: "logoUrl", l: "Logo URL" }].map((f) => (
+              <label key={f.k} className="text-[11px] font-black text-[var(--muted)]">{f.l}
+                <input value={(profileForm as unknown as Record<string, string>)[f.k] ?? ""} onChange={(e) => setProfileForm((p) => ({ ...p, [f.k]: e.target.value }))} className="mt-1 h-10 w-full rounded-[8px] border border-[var(--line)] bg-[var(--surface-raised)] px-3 text-sm font-bold outline-none focus:border-[var(--accent)]" />
+              </label>
+            ))}
+            <label className="text-[11px] font-black text-[var(--muted)] md:col-span-2">地址
+              <input value={profileForm.address} onChange={(e) => setProfileForm((p) => ({ ...p, address: e.target.value }))} className="mt-1 h-10 w-full rounded-[8px] border border-[var(--line)] bg-[var(--surface-raised)] px-3 text-sm font-bold outline-none focus:border-[var(--accent)]" />
+            </label>
+            <label className="text-[11px] font-black text-[var(--muted)] md:col-span-2">公司简介
+              <textarea value={profileForm.about} onChange={(e) => setProfileForm((p) => ({ ...p, about: e.target.value }))} className="mt-1 min-h-20 w-full rounded-[8px] border border-[var(--line)] bg-[var(--surface-raised)] p-3 text-sm font-bold outline-none focus:border-[var(--accent)]" />
+            </label>
+          </div>
+          <div className="mt-4 flex items-center gap-3">
+            <button type="button" onClick={() => void supplierPost({ action: "saveProfile", ...profileForm }, "公司资料已保存")} className="h-10 rounded-[8px] bg-[var(--accent)] px-5 text-sm font-black text-[var(--accent-ink)]">保存资料</button>
+            {sup?.profile.updatedAt && <span className="text-[11px] font-bold text-[var(--muted)]">上次更新 {sup.profile.updatedAt}</span>}
+          </div>
+        </div>
+      )}
+
+      {/* ============ 团队账户 ============ */}
+      {tab === "team" && (
+        <div className="space-y-4">
+          <div className="panel p-5">
+            <div className="mb-3 flex items-center gap-2 text-xs font-black uppercase text-[var(--muted)]"><UserPlus size={14} /> 新增团队成员（同公司多人协作)</div>
+            <div className="grid gap-2 md:grid-cols-[1.2fr_1.4fr_1fr_auto]">
+              <input value={member.name} onChange={(e) => setMember({ ...member, name: e.target.value })} placeholder="姓名" className="h-10 rounded-[8px] border border-[var(--line)] bg-[var(--surface-raised)] px-3 text-sm font-bold outline-none focus:border-[var(--accent)]" />
+              <input value={member.identifier} onChange={(e) => setMember({ ...member, identifier: e.target.value })} placeholder="登录邮箱 / 手机" className="h-10 rounded-[8px] border border-[var(--line)] bg-[var(--surface-raised)] px-3 text-sm font-bold outline-none focus:border-[var(--accent)]" />
+              <input value={member.phone} onChange={(e) => setMember({ ...member, phone: e.target.value })} placeholder="电话(可空)" className="h-10 rounded-[8px] border border-[var(--line)] bg-[var(--surface-raised)] px-3 text-sm font-bold outline-none focus:border-[var(--accent)]" />
+              <button type="button" disabled={!member.name.trim() || !member.identifier.trim()} onClick={async () => { const d = await supplierPost({ action: "createMember", ...member }, "已创建账号"); if (d) { setNewCred({ identifier: d.identifier, tempPassword: d.tempPassword }); setMember({ name: "", identifier: "", phone: "" }); } }} className="h-10 rounded-[8px] bg-[var(--accent)] px-4 text-sm font-black text-[var(--accent-ink)] disabled:opacity-50">创建账号</button>
+            </div>
+            {newCred && <div className="mt-3 rounded-[8px] border p-3 text-sm font-bold" style={{ borderColor: "var(--accent)", background: "rgba(245,179,1,.1)" }}>新账号已建:<b>{newCred.identifier}</b> · 一次性临时密码 <span className="font-mono text-[var(--accent)]">{newCred.tempPassword}</span> —— 请转交本人,首次登录后让其修改。</div>}
+          </div>
+          <div className="panel p-5">
+            <div className="mb-3 text-xs font-black uppercase text-[var(--muted)]">团队成员</div>
+            <div className="space-y-2">
+              {(sup?.team ?? []).map((m) => (
+                <div key={m.id} className="flex flex-wrap items-center gap-2 rounded-[8px] border border-[var(--line)] bg-[var(--surface-raised)] px-3 py-2 text-sm">
+                  <span className="font-black">{m.name}</span>
+                  <span className="font-mono text-xs text-[var(--muted)]">{m.identifier}</span>
+                  <Badge value={m.status === "active" ? "启用中" : "已停用"} />
+                  <button type="button" onClick={() => void supplierPost({ action: "toggleMember", userId: m.id }, m.status === "active" ? "已停用" : "已启用")} className="ml-auto h-8 rounded-[8px] border border-[var(--line)] px-3 text-xs font-black text-[var(--muted)] hover:border-[var(--accent)]">{m.status === "active" ? "停用" : "启用"}</button>
+                </div>
+              ))}
+              {(sup?.team ?? []).length === 0 && <div className="py-6 text-center text-xs font-bold text-[var(--muted)]">还没有团队成员——上面创建账号,公司就能多人一起用这个后台。</div>}
             </div>
           </div>
         </div>

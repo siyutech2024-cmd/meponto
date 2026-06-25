@@ -173,8 +173,18 @@ export default function RegisterPage() {
 
   return (
     <main className="min-h-screen w-full" style={{ background: "linear-gradient(135deg,#fff4cf,#ffd9a8)" }}>
+      <style>{`
+        .me-wm-light{background:linear-gradient(100deg,#19202c 30%,#f5b301 50%,#19202c 70%);background-size:220% auto;-webkit-background-clip:text;background-clip:text;color:transparent;-webkit-text-fill-color:transparent;animation:meShineM 2.6s linear infinite;letter-spacing:-.5px;line-height:1}
+        @keyframes meShineM{to{background-position:-220% center}}
+        @media (prefers-reduced-motion:reduce){.me-wm-light{animation:none;color:#19202c;-webkit-text-fill-color:#19202c}}
+      `}</style>
       <div className="mx-auto max-w-lg px-5 py-10">
         <div className="mb-6 text-center">
+          <div className="mb-3 flex items-center justify-center gap-2.5">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src="/meponto-app-icon.png" alt="MePonto" className="h-11 w-11 rounded-xl" />
+            <span aria-hidden="true" className="me-wm-light select-none text-[28px] font-black">MePonto</span>
+          </div>
           <div className="text-xs font-black uppercase tracking-[0.18em] text-[#ff7a00]">MePonto · PontoMall</div>
           <h1 className="mt-2 text-3xl font-black text-[#19202c]">Conta de membro</h1>
           <p className="mt-2 text-sm font-bold text-black/55">Entre com seu telefone. Entregadores também são membros — veja escalas, carteira e pontos.</p>

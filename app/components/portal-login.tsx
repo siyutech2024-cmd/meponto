@@ -31,12 +31,20 @@ export function PortalLogin({ portalId }: { portalId: PortalId }) {
 
   return (
     <main className="min-h-screen bg-[var(--background)] text-[var(--text)]">
+      <style>{`
+        .me-wm-dark{background:linear-gradient(100deg,#fff 28%,#f5b301 50%,#fff 72%);background-size:220% auto;-webkit-background-clip:text;background-clip:text;color:transparent;-webkit-text-fill-color:transparent;animation:meShineP 2.6s linear infinite;letter-spacing:-.5px;line-height:1}
+        @keyframes meShineP{to{background-position:-220% center}}
+        @media (prefers-reduced-motion:reduce){.me-wm-dark{animation:none;color:#fff;-webkit-text-fill-color:#fff}}
+      `}</style>
       <div className="grid min-h-screen lg:grid-cols-[minmax(0,1fr)_480px]">
         {/* Brand panel: centered, balanced proportions. */}
         <section className="relative flex flex-col items-center justify-center gap-8 border-b border-[var(--line)] bg-[#050505] p-10 text-center text-white lg:border-b-0 lg:border-r" data-i18n-skip>
           <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_30%_20%,rgba(255,209,0,0.08),transparent_55%)]" />
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src="/meponto-logo.png" alt="MePonto" className="relative h-24 w-auto rounded-[12px] object-contain shadow-[0_0_42px_rgba(255,212,0,0.22)] md:h-28" />
+          <div className="relative flex items-center gap-3">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src="/meponto-app-icon.png" alt="MePonto" className="h-16 w-16 rounded-2xl md:h-20 md:w-20" style={{ filter: "drop-shadow(0 0 18px rgba(245,179,1,.32))" }} />
+            <span aria-hidden="true" className="me-wm-dark select-none text-4xl font-black md:text-5xl">MePonto</span>
+          </div>
           <div className="relative max-w-xl">
             <div className="inline-flex items-center gap-2 text-xs font-black uppercase tracking-[0.18em] text-[var(--accent)]">
               <ShieldCheck size={15} />
