@@ -11,6 +11,27 @@ export async function proxy(request: NextRequest) {
   const pathname = request.nextUrl.pathname;
   const session = await verifySessionToken(request.cookies.get(SESSION_COOKIE)?.value);
 
+  // ---- Progressive-login guard (sensitive API writes) --------------------
+  // A Google *guest* (signed in but not yet phone+CPF verified) may browse, but
+  // any money/points/order/economy WRITE is blocked until they verify. One
+  // chokepoint for all sensitive API writes. Runs first and returns early — the
+  // host page-routing below never applies to /api. Only ever blocks
+  // verified:false (guest) sessions, so it's a no-op when GOOGLE_LITE_LOGIN=0.
+  if (pathname.startsWith("/api/")) {
+    const GUARDED = ["/api/wallet", "/api/points", "/api/mall", "/api/marketplace", "/api/partner", "/api/tasks"];
+    if (
+      session?.verified === false &&
+      ["POST", "PUT", "PATCH", "DELETE"].includes(request.method) &&
+      GUARDED.some((p) => pathname === p || pathname.startsWith(`${p}/`))
+    ) {
+      return NextResponse.json(
+        { error: "Confirme seu telefone e CPF para concluir.", code: "needs_verification" },
+        { status: 403 },
+      );
+    }
+    return NextResponse.next();
+  }
+
   // SEO endpoints answer on every host (host-aware content lives in /api/seo).
   if (pathname === "/robots.txt") return NextResponse.rewrite(new URL("/api/seo/robots", request.url));
   if (pathname === "/sitemap.xml") return NextResponse.rewrite(new URL("/api/seo/sitemap", request.url));
@@ -178,5 +199,15 @@ export async function proxy(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/((?!api|_next/static|_next/image|favicon.ico|meponto-).*)"],
+  matcher: [
+    "/((?!api|_next/static|_next/image|favicon.ico|meponto-).*)",
+    // Sensitive economy writes also run through the proxy (the pattern above
+    // excludes /api) so the progressive-login guest guard can gate them.
+    "/api/wallet/:path*",
+    "/api/points/:path*",
+    "/api/mall/:path*",
+    "/api/marketplace/:path*",
+    "/api/partner/:path*",
+    "/api/tasks/:path*",
+  ],
 };
