@@ -20,6 +20,11 @@ export async function GET(request: Request) {
       franchise: session.franchise ?? "",
       station: session.station ?? "",
       portalName: portalConfigs[session.portal].productName,
+      // Progressive login: `verified:false` marks a Google guest who hasn't
+      // confirmed phone + CPF yet (lets the storefront show a guest account +
+      // an "activate" prompt instead of treating them as logged out).
+      verified: session.verified !== false,
+      email: session.email ?? "",
     },
   });
 }

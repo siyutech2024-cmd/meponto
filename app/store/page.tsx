@@ -108,6 +108,10 @@ export default function StorefrontPage() {
   const [data, setData] = useState<Payload | null>(null);
   const [loading, setLoading] = useState(true);
   const [riderName, setRiderName] = useState<string | null>(null);
+  // Logged-in identity from the session cookie — present even for a Google
+  // *guest* (verified:false) who has no member record yet (`me` stays null).
+  const [account, setAccount] = useState<{ name: string; email: string; verified: boolean } | null>(null);
+  const [accountOpen, setAccountOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState("");
   const [detail, setDetail] = useState<MarketplaceProduct | null>(null);
@@ -148,8 +152,13 @@ export default function StorefrontPage() {
       let name: string | null = null;
       try {
         const response = await fetch("/api/auth/session", { cache: "no-store" });
-        const payload = await response.json().catch(() => ({}));
-        if (payload?.user?.portal === "rider" && payload.user.name) name = payload.user.name as string;
+        const payload = (await response.json().catch(() => ({}))) as {
+          user?: { portal?: string; name?: string; email?: string; verified?: boolean };
+        };
+        if (payload?.user?.portal === "rider" && payload.user.name) {
+          name = payload.user.name;
+          setAccount({ name: payload.user.name, email: payload.user.email ?? "", verified: payload.user.verified !== false });
+        }
       } catch {
         /* browsing anonymously is fine */
       }
@@ -179,10 +188,11 @@ export default function StorefrontPage() {
       else if (topUpOpen) { setTopUpOpen(false); setActiveTopUp(null); }
       else if (extratoOpen) setExtratoOpen(false);
       else if (ordersOpen) setOrdersOpen(false);
+      else if (accountOpen) setAccountOpen(false);
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [detail, topUpOpen, ordersOpen, extratoOpen]);
+  }, [detail, topUpOpen, ordersOpen, extratoOpen, accountOpen]);
 
   const me = data?.me ?? null;
   const products = useMemo(() => {
@@ -227,7 +237,8 @@ export default function StorefrontPage() {
 
   async function redeem(product: MarketplaceProduct) {
     if (!me) {
-      window.location.href = loginUrlWithReturn();
+      // Not a full member yet (guest or anonymous) → activate/verify first.
+      window.location.href = `/register?returnTo=${encodeURIComponent(typeof window !== "undefined" ? window.location.href : "https://mall.meponto.com/")}`;
       return;
     }
     setBusy(true);
@@ -350,6 +361,17 @@ export default function StorefrontPage() {
 
   const pixKey = data?.pixKey || "";
 
+  async function logout() {
+    try { await fetch("/api/auth/logout", { method: "POST" }); } catch { /* ignore */ }
+    window.location.reload();
+  }
+  // Activate / verify: the unified login+register page collects phone → OTP →
+  // CPF, which links this Google guest to a rider record (or creates a member).
+  const activateUrl = `/register?returnTo=${encodeURIComponent(typeof window !== "undefined" ? window.location.href : "https://mall.meponto.com/")}`;
+  // Logged in (member OR guest) — drives the header + account panel.
+  const loggedIn = !!me || !!account;
+  const isGuest = !!account && !me; // signed in but no member record yet
+
   return (
     <main data-i18n-skip className="min-h-screen" style={{ background: "#f6f7f9", color: INK, fontFamily: "Inter, system-ui, sans-serif" }}>
       {/* ---- Header ---------------------------------------------------------- */}
@@ -408,7 +430,27 @@ export default function StorefrontPage() {
                     R$ {(me.cashBalance ?? 0).toFixed(2)} <span className="text-base leading-none">+</span>
                   </button>
                 )}
+                <button
+                  type="button"
+                  onClick={() => setAccountOpen(true)}
+                  title="Minha conta"
+                  className="grid h-10 w-10 shrink-0 place-items-center rounded-full text-sm font-black text-white transition-transform hover:scale-105"
+                  style={{ background: INK }}
+                >
+                  {(me.name[0] || "?").toUpperCase()}
+                </button>
               </>
+            ) : account ? (
+              // Logged-in Google guest (no member record yet) — show their account.
+              <button
+                type="button"
+                onClick={() => setAccountOpen(true)}
+                className="inline-flex h-10 items-center gap-2 rounded-full border border-black/10 bg-white pl-1.5 pr-3 text-sm font-black transition-colors hover:border-[#f5b301]"
+              >
+                <span className="grid h-7 w-7 place-items-center rounded-full text-xs font-black text-white" style={{ background: INK }}>{(account.name[0] || "?").toUpperCase()}</span>
+                <span className="hidden max-w-[110px] truncate sm:inline">{account.name.split(" ")[0]}</span>
+                <span className="rounded-full px-2 py-0.5 text-[10px] font-black" style={{ background: "#fff4cf", color: "#9a7400" }}>Visitante</span>
+              </button>
             ) : (
               <div className="flex items-center gap-2">
                 <a href="/register" className="inline-flex h-10 items-center gap-2 rounded-full border px-4 text-sm font-black transition-transform hover:scale-105" style={{ borderColor: "rgba(0,0,0,.15)", color: INK }}>
@@ -872,6 +914,63 @@ export default function StorefrontPage() {
                   </div>
                 );
               })}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ---- Account / profile drawer (member & guest) ------------------------------ */}
+      {accountOpen && loggedIn && (
+        <div className="fixed inset-0 z-50 flex justify-end bg-black/45 backdrop-blur-sm" onClick={() => setAccountOpen(false)}>
+          <div className="flex h-full w-full max-w-sm flex-col bg-white shadow-2xl" onClick={(event) => event.stopPropagation()}>
+            <div className="flex items-center justify-between border-b border-black/5 px-5 py-4">
+              <div className="text-base font-black">Minha conta</div>
+              <button type="button" onClick={() => setAccountOpen(false)} className="grid h-9 w-9 place-items-center rounded-full bg-black/5"><X size={16} /></button>
+            </div>
+            <div className="flex-1 space-y-4 overflow-y-auto p-5">
+              <div className="flex items-center gap-3">
+                <span className="grid h-14 w-14 shrink-0 place-items-center rounded-full text-xl font-black text-white" style={{ background: INK }}>{((me?.name || account?.name || "?")[0] || "?").toUpperCase()}</span>
+                <div className="min-w-0">
+                  <div className="truncate text-lg font-black">{me?.name || account?.name}</div>
+                  {account?.email ? <div className="truncate text-xs font-bold text-black/45">{account.email}</div> : null}
+                </div>
+              </div>
+
+              {isGuest ? (
+                <div className="rounded-2xl border p-4" style={{ borderColor: GOLD, background: "#fffaf0" }}>
+                  <div className="inline-flex rounded-full px-2.5 py-0.5 text-[11px] font-black" style={{ background: "#fff4cf", color: "#9a7400" }}>Conta de visitante</div>
+                  <p className="mt-2 text-sm font-bold leading-6 text-black/60">Você entrou com o Google. Confirme seu telefone e CPF para acumular pontos, resgatar benefícios e ver sua carteira.</p>
+                  <a href={activateUrl} className="mt-3 inline-flex h-11 w-full items-center justify-center gap-2 rounded-full text-sm font-black uppercase tracking-wide transition-transform hover:scale-[1.02]" style={{ background: GOLD, color: INK }}>
+                    Ativar minha conta <ArrowRight size={16} />
+                  </a>
+                </div>
+              ) : me ? (
+                <>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="rounded-2xl bg-[#fff4cf] p-4">
+                      <div className="text-[11px] font-black uppercase text-[#9a7400]">Pontos</div>
+                      <div className="mt-1 text-2xl font-black" style={{ color: "#9a7400" }}>{me.balance.toLocaleString("pt-BR")}</div>
+                    </div>
+                    <div className="rounded-2xl bg-[#eef6f0] p-4">
+                      <div className="text-[11px] font-black uppercase" style={{ color: "#1d7a3e" }}>Saldo R$</div>
+                      <div className="mt-1 text-2xl font-black" style={{ color: "#1d7a3e" }}>{(me.cashBalance ?? 0).toFixed(2)}</div>
+                    </div>
+                  </div>
+                  {(me.tierLabel || me.station) && (
+                    <div className="space-y-1.5 rounded-2xl border border-black/8 p-4 text-sm font-bold">
+                      {me.tierLabel && <div className="flex items-center justify-between"><span className="text-black/45">Nível</span><span>{me.tierLabel}</span></div>}
+                      {me.station && <div className="flex items-center justify-between"><span className="text-black/45">Retirada</span><span>{me.station}</span></div>}
+                    </div>
+                  )}
+                  <div className="flex gap-2">
+                    <button type="button" onClick={() => { setAccountOpen(false); setOrdersOpen(true); }} className="h-11 flex-1 rounded-full border border-black/10 text-sm font-black">Meus resgates</button>
+                    <button type="button" onClick={() => { setAccountOpen(false); setExtratoOpen(true); }} className="h-11 flex-1 rounded-full border border-black/10 text-sm font-black">Extrato</button>
+                  </div>
+                </>
+              ) : null}
+            </div>
+            <div className="border-t border-black/5 p-5">
+              <button type="button" onClick={() => void logout()} className="h-11 w-full rounded-full border border-black/10 text-sm font-black text-black/60 transition-colors hover:border-[#c4423b] hover:text-[#c4423b]">Sair</button>
             </div>
           </div>
         </div>
