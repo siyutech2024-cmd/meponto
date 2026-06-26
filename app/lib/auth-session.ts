@@ -16,8 +16,24 @@ export type AuthSession = {
   /** Data scope: set for franchise/station portal accounts. */
   franchise?: string;
   station?: string;
+  /**
+   * Progressive (Google) login: a guest session that signed in with Google but
+   * hasn't yet confirmed phone + CPF. `verified !== false` means a fully verified
+   * member (existing behaviour). `verified === false` means a lite/guest member
+   * — let them browse PontoMall, but gate points/wallet/rider actions behind
+   * phone+CPF verification (use `isVerifiedSession`). `googleSub`/`email` carry
+   * the Google identity so verification can link it to the rider record.
+   */
+  verified?: boolean;
+  email?: string;
+  googleSub?: string;
   expiresAt: number;
 };
+
+/** True unless this is an unverified Google guest session. */
+export function isVerifiedSession(session: AuthSession | null | undefined): boolean {
+  return !!session && session.verified !== false;
+}
 
 export async function createSessionToken(session: Omit<AuthSession, "expiresAt">) {
   const payload: AuthSession = {

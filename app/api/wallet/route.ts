@@ -371,6 +371,11 @@ async function handlePost(request: Request) {
       // rider can only withdraw their own balance); body fallback for demo only.
       const { sessionFromRequest } = await import("../../lib/auth-session");
       const session = await sessionFromRequest(request);
+      // Progressive login: an unverified Google guest must confirm phone + CPF
+      // before moving money. Clear message instead of a confusing "not found".
+      if (session && session.verified === false) {
+        return jsonResponse({ error: "Confirme seu telefone e CPF para solicitar saque.", code: "needs_verification" }, { status: 403 });
+      }
       const rider = session
         ? memory.riders.find((item) => item.id === session.userId || item.name === session.name)
         : memory.riders.find((item) => (riderId && item.id === riderId) || (riderName && item.name === riderName));

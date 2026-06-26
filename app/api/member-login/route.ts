@@ -1,6 +1,6 @@
 import { jsonResponse, memory } from "../../lib/server/memory";
 import { refreshCollectionsFromDatabase, flushPendingToDatabase } from "../../lib/server/persistence";
-import { createSessionToken, sessionCookie } from "../../lib/auth-session";
+import { createSessionToken, sessionCookie, sessionFromRequest } from "../../lib/auth-session";
 
 /**
  * Public MEMBER login by phone + OTP, anchored to the canonical rider record.
@@ -28,6 +28,15 @@ import { createSessionToken, sessionCookie } from "../../lib/auth-session";
 
 const OTP_REQUIRED = process.env.MEMBER_LOGIN_OTP === "1";
 const OTP_DEV_RETURN = process.env.OTP_DEV_RETURN === "1";
+/**
+ * Progressive Google login: when ON, a Google sign-in that isn't linked to a
+ * rider yet enters PontoMall immediately as an unverified *guest* (no record
+ * created), instead of forcing phone+CPF up front. Sensitive actions (points,
+ * wallet, rider features) still require verification, which then links the
+ * Google identity to the rider record. Default OFF → keeps the safe "link
+ * first" behaviour unchanged.
+ */
+const GOOGLE_LITE_LOGIN = process.env.GOOGLE_LITE_LOGIN === "1";
 const OTP_TTL_MS = 5 * 60 * 1000;
 const OTP_RESEND_MS = 30 * 1000;
 const OTP_MAX_ATTEMPTS = 5;
@@ -71,6 +80,31 @@ async function issueSession(member: { id: string; name: string }, phone: string,
   return response;
 }
 
+/**
+ * Progressive Google login: issue an *unverified guest* session (no rider record
+ * created). Lets the person browse PontoMall right away; the Google identity is
+ * carried in the session and linked to the rider record once they verify phone +
+ * CPF. `verified:false` flags every sensitive action to require verification.
+ */
+async function issueGuestSession(google: { sub: string; email: string; name: string }, request: Request) {
+  const token = await createSessionToken({
+    userId: `guest-google-${google.sub}`,
+    name: google.name,
+    identifier: google.email,
+    role: "Rider",
+    portal: "rider",
+    tenantId: "meponto",
+    organization: "",
+    defaultPath: "/store",
+    verified: false,
+    email: google.email,
+    googleSub: google.sub,
+  });
+  const response = jsonResponse({ data: { name: google.name, role: "Rider", portal: "rider", organization: "", verified: false, needsVerification: true } });
+  response.headers.append("Set-Cookie", sessionCookie(token, request.headers.get("host")));
+  return response;
+}
+
 /** SMS delivery — Twilio when configured, otherwise dev log. Never throws. */
 async function sendOtp(phone: string, code: string) {
   const sid = process.env.TWILIO_ACCOUNT_SID;
@@ -99,10 +133,10 @@ async function sendOtp(phone: string, code: string) {
 }
 
 // ---- Sign in with Google (rider identity, not a separate account) ----
-type GoogleClaims = { aud?: string; email?: string; email_verified?: string | boolean; sub?: string; exp?: string };
+type GoogleClaims = { aud?: string; email?: string; email_verified?: string | boolean; sub?: string; exp?: string; name?: string; given_name?: string };
 
-/** Verify a Google ID token against Google. Returns {sub,email} or null. */
-async function verifyGoogleToken(credential: string): Promise<{ sub: string; email: string } | null> {
+/** Verify a Google ID token against Google. Returns {sub,email,name} or null. */
+async function verifyGoogleToken(credential: string): Promise<{ sub: string; email: string; name: string } | null> {
   const clientId = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID;
   if (!clientId || !credential) return null;
   try {
@@ -111,7 +145,8 @@ async function verifyGoogleToken(credential: string): Promise<{ sub: string; ema
     const c = (await res.json()) as GoogleClaims;
     if (c.aud !== clientId || !c.sub) return null;
     if (c.exp && Number(c.exp) * 1000 < Date.now()) return null;
-    return { sub: c.sub, email: (c.email ?? "").trim().toLowerCase() };
+    const email = (c.email ?? "").trim().toLowerCase();
+    return { sub: c.sub, email, name: (c.name || c.given_name || email.split("@")[0] || "Membro").trim() };
   } catch {
     return null;
   }
@@ -129,6 +164,21 @@ async function linkGoogleIfPresent(riderId: string, googleCredential?: string) {
   }
 }
 
+/**
+ * Progressive login: link the Google identity carried in the guest session to
+ * the verified rider record (no duplicate account — the same rider.id keeps all
+ * points/wallet). Called on verify-otp so a guest who entered via Google and
+ * later confirms phone+CPF gets their Google permanently bound to their rider.
+ */
+async function linkGoogleSubIfPresent(riderId: string, sub?: string) {
+  if (!sub) return;
+  const idx = memory.riders.findIndex((r) => r.id === riderId);
+  if (idx !== -1 && memory.riders[idx].googleSub !== sub) {
+    memory.riders[idx] = { ...memory.riders[idx], googleSub: sub };
+    await flushPendingToDatabase();
+  }
+}
+
 export async function POST(request: Request) {
   await refreshCollectionsFromDatabase(["riders"]);
   const body = (await request.json().catch(() => ({}))) as {
@@ -142,7 +192,10 @@ export async function POST(request: Request) {
     if (!g) return jsonResponse({ error: "Não foi possível validar com o Google.", code: "google_invalid" }, { status: 401 });
     const member = memory.riders.find((r) => !!r.googleSub && r.googleSub === g.sub);
     if (member) return issueSession(member, member.phone ?? "", request);
-    // Not linked yet → client collects CPF + phone OTP, then verify-otp with googleCredential.
+    // Progressive login: enter PontoMall now as an unverified guest; verify phone
+    // + CPF later (which links this Google identity to the rider record).
+    if (GOOGLE_LITE_LOGIN) return issueGuestSession(g, request);
+    // Default: client collects CPF + phone OTP, then verify-otp with googleCredential.
     return jsonResponse({ data: { needsLink: true, email: g.email } });
   }
 
@@ -225,6 +278,10 @@ export async function POST(request: Request) {
     }
     if (!member) return jsonResponse({ error: "Cadastro não encontrado.", code: "not_found" }, { status: 404 });
     await linkGoogleIfPresent(member.id, body.googleCredential);
+    // Progressive login: if a Google *guest* is verifying, bind that Google
+    // identity (carried in the guest session) to this rider record now.
+    const guest = await sessionFromRequest(request);
+    await linkGoogleSubIfPresent(member.id, guest?.googleSub);
     return issueSession(member, phoneRaw, request);
   }
 

@@ -79,3 +79,21 @@ TWILIO_FROM=+1xxxxxxxxxx        # 你的 Twilio 发送号(或 messaging service 
 3. **在 Android Studio 编译验证**(Credential Manager 代码沙箱无法编译验证)。
 
 > 仍建议首版可先不配(按钮隐藏)、过审后再启用 Google;不影响上架。
+
+## 渐进式 Google 登录(可跳过先进商城,后验证)— `GOOGLE_LITE_LOGIN`
+
+默认行为:Google 登录若未绑定骑手 → 让用户先输手机号+CPF 绑定才进。
+**渐进式开关 `GOOGLE_LITE_LOGIN=1`**:未绑定的 Google 登录**直接以"访客会员"进 PontoMall 浏览**,敏感操作(积分兑换、钱包/提现、骑手功能)再要求验证;验证时按 CPF/手机号自动把 Google 关联到已有骑手记录(**不建临时账号、不产生重复、积分零丢失**)。
+
+实现要点(全部 additive,默认关 → 不影响线上):
+
+- **会话 `auth-session.ts`**:`AuthSession` 增可选 `verified?`/`email?`/`googleSub?`;`verified===false` 即访客。助手 `isVerifiedSession(session)`。
+- **后端 `member-login`**:`action:"google"` 未绑定且 flag 开 → `issueGuestSession`(发 `verified:false` 会话、`userId=guest-google-<sub>`、`defaultPath=/store`,**不写任何记录**)。`verify-otp` 成功后 `linkGoogleSubIfPresent` 把访客会话里的 `googleSub` 写到验证通过的骑手记录(完成"延后认证→合并")。
+- **前端 `/register`**:访客响应带 `name` → 命中现有"写会话→跳 `/store`"分支,直接进商城;flag 关时仍走 needsLink 绑定。
+- **越权防护**:访客 `userId` 匹配不到任何骑手记录,所有"按 userId 取骑手"的写接口天然查无记录;`wallet` 提现已加**明确**守卫 `session.verified===false → 403 needs_verification`。
+
+> ⚠️ **启用 flag 前的加固清单**:给其余敏感写接口同样加一行守卫
+> `if (session?.verified === false) return jsonResponse({ error: "...", code: "needs_verification" }, { status: 403 });`
+> 建议排查:`app/api/points`、`app/api/mall`、`app/api/marketplace/orders`、`app/api/partner/redeem`、`app/api/tasks`(任何会扣分/兑换/下单/动账的 POST)。浏览类(目录、商品)无需加。
+
+启用步骤:Vercel 设 `GOOGLE_LITE_LOGIN=1` → 重新部署。关掉即回到"先绑定"行为。

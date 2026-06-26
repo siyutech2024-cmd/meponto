@@ -43,7 +43,11 @@ export default function RegisterPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action: "google", credential }),
       });
-      const payload = (await res.json().catch(() => ({}))) as { error?: string; data?: { name?: string; needsLink?: boolean; email?: string } };
+      // Progressive login (GOOGLE_LITE_LOGIN on): the server returns a guest
+      // session with `name` + verified:false → falls into the redirect-to-/store
+      // branch below and enters PontoMall right away. With the flag off it
+      // returns needsLink and we collect phone+CPF here as before.
+      const payload = (await res.json().catch(() => ({}))) as { error?: string; data?: { name?: string; needsLink?: boolean; email?: string; verified?: boolean; needsVerification?: boolean } };
       if (!res.ok) throw new Error(payload.error ?? "Não foi possível entrar com o Google.");
       if (payload.data?.needsLink) {
         setGoogleCred(credential);
