@@ -29,14 +29,14 @@ import { createSessionToken, sessionCookie, sessionFromRequest } from "../../lib
 const OTP_REQUIRED = process.env.MEMBER_LOGIN_OTP === "1";
 const OTP_DEV_RETURN = process.env.OTP_DEV_RETURN === "1";
 /**
- * Progressive Google login: when ON, a Google sign-in that isn't linked to a
- * rider yet enters PontoMall immediately as an unverified *guest* (no record
- * created), instead of forcing phone+CPF up front. Sensitive actions (points,
- * wallet, rider features) still require verification, which then links the
- * Google identity to the rider record. Default OFF → keeps the safe "link
- * first" behaviour unchanged.
+ * Progressive Google login: a Google sign-in that isn't linked to a rider yet
+ * enters PontoMall immediately as an unverified *guest* (no record created),
+ * instead of forcing phone+CPF up front. Sensitive actions (points, wallet,
+ * rider features) still require verification — enforced centrally in
+ * `middleware.ts` — which then links the Google identity to the rider record.
+ * Default ON; set GOOGLE_LITE_LOGIN=0 to restore the "link first" behaviour.
  */
-const GOOGLE_LITE_LOGIN = process.env.GOOGLE_LITE_LOGIN === "1";
+const GOOGLE_LITE_LOGIN = process.env.GOOGLE_LITE_LOGIN !== "0";
 const OTP_TTL_MS = 5 * 60 * 1000;
 const OTP_RESEND_MS = 30 * 1000;
 const OTP_MAX_ATTEMPTS = 5;
