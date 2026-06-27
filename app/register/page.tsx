@@ -115,9 +115,16 @@ export default function RegisterPage() {
       });
       const payload = (await res.json().catch(() => ({}))) as {
         error?: string;
-        data?: { sent?: boolean; rebind?: boolean; needsCpf?: boolean; devCode?: string };
+        data?: { sent?: boolean; rebind?: boolean; needsCpf?: boolean; devCode?: string; name?: string; role?: string; portal?: string; organization?: string };
       };
       if (!res.ok) throw new Error(payload.error ?? "Não foi possível enviar o código.");
+      // Progressive activation: a Google guest entering a new phone is created +
+      // logged in straight away (no SMS) — the server returns a full session.
+      if (payload.data?.portal && payload.data?.name) {
+        writeSession({ name: payload.data.name, role: payload.data.role || "Rider", portal: payload.data.portal, organization: payload.data.organization || "", identifier: loginPhone });
+        window.location.href = "/store";
+        return;
+      }
       if (payload.data?.needsCpf) {
         setLoginStep("cpf");
         setError("Telefone não encontrado. Confirme seu CPF para vincular este número.");

@@ -1,6 +1,7 @@
-import { jsonResponse, memory } from "../../lib/server/memory";
+import { jsonResponse, memory, makeServerId, appendServerAudit } from "../../lib/server/memory";
 import { refreshCollectionsFromDatabase, flushPendingToDatabase } from "../../lib/server/persistence";
 import { createSessionToken, sessionCookie, sessionFromRequest } from "../../lib/auth-session";
+import type { Rider } from "../../lib/data";
 
 /**
  * Public MEMBER login by phone + OTP, anchored to the canonical rider record.
@@ -63,6 +64,42 @@ const findMemberByCpf = (rawCpf: string) => {
   if (want.length !== 11) return undefined;
   return memory.riders.find((r) => onlyDigits(r.cpf ?? "") === want);
 };
+
+/**
+ * Build a fresh public member (会员一级, no 99 ID) — mirrors /api/register's
+ * defaults. Used by the progressive-login activation so a brand-new Google user
+ * (not an imported rider) becomes a real member from their Google identity + a
+ * phone, no CPF/SMS required. Binding a 99 ID later promotes them to 会员二级.
+ */
+function newMember(fields: { name: string; phone: string; cpf?: string; googleSub?: string }): Rider {
+  return {
+    id: makeServerId("r", memory.riders.length + 1),
+    name: fields.name,
+    cpf: fields.cpf ?? "",
+    phone: fields.phone,
+    pix: "",
+    bairro: "",
+    ponto: "Unassigned",
+    leader: "Unassigned",
+    invitedBy: "Google sign-in",
+    chatRoom: "PontoMall",
+    ar: 100,
+    status: "Active",
+    vehicleType: "—",
+    brand: "—",
+    model: "—",
+    rentalStatus: "—",
+    isMottu: false,
+    onlineHours: 0,
+    nightShiftCount: 0,
+    incidentCount: 0,
+    joinDate: new Date().toISOString().slice(0, 10),
+    ninetyNineId: "",
+    franchise: "Unassigned",
+    birthday: "",
+    googleSub: fields.googleSub,
+  };
+}
 
 async function issueSession(member: { id: string; name: string }, phone: string, request: Request) {
   const token = await createSessionToken({
@@ -214,6 +251,33 @@ export async function POST(request: Request) {
   if (action === "request-otp") {
     // Demo/review phone: pretend a code was sent (verify uses the fixed code).
     if (isDemo) return jsonResponse({ data: { sent: true, rebind: false } });
+
+    // ---- Google guest activation (no SMS) ----------------------------------
+    // A signed-in Google guest (verified:false) entering a phone:
+    //  • NEW phone (not an imported rider) → create a member straight from their
+    //    Google identity + phone, no CPF/SMS (Google already authenticated them).
+    //  • EXISTING rider phone → claim it by confirming the rider's CPF (knowledge
+    //    factor in place of an SMS code), then link Google. No duplicate account.
+    const guest = await sessionFromRequest(request);
+    if (guest?.verified === false && guest.googleSub) {
+      const existing = findMemberByPhone(phoneRaw) ?? (body.cpf ? findMemberByCpf(body.cpf) : undefined);
+      if (existing) {
+        if (!body.cpf) return jsonResponse({ data: { sent: false, needsCpf: true } });
+        if (onlyDigits(existing.cpf ?? "") !== onlyDigits(body.cpf)) {
+          return jsonResponse({ error: "CPF não confere com este cadastro.", code: "cpf_mismatch" }, { status: 403 });
+        }
+        const idx = memory.riders.findIndex((r) => r.id === existing.id);
+        memory.riders[idx] = { ...memory.riders[idx], googleSub: guest.googleSub, phone: normalized };
+        await flushPendingToDatabase();
+        return issueSession(memory.riders[idx], normalized, request);
+      }
+      const created = newMember({ name: guest.name || guest.email?.split("@")[0] || "Membro", phone: phoneRaw, cpf: onlyDigits(body.cpf ?? ""), googleSub: guest.googleSub });
+      memory.riders.unshift(created);
+      appendServerAudit({ actor: "Google", action: "MEMBER_REGISTERED", entity: "Rider", entityId: created.id, detail: `${created.name} (Google sign-in, sem 99 ID)`, risk: "Low" });
+      await flushPendingToDatabase();
+      return issueSession(created, phoneRaw, request);
+    }
+
     let member = findMemberByPhone(phoneRaw);
     let rebindRiderId: string | undefined;
     if (!member && body.cpf) {
