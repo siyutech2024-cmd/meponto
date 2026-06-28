@@ -370,7 +370,10 @@ export default function StorefrontPage() {
   const activateUrl = `/register?returnTo=${encodeURIComponent(typeof window !== "undefined" ? window.location.href : "https://mall.meponto.com/")}`;
   // Logged in (member OR guest) — drives the header + account panel.
   const loggedIn = !!me || !!account;
-  const isGuest = !!account && !me; // signed in but no member record yet
+  // A true guest = signed in with Google but not yet phone+CPF verified. NOT the
+  // same as "account set but `me` still loading" — checking `!me` there caused a
+  // verified member to flash "Visitante" while /api/mall loaded (cold start).
+  const isGuest = !!account && account.verified === false;
 
   return (
     <main data-i18n-skip className="min-h-screen" style={{ background: "#f6f7f9", color: INK, fontFamily: "Inter, system-ui, sans-serif" }}>
@@ -449,7 +452,7 @@ export default function StorefrontPage() {
               >
                 <span className="grid h-7 w-7 place-items-center rounded-full text-xs font-black text-white" style={{ background: INK }}>{(account.name[0] || "?").toUpperCase()}</span>
                 <span className="hidden max-w-[110px] truncate sm:inline">{account.name.split(" ")[0]}</span>
-                <span className="rounded-full px-2 py-0.5 text-[10px] font-black" style={{ background: "#fff4cf", color: "#9a7400" }}>Visitante</span>
+                {isGuest ? <span className="rounded-full px-2 py-0.5 text-[10px] font-black" style={{ background: "#fff4cf", color: "#9a7400" }}>Visitante</span> : null}
               </button>
             ) : (
               <div className="flex items-center gap-2">
