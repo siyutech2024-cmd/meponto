@@ -7,6 +7,8 @@ import { downloadCsv } from "../lib/csv";
 import { readSession } from "../lib/session";
 import { mallHubPortals } from "../lib/portals";
 import { useDialog } from "../components/dialog";
+import { useVentoStore } from "../lib/store";
+import { translate, type TranslationKey } from "../lib/i18n";
 import type { RiderWithdrawal } from "../lib/finance";
 
 type WeeklyRider = { name: string; rider99Id: string; station: string; settle: number; orders: number; days: number; paid: number };
@@ -18,6 +20,12 @@ const md = (iso: string) => `${Number(iso.slice(5, 7))}.${Number(iso.slice(8, 10
 
 function RiderPayrollWallet() {
   const dialog = useDialog();
+  const language = useVentoStore((s) => s.language);
+  const t = (k: TranslationKey, vars?: Record<string, string | number | undefined>) => {
+    let s = translate(language, k);
+    if (vars) for (const [key, val] of Object.entries(vars)) s = s.replace(`{${key}}`, String(val ?? ""));
+    return s;
+  };
   const session = useMemo(() => readSession(), []);
   const scopeFranchise = session?.portal === "franchise" ? session.franchise || session.organization : "";
   const headers = useMemo(() => ({ "Content-Type": "application/json", "x-vento-role": session?.role ?? "Super Admin" }), [session]);
@@ -79,7 +87,7 @@ function RiderPayrollWallet() {
     if (!pay || !weekly) return;
     const amount = Number(payAmount);
     if (!Number.isFinite(amount) || amount <= 0) {
-      setMessage({ tone: "err", text: "请输入有效金额" });
+      setMessage({ tone: "err", text: t("wlInvalidAmount") });
       return;
     }
     const response = await fetch("/api/wallet", {
@@ -89,23 +97,23 @@ function RiderPayrollWallet() {
     });
     const payload = await response.json().catch(() => ({}));
     if (!response.ok) {
-      setMessage({ tone: "err", text: payload.error ?? `付款失败 (${response.status})` });
+      setMessage({ tone: "err", text: payload.error ?? t("wlPayFailed", { s: response.status }) });
       return;
     }
-    setMessage({ tone: "ok", text: `已记录付款：${pay.target === "franchise" ? "加盟商" : "骑手"} ${pay.refName} ${money(amount)}（${payPeriod === "weekly" ? "周付" : "日付"}）。` });
+    setMessage({ tone: "ok", text: t("wlPayRecorded", { who: pay.target === "franchise" ? t("wlWho_franchise") : t("wlWho_rider"), name: pay.refName, money: money(amount), period: payPeriod === "weekly" ? t("wlPeriodWeekly") : t("wlPeriodDaily") }) });
     setPay(null);
     void load();
   }
 
   async function act(action: "confirmPayment" | "rejectWithdrawal", withdrawalId: string) {
-    const note = action === "rejectWithdrawal" ? (await dialog.prompt("拒绝提现", { message: "拒绝原因（会显示给骑手）" })) ?? "" : "";
+    const note = action === "rejectWithdrawal" ? (await dialog.prompt(t("wlRejectTitle"), { message: t("wlRejectMsg") })) ?? "" : "";
     const response = await fetch("/api/wallet", { method: "POST", headers, body: JSON.stringify({ action, withdrawalId, note }) });
     const payload = await response.json().catch(() => ({}));
     if (!response.ok) {
-      setMessage({ tone: "err", text: payload.error ?? `操作失败 (${response.status})` });
+      setMessage({ tone: "err", text: payload.error ?? t("wlOpFailed", { s: response.status }) });
       return;
     }
-    setMessage({ tone: "ok", text: action === "confirmPayment" ? "已确认付款，骑手余额已扣减并留痕。" : "已拒绝该提现，冻结金额已释放。" });
+    setMessage({ tone: "ok", text: action === "confirmPayment" ? t("wlConfirmedPay") : t("wlRejected") });
     void load();
   }
 
@@ -114,7 +122,7 @@ function RiderPayrollWallet() {
     if (!weekly) return null;
     const r = await fetch(`/api/wallet?statement=${encodeURIComponent(franchise)}&from=${weekly.week.from}&to=${weekly.week.to}`, { headers, cache: "no-store" });
     if (!r.ok) {
-      setMessage({ tone: "err", text: "账单生成失败" });
+      setMessage({ tone: "err", text: t("wlStmtFailed") });
       return null;
     }
     return (await r.json()).data as { from: string; to: string; total: number; rows: StatementRow[] };
@@ -125,11 +133,11 @@ function RiderPayrollWallet() {
   async function exportCsv(franchise: string) {
     const data = await fetchStatement(franchise);
     if (!data) return;
-    const headerRow = ["日期", "骑手", "99ID", "CPF", "PIX", "加盟商", "站点", "完单", "在线时长", "AR%", "行程收入", "奖励", "小费", "现金欠款", "餐损", "其他", "结算金额"];
+    const headerRow = [t("wlCsvDate"), t("wlColRider"), "99ID", "CPF", "PIX", t("rdColFranchise"), t("wlColStation"), t("wlColOrders"), t("wlCsvOnlineH"), "AR%", t("wlCsvTripInc"), t("wlCsvBonus"), t("wlCsvTips"), t("wlCsvCashDebt"), t("wlCsvMeal"), t("wlCsvOther"), t("wlCsvSettle")];
     const rows = data.rows.map((r) => [r.date, r.riderName, r.rider99Id, r.cpf, r.pix, r.franchise, r.station, String(r.orders), r.onlineHours ?? "", r.ar ?? "", r.tripIncome.toFixed(2), r.bonus.toFixed(2), r.tips.toFixed(2), r.cashDebt.toFixed(2), r.mealDeduction.toFixed(2), r.other.toFixed(2), r.settleAmount.toFixed(2)]);
-    rows.push(["合计", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", Number(data.total).toFixed(2)]);
+    rows.push([t("wlCsvTotal"), "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", Number(data.total).toFixed(2)]);
     downloadCsv(`statement-${franchise}-${data.from}_${data.to}`, headerRow, rows);
-    setMessage({ tone: "ok", text: `已导出「${franchise}」${md(data.from)}–${md(data.to)} 明细（${data.rows.length} 行，合计 ${money(Number(data.total))}）。` });
+    setMessage({ tone: "ok", text: t("wlExported", { f: franchise, from: md(data.from), to: md(data.to), n: data.rows.length, money: money(Number(data.total)) }) });
   }
 
   async function exportPdf(franchise: string) {
@@ -149,7 +157,7 @@ function RiderPayrollWallet() {
       <tbody>${body}</tbody><tfoot><tr><td colspan="5">Total</td><td style="text-align:right">R$ ${Number(data.total).toFixed(2)}</td></tr></tfoot></table>
       <script>window.onload=function(){window.print()}</script></body></html>`;
     const win = window.open("", "_blank");
-    if (!win) { setMessage({ tone: "err", text: "请允许弹出窗口后重试。" }); return; }
+    if (!win) { setMessage({ tone: "err", text: t("wlPopupBlocked") }); return; }
     win.document.write(html);
     win.document.close();
   }
@@ -160,9 +168,9 @@ function RiderPayrollWallet() {
   return (
     <AppShell>
       <PageTitle
-        title="结算与提现"
-        eyebrow={scopeFranchise ? `加盟商财务 · ${scopeFranchise}` : "自然周结算 · 加盟商 → 骑手"}
-        action={<button type="button" onClick={() => void load()} className="tag inline-flex items-center gap-1"><RefreshCcw size={13} /> 刷新</button>}
+        title={t("wlTitle")}
+        eyebrow={scopeFranchise ? t("wlEyebrowFr", { f: scopeFranchise }) : t("wlEyebrowHq")}
+        action={<button type="button" onClick={() => void load()} className="tag inline-flex items-center gap-1"><RefreshCcw size={13} /> {t("wlRefresh")}</button>}
       />
 
       {message && (
@@ -173,43 +181,43 @@ function RiderPayrollWallet() {
 
       {/* Week selector */}
       <div className="panel mb-4 flex flex-wrap items-center justify-between gap-3 p-3" data-i18n-skip>
-        <button type="button" className="tag" onClick={() => shiftWeek(-7)}>← 上一周</button>
+        <button type="button" className="tag" onClick={() => shiftWeek(-7)}>{t("wlPrevWeek")}</button>
         <div className="text-sm font-black">
           {weekly ? `${md(weekly.week.from)} – ${md(weekly.week.to)}` : "—"}
-          <span className="ml-2 text-[11px] font-bold text-[var(--muted)]">自然周（周一至周日）</span>
+          <span className="ml-2 text-[11px] font-bold text-[var(--muted)]">{t("wlNatWeek")}</span>
         </div>
-        <button type="button" className="tag" onClick={() => shiftWeek(7)}>下一周 →</button>
-        <div className="ml-auto text-sm font-black text-[var(--accent)]">该周应结 {weekly ? money(weekly.grandTotal) : "—"}</div>
+        <button type="button" className="tag" onClick={() => shiftWeek(7)}>{t("wlNextWeek")}</button>
+        <div className="ml-auto text-sm font-black text-[var(--accent)]">{t("wlWeekTotal", { money: weekly ? money(weekly.grandTotal) : "—" })}</div>
       </div>
 
-      <p className="mb-4 -mt-2 px-1 text-[11px] font-bold text-[var(--muted)]">应结/已付/待付均按<b>所选周</b>计算,切换周即重算。两段结算:加盟商行的「已付」是<b>总部→加盟商</b>;展开后骑手行的「已付」是<b>加盟商→骑手</b>(含已付 PIX)。两者是不同的钱,表头不等于明细之和属正常。「该周应结」为全网各加盟商应结之和。</p>
+      <p className="mb-4 -mt-2 px-1 text-[11px] font-bold text-[var(--muted)]">{t("wlExplain")}</p>
 
       {scopeFranchise && (
         <div className="panel mb-4 p-4">
           <div className="mb-2 flex flex-wrap items-center gap-2">
-            <span className="text-xs font-black uppercase text-[var(--muted)]">销售分成 · {scopeFranchise}</span>
-            <input value={stationShare} onChange={(e) => setStationShare(e.target.value.replace(/[^\d.]/g, ""))} placeholder="站点分成 R$/单" className="ml-auto h-9 w-32 rounded-[8px] border border-[var(--line)] bg-[var(--surface-raised)] px-2 text-sm font-bold outline-none" />
-            <button type="button" onClick={async () => { const res = await fetch("/api/mall/ops", { method: "POST", headers, body: JSON.stringify({ action: "setStationShare", stationShareBRL: Number(stationShare) || 0 }) }); setMessage(res.ok ? { tone: "ok", text: `站点分成已设为 R$ ${Number(stationShare) || 0}/单` } : { tone: "err", text: "设置失败" }); }} className="h-9 rounded-[8px] bg-[var(--accent)] px-3 text-xs font-black text-[var(--accent-ink)]">设置站点分成</button>
+            <span className="text-xs font-black uppercase text-[var(--muted)]">{t("wlRevShare", { f: scopeFranchise })}</span>
+            <input value={stationShare} onChange={(e) => setStationShare(e.target.value.replace(/[^\d.]/g, ""))} placeholder={t("wlStationSharePh")} className="ml-auto h-9 w-32 rounded-[8px] border border-[var(--line)] bg-[var(--surface-raised)] px-2 text-sm font-bold outline-none" />
+            <button type="button" onClick={async () => { const res = await fetch("/api/mall/ops", { method: "POST", headers, body: JSON.stringify({ action: "setStationShare", stationShareBRL: Number(stationShare) || 0 }) }); setMessage(res.ok ? { tone: "ok", text: t("wlStationShareSet", { x: Number(stationShare) || 0 }) } : { tone: "err", text: t("wlSetFailed") }); }} className="h-9 rounded-[8px] bg-[var(--accent)] px-3 text-xs font-black text-[var(--accent-ink)]">{t("wlSetStationShare")}</button>
           </div>
           <div className="space-y-2">
             {revStatements.map((s) => (
               <div key={s.id} className="flex flex-wrap items-center gap-2 rounded-[8px] border border-[var(--line)] bg-[var(--surface-raised)] px-3 py-2 text-sm">
                 <span className="font-black">{s.month}</span>
-                <Badge value={{ draft: "待确认", confirmed: "待总部付款", paid: "已付款" }[s.status]} />
-                <span className="text-xs font-bold text-[var(--muted)]">{s.orders} 单 · 净 R$ {s.franchiseNetTotal.toFixed(2)} · 站点 R$ {s.stationShareTotal.toFixed(2)} · 合计 <b>R$ {s.total.toFixed(2)}</b></span>
+                <Badge value={{ draft: t("wlRsDraft"), confirmed: t("wlRsConfirmed"), paid: t("wlRsPaid") }[s.status]} />
+                <span className="text-xs font-bold text-[var(--muted)]">{t("wlRsLine", { orders: s.orders, net: `R$ ${s.franchiseNetTotal.toFixed(2)}`, station: `R$ ${s.stationShareTotal.toFixed(2)}`, total: `R$ ${s.total.toFixed(2)}` })}</span>
                 {s.status === "draft" && (
-                  <button type="button" onClick={async () => { const res = await fetch("/api/mall/ops", { method: "POST", headers, body: JSON.stringify({ action: "confirmRevShareStatement", statementId: s.id }) }); if (res.ok) { setMessage({ tone: "ok", text: "已确认对账单" }); void loadRevShare(); } }} className="ml-auto h-8 rounded-[8px] bg-[var(--accent)] px-3 text-xs font-black text-[var(--accent-ink)]">确认对账单</button>
+                  <button type="button" onClick={async () => { const res = await fetch("/api/mall/ops", { method: "POST", headers, body: JSON.stringify({ action: "confirmRevShareStatement", statementId: s.id }) }); if (res.ok) { setMessage({ tone: "ok", text: t("wlStmtConfirmed") }); void loadRevShare(); } }} className="ml-auto h-8 rounded-[8px] bg-[var(--accent)] px-3 text-xs font-black text-[var(--accent-ink)]">{t("wlConfirmStmt")}</button>
                 )}
               </div>
             ))}
-            {revStatements.length === 0 && <div className="py-2 text-center text-xs font-bold text-[var(--muted)]">暂无分成对账单（总部按月生成后在此确认）。</div>}
+            {revStatements.length === 0 && <div className="py-2 text-center text-xs font-bold text-[var(--muted)]">{t("wlNoRevStmt")}</div>}
           </div>
         </div>
       )}
 
       {/* Franchise → rider fold */}
       <div className="space-y-2">
-        {(weekly?.franchises ?? []).length === 0 && <div className="panel p-6 text-center text-sm font-bold text-[var(--muted)]">本周暂无结算数据。</div>}
+        {(weekly?.franchises ?? []).length === 0 && <div className="panel p-6 text-center text-sm font-bold text-[var(--muted)]">{t("wlNoWeekData")}</div>}
         {weekly?.franchises.map((g) => {
           const net = Math.round((g.settle - g.franchisePaid) * 100) / 100;
           const pendingAmt = Math.max(0, net);
@@ -222,15 +230,15 @@ function RiderPayrollWallet() {
                   <ChevronRight size={16} className={`shrink-0 text-[var(--muted)] transition-transform ${expanded ? "rotate-90" : ""}`} />
                   <Building2 size={15} className="shrink-0 text-[var(--accent)]" />
                   <span className="truncate text-sm font-black">{g.franchise}</span>
-                  <span className="text-[11px] font-bold text-[var(--muted)]">{g.riders.length} 骑手</span>
+                  <span className="text-[11px] font-bold text-[var(--muted)]">{t("wlRidersCount", { n: g.riders.length })}</span>
                 </button>
                 <div className="flex items-center gap-4 text-sm">
-                  <div className="text-right"><div className="text-[10px] font-black uppercase text-[var(--muted)]">应结</div><div className="font-black">{money(g.settle)}</div></div>
-                  <div className="text-right"><div className="text-[10px] font-black uppercase text-[var(--muted)]" title="总部付给加盟商">已付·总部→商</div><div className="font-black text-[var(--ok-ink)]">{money(g.franchisePaid)}</div></div>
-                  <div className="text-right"><div className="text-[10px] font-black uppercase text-[var(--muted)]">{overpaid > 0 ? "超付" : "待付"}</div><div className={`font-black ${overpaid > 0 ? "text-[var(--danger-ink)]" : pendingAmt > 0 ? "text-[var(--warning-ink)]" : "text-[var(--muted)]"}`}>{overpaid > 0 ? `+${money(overpaid)}` : money(pendingAmt)}</div></div>
+                  <div className="text-right"><div className="text-[10px] font-black uppercase text-[var(--muted)]">{t("wlSettle")}</div><div className="font-black">{money(g.settle)}</div></div>
+                  <div className="text-right"><div className="text-[10px] font-black uppercase text-[var(--muted)]" title={t("wlPaidHqFrTitle")}>{t("wlPaidHqFr")}</div><div className="font-black text-[var(--ok-ink)]">{money(g.franchisePaid)}</div></div>
+                  <div className="text-right"><div className="text-[10px] font-black uppercase text-[var(--muted)]">{overpaid > 0 ? t("wlOverpaid") : t("wlPending")}</div><div className={`font-black ${overpaid > 0 ? "text-[var(--danger-ink)]" : pendingAmt > 0 ? "text-[var(--warning-ink)]" : "text-[var(--muted)]"}`}>{overpaid > 0 ? `+${money(overpaid)}` : money(pendingAmt)}</div></div>
                 </div>
                 <div className="flex gap-1.5">
-                  {!scopeFranchise && <button type="button" className="inline-flex h-9 items-center rounded-[8px] bg-[var(--accent)] px-3 text-xs font-black uppercase text-[var(--accent-ink)]" onClick={() => openPay("franchise", g.franchise, g.franchise, pendingAmt)}>标记付加盟商</button>}
+                  {!scopeFranchise && <button type="button" className="inline-flex h-9 items-center rounded-[8px] bg-[var(--accent)] px-3 text-xs font-black uppercase text-[var(--accent-ink)]" onClick={() => openPay("franchise", g.franchise, g.franchise, pendingAmt)}>{t("wlPayFranchiseBtn")}</button>}
                   <button type="button" className="tag" onClick={() => void exportCsv(g.franchise)}>CSV</button>
                   <button type="button" className="tag" onClick={() => void exportPdf(g.franchise)}>PDF</button>
                 </div>
@@ -240,7 +248,7 @@ function RiderPayrollWallet() {
                   <table className="w-full text-sm">
                     <thead>
                       <tr className="text-left text-[10px] font-black uppercase text-[var(--muted)]">
-                        <th className="pb-2">骑手</th><th className="pb-2">站点</th><th className="pb-2 text-right">完单</th><th className="pb-2 text-right">天数</th><th className="pb-2 text-right">应结</th><th className="pb-2 text-right" title="加盟商付给骑手 + 已付 PIX 提现">已付·→骑手</th><th className="pb-2 text-right">操作</th>
+                        <th className="pb-2">{t("wlColRider")}</th><th className="pb-2">{t("wlColStation")}</th><th className="pb-2 text-right">{t("wlColOrders")}</th><th className="pb-2 text-right">{t("wlColDays")}</th><th className="pb-2 text-right">{t("wlColSettle")}</th><th className="pb-2 text-right" title={t("wlPaidRiderTitle")}>{t("wlColPaidRider")}</th><th className="pb-2 text-right">{t("wlColAction")}</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -255,7 +263,7 @@ function RiderPayrollWallet() {
                             <td className="py-2 text-right font-black">{money(r.settle)}</td>
                             <td className="py-2 text-right text-[var(--ok-ink)]">{money(r.paid)}</td>
                             <td className="py-2 text-right">
-                              <button type="button" className="tag" onClick={() => openPay("rider", r.name, g.franchise, ridPending)}>标记已付</button>
+                              <button type="button" className="tag" onClick={() => openPay("rider", r.name, g.franchise, ridPending)}>{t("wlMarkPaid")}</button>
                             </td>
                           </tr>
                         );
@@ -272,7 +280,7 @@ function RiderPayrollWallet() {
       {/* Rider PIX withdrawals queue */}
       {pendingWithdrawals.length > 0 && (
         <div className="panel mt-4 p-4">
-          <div className="mb-3 flex items-center gap-2 text-xs font-black uppercase text-[var(--accent)]"><Banknote size={14} /> 待付款提现申请（{pendingWithdrawals.length}）</div>
+          <div className="mb-3 flex items-center gap-2 text-xs font-black uppercase text-[var(--accent)]"><Banknote size={14} /> {t("wlWithdrawQueue", { n: pendingWithdrawals.length })}</div>
           <div className="space-y-2">
             {pendingWithdrawals.map((w) => (
               <div key={w.id} className="flex flex-wrap items-center justify-between gap-2 rounded-[8px] border border-[var(--line)] bg-[var(--surface-raised)] p-3">
@@ -281,8 +289,8 @@ function RiderPayrollWallet() {
                   <div className="text-[11px] font-bold text-[var(--muted)]">PIX {w.pix} ｜ {w.station}（{w.franchise}）｜ {w.requestedAt}</div>
                 </div>
                 <div className="flex gap-2">
-                  <button type="button" onClick={() => void act("confirmPayment", w.id)} className="inline-flex h-9 items-center gap-1 rounded-[8px] bg-[var(--accent)] px-3 text-xs font-black uppercase text-[var(--accent-ink)]"><CheckCircle2 size={13} /> 已付款</button>
-                  <button type="button" onClick={() => void act("rejectWithdrawal", w.id)} className="inline-flex h-9 items-center gap-1 rounded-[8px] border border-[var(--line)] px-3 text-xs font-black uppercase text-[var(--danger-ink)]"><XCircle size={13} /> 拒绝</button>
+                  <button type="button" onClick={() => void act("confirmPayment", w.id)} className="inline-flex h-9 items-center gap-1 rounded-[8px] bg-[var(--accent)] px-3 text-xs font-black uppercase text-[var(--accent-ink)]"><CheckCircle2 size={13} /> {t("wlPaidBtn")}</button>
+                  <button type="button" onClick={() => void act("rejectWithdrawal", w.id)} className="inline-flex h-9 items-center gap-1 rounded-[8px] border border-[var(--line)] px-3 text-xs font-black uppercase text-[var(--danger-ink)]"><XCircle size={13} /> {t("wlRejectBtn")}</button>
                 </div>
               </div>
             ))}
@@ -294,14 +302,14 @@ function RiderPayrollWallet() {
       {pay && (
         <div className="fixed inset-0 z-[100] grid place-items-center bg-[var(--overlay)] p-4 backdrop-blur-sm" onMouseDown={() => setPay(null)}>
           <div className="panel w-full max-w-md p-5 shadow-2xl" onMouseDown={(e) => e.stopPropagation()}>
-            <h2 className="text-lg font-black">标记付款 · {pay.target === "franchise" ? "加盟商" : "骑手"}「{pay.refName}」</h2>
-            <p className="mt-1 text-xs font-bold text-[var(--muted)]">{weekly ? `${md(weekly.week.from)} – ${md(weekly.week.to)}` : ""} ｜ 建议金额 {money(pay.suggested)}</p>
+            <h2 className="text-lg font-black">{t("wlPayModalTitle", { who: pay.target === "franchise" ? t("wlWho_franchise") : t("wlWho_rider"), name: pay.refName })}</h2>
+            <p className="mt-1 text-xs font-bold text-[var(--muted)]">{t("wlSuggested", { week: weekly ? `${md(weekly.week.from)} – ${md(weekly.week.to)}` : "", money: money(pay.suggested) })}</p>
             <label className="mt-4 block">
-              <span className="mb-1 block text-[10px] font-black uppercase text-[var(--muted)]">金额（R$）</span>
+              <span className="mb-1 block text-[10px] font-black uppercase text-[var(--muted)]">{t("wlAmount")}</span>
               <input autoFocus inputMode="decimal" value={payAmount} onChange={(e) => setPayAmount(e.target.value.replace(/[^\d.]/g, ""))} className="h-11 w-full rounded-[8px] border border-[var(--line)] bg-[var(--surface-raised)] px-3 text-sm font-bold outline-none focus:border-[var(--accent)]" />
             </label>
             <div className="mt-3">
-              <span className="mb-1 block text-[10px] font-black uppercase text-[var(--muted)]">付款类型</span>
+              <span className="mb-1 block text-[10px] font-black uppercase text-[var(--muted)]">{t("wlPayType")}</span>
               <div className="flex gap-2">
                 {(["weekly", "daily"] as const).map((p) => (
                   <button
@@ -314,18 +322,18 @@ function RiderPayrollWallet() {
                         : "border-[var(--line)] bg-[var(--surface-raised)] text-[var(--muted-strong)] hover:border-[var(--muted)]"
                     }`}
                   >
-                    {payPeriod === p ? "✓ " : ""}{p === "weekly" ? "周付款" : "日付款"}
+                    {payPeriod === p ? "✓ " : ""}{p === "weekly" ? t("wlWeekly") : t("wlDaily")}
                   </button>
                 ))}
               </div>
             </div>
             <label className="mt-3 block">
-              <span className="mb-1 block text-[10px] font-black uppercase text-[var(--muted)]">备注（选填）</span>
+              <span className="mb-1 block text-[10px] font-black uppercase text-[var(--muted)]">{t("wlNote")}</span>
               <input value={payNote} onChange={(e) => setPayNote(e.target.value)} className="h-11 w-full rounded-[8px] border border-[var(--line)] bg-[var(--surface-raised)] px-3 text-sm font-bold outline-none focus:border-[var(--accent)]" />
             </label>
             <div className="mt-5 flex justify-end gap-2">
-              <button type="button" onClick={() => setPay(null)} className="h-10 rounded-[8px] border border-[var(--line)] px-4 text-sm font-black text-[var(--muted-strong)]">取消</button>
-              <button type="button" onClick={() => void submitPay()} className="h-10 rounded-[8px] bg-[var(--accent)] px-5 text-sm font-black text-[var(--accent-ink)]">确认付款</button>
+              <button type="button" onClick={() => setPay(null)} className="h-10 rounded-[8px] border border-[var(--line)] px-4 text-sm font-black text-[var(--muted-strong)]">{t("wlCancel")}</button>
+              <button type="button" onClick={() => void submitPay()} className="h-10 rounded-[8px] bg-[var(--accent)] px-5 text-sm font-black text-[var(--accent-ink)]">{t("wlConfirmPay")}</button>
             </div>
           </div>
         </div>
