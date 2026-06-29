@@ -134,7 +134,7 @@ export default function FranchiseDispatchPage() {
 
       <FranchiseOverview franchise={franchise} headers={headers} />
 
-      <div className="grid gap-4 xl:grid-cols-[1fr_380px]">
+      <div className="grid gap-4 xl:grid-cols-[1fr_minmax(400px,460px)]">
         <div className="panel p-4">
           <div className="mb-3 flex flex-wrap items-center justify-between gap-2" data-i18n-skip>
             <div className="text-xs font-black uppercase text-[var(--accent)]">总部分配给我的班次配额 → 拆分给站点</div>
@@ -225,7 +225,6 @@ export default function FranchiseDispatchPage() {
           )}
         </div>
 
-        <div className="space-y-4">
         <ShiftRiderPicker
           shift={myShifts.find((row) => row.shift.id === activeShiftId)?.shift ?? null}
           franchise={franchise}
@@ -234,55 +233,60 @@ export default function FranchiseDispatchPage() {
           onDone={(text) => { setMessage({ tone: "ok", text }); void load(); }}
           onError={(text) => { setMessage({ tone: "err", text }); void load(); }}
         />
-        <div className="panel p-4">
-          <div className="mb-3 text-xs font-black uppercase text-[var(--accent)]">已提报 · 待总部审核（{pending.length}）</div>
-          {(() => {
-            const stations = [...new Set(board.signups.map((x) => x.station))];
-            const rows = stations.map((name) => ({
-              name,
-              pending: board.signups.filter((x) => x.station === name && x.status === "submitted").length,
-              total: board.signups.filter((x) => x.station === name).length,
-            }));
-            return rows.length > 0 ? (
-              <div className="mb-3 grid gap-2 sm:grid-cols-2">
-                {rows.map((row) => (
-                  <div key={row.name} className={`flex items-center justify-between rounded-[8px] border px-3 py-2 text-[12px] font-bold ${row.pending > 0 ? "border-[var(--warning)] bg-[var(--warning-bg)]" : "border-[var(--line)] bg-[var(--surface-raised)]"}`}>
-                    <span className="font-black">{row.name}</span>
-                    <span className="flex items-center gap-2">
-                      待总部审核 {row.pending} / {row.total}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            ) : null;
-          })()}
-          {pending.length === 0 ? (
-            <div className="text-sm font-bold text-[var(--muted)]">暂无待审核报名。</div>
-          ) : (
-            <>
-              <div className="max-h-[420px] space-y-2 overflow-auto pr-1">
+      </div>
+
+      {/* 已提报 · 全宽清晰表格 */}
+      <div className="panel mt-4 p-4">
+        <div className="mb-3 flex flex-wrap items-center gap-2">
+          <span className="text-xs font-black uppercase text-[var(--accent)]">已提报 · 待总部审核（{pending.length}）</span>
+          <span className="ml-auto inline-flex items-center gap-1 text-[11px] font-bold text-[var(--muted)]"><Send size={12} /> 提报后直达总部,由总部统一审核并填报 Eastwind。</span>
+        </div>
+        {(() => {
+          const stations = [...new Set(board.signups.map((x) => x.station))];
+          const rows = stations.map((name) => ({
+            name,
+            pending: board.signups.filter((x) => x.station === name && x.status === "submitted").length,
+            total: board.signups.filter((x) => x.station === name).length,
+          }));
+          return rows.length > 0 ? (
+            <div className="mb-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+              {rows.map((row) => (
+                <div key={row.name} className={`flex items-center justify-between gap-2 rounded-[8px] border px-3 py-2 text-[12px] font-bold ${row.pending > 0 ? "border-[var(--warning)] bg-[var(--warning-bg)]" : "border-[var(--line)] bg-[var(--surface-raised)]"}`}>
+                  <span className="truncate font-black">{row.name}</span>
+                  <span className="shrink-0">待审 {row.pending}/{row.total}</span>
+                </div>
+              ))}
+            </div>
+          ) : null;
+        })()}
+        {pending.length === 0 ? (
+          <div className="py-6 text-center text-sm font-bold text-[var(--muted)]">暂无待审核报名。</div>
+        ) : (
+          <div className="overflow-x-auto rounded-[8px] border border-[var(--line)]">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="bg-[var(--surface-raised)] text-left text-[11px] font-black uppercase text-[var(--muted)]">
+                  <th className="px-3 py-2">骑手</th><th className="px-3 py-2">站点</th><th className="px-3 py-2">日期</th><th className="px-3 py-2">时段</th><th className="px-3 py-2">99 ID</th><th className="px-3 py-2 text-right">状态</th>
+                </tr>
+              </thead>
+              <tbody>
                 {pending.map((signup) => {
                   const shift = board.shifts.find((item) => item.id === signup.shiftId);
                   return (
-                    <div key={signup.id} className="flex items-center gap-2 rounded-[8px] border border-[var(--line)] bg-[var(--surface-raised)] p-2">
-                      <div className="min-w-0 flex-1">
-                        <div className="truncate text-sm font-black">{signup.riderName || signup.rider99Id}</div>
-                        <div className="truncate text-[11px] font-bold text-[var(--muted)]">
-                          {signup.station} ｜ {shift ? `${shift.date} ${shift.timeRange}` : signup.shiftId} ｜ 99ID {signup.rider99Id}
-                        </div>
-                      </div>
-                      <Badge value="待总部审核" />
-                    </div>
+                    <tr key={signup.id} className="border-t border-[var(--line)] font-bold">
+                      <td className="px-3 py-2 font-black">{signup.riderName || signup.rider99Id}</td>
+                      <td className="px-3 py-2"><span className="tag">{signup.station}</span></td>
+                      <td className="px-3 py-2 text-[var(--muted)]">{shift?.date ?? "—"}</td>
+                      <td className="px-3 py-2">{shift?.timeRange ?? signup.shiftId}</td>
+                      <td className="px-3 py-2 font-mono text-[11px] text-[var(--muted)]">{signup.rider99Id}</td>
+                      <td className="px-3 py-2 text-right"><Badge value="待总部审核" /></td>
+                    </tr>
                   );
                 })}
-              </div>
-              <div className="mt-2 flex items-center gap-1 text-[11px] font-bold text-[var(--muted)]">
-                <Send size={12} /> 提报后直达总部，由总部统一审核并填报 Eastwind。
-              </div>
-            </>
-          )}
-        </div>
-        </div>
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
     </AppShell>
   );
