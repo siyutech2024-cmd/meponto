@@ -5,6 +5,8 @@ import { Building2, MapPin, Plus, RefreshCcw, Store, Trash2, UserRound } from "l
 import { AppShell, Badge, PageTitle } from "../components/ui";
 import { readSession } from "../lib/session";
 import { useDialog } from "../components/dialog";
+import { useVentoStore } from "../lib/store";
+import { translate, type TranslationKey } from "../lib/i18n";
 import { mapsEmbedUrl, type Franchise } from "../lib/network";
 import type { Ponto } from "../lib/data";
 
@@ -14,6 +16,12 @@ const input = "h-11 w-full rounded-[8px] border border-[var(--line)] bg-[var(--s
 
 export default function NetworkPage() {
   const dialog = useDialog();
+  const language = useVentoStore((s) => s.language);
+  const t = (k: TranslationKey, vars?: Record<string, string | number | undefined>) => {
+    let s = translate(language, k);
+    if (vars) for (const [key, val] of Object.entries(vars)) s = s.replace(`{${key}}`, String(val ?? ""));
+    return s;
+  };
   const session = useMemo(() => readSession(), []);
   const headers = useMemo(() => ({ "Content-Type": "application/json", "x-vento-role": session?.role ?? "Super Admin" }), [session]);
   const franchiseScope = session?.portal === "franchise" ? session.franchise || session.organization : "";
@@ -41,7 +49,7 @@ export default function NetworkPage() {
     const response = await fetch("/api/network", { method: "POST", headers, body: JSON.stringify(body) });
     const payload = await response.json().catch(() => ({}));
     if (!response.ok) {
-      setMessage({ tone: "err", text: payload.error ?? `操作失败 (${response.status})` });
+      setMessage({ tone: "err", text: payload.error ?? t("pnOpFailed", { s: response.status }) });
       return null;
     }
     void load();
@@ -57,9 +65,9 @@ export default function NetworkPage() {
   return (
     <AppShell>
       <PageTitle
-        title="网络架构"
-        eyebrow={isHq ? "总部 → 加盟商 → 站点 · 层级绑定" : `加盟商视角 · ${franchiseScope}`}
-        action={<button type="button" onClick={() => void load()} className="tag inline-flex items-center gap-1"><RefreshCcw size={13} /> 刷新</button>}
+        title={t("pnTitle")}
+        eyebrow={isHq ? t("pnEyebrowHq") : t("pnEyebrowFr", { f: franchiseScope })}
+        action={<button type="button" onClick={() => void load()} className="tag inline-flex items-center gap-1"><RefreshCcw size={13} /> {t("pnRefresh")}</button>}
       />
 
       {message && (
@@ -70,7 +78,7 @@ export default function NetworkPage() {
 
       {isHq && (
         <div className="panel mb-4 p-4">
-          <div className="mb-3 flex items-center gap-2 text-xs font-black uppercase text-[var(--accent)]"><Building2 size={14} /> 加盟商（{franchises.length}）</div>
+          <div className="mb-3 flex items-center gap-2 text-xs font-black uppercase text-[var(--accent)]"><Building2 size={14} /> {t("pnFranchisesN", { n: franchises.length })}</div>
           <div className="mb-4 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
             {franchises.map((franchise) => (
               <div key={franchise.id} className="rounded-[8px] border border-[var(--line)] bg-[var(--surface-raised)] p-3">
@@ -78,25 +86,25 @@ export default function NetworkPage() {
                   <div className="text-sm font-black">{franchise.name}</div>
                   <button
                     type="button"
-                    title="删除（需先迁移下属站点）"
+                    title={t("pnDelHint")}
                     onClick={async () => {
-                      if (!(await dialog.confirm(`删除加盟商「${franchise.name}」？`, { tone: "danger", confirmText: "删除" }))) return;
+                      if (!(await dialog.confirm(t("pnDelFrQ", { name: franchise.name }), { tone: "danger", confirmText: t("pnDel") }))) return;
                       const response = await fetch("/api/network", { method: "POST", headers, body: JSON.stringify({ action: "deleteFranchise", franchiseId: franchise.id }) });
                       const payload = await response.json().catch(() => ({}));
                       if (response.ok) {
-                        setMessage({ tone: "ok", text: `「${franchise.name}」已删除。` });
+                        setMessage({ tone: "ok", text: t("pnDeleted", { name: franchise.name }) });
                         void load();
                         return;
                       }
                       // Bound stations: offer force-delete (stations become unbound).
                       if (response.status === 409 && payload.canForce) {
-                        if (await dialog.confirm("强制删除加盟商？", { message: `${payload.error}\n\n强制删除后其站点将变为「未绑定」，可稍后迁移到其他加盟商。`, tone: "danger", confirmText: "强制删除" })) {
+                        if (await dialog.confirm(t("pnForceDelQ"), { message: t("pnForceDelMsg", { err: payload.error }), tone: "danger", confirmText: t("pnForceDel") })) {
                           const r2 = await post({ action: "deleteFranchise", franchiseId: franchise.id, force: true });
-                          if (r2) setMessage({ tone: "ok", text: `「${franchise.name}」已删除，${r2.data?.unbound ?? 0} 个站点已解除绑定。` });
+                          if (r2) setMessage({ tone: "ok", text: t("pnDeletedUnbound", { name: franchise.name, n: r2.data?.unbound ?? 0 }) });
                         }
                         return;
                       }
-                      setMessage({ tone: "err", text: payload.error ?? `删除失败 (${response.status})` });
+                      setMessage({ tone: "err", text: payload.error ?? t("pnDelFailed", { s: response.status }) });
                     }}
                     className="text-[var(--muted)] hover:text-[var(--danger-ink)]"
                   >
@@ -107,64 +115,64 @@ export default function NetworkPage() {
                   {franchise.owner || "—"}{franchise.phone && ` ｜ ${franchise.phone}`} ｜ {franchise.city}
                 </div>
                 <div className="mt-2 flex flex-wrap items-center gap-2">
-                  <Badge value={`${franchise.stationCount} 个站点`} />
+                  <Badge value={t("pnStationsN", { n: franchise.stationCount })} />
                   <span className={`text-[11px] font-black ${(franchise.depositBalance ?? 0) < 0 ? "text-[var(--danger-ink)]" : "text-[var(--accent)]"}`}>
-                    预存 R$ {(franchise.depositBalance ?? 0).toFixed(2)}{(franchise.depositBalance ?? 0) < 0 && "（欠款，请充值）"}
+                    {t("pnDeposit", { x: (franchise.depositBalance ?? 0).toFixed(2) })}{(franchise.depositBalance ?? 0) < 0 && t("pnDepositDebt")}
                   </span>
                   <button
                     type="button"
                     className="tag"
                     onClick={async () => {
-                      const raw = await dialog.prompt("充值预存", { message: `为「${franchise.name}」充值预存金额（负数=扣减）`, placeholder: "如 500 或 -200" });
+                      const raw = await dialog.prompt(t("pnTopUpTitle"), { message: t("pnTopUpMsg", { name: franchise.name }), placeholder: t("pnTopUpPh") });
                       const amount = Number(raw);
                       if (!raw || !Number.isFinite(amount) || amount === 0) return;
-                      const r = await post({ action: "depositFranchise", franchiseId: franchise.id, amount, note: "后台手工调整" });
-                      if (r) setMessage({ tone: "ok", text: `「${franchise.name}」预存余额已更新：R$ ${Number(r.data?.depositBalance ?? 0).toFixed(2)}` });
+                      const r = await post({ action: "depositFranchise", franchiseId: franchise.id, amount, note: t("pnTopUpNote") });
+                      if (r) setMessage({ tone: "ok", text: t("pnDepositUpdated", { name: franchise.name, x: Number(r.data?.depositBalance ?? 0).toFixed(2) }) });
                     }}
                   >
-                    充值
+                    {t("pnTopUp")}
                   </button>
                 </div>
               </div>
             ))}
-            {franchises.length === 0 && <div className="text-sm font-bold text-[var(--muted)]">还没有加盟商，先在下方创建。</div>}
+            {franchises.length === 0 && <div className="text-sm font-bold text-[var(--muted)]">{t("pnNoFranchises")}</div>}
           </div>
           <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-5">
-            <input className={input} placeholder="加盟商名称 *" value={franchiseForm.name} onChange={(e) => setFranchiseForm({ ...franchiseForm, name: e.target.value })} />
-            <input className={input} placeholder="负责人" value={franchiseForm.owner} onChange={(e) => setFranchiseForm({ ...franchiseForm, owner: e.target.value })} />
-            <input className={input} placeholder="联系电话" value={franchiseForm.phone} onChange={(e) => setFranchiseForm({ ...franchiseForm, phone: e.target.value })} />
-            <input className={input} placeholder="城市" value={franchiseForm.city} onChange={(e) => setFranchiseForm({ ...franchiseForm, city: e.target.value })} />
+            <input className={input} placeholder={t("pnFrNamePh")} value={franchiseForm.name} onChange={(e) => setFranchiseForm({ ...franchiseForm, name: e.target.value })} />
+            <input className={input} placeholder={t("pnFrOwnerPh")} value={franchiseForm.owner} onChange={(e) => setFranchiseForm({ ...franchiseForm, owner: e.target.value })} />
+            <input className={input} placeholder={t("pnFrPhonePh")} value={franchiseForm.phone} onChange={(e) => setFranchiseForm({ ...franchiseForm, phone: e.target.value })} />
+            <input className={input} placeholder={t("pnFrCityPh")} value={franchiseForm.city} onChange={(e) => setFranchiseForm({ ...franchiseForm, city: e.target.value })} />
             <button
               type="button"
               disabled={!franchiseForm.name.trim()}
               onClick={async () => {
                 const r = await post({ action: "addFranchise", ...franchiseForm });
                 if (r) {
-                  setMessage({ tone: "ok", text: `加盟商 ${franchiseForm.name} 已创建。` });
+                  setMessage({ tone: "ok", text: t("pnFrCreated", { name: franchiseForm.name }) });
                   setFranchiseForm({ name: "", owner: "", phone: "", city: "São Paulo" });
                 }
               }}
               className="inline-flex h-11 items-center justify-center gap-1 rounded-[8px] bg-[var(--accent)] text-xs font-black uppercase text-[var(--accent-ink)] disabled:opacity-50"
             >
-              <Plus size={14} /> 新增加盟商
+              <Plus size={14} /> {t("pnAddFr")}
             </button>
           </div>
         </div>
       )}
 
       <div className="panel mb-4 p-4">
-        <div className="mb-3 flex items-center gap-2 text-xs font-black uppercase text-[var(--accent)]"><Store size={14} /> 新增站点（必须绑定上级加盟商 + 地址/地图）</div>
+        <div className="mb-3 flex items-center gap-2 text-xs font-black uppercase text-[var(--accent)]"><Store size={14} /> {t("pnAddStationTitle")}</div>
         <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-6">
-          <input className={input} placeholder="站点名称 *" value={stationForm.name} onChange={(e) => setStationForm({ ...stationForm, name: e.target.value })} />
+          <input className={input} placeholder={t("pnStNamePh")} value={stationForm.name} onChange={(e) => setStationForm({ ...stationForm, name: e.target.value })} />
           <select className={input} value={stationForm.franchise} onChange={(e) => setStationForm({ ...stationForm, franchise: e.target.value })}>
-            <option value="">上级加盟商 *</option>
+            <option value="">{t("pnStParentPh")}</option>
             {franchises.map((f) => (
               <option key={f.id} value={f.name}>{f.name}</option>
             ))}
           </select>
-          <input className={`${input} lg:col-span-2`} placeholder="站点地址（如 Rua Augusta 1000, São Paulo）*" value={stationForm.address} onChange={(e) => setStationForm({ ...stationForm, address: e.target.value })} />
-          <input className={input} placeholder="Google Maps 链接（选填）" value={stationForm.mapUrl} onChange={(e) => setStationForm({ ...stationForm, mapUrl: e.target.value })} />
-          <input className={input} placeholder="站点负责人" value={stationForm.leader} onChange={(e) => setStationForm({ ...stationForm, leader: e.target.value })} />
+          <input className={`${input} lg:col-span-2`} placeholder={t("pnStAddrPh")} value={stationForm.address} onChange={(e) => setStationForm({ ...stationForm, address: e.target.value })} />
+          <input className={input} placeholder={t("pnStMapPh")} value={stationForm.mapUrl} onChange={(e) => setStationForm({ ...stationForm, mapUrl: e.target.value })} />
+          <input className={input} placeholder={t("pnStLeaderPh")} value={stationForm.leader} onChange={(e) => setStationForm({ ...stationForm, leader: e.target.value })} />
         </div>
         <button
           type="button"
@@ -175,15 +183,15 @@ export default function NetworkPage() {
               setMessage({
                 tone: "ok",
                 text: r.pendingApproval
-                  ? `站点 ${stationForm.name} 已提交，等待总部审核后生效。`
-                  : `站点 ${stationForm.name} 已创建并绑定 ${stationForm.franchise}。`,
+                  ? t("pnStPending", { name: stationForm.name })
+                  : t("pnStCreated", { name: stationForm.name, f: stationForm.franchise }),
               });
               setStationForm({ name: "", franchise: "", address: "", mapUrl: "", leader: "" });
             }
           }}
           className="mt-3 inline-flex h-11 items-center gap-2 rounded-[8px] bg-[var(--accent)] px-6 text-sm font-black uppercase text-[var(--accent-ink)] disabled:opacity-50"
         >
-          <Plus size={15} /> 创建站点
+          <Plus size={15} /> {t("pnCreateStation")}
         </button>
       </div>
 
@@ -191,7 +199,7 @@ export default function NetworkPage() {
         <input
           value={stationQuery}
           onChange={(e) => setStationQuery(e.target.value)}
-          placeholder="搜索站点 / 加盟商..."
+          placeholder={t("pnSearchPh")}
           className="h-11 w-full max-w-sm rounded-[8px] border border-[var(--line)] bg-[var(--surface-raised)] px-3 text-sm font-bold outline-none focus:border-[var(--accent)]"
         />
         <span className="shrink-0 text-xs font-bold text-[var(--muted)]" data-i18n-skip>{shownStations.length}</span>
@@ -211,9 +219,9 @@ export default function NetworkPage() {
               <div className="space-y-2 p-4">
                 <div className="flex flex-wrap items-center gap-2">
                   <span className="text-sm font-black">{station.name}</span>
-                  <Badge value={station.franchise || "未绑定"} />
+                  <Badge value={station.franchise || t("pnUnbound")} />
                   <span className="tag">{station.bairro}</span>
-                  {station.status === "pending" && <span className="tag border-[var(--warning)] text-[var(--warning-ink)]">待总部审核</span>}
+                  {station.status === "pending" && <span className="tag border-[var(--warning)] text-[var(--warning-ink)]">{t("pnPendingReview")}</span>}
                 </div>
                 {station.status === "pending" && isHq && (
                   <div className="flex gap-2">
@@ -222,21 +230,21 @@ export default function NetworkPage() {
                       className="inline-flex h-9 items-center rounded-[8px] bg-[var(--accent)] px-4 text-xs font-black uppercase text-[var(--accent-ink)]"
                       onClick={async () => {
                         const r = await post({ action: "approveStation", stationId: station.id });
-                        if (r) setMessage({ tone: "ok", text: `站点「${station.name}」已批准。` });
+                        if (r) setMessage({ tone: "ok", text: t("pnApproved", { name: station.name }) });
                       }}
                     >
-                      批准
+                      {t("pnApprove")}
                     </button>
                     <button
                       type="button"
                       className="tag text-[var(--danger-ink)]"
                       onClick={async () => {
-                        if (!(await dialog.confirm(`驳回并删除站点「${station.name}」？`, { tone: "danger", confirmText: "驳回" }))) return;
+                        if (!(await dialog.confirm(t("pnRejectStQ", { name: station.name }), { tone: "danger", confirmText: t("pnReject") }))) return;
                         const r = await post({ action: "rejectStation", stationId: station.id });
-                        if (r) setMessage({ tone: "ok", text: "已驳回。" });
+                        if (r) setMessage({ tone: "ok", text: t("pnRejected") });
                       }}
                     >
-                      驳回
+                      {t("pnReject")}
                     </button>
                   </div>
                 )}
@@ -252,8 +260,8 @@ export default function NetworkPage() {
                 )}
                 <div className="flex items-center gap-3 text-[11px] font-bold text-[var(--muted)]">
                   <span className="inline-flex items-center gap-1"><UserRound size={12} /> {station.leader || "—"}</span>
-                  <span>骑手 {station.ridersCount}</span>
-                  <span>安全 {station.safetyScore}/100</span>
+                  <span>{t("pnRiders", { n: station.ridersCount })}</span>
+                  <span>{t("pnSafety", { n: station.safetyScore })}</span>
                 </div>
                 {isHq && (
                   <div className="flex gap-2 pt-1">
@@ -261,26 +269,26 @@ export default function NetworkPage() {
                       type="button"
                       className="tag"
                       onClick={async () => {
-                        const address = await dialog.prompt("编辑站点地址", { defaultValue: station.address ?? "", placeholder: "Rua ... , São Paulo" });
+                        const address = await dialog.prompt(t("pnEditAddrTitle"), { defaultValue: station.address ?? "", placeholder: "Rua ... , São Paulo" });
                         if (address === null) return;
-                        const mapUrl = (await dialog.prompt("Google Maps 链接（可留空）", { defaultValue: station.mapUrl ?? "" })) ?? "";
+                        const mapUrl = (await dialog.prompt(t("pnMapPromptTitle"), { defaultValue: station.mapUrl ?? "" })) ?? "";
                         const r = await post({ action: "updateStation", stationId: station.id, address, mapUrl });
-                        if (r) setMessage({ tone: "ok", text: "站点位置已更新。" });
+                        if (r) setMessage({ tone: "ok", text: t("pnLocUpdated") });
                       }}
                     >
-                      编辑位置
+                      {t("pnEditLoc")}
                     </button>
                     <button
                       type="button"
                       className="tag"
                       onClick={async () => {
-                        const next = await dialog.prompt("迁移站点", { message: `迁移「${station.name}」到加盟商（现有：${franchises.map((f) => f.name).join(" / ")}）`, defaultValue: station.franchise ?? "" });
+                        const next = await dialog.prompt(t("pnMigrateTitle"), { message: t("pnMigrateMsg", { name: station.name, list: franchises.map((f) => f.name).join(" / ") }), defaultValue: station.franchise ?? "" });
                         if (!next?.trim()) return;
                         const r = await post({ action: "updateStation", stationId: station.id, franchise: next.trim() });
-                        if (r) setMessage({ tone: "ok", text: `已绑定到 ${next.trim()}。` });
+                        if (r) setMessage({ tone: "ok", text: t("pnBoundTo", { x: next.trim() }) });
                       }}
                     >
-                      变更上级
+                      {t("pnChangeParent")}
                     </button>
                   </div>
                 )}
@@ -288,7 +296,7 @@ export default function NetworkPage() {
             </div>
           );
         })}
-        {shownStations.length === 0 && <div className="panel p-6 text-sm font-bold text-[var(--muted)]">暂无站点。</div>}
+        {shownStations.length === 0 && <div className="panel p-6 text-sm font-bold text-[var(--muted)]">{t("pnNoStations")}</div>}
       </div>
     </AppShell>
   );

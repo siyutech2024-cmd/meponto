@@ -8,6 +8,8 @@ import { portalConfigs, type PortalId } from "../lib/portals";
 import type { AppUser } from "../lib/users";
 import { readSession } from "../lib/session";
 import { useDialog } from "../components/dialog";
+import { useVentoStore } from "../lib/store";
+import { translate, type TranslationKey } from "../lib/i18n";
 
 type SafeUser = Omit<AppUser, "passwordHash" | "salt">;
 
@@ -16,6 +18,12 @@ const portalIds = Object.keys(portalConfigs) as PortalId[];
 
 export default function UsersPage() {
   const dialog = useDialog();
+  const language = useVentoStore((s) => s.language);
+  const t = (k: TranslationKey, vars?: Record<string, string | number | undefined>) => {
+    let s = translate(language, k);
+    if (vars) for (const [key, val] of Object.entries(vars)) s = s.replace(`{${key}}`, String(val ?? ""));
+    return s;
+  };
   // Franchise portal: this page becomes "station accounts" scoped to itself.
   const session = useMemo(() => readSession(), []);
   const isFranchise = session?.portal === "franchise";
@@ -48,7 +56,7 @@ export default function UsersPage() {
     const response = await fetch("/api/users", { method: "POST", headers, body: JSON.stringify(body) });
     const payload = await response.json().catch(() => ({}));
     if (!response.ok) {
-      setMessage({ tone: "err", text: payload.error ?? `请求失败 (${response.status})` });
+      setMessage({ tone: "err", text: payload.error ?? t("usReqFailed", { s: response.status }) });
       return null;
     }
     void load();
@@ -61,11 +69,11 @@ export default function UsersPage() {
   return (
     <AppShell>
       <PageTitle
-        title={isFranchise ? "站点账号" : "用户与权限"}
-        eyebrow={isFranchise ? `为 ${ownFranchise} 下属站点配置登录账号` : "多用户账号 · 角色 · 系统归属"}
+        title={isFranchise ? t("usTitleSt") : t("usTitleHq")}
+        eyebrow={isFranchise ? t("usEyebrowFr", { f: ownFranchise }) : t("usEyebrowHq")}
         action={
           <button type="button" onClick={() => void load()} className="tag inline-flex items-center gap-1">
-            <RefreshCcw size={13} /> 刷新
+            <RefreshCcw size={13} /> {t("usRefresh")}
           </button>
         }
       />
@@ -79,15 +87,15 @@ export default function UsersPage() {
       <div className="grid gap-4 lg:grid-cols-[400px_1fr]">
         <div className="panel space-y-3 p-5">
           <div className="flex items-center gap-2 text-xs font-black uppercase text-[var(--accent)]">
-            <UserPlus size={15} /> 新建用户
+            <UserPlus size={15} /> {t("usNewUser")}
           </div>
-          <input className={input} placeholder="姓名" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
-          <input className={input} placeholder="登录邮箱或手机号" value={form.identifier} onChange={(e) => setForm({ ...form, identifier: e.target.value })} />
-          <input className={input} placeholder="联系电话（选填）" value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} />
-          <input className={input} type="password" placeholder="初始密码（至少 6 位）" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} />
+          <input className={input} placeholder={t("usName")} value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
+          <input className={input} placeholder={t("usIdentifier")} value={form.identifier} onChange={(e) => setForm({ ...form, identifier: e.target.value })} />
+          <input className={input} placeholder={t("usPhoneOpt")} value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} />
+          <input className={input} type="password" placeholder={t("usPassword")} value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} />
           <div className={`grid grid-cols-2 gap-3 ${isFranchise ? "hidden" : ""}`}>
             <label className="text-[10px] font-black uppercase text-[var(--muted)]">
-              所属系统
+              {t("usSystem")}
               <select
                 className={`${input} mt-1`}
                 value={form.portal}
@@ -103,7 +111,7 @@ export default function UsersPage() {
               </select>
             </label>
             <label className="text-[10px] font-black uppercase text-[var(--muted)]">
-              角色
+              {t("usRole")}
               <select className={`${input} mt-1`} value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value as Role })}>
                 {roles.filter((role) => allowedRoles.includes(role)).map((role) => (
                   <option key={role} value={role}>{role}</option>
@@ -116,12 +124,12 @@ export default function UsersPage() {
               <input className={input} value={ownFranchise} disabled />
             ) : (
               <select className={input} value={form.franchise} onChange={(e) => setForm({ ...form, franchise: e.target.value, station: "" })}>
-                <option value="">所属加盟商{form.portal === "franchise" ? " *" : "（选填）"}</option>
+                <option value="">{t("usOwnerFranchise")}{form.portal === "franchise" ? " *" : t("usOptional")}</option>
                 {network.franchises.map((f) => <option key={f.id} value={f.name}>{f.name}</option>)}
               </select>
             )}
             <select className={input} value={form.station} onChange={(e) => setForm({ ...form, station: e.target.value })}>
-              <option value="">所属站点{form.portal === "ponto" ? " *" : "（选填）"}</option>
+              <option value="">{t("usOwnerStation")}{form.portal === "ponto" ? " *" : t("usOptional")}</option>
               {network.stations
                 .filter((s) => {
                   const fr = isFranchise ? ownFranchise : form.franchise;
@@ -139,20 +147,20 @@ export default function UsersPage() {
               const result = await post({ action: "create", ...form });
               setBusy(false);
               if (result) {
-                setMessage({ tone: "ok", text: `用户 ${form.identifier} 已创建，可立即登录 ${portalConfigs[form.portal].productName}。` });
+                setMessage({ tone: "ok", text: t("usCreated", { id: form.identifier, portal: portalConfigs[form.portal].productName }) });
                 setForm({ ...form, name: "", identifier: "", phone: "", password: "" });
               }
             }}
             className="inline-flex h-11 w-full items-center justify-center gap-2 rounded-[8px] bg-[var(--accent)] text-sm font-black uppercase text-[var(--accent-ink)] hover:bg-[var(--accent-strong)] disabled:opacity-50"
           >
-            <ShieldCheck size={16} /> 创建账号
+            <ShieldCheck size={16} /> {t("usCreate")}
           </button>
         </div>
 
         <div className="panel p-5">
-          <div className="mb-3 text-xs font-black uppercase text-[var(--accent)]">账号列表（{users.length}）</div>
+          <div className="mb-3 text-xs font-black uppercase text-[var(--accent)]">{t("usListN", { n: users.length })}</div>
           {users.length === 0 ? (
-            <div className="text-sm font-bold text-[var(--muted)]">还没有自建账号；演示账号不在此列表。</div>
+            <div className="text-sm font-bold text-[var(--muted)]">{t("usNoUsers")}</div>
           ) : (
             <div className="max-h-[560px] space-y-2 overflow-auto pr-1">
               {users.map((user) => (
@@ -163,13 +171,13 @@ export default function UsersPage() {
                         {user.name}
                         <Badge value={user.role} />
                         <Badge value={portalConfigs[user.portal]?.productName ?? user.portal} />
-                        {user.status === "disabled" && <Badge value="已停用" />}
+                        {user.status === "disabled" && <Badge value={t("usDisabled")} />}
                       </div>
                       <div className="mt-1 text-[11px] font-bold text-[var(--muted)]">
                         {user.identifier}
                         {user.franchise && ` ｜ ${user.franchise}`}
                         {user.station && ` / ${user.station}`}
-                        {user.lastLoginAt && ` ｜ 最近登录 ${user.lastLoginAt}`}
+                        {user.lastLoginAt && t("usLastLogin", { x: user.lastLoginAt })}
                       </div>
                     </div>
                     <div className="flex gap-2">
@@ -177,13 +185,13 @@ export default function UsersPage() {
                         type="button"
                         className="tag inline-flex items-center gap-1"
                         onClick={async () => {
-                          const password = await dialog.prompt("重置密码", { message: `为 ${user.identifier} 设置新密码（至少 6 位）` });
+                          const password = await dialog.prompt(t("usResetPw"), { message: t("usResetPwMsg", { id: user.identifier }) });
                           if (!password) return;
                           const result = await post({ action: "resetPassword", userId: user.id, password });
-                          if (result) setMessage({ tone: "ok", text: "密码已重置。" });
+                          if (result) setMessage({ tone: "ok", text: t("usPwReset") });
                         }}
                       >
-                        <KeyRound size={13} /> 重置密码
+                        <KeyRound size={13} /> {t("usResetPw")}
                       </button>
                       <button
                         type="button"
@@ -191,28 +199,28 @@ export default function UsersPage() {
                         onClick={async () => {
                           const next = user.status === "active" ? "disabled" : "active";
                           const result = await post({ action: "update", userId: user.id, status: next });
-                          if (result) setMessage({ tone: "ok", text: next === "disabled" ? "账号已停用。" : "账号已启用。" });
+                          if (result) setMessage({ tone: "ok", text: next === "disabled" ? t("usDisabledMsg") : t("usEnabledMsg") });
                         }}
                       >
-                        {user.status === "active" ? "停用" : "启用"}
+                        {user.status === "active" ? t("usDisable") : t("usEnable")}
                       </button>
                       <button
                         type="button"
                         className="tag"
                         onClick={() => setEdit({ id: user.id, name: user.name, phone: user.phone ?? "", role: user.role, portal: user.portal, franchise: user.franchise ?? "", station: user.station ?? "" })}
                       >
-                        编辑
+                        {t("usEdit")}
                       </button>
                       <button
                         type="button"
                         className="tag text-[var(--danger-ink)]"
                         onClick={async () => {
-                          if (!(await dialog.confirm(`删除账号「${user.identifier}」？`, { message: "删除后将无法登录，且不可恢复。", tone: "danger", confirmText: "删除" }))) return;
+                          if (!(await dialog.confirm(t("usDelQ", { id: user.identifier }), { message: t("usDelMsg"), tone: "danger", confirmText: t("usDel") }))) return;
                           const result = await post({ action: "delete", userId: user.id });
-                          if (result) setMessage({ tone: "ok", text: `账号 ${user.identifier} 已删除。` });
+                          if (result) setMessage({ tone: "ok", text: t("usDeleted", { id: user.identifier }) });
                         }}
                       >
-                        删除
+                        {t("usDel")}
                       </button>
                     </div>
                   </div>
@@ -227,10 +235,10 @@ export default function UsersPage() {
       {edit && (
         <div className="fixed inset-0 z-[100] grid place-items-center bg-[var(--overlay)] p-4 backdrop-blur-sm" onMouseDown={() => setEdit(null)}>
           <div className="panel w-full max-w-lg space-y-3 p-5 shadow-2xl" onMouseDown={(e) => e.stopPropagation()}>
-            <h2 className="text-lg font-black">编辑账号</h2>
+            <h2 className="text-lg font-black">{t("usEditTitle")}</h2>
             <div className="grid gap-2 sm:grid-cols-2">
-              <input className={input} placeholder="姓名" value={edit.name} onChange={(e) => setEdit({ ...edit, name: e.target.value })} />
-              <input className={input} placeholder="电话" value={edit.phone} onChange={(e) => setEdit({ ...edit, phone: e.target.value })} />
+              <input className={input} placeholder={t("usName")} value={edit.name} onChange={(e) => setEdit({ ...edit, name: e.target.value })} />
+              <input className={input} placeholder={t("usPhone")} value={edit.phone} onChange={(e) => setEdit({ ...edit, phone: e.target.value })} />
               {!isFranchise && (
                 <select
                   className={input}
@@ -251,12 +259,12 @@ export default function UsersPage() {
               )}
               {!isFranchise && (
                 <select className={input} value={edit.franchise} onChange={(e) => setEdit({ ...edit, franchise: e.target.value, station: "" })}>
-                  <option value="">所属加盟商（无）</option>
+                  <option value="">{t("usOwnerFranchiseNone")}</option>
                   {network.franchises.map((f) => <option key={f.id} value={f.name}>{f.name}</option>)}
                 </select>
               )}
               <select className={input} value={edit.station} onChange={(e) => setEdit({ ...edit, station: e.target.value })}>
-                <option value="">所属站点（无）</option>
+                <option value="">{t("usOwnerStationNone")}</option>
                 {network.stations
                   .filter((s) => {
                     const fr = isFranchise ? ownFranchise : edit.franchise;
@@ -266,19 +274,19 @@ export default function UsersPage() {
               </select>
             </div>
             <div className="flex justify-end gap-2">
-              <button type="button" onClick={() => setEdit(null)} className="h-10 rounded-[8px] border border-[var(--line)] px-4 text-sm font-black text-[var(--muted-strong)]">取消</button>
+              <button type="button" onClick={() => setEdit(null)} className="h-10 rounded-[8px] border border-[var(--line)] px-4 text-sm font-black text-[var(--muted-strong)]">{t("usCancel")}</button>
               <button
                 type="button"
                 className="h-10 rounded-[8px] bg-[var(--accent)] px-5 text-sm font-black text-[var(--accent-ink)]"
                 onClick={async () => {
                   const result = await post({ action: "update", userId: edit.id, name: edit.name, phone: edit.phone, role: edit.role, portal: edit.portal, franchise: edit.franchise, station: edit.station });
                   if (result) {
-                    setMessage({ tone: "ok", text: "账号信息已更新。" });
+                    setMessage({ tone: "ok", text: t("usUpdated") });
                     setEdit(null);
                   }
                 }}
               >
-                保存修改
+                {t("usSave")}
               </button>
             </div>
           </div>
