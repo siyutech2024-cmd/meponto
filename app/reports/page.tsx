@@ -5,6 +5,8 @@ import { Building2, Download, FileBarChart2, MapPin, RefreshCcw, Users } from "l
 import { AppShell, PageTitle } from "../components/ui";
 import { downloadCsv } from "../lib/csv";
 import { readSession } from "../lib/session";
+import { useVentoStore } from "../lib/store";
+import { translate, type TranslationKey } from "../lib/i18n";
 
 /**
  * Operations report center — REAL data from the T+1 statement endpoint.
@@ -48,10 +50,15 @@ function mondayOf(date: Date): string {
   return d.toISOString().slice(0, 10);
 }
 
-const FULL_HEADERS = ["日期", "骑手", "99ID", "CPF", "PIX", "电话", "加盟商", "站点", "完单(结算)", "完单(考核)", "在线时长", "AR%", "%TSH", "今日统计", "行程收入", "奖励", "小费", "现金欠款", "餐损", "结算金额", "付款状态"];
-const fullRow = (r: Row) => [r.date, r.riderName, r.rider99Id, r.cpf, r.pix, r.phone, r.franchise, r.station, String(r.orders), r.kpiOrders ?? "", r.onlineHours ?? "", r.ar ?? "", r.tsh ?? "", r.total.toFixed(2), r.tripIncome.toFixed(2), r.bonus.toFixed(2), r.tips.toFixed(2), r.cashDebt.toFixed(2), r.mealDeduction.toFixed(2), r.settleAmount.toFixed(2), r.paid ? "已付" : "待付"];
-
 export default function ReportsPage() {
+  const language = useVentoStore((s) => s.language);
+  const t = (k: TranslationKey, vars?: Record<string, string | number | undefined>) => {
+    let s = translate(language, k);
+    if (vars) for (const [key, val] of Object.entries(vars)) s = s.replace(`{${key}}`, String(val ?? ""));
+    return s;
+  };
+  const FULL_HEADERS = [t("wlCsvDate"), t("rdColRider"), "99ID", "CPF", "PIX", t("rdPhPhone"), t("rdColFranchise"), t("wlColStation"), t("rpOrdersSettle"), t("rpOrdersKpi"), t("wlCsvOnlineH"), "AR%", "%TSH", t("rpToday"), t("wlCsvTripInc"), t("wlCsvBonus"), t("wlCsvTips"), t("wlCsvCashDebt"), t("wlCsvMeal"), t("wlCsvSettle"), t("rpPayStatus")];
+  const fullRow = (r: Row) => [r.date, r.riderName, r.rider99Id, r.cpf, r.pix, r.phone, r.franchise, r.station, String(r.orders), r.kpiOrders ?? "", r.onlineHours ?? "", r.ar ?? "", r.tsh ?? "", r.total.toFixed(2), r.tripIncome.toFixed(2), r.bonus.toFixed(2), r.tips.toFixed(2), r.cashDebt.toFixed(2), r.mealDeduction.toFixed(2), r.settleAmount.toFixed(2), r.paid ? t("rpPaid") : t("rpPending")];
   const session = useMemo(() => readSession(), []);
   const scopeFranchise = session?.portal === "franchise" ? session.franchise || session.organization : "";
 
@@ -102,19 +109,19 @@ export default function ReportsPage() {
     return [...map.values()].map((g) => ({ ...g, riderCount: g.riders.size, ar: g.arN ? Math.round((g.arSum / g.arN) * 10) / 10 : null })).sort((a, b) => b.settle - a.settle);
   }, [rows, dim]);
 
-  const dims = (scopeFranchise ? [["station", "按站点", MapPin], ["rider", "按骑手", Users]] : [["franchise", "按加盟商", Building2], ["station", "按站点", MapPin], ["rider", "按骑手", Users]]) as Array<["franchise" | "station" | "rider", string, typeof Building2]>;
+  const dims = (scopeFranchise ? [["station", t("rpByStation"), MapPin], ["rider", t("rpByRider"), Users]] : [["franchise", t("rpByFranchise"), Building2], ["station", t("rpByStation"), MapPin], ["rider", t("rpByRider"), Users]]) as Array<["franchise" | "station" | "rider", string, typeof Building2]>;
 
   return (
     <AppShell>
       <PageTitle
-        title="运营报表中心"
-        eyebrow={scopeFranchise ? `加盟商报表 · ${scopeFranchise}` : "真实 T+1 数据 · 加盟商/站点/骑手三维"}
+        title={t("rpTitle")}
+        eyebrow={scopeFranchise ? t("rpEyebrowFr", { f: scopeFranchise }) : t("rpEyebrowHq")}
         action={
           <div className="flex gap-2">
-            <button type="button" className="tag inline-flex items-center gap-1" onClick={() => downloadCsv(`report-${from}_${to}`, FULL_HEADERS, rows.map(fullRow))} title="逐日全字段明细">
-              <Download size={13} /> 导出明细
+            <button type="button" className="tag inline-flex items-center gap-1" onClick={() => downloadCsv(`report-${from}_${to}`, FULL_HEADERS, rows.map(fullRow))} title={t("rpExportRowsTitle")}>
+              <Download size={13} /> {t("rpExportRows")}
             </button>
-            <button type="button" className="tag inline-flex items-center gap-1" onClick={() => void load()}><RefreshCcw size={13} /> 刷新</button>
+            <button type="button" className="tag inline-flex items-center gap-1" onClick={() => void load()}><RefreshCcw size={13} /> {t("rpRefresh")}</button>
           </div>
         }
       />
@@ -123,27 +130,27 @@ export default function ReportsPage() {
       <div className="panel mb-4 flex flex-wrap items-center gap-3 p-3" data-i18n-skip>
         <FileBarChart2 size={16} className="text-[var(--accent)]" />
         <label className="flex items-center gap-2 text-xs font-black uppercase text-[var(--muted)]">
-          从 <input type="date" className={input} value={from} onChange={(e) => setFrom(e.target.value)} />
+          {t("rpFrom")} <input type="date" className={input} value={from} onChange={(e) => setFrom(e.target.value)} />
         </label>
         <label className="flex items-center gap-2 text-xs font-black uppercase text-[var(--muted)]">
-          至 <input type="date" className={input} value={to} onChange={(e) => setTo(e.target.value)} />
+          {t("rpTo")} <input type="date" className={input} value={to} onChange={(e) => setTo(e.target.value)} />
         </label>
         <div className="flex gap-1.5">
-          <button type="button" className="tag" onClick={() => { setFrom(mondayOf(new Date())); setTo(new Date().toISOString().slice(0, 10)); }}>本周</button>
-          <button type="button" className="tag" onClick={() => { const d = new Date(); d.setDate(d.getDate() - 7); const start = mondayOf(d); const end = new Date(`${start}T12:00:00`); end.setDate(end.getDate() + 6); setFrom(start); setTo(end.toISOString().slice(0, 10)); }}>上周</button>
-          <button type="button" className="tag" onClick={() => { const d = new Date(); d.setDate(d.getDate() - 29); setFrom(d.toISOString().slice(0, 10)); setTo(new Date().toISOString().slice(0, 10)); }}>近30天</button>
+          <button type="button" className="tag" onClick={() => { setFrom(mondayOf(new Date())); setTo(new Date().toISOString().slice(0, 10)); }}>{t("rpThisWeek")}</button>
+          <button type="button" className="tag" onClick={() => { const d = new Date(); d.setDate(d.getDate() - 7); const start = mondayOf(d); const end = new Date(`${start}T12:00:00`); end.setDate(end.getDate() + 6); setFrom(start); setTo(end.toISOString().slice(0, 10)); }}>{t("rpLastWeek")}</button>
+          <button type="button" className="tag" onClick={() => { const d = new Date(); d.setDate(d.getDate() - 29); setFrom(d.toISOString().slice(0, 10)); setTo(new Date().toISOString().slice(0, 10)); }}>{t("rp30d")}</button>
         </div>
-        {loading && <span className="text-xs font-bold text-[var(--muted)]">加载中...</span>}
+        {loading && <span className="text-xs font-bold text-[var(--muted)]">{t("rpLoading")}</span>}
       </div>
 
       {/* Summary cards */}
       <div className="mb-4 grid gap-3 sm:grid-cols-3 xl:grid-cols-6">
         {[
-          ["骑手数", String(summary.riders)],
-          ["完单(结算)", String(summary.orders)],
-          ["完单(考核)", String(summary.kpiOrders)],
-          ["平均 AR", summary.ar !== null ? `${summary.ar}%` : "—"],
-          ["已付", money(summary.paid)],
+          [t("rpRiders"), String(summary.riders)],
+          [t("rpOrdersSettle"), String(summary.orders)],
+          [t("rpOrdersKpi"), String(summary.kpiOrders)],
+          [t("rpAvgAr"), summary.ar !== null ? `${summary.ar}%` : "—"],
+          [t("rpPaid"), money(summary.paid)],
         ].map(([label, value]) => (
           <div key={label} className="panel p-3 text-center">
             <div className="text-[10px] font-black uppercase text-[var(--muted)]">{label}</div>
@@ -151,7 +158,7 @@ export default function ReportsPage() {
           </div>
         ))}
         <div className="panel border-[var(--accent)] p-3 text-center">
-          <div className="text-[10px] font-black uppercase text-[var(--accent)]">结算合计（待付 {money(summary.pending)}）</div>
+          <div className="text-[10px] font-black uppercase text-[var(--accent)]">{t("rpSettleTotal", { pending: money(summary.pending) })}</div>
           <div className="mt-1 text-lg font-black text-[var(--accent)]">{money(summary.settle)}</div>
         </div>
       </div>
@@ -172,29 +179,29 @@ export default function ReportsPage() {
             onClick={() =>
               downloadCsv(
                 `report-${dim}-${from}_${to}`,
-                ["对象", "补充", "骑手数", "完单(结算)", "完单(考核)", "平均AR%", "应结", "已付", "待付"],
+                [t("rpColObject"), t("rpColSub"), t("rpRiders"), t("rpOrdersSettle"), t("rpOrdersKpi"), t("rpAvgAr"), t("rpSettle"), t("rpPaid"), t("rpPending")],
                 grouped.map((g) => [g.key, g.sub, String(g.riderCount), String(g.orders), String(g.kpiOrders), g.ar ?? "", g.settle.toFixed(2), g.paid.toFixed(2), (g.settle - g.paid).toFixed(2)]),
               )
             }
           >
-            <Download size={13} /> 导出本表
+            <Download size={13} /> {t("rpExportTable")}
           </button>
         </div>
         {rows.length === 0 ? (
-          <div className="py-8 text-center text-sm font-bold text-[var(--muted)]">{loading ? "加载中..." : "所选期间没有 T+1 数据。请先在「KPI T+1」导入报表。"}</div>
+          <div className="py-8 text-center text-sm font-bold text-[var(--muted)]">{loading ? t("rpLoading") : t("rpNoData")}</div>
         ) : (
           <div className="max-h-[560px] overflow-auto">
             <table className="w-full text-left text-sm">
               <thead className="sticky top-0 bg-[var(--surface)]">
                 <tr className="text-[10px] font-black uppercase text-[var(--muted)]">
-                  <th className="pb-2">{dim === "franchise" ? "加盟商" : dim === "station" ? "站点" : "骑手"}</th>
-                  <th className="pb-2 text-right">骑手数</th>
-                  <th className="pb-2 text-right">完单(结算)</th>
-                  <th className="pb-2 text-right">完单(考核)</th>
-                  <th className="pb-2 text-right">平均 AR</th>
-                  <th className="pb-2 text-right">应结</th>
-                  <th className="pb-2 text-right">已付</th>
-                  <th className="pb-2 text-right">待付</th>
+                  <th className="pb-2">{dim === "franchise" ? t("rdColFranchise") : dim === "station" ? t("wlColStation") : t("rdColRider")}</th>
+                  <th className="pb-2 text-right">{t("rpRiders")}</th>
+                  <th className="pb-2 text-right">{t("rpOrdersSettle")}</th>
+                  <th className="pb-2 text-right">{t("rpOrdersKpi")}</th>
+                  <th className="pb-2 text-right">{t("rpAvgAr")}</th>
+                  <th className="pb-2 text-right">{t("rpSettle")}</th>
+                  <th className="pb-2 text-right">{t("rpPaid")}</th>
+                  <th className="pb-2 text-right">{t("rpPending")}</th>
                 </tr>
               </thead>
               <tbody>
