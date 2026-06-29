@@ -33,11 +33,13 @@ async function run(request: Request) {
     }
   }
 
-  await refreshCollectionsFromDatabase(["riders", "riderDailyKpis", "pointsLedgerEntries"]);
+  await refreshCollectionsFromDatabase(["riders", "riderDailyKpis", "pointsLedgerEntries", "mallConfigs"]);
 
   const now = new Date();
   const year = now.getUTCFullYear();
   const todayMonthDay = now.toISOString().slice(5, 10); // "MM-DD"
+  // Base birthday gift for EVERY member (tiers may grant more).
+  const baseBirthday = memory.mallConfigs.find((c) => c.id === "mall-config")?.birthdayBasePoints ?? 0;
 
   const granted: Array<{ riderId: string; name: string; tier: string; points: number }> = [];
 
@@ -49,7 +51,7 @@ async function run(request: Request) {
     if (monthDay !== todayMonthDay) continue;
 
     const tier = resolveTier(lifetimeOrders(rider.ninetyNineId));
-    const points = tier.birthdayPoints;
+    const points = Math.max(tier.birthdayPoints, baseBirthday);
     if (points <= 0) continue;
 
     // Idempotency: one grant per rider per year.

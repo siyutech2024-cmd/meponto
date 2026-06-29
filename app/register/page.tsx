@@ -10,7 +10,7 @@ const GOOGLE_CLIENT_ID = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID;
 /** Public member self-registration + phone-OTP login (公开用户 → 会员一级). */
 export default function RegisterPage() {
   const [mode, setMode] = useState<"register" | "login">("login");
-  const [form, setForm] = useState({ name: "", phone: "", cpf: "", inviterId: "" });
+  const [form, setForm] = useState({ name: "", phone: "", cpf: "", inviterId: "", birthday: "" });
   const [state, setState] = useState<"idle" | "sending" | "done">("idle");
   const [error, setError] = useState("");
   const [memberId, setMemberId] = useState("");
@@ -289,6 +289,9 @@ export default function RegisterPage() {
             </label>
             <label className="block text-xs font-black uppercase text-black/45">CPF (opcional)
               <input value={form.cpf} onChange={(e) => setForm({ ...form, cpf: e.target.value })} className={`${input} mt-1`} placeholder="000.000.000-00" />
+            </label>
+            <label className="block text-xs font-black uppercase text-black/45">Aniversário 🎂 (ganhe pontos no seu dia)
+              <input type="date" value={form.birthday} onChange={(e) => setForm({ ...form, birthday: e.target.value })} className={`${input} mt-1`} />
             </label>
             {form.inviterId ? <div className="rounded-[10px] bg-[#e8f6ee] px-3 py-2 text-xs font-bold text-[#1d7a3e]">✓ Convite aplicado — quem te convidou ganha pontos.</div> : null}
             {error ? <div className="rounded-[10px] bg-[#fdeceb] px-3 py-2 text-sm font-bold text-[#c4423b]">{error}</div> : null}

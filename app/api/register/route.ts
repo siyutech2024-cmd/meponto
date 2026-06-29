@@ -25,7 +25,7 @@ function normalizeBR(raw: string): string {
 
 export async function POST(request: Request) {
   await refreshCollectionsFromDatabase(COLLECTIONS);
-  const body = (await request.json().catch(() => ({}))) as { name?: string; phone?: string; cpf?: string; inviterId?: string };
+  const body = (await request.json().catch(() => ({}))) as { name?: string; phone?: string; cpf?: string; inviterId?: string; birthday?: string };
   const name = (body.name ?? "").trim();
   const phone = (body.phone ?? "").trim();
   if (!name || !phone) return jsonResponse({ error: "Nome e telefone são obrigatórios." }, { status: 400 });
@@ -61,7 +61,7 @@ export async function POST(request: Request) {
     joinDate: new Date().toISOString().slice(0, 10),
     ninetyNineId: "",
     franchise: "Unassigned",
-    birthday: "",
+    birthday: /^\d{4}-\d{2}-\d{2}$/.test((body.birthday ?? "").trim()) ? (body.birthday ?? "").trim() : "",
   };
   memory.riders.unshift(member);
   appendServerAudit({ actor: "Self-registration", action: "MEMBER_REGISTERED", entity: "Rider", entityId: id, detail: `${name} (membro público, sem 99 ID)`, risk: "Low" });

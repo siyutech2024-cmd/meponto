@@ -21,6 +21,10 @@ export type MallConfig = {
   referralPoints: number;
   partnerServicePoints: number;
   partnerServiceCount: number;
+  /** Money equivalence: how many points equal R$1 (redemption/GMV reference). */
+  pointsPerBrl?: number;
+  /** Base birthday gift granted to EVERY member (tiers may grant more). */
+  birthdayBasePoints?: number;
   /** Company PIX key shown for hybrid (points + cash) checkout transfers. */
   pixKey?: string;
   /**
@@ -45,6 +49,8 @@ export const defaultMallConfig: MallConfig = {
   referralPoints: 20,
   partnerServicePoints: 20,
   partnerServiceCount: 3,
+  pointsPerBrl: 10,
+  birthdayBasePoints: 50,
   pixKey: "",
   dailyRedeemCount: 20,
   dailyRedeemPoints: 0,

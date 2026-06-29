@@ -106,7 +106,7 @@ export async function GET(request: Request) {
   // valued at the reference rate (`pointsPerBrlReference` pts ≈ R$1) and added
   // to the cash actually collected. Gives one comparable figure across the
   // points + PIX split (G6). Reference value only, not a cash-out promise.
-  const pointsToBrlRate = pointsRules.pointsPerBrlReference || 10;
+  const pointsToBrlRate = (memory.mallConfigs.find((c) => c.id === "mall-config")?.pointsPerBrl) || pointsRules.pointsPerBrlReference || 10;
   const gmvBRL = Math.round((cashGmv + (pointsGmv + partnerPointsSpent) / pointsToBrlRate) * 100) / 100;
 
   return jsonResponse({
