@@ -52,7 +52,11 @@ function KpiPill({ label, value }: { label: string; value: string }) {
 export default function RiderMonitorPage() {
   const session = useMemo(() => readSession(), []);
   const language = useVentoStore((s) => s.language);
-  const t = useCallback((k: TranslationKey) => translate(language, k), [language]);
+  const t = useCallback((k: TranslationKey, vars?: Record<string, string | number | undefined>) => {
+    let s = translate(language, k);
+    if (vars) for (const [key, val] of Object.entries(vars)) s = s.replace(`{${key}}`, String(val ?? ""));
+    return s;
+  }, [language]);
   const catLabel = useCallback((r: { cat: Cat; statusLabel: string }) => (r.cat === "other" ? r.statusLabel : t(CAT_KEY[r.cat])), [t]);
 
   const scopeFranchise = session?.portal === "franchise" ? session.franchise || session.organization : "";
@@ -97,6 +101,8 @@ export default function RiderMonitorPage() {
     return true;
   });
 
+  const staleMin = data?.capturedAt ? Math.floor((Date.now() - new Date(data.capturedAt).getTime()) / 60000) : null;
+  const isStale = staleMin != null && staleMin > 15;
   const batchLabel = data?.capturedAt ? new Date(data.capturedAt).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" }) : "—";
   const scopeLabel = isHQ ? t("rmScopeCity") : scopeFranchise ? `${t("rmScopeFranchise")}: ${scopeFranchise}` : `${t("rmScopePonto")}: ${scopeStation}`;
   const kpi = data?.kpi;
@@ -120,6 +126,12 @@ export default function RiderMonitorPage() {
           </div>
         }
       />
+
+      {isStale ? (
+        <div className="mb-3 flex items-center gap-2 rounded-[8px] border border-[var(--danger)] bg-[var(--danger-bg)] px-4 py-3 text-sm font-black text-[var(--danger-ink)]">
+          {t("rmStale", { min: staleMin })}
+        </div>
+      ) : null}
 
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
         <StatCard label={t("rmOnShift")} value={data?.summary.total ?? 0} color="var(--accent)" big />

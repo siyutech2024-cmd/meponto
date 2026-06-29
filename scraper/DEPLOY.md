@@ -130,3 +130,31 @@ select max(captured_at) from rider_status_snapshots;
 - **数据归档**：另加定时任务，明细保留 90 天：
   `delete from rider_status_snapshots where captured_at < now() - interval '90 days';`
 - **监控**：可加一个外部检查，若 `max(captured_at)` 超 15 分钟没更新就告警。
+  实时看板页本身也会在最新批次超 15 分钟时显示「数据已过期」红标。
+
+---
+
+## 7. 登录态过期 → 重新登录（约每周一次）
+
+Eastwind 风控会周期性让登录失效。表现：看板停更、看板顶部红标、日志刷
+`nothing captured ... pc-login`。**务必在 `.env` 配 `ALERT_WEBHOOK_URL`**，
+这样一过期手机就收到告警，而不是几天后才发现。
+
+重新登录（需要：1 个 VPS 终端 + 1 个 Mac 隧道终端 + 一个 VNC 查看器）：
+
+```bash
+# ① VPS（先 ssh root@<vps>，确认提示符是 root@srv...，再跑）
+cd /opt/eastwind-scraper && bash novnc-login.sh
+#   等待出现 "x11vnc listening on 5900 OK" 并停在 "press Enter"，先别按
+
+# ② Mac（另开一个本机终端）建隧道（端口被占就换 5902/5903…）
+ssh -L 5901:localhost:5900 root@<vps> -N
+
+# ③ Mac 连 VNC：RealVNC Viewer 或系统屏幕共享 → localhost:5901，密码 eastwind99
+#   在 VPS 桌面浏览器里手动登录 99/Didi，直到看见骑手看板
+
+# ④ 回 ① 的 VPS 终端按 Enter → 会话保存、抓取器自动重启
+```
+
+要点：登录必须在 **VPS 自己的浏览器**里完成（会话绑定 VPS 的 IP+浏览器指纹，
+从 Mac 拷会话过去无效）。完成后 `pm2 logs eastwind-scraper` 应恢复 `ingest 200`。
