@@ -7,7 +7,7 @@ import { readSession } from "../lib/session";
 import { useVentoStore } from "../lib/store";
 import { translate, type TranslationKey } from "../lib/i18n";
 
-type Cat = "delivering" | "online" | "below" | "outArea" | "other";
+type Cat = "delivering" | "online" | "notOnline" | "below" | "outArea" | "other";
 type LiveRider = {
   riderExtId: string | null; name: string | null; phone: string | null;
   status: string | null; statusLabel: string; cat: Cat; shift: string;
@@ -15,7 +15,7 @@ type LiveRider = {
   restMins: number | null; finishedCnt: number | null; lat: number | null; lng: number | null;
   franchise: string; ponto: string; leader: string; assigned: boolean;
 };
-type Cats = { delivering: number; online: number; below: number; outArea: number; other: number };
+type Cats = { delivering: number; online: number; notOnline: number; below: number; outArea: number; other: number };
 type AggRow = { name: string; total: number; finished: number } & Cats;
 type Payload = {
   capturedAt: string | null;
@@ -24,8 +24,8 @@ type Payload = {
   summary: { total: number; assigned: number; unassigned: number; finishedTotal: number; cats: Cats; byFranchise: AggRow[]; byPonto: AggRow[] };
 };
 
-const CAT_COLOR: Record<Cat, string> = { delivering: "#16a34a", online: "#2563eb", below: "#d97706", outArea: "#dc2626", other: "#6b7280" };
-const CAT_KEY: Record<Cat, TranslationKey> = { delivering: "rmDelivering", online: "rmOnline", below: "rmBelow", outArea: "rmOutArea", other: "rmColStatus" };
+const CAT_COLOR: Record<Cat, string> = { delivering: "#16a34a", online: "#2563eb", notOnline: "#9ca3af", below: "#d97706", outArea: "#dc2626", other: "#6b7280" };
+const CAT_KEY: Record<Cat, TranslationKey> = { delivering: "rmDelivering", online: "rmOnline", notOnline: "rmNotOnline", below: "rmBelow", outArea: "rmOutArea", other: "rmColStatus" };
 
 function StatCard({ label, value, color, big }: { label: string; value: number | string; color: string; big?: boolean }) {
   return (
@@ -109,7 +109,7 @@ export default function RiderMonitorPage() {
   const pct = (v: number | null | undefined) => (v == null ? "—" : `${v}%`);
 
   const catChips: Array<[Cat | "", string]> = [
-    ["", t("rmAllStatus")], ["delivering", t("rmDelivering")], ["online", t("rmOnline")], ["below", t("rmBelow")], ["outArea", t("rmOutArea")],
+    ["", t("rmAllStatus")], ["delivering", t("rmDelivering")], ["online", t("rmOnline")], ["notOnline", t("rmNotOnline")], ["below", t("rmBelow")], ["outArea", t("rmOutArea")],
   ];
 
   return (
@@ -137,8 +137,8 @@ export default function RiderMonitorPage() {
         <StatCard label={t("rmOnShift")} value={data?.summary.total ?? 0} color="var(--accent)" big />
         <StatCard label={t("rmDelivering")} value={cats?.delivering ?? 0} color={CAT_COLOR.delivering} />
         <StatCard label={t("rmOnline")} value={cats?.online ?? 0} color={CAT_COLOR.online} />
+        <StatCard label={t("rmNotOnline")} value={cats?.notOnline ?? 0} color={CAT_COLOR.notOnline} />
         <StatCard label={t("rmBelow")} value={cats?.below ?? 0} color={CAT_COLOR.below} />
-        <StatCard label={t("rmOutArea")} value={cats?.outArea ?? 0} color={CAT_COLOR.outArea} />
         {isHQ
           ? <StatCard label={t("rmUnassigned")} value={data?.summary.unassigned ?? 0} color="#dc2626" />
           : <StatCard label={t("rmFinishedTotal")} value={data?.summary.finishedTotal ?? 0} color={CAT_COLOR.delivering} />}

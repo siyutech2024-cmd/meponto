@@ -21,24 +21,28 @@ const digits = (v: unknown) => String(v ?? "").replace(/\D/g, "");
 
 // Normalize Eastwind workStatus → a stable category + Chinese label.
 // Categories are fixed so the dashboard columns/cards are always consistent.
-type Cat = "delivering" | "online" | "below" | "outArea" | "other";
+type Cat = "delivering" | "online" | "notOnline" | "below" | "outArea" | "other";
 const CAT_BY_CODE: Record<string, { cat: Cat; label: string }> = {
   "2": { cat: "delivering", label: "配送中" },
   "4": { cat: "online", label: "在线" },
-  "1": { cat: "below", label: "不及预期" },
   "3": { cat: "outArea", label: "不在区域内" },
 };
+// Classify by status TEXT first (the displayed status), code only as fallback.
+// IMPORTANT: "Não está online" (未履约/未上线) contains "online" but is negated,
+// so the not-online check must run BEFORE the online check.
 function classify(statusCode: string | null, statusStr: string | null): { cat: Cat; label: string } {
-  const byCode = statusCode != null ? CAT_BY_CODE[String(statusCode)] : undefined;
-  if (byCode) return byCode;
   const s = (statusStr || "").toLowerCase();
   if (/entregando|em rota/.test(s)) return { cat: "delivering", label: "配送中" };
-  if (/conectado|online/.test(s)) return { cat: "online", label: "在线" };
-  if (/abaixo|expectativ/.test(s)) return { cat: "below", label: "不及预期" };
-  if (/fora|área|area/.test(s)) return { cat: "outArea", label: "不在区域内" };
+  if (/não está online|nao esta online|não conectado|nao conectado|ausente|offline|desconect|未履约|未上线|未在线/.test(s))
+    return { cat: "notOnline", label: "未上线" };
+  if (/conectado|em pausa|pausa|\bonline\b/.test(s)) return { cat: "online", label: "在线" };
+  if (/abaixo|expectativ|不及预期/.test(s)) return { cat: "below", label: "不及预期" };
+  if (/fora|área|area|不在区域/.test(s)) return { cat: "outArea", label: "不在区域内" };
+  const byCode = statusCode != null ? CAT_BY_CODE[String(statusCode)] : undefined;
+  if (byCode) return byCode;
   return { cat: "other", label: statusStr || "未知" };
 }
-const EMPTY_CATS = () => ({ delivering: 0, online: 0, below: 0, outArea: 0, other: 0 });
+const EMPTY_CATS = () => ({ delivering: 0, online: 0, notOnline: 0, below: 0, outArea: 0, other: 0 });
 
 type SnapshotRow = {
   rider_ext_id: string | null; rider_name: string | null; phone: string | null; id_no: string | null;
