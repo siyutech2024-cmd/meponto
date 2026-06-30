@@ -4,6 +4,8 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { BellRing, ListChecks, RefreshCcw, Send, Smartphone, Trash2 } from "lucide-react";
 import { AppShell, PageTitle } from "../components/ui";
 import { readSession } from "../lib/session";
+import { useVentoStore } from "../lib/store";
+import { translate, type TranslationKey } from "../lib/i18n";
 
 type SplashCfg = {
   enabled: boolean;
@@ -25,6 +27,12 @@ const DEFAULT_CFG: SplashCfg = {
 };
 
 export default function AppConfigPage() {
+  const language = useVentoStore((s) => s.language);
+  const t = (k: TranslationKey, vars?: Record<string, string | number | undefined>) => {
+    let s = translate(language, k);
+    if (vars) for (const [key, val] of Object.entries(vars)) s = s.replace(`{${key}}`, String(val ?? ""));
+    return s;
+  };
   const session = useMemo(() => readSession(), []);
   const headers = useMemo(() => ({ "Content-Type": "application/json", "x-vento-role": session?.role ?? "Super Admin" }), [session]);
   const [cfg, setCfg] = useState<SplashCfg>(DEFAULT_CFG);
@@ -71,7 +79,7 @@ export default function AppConfigPage() {
     const payload = r ? await r.json().catch(() => ({})) : {};
     if (!r || !r.ok) { setNote({ tone: "err", text: payload.error ?? "保存失败" }); return; }
     setCfg({ ...DEFAULT_CFG, ...(payload.data as SplashCfg) });
-    setNote({ tone: "ok", text: `启动页已保存（v${payload.data.version}）。骑手 App 下次启动即更新。` });
+    setNote({ tone: "ok", text: t("dynSplashSaved", { v: payload.data.version }) });
   }
 
   async function sendPush() {
@@ -79,7 +87,7 @@ export default function AppConfigPage() {
     const r = await fetch("/api/push", { method: "POST", headers, body: JSON.stringify({ action: "send", title: pushTitle, body: pushBody, url: pushUrl || "/rider-app" }) }).catch(() => null);
     const payload = r ? await r.json().catch(() => ({})) : {};
     if (!r || !r.ok) { setNote({ tone: "err", text: payload.error ?? "发送失败" }); return; }
-    setNote({ tone: "ok", text: `推送已发送：送达 ${payload.data.sent}/${payload.data.targets} 台设备。` });
+    setNote({ tone: "ok", text: t("dynPushSent", { sent: payload.data.sent, targets: payload.data.targets }) });
     setPushTitle(""); setPushBody("");
   }
 
@@ -124,7 +132,7 @@ export default function AppConfigPage() {
 
           <div className="mt-4 flex items-center gap-3">
             <button type="button" onClick={() => void saveSplash()} className="h-11 rounded-[8px] bg-[var(--accent)] px-5 text-sm font-black text-[var(--accent-ink)]">保存启动页</button>
-            <span className="text-[11px] font-bold text-[var(--muted)]">当前 v{cfg.version}{cfg.updatedAt ? ` · ${cfg.updatedAt} · ${cfg.updatedBy ?? ""}` : ""}</span>
+            <span className="text-[11px] font-bold text-[var(--muted)]">{t("dynCurrentV", { v: cfg.version })}{cfg.updatedAt ? ` · ${cfg.updatedAt} · ${cfg.updatedBy ?? ""}` : ""}</span>
           </div>
         </div>
 

@@ -8,6 +8,8 @@ import type { MarketplaceOrder, MarketplaceProduct } from "../lib/points";
 import type { MallConfig } from "../lib/mall";
 import type { CashLedgerEntry, CashTopUp, MallBanner, MallCategory, MallCoupon, MallPayment, PriceChangeRequest, PurchaseOrder, SupplierStatement } from "../lib/mall-ops";
 import { paymentStatusLabel, poStatusLabel, statementStatusLabel, topUpStatusLabel } from "../lib/mall-ops";
+import { useVentoStore } from "../lib/store";
+import { translate, type TranslationKey } from "../lib/i18n";
 
 /**
  * PontoMall back office (mall.meponto.com/admin → /mall) — the independent
@@ -62,6 +64,12 @@ function Stat({ label, value, hint }: { label: string; value: string; hint?: str
 }
 
 export default function MallAdminPage() {
+  const language = useVentoStore((s) => s.language);
+  const t = (k: TranslationKey, vars?: Record<string, string | number | undefined>) => {
+    let s = translate(language, k);
+    if (vars) for (const [key, val] of Object.entries(vars)) s = s.replace(`{${key}}`, String(val ?? ""));
+    return s;
+  };
   const headers = useMemo(() => ({ "Content-Type": "application/json" }), []);
   const [tab, setTab] = useState<(typeof TABS)[number]["id"]>("overview");
   const [mall, setMall] = useState<MallPayload | null>(null);
@@ -106,7 +114,7 @@ export default function MallAdminPage() {
     const response = await fetch(path, { method: "POST", headers, body: JSON.stringify(body) });
     const payload = await response.json().catch(() => ({}));
     if (!response.ok) {
-      setMessage({ tone: "err", text: payload.error ?? `请求失败 (${response.status})` });
+      setMessage({ tone: "err", text: payload.error ?? t("dynReqFail", { s: response.status }) });
       return null;
     }
     if (okText) setMessage({ tone: "ok", text: okText });
@@ -158,7 +166,7 @@ export default function MallAdminPage() {
         <div className="space-y-5">
           <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
             <Stat label="兑换单数" value={String(summary?.orders ?? 0)} hint="非取消的全部订单" />
-            <Stat label="积分 GMV" value={`${(summary?.pointsGmv ?? 0).toLocaleString()} 分`} hint="累计消耗积分" />
+            <Stat label="积分 GMV" value={`${(summary?.pointsGmv ?? 0).toLocaleString()} ${t("dynPts")}`} hint="累计消耗积分" />
             <Stat label="现金 GMV（已核销）" value={`R$ ${(summary?.cashGmv ?? 0).toFixed(2)}`} hint="PIX 补差实收" />
             <Stat label="待核销收款" value={String(summary?.pendingPayments ?? 0)} hint="骑手已提交凭证" />
           </div>
@@ -175,7 +183,7 @@ export default function MallAdminPage() {
               <div className="mt-0.5 text-[11px] font-bold text-[var(--muted)]">点击去订单 Tab 处理</div>
             </button>
             <Stat label="合作方兑换" value={String(summary?.partnerOrders ?? 0)} hint="Partner 兑换单数" />
-            <Stat label="合作方积分消耗" value={`${(summary?.partnerPointsSpent ?? 0).toLocaleString()} 分`} hint="Partner 积分账户（独立口径）" />
+            <Stat label="合作方积分消耗" value={`${(summary?.partnerPointsSpent ?? 0).toLocaleString()} ${t("dynPts")}`} hint="Partner 积分账户（独立口径）" />
             <Stat label="近 30 天兑换" value={String((summary?.daily ?? []).reduce((sum, d) => sum + d.count, 0))} hint="最近 30 天订单合计" />
           </div>
 
@@ -279,7 +287,7 @@ export default function MallAdminPage() {
                     ))}
                     <div className="flex items-end gap-2">
                       <button type="button" onClick={() => void post("/api/mall", { action: "updateProduct", productId: product.id, name: editDraft.name, description: editDraft.description, imageUrl: editDraft.imageUrl, category: editDraft.category, stock: Number(editDraft.stock) || 0, purchaseLimit: Number(editDraft.purchaseLimit) || 0 }, "商品已更新").then(() => setEditOpen(""))} className="h-9 rounded-[8px] bg-[var(--accent)] px-4 text-xs font-black text-[var(--accent-ink)]">保存</button>
-                      <button type="button" onClick={() => { if (confirm(`删除商品「${product.name}」？`)) void post("/api/mall", { action: "deleteProduct", productId: product.id }, "已删除"); }} className="h-9 rounded-[8px] border border-[#c4423b]/40 px-4 text-xs font-black text-[#c4423b]">删除</button>
+                      <button type="button" onClick={() => { if (confirm(t("dynDelProduct", { n: product.name }))) void post("/api/mall", { action: "deleteProduct", productId: product.id }, "已删除"); }} className="h-9 rounded-[8px] border border-[#c4423b]/40 px-4 text-xs font-black text-[#c4423b]">删除</button>
                     </div>
                   </div>
                 )}
@@ -362,8 +370,8 @@ export default function MallAdminPage() {
               {(ops?.coupons ?? []).map((coupon) => (
                 <div key={coupon.id} className="flex flex-wrap items-center gap-2 rounded-[10px] border border-[var(--line)] bg-[var(--surface-raised)] px-3 py-2" style={{ opacity: coupon.active ? 1 : 0.5 }}>
                   <span className="text-sm font-black">{coupon.title}</span>
-                  <span className="rounded-full bg-[var(--accent)]/15 px-2 py-0.5 text-[11px] font-black text-[var(--accent)]">{coupon.type === "percent_off" ? `${coupon.value}% 折` : `-${coupon.value} 分`}</span>
-                  <span className="text-[11px] font-bold text-[var(--muted)]">门槛 {coupon.minPoints} 分 · {({ member: "全员", bronze: "铜+", prata: "银+", ouro: "金+", diamante: "钻" } as Record<string, string>)[coupon.minTier]} · 每人{coupon.perRiderLimit === 0 ? "不限" : coupon.perRiderLimit}{coupon.expiresAt ? ` · 至 ${coupon.expiresAt}` : ""}</span>
+                  <span className="rounded-full bg-[var(--accent)]/15 px-2 py-0.5 text-[11px] font-black text-[var(--accent)]">{coupon.type === "percent_off" ? t("dynPctOff", { v: coupon.value }) : t("dynPtsOff", { v: coupon.value })}</span>
+                  <span className="text-[11px] font-bold text-[var(--muted)]">{t("dynCouponMeta", { min: coupon.minPoints, tier: ({ member: t("dynTierAll"), bronze: t("dynTierBronze"), prata: t("dynTierSilver"), ouro: t("dynTierGold"), diamante: t("dynTierDiamond") } as Record<string, string>)[coupon.minTier], limit: coupon.perRiderLimit === 0 ? t("dynLimitNone") : coupon.perRiderLimit, until: coupon.expiresAt ? t("dynUntil", { d: coupon.expiresAt }) : "" })}</span>
                   <button type="button" onClick={() => void post("/api/mall/ops", { action: "updateCoupon", couponId: coupon.id, active: !coupon.active })} className="tag ml-auto">{coupon.active ? "停用" : "启用"}</button>
                   <button type="button" onClick={() => void post("/api/mall/ops", { action: "deleteCoupon", couponId: coupon.id })} className="text-xs font-black text-[#c4423b]">删除</button>
                 </div>
@@ -577,7 +585,7 @@ export default function MallAdminPage() {
                       {(po.status === "ordered" || po.status === "confirmed") && <button type="button" onClick={() => void post("/api/mall/ops", { action: "cancelPO", poId: po.id }, "已取消")} className="h-8 rounded-[8px] border border-[var(--line)] px-3 text-xs font-black text-[var(--muted)]">取消</button>}
                     </span>
                   </div>
-                  <div className="mt-1 text-xs font-bold text-[var(--muted)]">{po.items.map((item) => `${item.name}×${item.qty}`).join("、")}{po.shipNote ? ` · 物流：${po.shipNote}` : ""}</div>
+                  <div className="mt-1 text-xs font-bold text-[var(--muted)]">{po.items.map((item) => `${item.name}×${item.qty}`).join("、")}{po.shipNote ? t("dynLogistics", { x: po.shipNote }) : ""}</div>
                 </div>
               ))}
               {(ops?.purchaseOrders ?? []).length === 0 && <div className="py-4 text-center text-xs font-bold text-[var(--muted)]">暂无补货单。</div>}
@@ -588,7 +596,7 @@ export default function MallAdminPage() {
             <div className="mb-3 flex flex-wrap items-center gap-2">
               <span className="text-xs font-black uppercase text-[var(--muted)]">月度对账单</span>
               <input type="month" value={statementMonth} onChange={(e) => setStatementMonth(e.target.value)} className="ml-auto h-9 rounded-[8px] border border-[var(--line)] bg-[var(--surface-raised)] px-2 text-sm font-bold outline-none" />
-              <button type="button" onClick={() => void post("/api/mall/ops", { action: "generateStatement", month: statementMonth }, `已生成 ${statementMonth} 对账单`)} className="h-9 rounded-[8px] bg-[var(--accent)] px-3.5 text-xs font-black text-[var(--accent-ink)]">生成对账单</button>
+              <button type="button" onClick={() => void post("/api/mall/ops", { action: "generateStatement", month: statementMonth }, t("dynStatementGen", { m: statementMonth }))} className="h-9 rounded-[8px] bg-[var(--accent)] px-3.5 text-xs font-black text-[var(--accent-ink)]">生成对账单</button>
             </div>
             <div className="space-y-2">
               {(ops?.statements ?? []).map((statement) => (
@@ -605,7 +613,7 @@ export default function MallAdminPage() {
                       <button type="button" onClick={() => downloadCsv(`statement-${statement.supplierName}-${statement.month}.csv`, ["日期", "订单", "商品", "供货价"], statement.lines.map((line) => [line.date, line.orderId, line.productName, line.supplyPrice.toFixed(2)]))} className="h-8 rounded-[8px] border border-[var(--line)] px-3 text-xs font-black text-[var(--muted)]">明细 CSV</button>
                     </span>
                   </div>
-                  {statement.paidAt && <div className="mt-1 text-xs font-bold text-[var(--muted)]">付款于 {statement.paidAt}{statement.receiptNote ? ` · ${statement.receiptNote}` : ""}</div>}
+                  {statement.paidAt && <div className="mt-1 text-xs font-bold text-[var(--muted)]">{t("dynPaidOn", { d: statement.paidAt })}{statement.receiptNote ? ` · ${statement.receiptNote}` : ""}</div>}
                 </div>
               ))}
               {(ops?.statements ?? []).length === 0 && <div className="py-4 text-center text-xs font-bold text-[var(--muted)]">选择月份生成对账单：按「履约订单 × 供货价」自动汇总每个供应商。</div>}
@@ -616,7 +624,7 @@ export default function MallAdminPage() {
             <div className="mb-3 flex flex-wrap items-center gap-2">
               <span className="text-xs font-black uppercase text-[var(--muted)]">销售分成 · 月度对账（加盟商）</span>
               <input type="month" value={statementMonth} onChange={(e) => setStatementMonth(e.target.value)} className="ml-auto h-9 rounded-[8px] border border-[var(--line)] bg-[var(--surface-raised)] px-2 text-sm font-bold outline-none" />
-              <button type="button" onClick={() => void post("/api/mall/ops", { action: "generateRevShareStatement", month: statementMonth }, `已生成 ${statementMonth} 分成对账单`)} className="h-9 rounded-[8px] bg-[var(--accent)] px-3.5 text-xs font-black text-[var(--accent-ink)]">生成分成对账单</button>
+              <button type="button" onClick={() => void post("/api/mall/ops", { action: "generateRevShareStatement", month: statementMonth }, t("dynShareStatementGen", { m: statementMonth }))} className="h-9 rounded-[8px] bg-[var(--accent)] px-3.5 text-xs font-black text-[var(--accent-ink)]">生成分成对账单</button>
             </div>
             <div className="space-y-2">
               {(((ops as { revShareStatements?: Array<{ id: string; franchise: string; month: string; status: "draft" | "confirmed" | "paid"; total: number; orders: number; stationShareTotal: number; franchiseNetTotal: number; paidAt?: string }> } | null)?.revShareStatements) ?? []).map((s) => (
@@ -630,7 +638,7 @@ export default function MallAdminPage() {
                       <button type="button" onClick={() => { const note = prompt("付款凭证备注（可空）") ?? ""; void post("/api/mall/ops", { action: "payRevShareStatement", statementId: s.id, note }, "已标记付款"); }} className="ml-auto h-8 rounded-[8px] bg-[var(--accent)] px-3 text-xs font-black text-[var(--accent-ink)]">标记已付款</button>
                     )}
                   </div>
-                  {s.paidAt && <div className="mt-1 text-xs font-bold text-[var(--muted)]">付款于 {s.paidAt}</div>}
+                  {s.paidAt && <div className="mt-1 text-xs font-bold text-[var(--muted)]">{t("dynPaidOn", { d: s.paidAt })}</div>}
                 </div>
               ))}
               {(((ops as { revShareStatements?: unknown[] } | null)?.revShareStatements) ?? []).length === 0 && <div className="py-4 text-center text-xs font-bold text-[var(--muted)]">按「已取货订单 × 产品加盟商分成」自动汇总。加盟商在自己后台确认后，这里可标记付款。</div>}

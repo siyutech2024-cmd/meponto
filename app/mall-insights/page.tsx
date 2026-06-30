@@ -5,6 +5,8 @@ import { ExternalLink, RefreshCcw } from "lucide-react";
 import { AppShell, PageTitle } from "../components/ui";
 import type { MarketplaceProduct } from "../lib/points";
 import type { MallPayment, SupplierStatement } from "../lib/mall-ops";
+import { useVentoStore } from "../lib/store";
+import { translate, type TranslationKey } from "../lib/i18n";
 
 /**
  * HQ read-only mall insights: key numbers only — all operations live in the
@@ -42,6 +44,12 @@ function Stat({ label, value, hint }: { label: string; value: string; hint?: str
 }
 
 export default function MallInsightsPage() {
+  const language = useVentoStore((s) => s.language);
+  const t = (k: TranslationKey, vars?: Record<string, string | number | undefined>) => {
+    let s = translate(language, k);
+    if (vars) for (const [key, val] of Object.entries(vars)) s = s.replace(`{${key}}`, String(val ?? ""));
+    return s;
+  };
   const headers = useMemo(() => ({ "Content-Type": "application/json" }), []);
   const [products, setProducts] = useState<MarketplaceProduct[]>([]);
   const [settlement, setSettlement] = useState<Array<{ supplier: string; qty: number; payable: number }>>([]);
@@ -90,13 +98,13 @@ export default function MallInsightsPage() {
       </div>
 
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-        <Stat label="GMV 折算（R$）" value={`R$ ${(summary?.gmvBRL ?? 0).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}`} hint={`统一口径:现金 + 积分÷${summary?.pointsToBrlRate ?? 10}`} />
-        <Stat label="积分 GMV" value={`${(summary?.pointsGmv ?? 0).toLocaleString()} 分`} hint="骑手累计消耗" />
+        <Stat label="GMV 折算（R$）" value={`R$ ${(summary?.gmvBRL ?? 0).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}`} hint={t("dynUnifiedBasis", { r: summary?.pointsToBrlRate ?? 10 })} />
+        <Stat label="积分 GMV" value={`${(summary?.pointsGmv ?? 0).toLocaleString()} ${t("dynPts")}`} hint="骑手累计消耗" />
         <Stat label="现金 GMV" value={`R$ ${(summary?.cashGmv ?? 0).toFixed(2)}`} hint="PIX 补差实收" />
         <Stat label="待核销收款" value={String(summary?.pendingPayments ?? 0)} hint="商城后台处理" />
       </div>
       <div className="mt-3 grid grid-cols-2 gap-3 md:grid-cols-4">
-        <Stat label="在售商品" value={String(products.filter((product) => product.status === "active").length)} hint={`SKU 共 ${products.length}`} />
+        <Stat label="在售商品" value={String(products.filter((product) => product.status === "active").length)} hint={t("dynSkuCount2", { n: products.length })} />
         <Stat label="待定价" value={String(products.filter((product) => product.status === "pending_pricing").length)} hint="供应商已提报" />
         <Stat label="待付供应商" value={`R$ ${payablePending.toFixed(2)}`} hint="已确认对账单" />
         <Stat label="供应商数" value={String(new Set(products.map((product) => product.supplierName).filter(Boolean)).size)} hint="有商品的供应商" />
@@ -104,7 +112,7 @@ export default function MallInsightsPage() {
       <div className="mt-3 grid grid-cols-2 gap-3 md:grid-cols-4">
         <Stat label="高价值待审核" value={String(summary?.reviewPending ?? 0)} hint="商城后台处理" />
         <Stat label="合作方兑换" value={String(summary?.partnerOrders ?? 0)} hint="Partner 兑换单数" />
-        <Stat label="合作方积分消耗" value={`${(summary?.partnerPointsSpent ?? 0).toLocaleString()} 分`} hint="Partner 独立积分口径" />
+        <Stat label="合作方积分消耗" value={`${(summary?.partnerPointsSpent ?? 0).toLocaleString()} ${t("dynPts")}`} hint="Partner 独立积分口径" />
         <Stat label="近 30 天兑换" value={String((summary?.daily ?? []).reduce((sum, day) => sum + day.count, 0))} hint="最近 30 天合计" />
       </div>
 
@@ -137,10 +145,10 @@ export default function MallInsightsPage() {
           <div className="mb-1 text-xs font-black uppercase text-[var(--muted)]">积分负债与兑付对账</div>
           <p className="mb-3 text-[11px] font-bold text-[var(--muted)]">积分为营销成本型负债;{liability.rate} 分 ≈ R$ 1(定价参考,非现金承诺)。过期回收与兑付现金共同收敛负债。</p>
           <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-            <Stat label="未兑付积分负债" value={`R$ ${liability.liabilityBRL.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}`} hint={`${liability.totalOutstanding.toLocaleString()} 分(骑手 ${liability.riderOutstanding.toLocaleString()} · 合作方 ${liability.partnerOutstanding.toLocaleString()})`} />
-            <Stat label="本月新增赚取" value={`${liability.earnedThisMonth.toLocaleString()} 分`} hint="负债增加项" />
-            <Stat label="本月消耗 / 过期" value={`${liability.spentThisMonth.toLocaleString()} / ${liability.expiredThisMonth.toLocaleString()} 分`} hint="兑换消耗 · 过期回收(均减负债)" />
-            <Stat label="待释放积分" value={`${liability.pendingPoints.toLocaleString()} 分`} hint="未计入可用负债" />
+            <Stat label="未兑付积分负债" value={`R$ ${liability.liabilityBRL.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}`} hint={t("dynLiabilityBreakdown", { total: liability.totalOutstanding.toLocaleString(), r: liability.riderOutstanding.toLocaleString(), p: liability.partnerOutstanding.toLocaleString() })} />
+            <Stat label="本月新增赚取" value={`${liability.earnedThisMonth.toLocaleString()} ${t("dynPts")}`} hint="负债增加项" />
+            <Stat label="本月消耗 / 过期" value={`${liability.spentThisMonth.toLocaleString()} / ${liability.expiredThisMonth.toLocaleString()} ${t("dynPts")}`} hint="兑换消耗 · 过期回收(均减负债)" />
+            <Stat label="待释放积分" value={`${liability.pendingPoints.toLocaleString()} ${t("dynPts")}`} hint="未计入可用负债" />
           </div>
           <div className="mt-3 flex flex-wrap items-center gap-x-6 gap-y-1 text-[11px] font-bold text-[var(--muted)]">
             <span>兑付现金支出(供应商应付):<b className="text-[var(--text)]">R$ {liability.supplierPayableBRL.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</b></span>

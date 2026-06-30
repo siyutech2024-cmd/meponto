@@ -5,6 +5,8 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { AlertTriangle, Banknote, Bike, Building2, CalendarDays, Gift, Headset, RefreshCcw, Store, TrendingUp, Users } from "lucide-react";
 import { AppShell, PageTitle } from "../components/ui";
 import { readSession } from "../lib/session";
+import { useVentoStore } from "../lib/store";
+import { translate, type TranslationKey } from "../lib/i18n";
 
 type Overview = {
   generatedAt: string;
@@ -27,6 +29,12 @@ function Stat({ label, value, accent, href, alert }: { label: string; value: str
 }
 
 export default function DashboardPage() {
+  const language = useVentoStore((s) => s.language);
+  const t = (k: TranslationKey, vars?: Record<string, string | number | undefined>) => {
+    let s = translate(language, k);
+    if (vars) for (const [key, val] of Object.entries(vars)) s = s.replace(`{${key}}`, String(val ?? ""));
+    return s;
+  };
   const session = useMemo(() => readSession(), []);
   const headers = useMemo(() => ({ "x-vento-role": session?.role ?? "Super Admin" }), [session]);
   const [data, setData] = useState<Overview | null>(null);
@@ -48,7 +56,7 @@ export default function DashboardPage() {
     <AppShell>
       <PageTitle
         title="总部仪表盘"
-        eyebrow={d ? `实时数据 · 更新于 ${d.generatedAt}` : "加载中..."}
+        eyebrow={d ? t("dynLiveUpdated", { x: d.generatedAt }) : t("dpLoading")}
         action={<button type="button" onClick={() => void load()} className="tag inline-flex items-center gap-1"><RefreshCcw size={13} /> 刷新</button>}
       />
 
@@ -89,7 +97,7 @@ export default function DashboardPage() {
           <div>
             <div className="mb-2 flex items-center gap-2 text-xs font-black uppercase text-[var(--accent)]"><Banknote size={14} /> 财务 · 客服 · 商城</div>
             <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-              <Stat label={`待付提现（R$ ${d.finance.pendingAmount.toFixed(2)}）`} value={d.finance.pendingWithdrawals} alert={d.finance.pendingWithdrawals > 0} href="/wallet" />
+              <Stat label={t("dynPendingWithdraw", { x: d.finance.pendingAmount.toFixed(2) })} value={d.finance.pendingWithdrawals} alert={d.finance.pendingWithdrawals > 0} href="/wallet" />
               <Stat label="累计已付提现 R$" value={d.finance.paidTotal.toFixed(2)} href="/wallet" />
               <Stat label="待处理工单" value={d.support.openTickets} alert={d.support.openTickets > 0} href="/support" />
               <Stat label="商城在途 / 待取" value={`${d.mall.inTransit} / ${d.mall.awaitingPickup}`} href="/mall" />

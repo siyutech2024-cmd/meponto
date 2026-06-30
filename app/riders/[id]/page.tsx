@@ -6,6 +6,8 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { ArrowLeft, Pencil, RefreshCcw } from "lucide-react";
 import { AppShell, Badge, PageTitle } from "../../components/ui";
 import { downloadCsv } from "../../lib/csv";
+import { useVentoStore } from "../../lib/store";
+import { translate, type TranslationKey } from "../../lib/i18n";
 
 type RiderRow = {
   id: string;
@@ -45,6 +47,12 @@ function Field({ label, value, mono }: { label: string; value: string | number; 
 }
 
 export default function RiderDetailPage() {
+  const language = useVentoStore((s) => s.language);
+  const t = (k: TranslationKey, vars?: Record<string, string | number | undefined>) => {
+    let s = translate(language, k);
+    if (vars) for (const [key, val] of Object.entries(vars)) s = s.replace(`{${key}}`, String(val ?? ""));
+    return s;
+  };
   const params = useParams<{ id: string }>();
   const id = Array.isArray(params.id) ? params.id[0] : params.id;
 
@@ -109,7 +117,7 @@ export default function RiderDetailPage() {
     const response = await fetch("/api/riders", { method: "POST", headers: HEADERS, body: JSON.stringify(body) });
     const payload = await response.json().catch(() => ({}));
     if (!response.ok) {
-      setMessage({ tone: "err", text: payload.error ?? `操作失败 (${response.status})` });
+      setMessage({ tone: "err", text: payload.error ?? t("dynActFail", { s: response.status }) });
       return false;
     }
     setMessage({ tone: "ok", text: okText });
@@ -144,7 +152,7 @@ export default function RiderDetailPage() {
     <AppShell>
       <PageTitle
         title={rider.name}
-        eyebrow={`骑手详情 · 99ID ${rider.ninetyNineId ?? "—"}`}
+        eyebrow={t("dynRiderEyebrow", { x: rider.ninetyNineId ?? "—" })}
         action={
           <div className="flex gap-2">
             <Link className="tag inline-flex items-center gap-1" href="/riders"><ArrowLeft size={13} /> 返回列表</Link>

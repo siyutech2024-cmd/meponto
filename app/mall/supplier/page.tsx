@@ -7,6 +7,8 @@ import { downloadCsv } from "../../lib/csv";
 import type { MarketplaceProduct } from "../../lib/points";
 import type { PriceChangeRequest, PurchaseOrder, SupplierStatement } from "../../lib/mall-ops";
 import { poStatusLabel, statementStatusLabel } from "../../lib/mall-ops";
+import { useVentoStore } from "../../lib/store";
+import { translate, type TranslationKey } from "../../lib/i18n";
 
 type SupplierProfileT = { id: string; companyName: string; brand: string; cnpj: string; contactName: string; contactEmail: string; contactPhone: string; address: string; pixKey: string; logoUrl: string; about: string; updatedAt?: string };
 type TeamMember = { id: string; name: string; identifier: string; phone: string; role: string; status: string; createdAt: string; lastLoginAt?: string };
@@ -53,6 +55,12 @@ function Stat({ label, value, hint }: { label: string; value: string; hint?: str
 }
 
 export default function SupplierWorkspacePage() {
+  const language = useVentoStore((s) => s.language);
+  const t = (k: TranslationKey, vars?: Record<string, string | number | undefined>) => {
+    let s = translate(language, k);
+    if (vars) for (const [key, val] of Object.entries(vars)) s = s.replace(`{${key}}`, String(val ?? ""));
+    return s;
+  };
   const headers = useMemo(() => ({ "Content-Type": "application/json" }), []);
   const [tab, setTab] = useState<(typeof TABS)[number]["id"]>("overview");
   const [supplierName, setSupplierName] = useState("");
@@ -177,7 +185,7 @@ export default function SupplierWorkspacePage() {
     const response = await fetch(path, { method: "POST", headers, body: JSON.stringify(body) });
     const payload = await response.json().catch(() => ({}));
     if (!response.ok) {
-      setMessage({ tone: "err", text: payload.error ?? `请求失败 (${response.status})` });
+      setMessage({ tone: "err", text: payload.error ?? t("dynReqFail", { s: response.status }) });
       return null;
     }
     if (okText) setMessage({ tone: "ok", text: okText });
@@ -188,7 +196,7 @@ export default function SupplierWorkspacePage() {
   async function supplierPost(body: Record<string, unknown>, okText?: string) {
     const response = await fetch("/api/supplier", { method: "POST", headers, body: JSON.stringify(body) });
     const payload = await response.json().catch(() => ({}));
-    if (!response.ok) { setMessage({ tone: "err", text: payload.error ?? `请求失败 (${response.status})` }); return null; }
+    if (!response.ok) { setMessage({ tone: "err", text: payload.error ?? t("dynReqFail", { s: response.status }) }); return null; }
     if (okText) setMessage({ tone: "ok", text: okText });
     void load();
     return payload.data;
@@ -335,7 +343,7 @@ export default function SupplierWorkspacePage() {
                   {product.supplierName === supplierName && product.status === "pending_pricing" ? (
                     <>
                       <button type="button" onClick={() => startEdit(product)} className="h-9 rounded-[8px] border border-[var(--line)] px-3 text-xs font-black text-[var(--muted)] hover:border-[var(--accent)]">编辑</button>
-                      <button type="button" onClick={() => { if (confirm(`删除「${product.name}」？该商品尚未定价。`)) void post("/api/mall", { action: "supplierDeleteProduct", productId: product.id }, "已删除"); }} className="h-9 rounded-[8px] border border-[#c4423b]/40 px-3 text-xs font-black text-[#c4423b]">删除</button>
+                      <button type="button" onClick={() => { if (confirm(t("dynDelUnpriced", { n: product.name }))) void post("/api/mall", { action: "supplierDeleteProduct", productId: product.id }, "已删除"); }} className="h-9 rounded-[8px] border border-[#c4423b]/40 px-3 text-xs font-black text-[#c4423b]">删除</button>
                     </>
                   ) : (
                     <>
@@ -388,7 +396,7 @@ export default function SupplierWorkspacePage() {
                     {po.status === "confirmed" && <button type="button" onClick={() => { const note = prompt("物流/送货备注（可空）") ?? ""; void post("/api/mall/ops", { action: "shipPO", poId: po.id, shipNote: note }, "已标记发货"); }} className="h-8 rounded-[8px] bg-[var(--accent)] px-3 text-xs font-black text-[var(--accent-ink)]">标记发货</button>}
                   </span>
                 </div>
-                <div className="mt-1 text-xs font-bold text-[var(--muted)]">{po.items.map((item) => `${item.name}×${item.qty}`).join("、")}{po.note ? ` · 备注：${po.note}` : ""}{po.shipNote ? ` · 物流：${po.shipNote}` : ""}</div>
+                <div className="mt-1 text-xs font-bold text-[var(--muted)]">{po.items.map((item) => `${item.name}×${item.qty}`).join("、")}{po.note ? t("dynNote", { x: po.note }) : ""}{po.shipNote ? t("dynLogistics", { x: po.shipNote }) : ""}</div>
               </div>
             ))}
             {(ops?.purchaseOrders ?? []).length === 0 && <div className="py-6 text-center text-xs font-bold text-[var(--muted)]">暂无补货单。</div>}
@@ -445,7 +453,7 @@ export default function SupplierWorkspacePage() {
         <div className="space-y-5">
           <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
             <Stat label="累计售出（件）" value={String(ops?.summary.orders ?? 0)} hint="兑换订单数" />
-            <Stat label="在售商品" value={String(products.filter((product) => product.status === "active").length)} hint={`共 ${products.length} 个 SKU`} />
+            <Stat label="在售商品" value={String(products.filter((product) => product.status === "active").length)} hint={t("dynSkuCount", { n: products.length })} />
             <Stat label="待收货款" value={`R$ ${payableTotal.toFixed(2)}`} hint="未付对账单合计" />
             <Stat label="已结货款" value={`R$ ${paidTotal.toFixed(2)}`} hint="历史已付合计" />
           </div>

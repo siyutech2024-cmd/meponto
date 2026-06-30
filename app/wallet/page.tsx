@@ -366,10 +366,16 @@ type HybridPayment = { id: string; orderId: string; riderName: string; productNa
 type TopUpRow = { id: string; riderName: string; amountBRL: number; reference?: string; status: string; createdAt: string };
 type OfficeFinance = { summary?: FinanceSummary; statements?: SupplierStmt[]; revShareStatements?: RevShareStmt[]; payments?: HybridPayment[]; topUps?: TopUpRow[] };
 
-const stmtStatusLabel = (s: "draft" | "confirmed" | "paid", who: "供应商" | "加盟商") =>
-  ({ draft: `待${who}确认`, confirmed: "待付款", paid: "已付款" }[s]);
+const stmtStatusLabel = (s: "draft" | "confirmed" | "paid", who: string, t: (k: TranslationKey, vars?: Record<string, string | number | undefined>) => string) =>
+  ({ draft: t("dynAwaitConfirm", { who }), confirmed: t("dynPayPending"), paid: t("dynPaid") }[s]);
 
 function MallFinanceWallet() {
+  const language = useVentoStore((s) => s.language);
+  const t = (k: TranslationKey, vars?: Record<string, string | number | undefined>) => {
+    let s = translate(language, k);
+    if (vars) for (const [key, val] of Object.entries(vars)) s = s.replace(`{${key}}`, String(val ?? ""));
+    return s;
+  };
   const session = useMemo(() => readSession(), []);
   const headers = useMemo(() => ({ "Content-Type": "application/json", "x-vento-role": session?.role ?? "Mall Operator" }), [session]);
   const [data, setData] = useState<OfficeFinance | null>(null);
@@ -421,10 +427,10 @@ function MallFinanceWallet() {
       )}
 
       <div className="mb-4 grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <Stat label="综合 GMV" value={money(sum?.gmvBRL ?? 0)} hint={`积分按 ${sum?.pointsToBrlRate ?? 10} pts≈R$1 折算`} />
+        <Stat label="综合 GMV" value={money(sum?.gmvBRL ?? 0)} hint={t("dynPointsRate", { r: sum?.pointsToBrlRate ?? 10 })} />
         <Stat label="现金收款" value={money(sum?.cashGmv ?? 0)} hint="已收 PIX / 混合付款" />
-        <Stat label="积分 GMV" value={`${(sum?.pointsGmv ?? 0).toLocaleString()} pts`} hint={`${sum?.orders ?? 0} 笔兑换`} />
-        <Stat label="待付合计" value={money(supplierPayable + revPayable)} hint={`供应商 ${money(supplierPayable)} · 分成 ${money(revPayable)}`} />
+        <Stat label="积分 GMV" value={`${(sum?.pointsGmv ?? 0).toLocaleString()} pts`} hint={t("dynRedeemCount", { n: sum?.orders ?? 0 })} />
+        <Stat label="待付合计" value={money(supplierPayable + revPayable)} hint={t("dynSupplierShare", { a: money(supplierPayable), b: money(revPayable) })} />
       </div>
 
       {/* Month picker (shared by both generate actions) */}
@@ -439,14 +445,14 @@ function MallFinanceWallet() {
         <div className="mb-3 flex flex-wrap items-center gap-2">
           <Store size={14} className="text-[var(--accent)]" />
           <span className="text-xs font-black uppercase text-[var(--muted)]">销售分成 · 月度对账（加盟商 / 站点)</span>
-          <button type="button" onClick={() => void post({ action: "generateRevShareStatement", month }, `已生成 ${month} 分成对账单`)} className="ml-auto h-9 rounded-[8px] bg-[var(--accent)] px-3.5 text-xs font-black text-[var(--accent-ink)]">生成分成对账单</button>
+          <button type="button" onClick={() => void post({ action: "generateRevShareStatement", month }, t("dynShareStatementGen", { m: month }))} className="ml-auto h-9 rounded-[8px] bg-[var(--accent)] px-3.5 text-xs font-black text-[var(--accent-ink)]">生成分成对账单</button>
         </div>
         <div className="space-y-2">
           {revStmts.map((s) => (
             <div key={s.id} className="flex flex-wrap items-center gap-2 rounded-[8px] border border-[var(--line)] bg-[var(--surface-raised)] px-3 py-2 text-sm">
               <span className="font-black">{s.franchise}</span>
               <span className="text-[11px] font-bold text-[var(--muted)]">{s.month}</span>
-              <Badge value={stmtStatusLabel(s.status, "加盟商")} />
+              <Badge value={stmtStatusLabel(s.status, t("dynWhoFranchise"), t)} />
               <span className="text-xs font-bold text-[var(--muted)]">{s.orders} 单 · 净 {money(s.franchiseNetTotal)} · 站点 {money(s.stationShareTotal)} · 合计 <b>{money(s.total)}</b></span>
               {s.status === "confirmed" && (
                 <button type="button" onClick={() => void post({ action: "payRevShareStatement", statementId: s.id }, "已标记付款")} className="ml-auto h-8 rounded-[8px] bg-[var(--accent)] px-3 text-xs font-black text-[var(--accent-ink)]">标记已付款</button>
@@ -463,14 +469,14 @@ function MallFinanceWallet() {
         <div className="mb-3 flex flex-wrap items-center gap-2">
           <Building2 size={14} className="text-[var(--accent)]" />
           <span className="text-xs font-black uppercase text-[var(--muted)]">供应商 · 月度对账</span>
-          <button type="button" onClick={() => void post({ action: "generateStatement", month }, `已生成 ${month} 供应商对账单`)} className="ml-auto h-9 rounded-[8px] bg-[var(--accent)] px-3.5 text-xs font-black text-[var(--accent-ink)]">生成对账单</button>
+          <button type="button" onClick={() => void post({ action: "generateStatement", month }, t("dynSupplierStatementGen", { m: month }))} className="ml-auto h-9 rounded-[8px] bg-[var(--accent)] px-3.5 text-xs font-black text-[var(--accent-ink)]">生成对账单</button>
         </div>
         <div className="space-y-2">
           {supplierStmts.map((s) => (
             <div key={s.id} className="flex flex-wrap items-center gap-2 rounded-[8px] border border-[var(--line)] bg-[var(--surface-raised)] px-3 py-2 text-sm">
               <span className="font-black">{s.supplierName}</span>
               <span className="text-[11px] font-bold text-[var(--muted)]">{s.month}</span>
-              <Badge value={stmtStatusLabel(s.status, "供应商")} />
+              <Badge value={stmtStatusLabel(s.status, t("dynWhoSupplier"), t)} />
               <span className="text-xs font-bold text-[var(--muted)]">应付 <b>{money(s.total)}</b></span>
               {s.status === "confirmed" && (
                 <button type="button" onClick={() => void post({ action: "payStatement", statementId: s.id }, "已标记付款")} className="ml-auto h-8 rounded-[8px] bg-[var(--accent)] px-3 text-xs font-black text-[var(--accent-ink)]">标记已付款</button>
