@@ -84,13 +84,37 @@ export async function PATCH(request: Request) {
   if (forbidden) return forbidden;
 
   const body = (await request.json().catch(() => ({}))) as {
-    action?: "setStatus" | "provisionAccount";
+    action?: "setStatus" | "provisionAccount" | "update";
     id?: string;
     status?: CrmPartnerStatus;
     identifier?: string;
-  };
+  } & Partial<CrmPartner>;
   const partner = memory.crmPartners.find((item) => item.id === body.id);
   if (!partner) return jsonResponse({ error: "partner not found" }, { status: 404 });
+
+  if (body.action === "update") {
+    const index = memory.crmPartners.findIndex((item) => item.id === partner.id);
+    const next: CrmPartner = {
+      ...partner,
+      ...(body.name !== undefined ? { name: body.name } : {}),
+      ...(body.category !== undefined ? { category: body.category } : {}),
+      ...(body.contactName !== undefined ? { contactName: body.contactName } : {}),
+      ...(body.phone !== undefined ? { phone: body.phone } : {}),
+      ...(body.bairro !== undefined ? { bairro: body.bairro } : {}),
+      ...(body.owner !== undefined ? { owner: body.owner } : {}),
+      ...(body.status !== undefined ? { status: body.status } : {}),
+      ...(body.tier !== undefined ? { tier: body.tier } : {}),
+      ...(body.risk !== undefined ? { risk: body.risk } : {}),
+      ...(body.monthlyVolume !== undefined ? { monthlyVolume: Number(body.monthlyVolume) } : {}),
+      ...(body.vehiclesAvailable !== undefined ? { vehiclesAvailable: Number(body.vehiclesAvailable) } : {}),
+      ...(body.services !== undefined ? { services: body.services } : {}),
+      ...(body.lat !== undefined ? { lat: Number(body.lat) } : {}),
+      ...(body.lng !== undefined ? { lng: Number(body.lng) } : {}),
+    };
+    memory.crmPartners[index] = next;
+    appendServerAudit({ actor: "Mall Console", action: "CRM_PARTNER_UPDATED", entity: "CrmPartner", entityId: partner.id, detail: `${partner.name} atualizado (loc ${next.lat},${next.lng})`, risk: "Low" });
+    return jsonResponse({ data: next });
+  }
 
   if (body.action === "setStatus") {
     const allowed: CrmPartnerStatus[] = ["Active", "Prospect", "Review", "Suspended"];

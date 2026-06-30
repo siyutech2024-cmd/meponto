@@ -36,6 +36,19 @@ export default function CrmPage() {
   const [formOpen, setFormOpen] = useState(false);
   const [form, setForm] = useState(emptyForm);
   const [isSaving, setIsSaving] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
+
+  function startEdit(partner: CrmPartner) {
+    setForm({
+      name: partner.name, category: partner.category, contactName: partner.contactName, phone: partner.phone,
+      bairro: partner.bairro, owner: partner.owner, status: partner.status, tier: partner.tier, risk: partner.risk,
+      monthlyVolume: partner.monthlyVolume, vehiclesAvailable: partner.vehiclesAvailable,
+      services: partner.services.join(", "), lat: partner.lat, lng: partner.lng,
+    });
+    setEditingId(partner.id);
+    setFormOpen(true);
+    if (typeof window !== "undefined") window.scrollTo({ top: 0, behavior: "smooth" });
+  }
 
   useEffect(() => {
     let active = true;
@@ -104,23 +117,18 @@ export default function CrmPage() {
     event.preventDefault();
     setIsSaving(true);
 
-    const response = await fetch("/api/crm", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        ...form,
-        services: form.services
-          .split(",")
-          .map((service) => service.trim())
-          .filter(Boolean),
-      }),
-    });
+    const payloadBody = { ...form, services: form.services.split(",").map((service) => service.trim()).filter(Boolean) };
+    const response = editingId
+      ? await fetch("/api/crm", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "update", id: editingId, ...payloadBody }) })
+      : await fetch("/api/crm", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payloadBody) });
     const payload = (await response.json()) as { data?: CrmPartner };
 
     if (payload.data) {
-      setPartners((current) => [payload.data as CrmPartner, ...current]);
+      const saved = payload.data;
+      setPartners((current) => (editingId ? current.map((p) => (p.id === saved.id ? saved : p)) : [saved, ...current]));
       setForm(emptyForm);
       setFormOpen(false);
+      setEditingId(null);
     }
 
     setIsSaving(false);
@@ -209,9 +217,9 @@ export default function CrmPage() {
           </div>
           <div className="flex gap-2 lg:col-span-4">
             <button disabled={isSaving} className="h-11 rounded border border-[var(--accent)] bg-[var(--accent)] px-4 text-sm font-black text-[var(--accent-ink)] disabled:opacity-50">
-              {isSaving ? "Saving" : "Create Partner"}
+              {isSaving ? "Saving" : editingId ? "保存修改" : "Create Partner"}
             </button>
-            <button type="button" onClick={() => setFormOpen(false)} className="h-11 rounded border border-[var(--line)] bg-[var(--surface-raised)] px-4 text-sm font-black text-[var(--text-soft)]">
+            <button type="button" onClick={() => { setFormOpen(false); setEditingId(null); setForm(emptyForm); }} className="h-11 rounded border border-[var(--line)] bg-[var(--surface-raised)] px-4 text-sm font-black text-[var(--text-soft)]">
               Cancel
             </button>
           </div>
@@ -271,6 +279,7 @@ export default function CrmPage() {
             ) : (
               <button type="button" onClick={() => void setStatus(partner, "Suspended")} className="h-8 rounded-[7px] border border-[var(--line)] px-2.5 text-xs font-black text-[var(--muted)]">挂起</button>
             )}
+            <button type="button" onClick={() => startEdit(partner)} className="h-8 rounded-[7px] border border-[var(--line)] px-2.5 text-xs font-black text-[var(--muted)] hover:border-[var(--accent)]">编辑/改位置</button>
             <button type="button" onClick={() => void provisionAccount(partner)} className="h-8 rounded-[7px] border border-[var(--accent)] px-2.5 text-xs font-black text-[var(--accent)]">开通账号</button>
           </div>,
         ])}
