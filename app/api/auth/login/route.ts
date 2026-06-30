@@ -77,7 +77,7 @@ async function findAppUserAccount(identifier: string, password: string): Promise
   const { memory } = await import("../../../lib/server/memory");
   const { refreshCollectionsFromDatabase } = await import("../../../lib/server/persistence");
 
-  await refreshCollectionsFromDatabase(["appUsers"]);
+  await refreshCollectionsFromDatabase(["appUsers", "crmPartners"]);
 
   const normalized = identifier.trim().toLowerCase();
   const compactPhone = identifier.replace(/\s/g, "");
@@ -89,6 +89,26 @@ async function findAppUserAccount(identifier: string, password: string): Promise
   const hash = createHash("sha256").update(`${user.salt}:${password}`).digest("hex");
   if (hash !== user.passwordHash) return undefined;
 
+  // Self-heal mall-hub accounts whose stored shape predates the supplier/partner
+  // split: re-derive portal/role/defaultPath from the CRM company's category so a
+  // supplier (provides product supply → /mall/supplier) never lands on the
+  // Partner service-point page (and vice-versa), even for older accounts.
+  let { portal, role, defaultPath } = user;
+  if (portal === "supplier" || portal === "partner") {
+    const company = memory.crmPartners.find((p) => p.name === user.organization);
+    if (company) {
+      const wantSupplier = company.category === "Supplier";
+      const wantPortal = wantSupplier ? "supplier" : "partner";
+      if (portal !== wantPortal) {
+        portal = wantPortal;
+        role = wantSupplier ? "Supplier Admin" : "Partner Operator";
+        defaultPath = wantSupplier ? "/mall/supplier" : "/partner-points";
+        const fix = memory.appUsers.findIndex((item) => item.id === user.id);
+        if (fix !== -1) memory.appUsers[fix] = { ...memory.appUsers[fix], portal, role, defaultPath };
+      }
+    }
+  }
+
   const index = memory.appUsers.findIndex((item) => item.id === user.id);
   if (index !== -1) {
     memory.appUsers[index] = { ...memory.appUsers[index], lastLoginAt: new Date().toISOString().slice(0, 16).replace("T", " ") };
@@ -96,15 +116,15 @@ async function findAppUserAccount(identifier: string, password: string): Promise
 
   return {
     id: user.id,
-    portal: user.portal,
+    portal,
     name: user.name,
-    role: user.role,
+    role,
     identifier: user.identifier,
     phone: user.phone,
     password: "",
     organization: user.organization,
     tenantId: user.tenantId,
-    defaultPath: user.defaultPath,
+    defaultPath,
     franchise: user.franchise,
     station: user.station,
   } as TestAccount & { franchise?: string; station?: string };
