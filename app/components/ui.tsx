@@ -147,6 +147,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   // Single-area portals (e.g. the supplier console) have no sidebar nav — drop
   // the empty 260px gutter and run the workspace full-width instead.
   const hasNav = visibleGroups.length > 0;
+  // The notification feed is the HQ incident/ops stream — only relevant to the
+  // PontoSys ops family. Mall hub (supplier/partner/operator) and the rider app
+  // shouldn't surface it, so hide the bell there.
+  const showBell = ["pontosys", "franchise", "ponto"].includes(portal.id);
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
@@ -249,16 +253,18 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             </div>
           </div>
           <div className="flex items-center gap-2">
-            <div className="relative">
-              <IconButton label={t("notifications")} onClick={() => setNotificationsOpen(true)}>
-                <Bell size={18} />
-              </IconButton>
-              {unreadCount ? (
-                <span className="absolute -right-1 -top-1 grid h-5 min-w-5 place-items-center rounded-full border border-[var(--surface)] bg-[var(--danger)] px-1 text-[10px] font-black text-[var(--text)] animate-pulse">
-                  {unreadCount}
-                </span>
-              ) : null}
-            </div>
+            {showBell && (
+              <div className="relative">
+                <IconButton label={t("notifications")} onClick={() => setNotificationsOpen(true)}>
+                  <Bell size={18} />
+                </IconButton>
+                {unreadCount ? (
+                  <span className="absolute -right-1 -top-1 grid h-5 min-w-5 place-items-center rounded-full border border-[var(--surface)] bg-[var(--danger)] px-1 text-[10px] font-black text-[var(--text)] animate-pulse">
+                    {unreadCount}
+                  </span>
+                ) : null}
+              </div>
+            )}
             <IconButton label={nextTheme === "dark" ? "Switch to dark mode" : "Switch to light mode"} onClick={() => setTheme(nextTheme)}>
               {theme === "dark" ? <Sun size={18} /> : <Moon size={18} />}
             </IconButton>

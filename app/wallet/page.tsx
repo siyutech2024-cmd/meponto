@@ -32,6 +32,7 @@ function RiderPayrollWallet() {
 
   const [anchor, setAnchor] = useState(""); // "" → backend picks the latest week with data
   const [weekly, setWeekly] = useState<Weekly | null>(null);
+  const [loading, setLoading] = useState(false);
   const [withdrawals, setWithdrawals] = useState<RiderWithdrawal[]>([]);
   const [open, setOpen] = useState<Set<string>>(new Set());
   const [message, setMessage] = useState<{ tone: "ok" | "err"; text: string } | null>(null);
@@ -52,17 +53,22 @@ function RiderPayrollWallet() {
   useEffect(() => { void loadRevShare(); }, [loadRevShare]);
 
   const load = useCallback(async () => {
-    const [weeklyResponse, listResponse] = await Promise.all([
-      fetch(`/api/wallet?view=weekly${anchor ? `&week=${anchor}` : ""}`, { headers, cache: "no-store" }),
-      fetch(`/api/wallet?${scopeFranchise ? `franchise=${encodeURIComponent(scopeFranchise)}` : ""}`, { headers, cache: "no-store" }),
-    ]);
-    if (weeklyResponse.ok) {
-      const w = (await weeklyResponse.json()).data as Weekly;
-      setWeekly(w);
-      // Lock the picker to the data week the backend chose (so navigation works).
-      if (!anchor && w?.week?.from) setAnchor(w.week.from);
+    setLoading(true);
+    try {
+      const [weeklyResponse, listResponse] = await Promise.all([
+        fetch(`/api/wallet?view=weekly${anchor ? `&week=${anchor}` : ""}`, { headers, cache: "no-store" }),
+        fetch(`/api/wallet?${scopeFranchise ? `franchise=${encodeURIComponent(scopeFranchise)}` : ""}`, { headers, cache: "no-store" }),
+      ]);
+      if (weeklyResponse.ok) {
+        const w = (await weeklyResponse.json()).data as Weekly;
+        setWeekly(w);
+        // Lock the picker to the data week the backend chose (so navigation works).
+        if (!anchor && w?.week?.from) setAnchor(w.week.from);
+      }
+      if (listResponse.ok) setWithdrawals((await listResponse.json()).data.withdrawals ?? []);
+    } finally {
+      setLoading(false);
     }
-    if (listResponse.ok) setWithdrawals((await listResponse.json()).data.withdrawals ?? []);
   }, [headers, anchor, scopeFranchise]);
 
   useEffect(() => {
@@ -73,6 +79,10 @@ function RiderPayrollWallet() {
     const base = anchor || weekly?.week.from || new Date().toISOString().slice(0, 10);
     const d = new Date(`${base}T12:00:00Z`);
     d.setUTCDate(d.getUTCDate() + deltaDays);
+    // Clear stale numbers immediately so the prior week's totals don't linger
+    // on screen while the new week loads.
+    setWeekly(null);
+    setLoading(true);
     setAnchor(d.toISOString().slice(0, 10));
   };
 
@@ -183,11 +193,11 @@ function RiderPayrollWallet() {
       <div className="panel mb-4 flex flex-wrap items-center justify-between gap-3 p-3" data-i18n-skip>
         <button type="button" className="tag" onClick={() => shiftWeek(-7)}>{t("wlPrevWeek")}</button>
         <div className="text-sm font-black">
-          {weekly ? `${md(weekly.week.from)} – ${md(weekly.week.to)}` : "—"}
+          {weekly ? `${md(weekly.week.from)} – ${md(weekly.week.to)}` : loading ? "加载中…" : "—"}
           <span className="ml-2 text-[11px] font-bold text-[var(--muted)]">{t("wlNatWeek")}</span>
         </div>
         <button type="button" className="tag" onClick={() => shiftWeek(7)}>{t("wlNextWeek")}</button>
-        <div className="ml-auto text-sm font-black text-[var(--accent)]">{t("wlWeekTotal", { money: weekly ? money(weekly.grandTotal) : "—" })}</div>
+        <div className="ml-auto text-sm font-black text-[var(--accent)]">{t("wlWeekTotal", { money: weekly ? money(weekly.grandTotal) : loading ? "…" : "—" })}</div>
       </div>
 
       <p className="mb-4 -mt-2 px-1 text-[11px] font-bold text-[var(--muted)]">{t("wlExplain")}</p>
