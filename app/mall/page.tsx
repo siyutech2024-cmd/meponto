@@ -642,57 +642,16 @@ export default function MallAdminPage() {
       {/* ================= 设置 ================= */}
       {tab === "settings" && (
         <div className="panel max-w-2xl p-5">
-          <div className="mb-3 text-xs font-black uppercase text-[var(--muted)]">积分与收款配置</div>
-          <div className="grid gap-3 md:grid-cols-2">
-            {[
-              { key: "perOrderPoints", label: "每完成 1 单积分", value: mall?.config.perOrderPoints },
-              { key: "referralPoints", label: "邀请注册积分", value: mall?.config.referralPoints },
-              { key: "partnerServicePoints", label: "Partner 服务积分", value: mall?.config.partnerServicePoints },
-              { key: "partnerServiceCount", label: "Partner 服务次数门槛", value: mall?.config.partnerServiceCount },
-            ].map((field) => (
-              <label key={field.key} className="text-[11px] font-black text-[var(--muted)]">{field.label}
-                <input value={configDraft[field.key] ?? String(field.value ?? "")} onChange={(e) => setConfigDraft((prev) => ({ ...prev, [field.key]: e.target.value }))} className="mt-1 h-10 w-full rounded-[8px] border border-[var(--line)] bg-[var(--surface-raised)] px-3 text-sm font-bold outline-none focus:border-[var(--accent)]" />
-              </label>
-            ))}
-            <label className="text-[11px] font-black text-[var(--muted)] md:col-span-2">公司 PIX 收款 Key（骑手充值时展示）
-              <input value={configDraft.pixKey ?? mall?.pixKey ?? ""} onChange={(e) => setConfigDraft((prev) => ({ ...prev, pixKey: e.target.value }))} placeholder="CNPJ / e-mail / chave aleatória" className="mt-1 h-10 w-full rounded-[8px] border border-[var(--line)] bg-[var(--surface-raised)] px-3 font-mono text-sm font-bold outline-none focus:border-[var(--accent)]" />
-            </label>
+          <div className="mb-3 text-xs font-black uppercase text-[var(--muted)]">收款配置</div>
+          <label className="block text-[11px] font-black text-[var(--muted)]">公司 PIX 收款 Key（骑手充值 / 混合付款时展示）
+            <input value={configDraft.pixKey ?? mall?.pixKey ?? ""} onChange={(e) => setConfigDraft((prev) => ({ ...prev, pixKey: e.target.value }))} placeholder="CNPJ / e-mail / chave aleatória" className="mt-1 h-10 w-full max-w-md rounded-[8px] border border-[var(--line)] bg-[var(--surface-raised)] px-3 font-mono text-sm font-bold outline-none focus:border-[var(--accent)]" />
+          </label>
+          <button type="button" onClick={() => void post("/api/mall", { action: "setConfig", pixKey: configDraft.pixKey ?? mall?.pixKey ?? "" }, "收款配置已保存")} className="mt-4 h-11 rounded-[8px] bg-[var(--accent)] px-6 text-sm font-black text-[var(--accent-ink)]">保存</button>
 
-            <div className="md:col-span-2 mt-2 border-t border-[var(--line)] pt-3 text-[11px] font-black uppercase text-[var(--muted)]">兑换限额（全局风控 · 0 = 不限）</div>
-            {[
-              { key: "dailyRedeemCount", label: "每日兑换笔数上限", value: mall?.config.dailyRedeemCount },
-              { key: "dailyRedeemPoints", label: "每日兑换积分上限", value: mall?.config.dailyRedeemPoints },
-              { key: "monthlyRedeemPoints", label: "每月兑换积分上限", value: mall?.config.monthlyRedeemPoints },
-              { key: "highValueReviewPoints", label: "高价值人工审核门槛（分）", value: mall?.config.highValueReviewPoints },
-              { key: "newAccountWindowDays", label: "新账号判定窗口（天）", value: mall?.config.newAccountWindowDays },
-              { key: "newAccountRedeemCap", label: "新账号窗口内兑换上限（分）", value: mall?.config.newAccountRedeemCap },
-            ].map((field) => (
-              <label key={field.key} className="text-[11px] font-black text-[var(--muted)]">{field.label}
-                <input value={configDraft[field.key] ?? String(field.value ?? "")} onChange={(e) => setConfigDraft((prev) => ({ ...prev, [field.key]: e.target.value }))} inputMode="numeric" className="mt-1 h-10 w-full rounded-[8px] border border-[var(--line)] bg-[var(--surface-raised)] px-3 text-sm font-bold outline-none focus:border-[var(--accent)]" />
-              </label>
-            ))}
+          <div className="mt-5 rounded-[10px] border border-[var(--line)] bg-[var(--surface-raised)] p-4">
+            <div className="text-sm font-black">积分规则统一在「积分经济」页管理</div>
+            <p className="mt-1 text-xs font-bold leading-5 text-[var(--muted)]">完单积分、邀请裂变、生日、Partner 服务积分、金钱等价(R$ ↔ 分)、每日/每月兑换上限、高价值审核阈值等,都已移到 <a href="/points-economy" className="text-[var(--accent)] underline">积分经济</a> 页统一设置(避免两处重复)。</p>
           </div>
-          <button
-            type="button"
-            onClick={() => {
-              const num = (key: string, fallback?: number) => Number(configDraft[key] ?? fallback ?? 0);
-              void post("/api/mall", {
-                action: "setConfig",
-                perOrderPoints: num("perOrderPoints", mall?.config.perOrderPoints),
-                referralPoints: num("referralPoints", mall?.config.referralPoints),
-                partnerServicePoints: num("partnerServicePoints", mall?.config.partnerServicePoints),
-                partnerServiceCount: num("partnerServiceCount", mall?.config.partnerServiceCount),
-                dailyRedeemCount: num("dailyRedeemCount", mall?.config.dailyRedeemCount),
-                dailyRedeemPoints: num("dailyRedeemPoints", mall?.config.dailyRedeemPoints),
-                monthlyRedeemPoints: num("monthlyRedeemPoints", mall?.config.monthlyRedeemPoints),
-                highValueReviewPoints: num("highValueReviewPoints", mall?.config.highValueReviewPoints),
-                newAccountWindowDays: num("newAccountWindowDays", mall?.config.newAccountWindowDays),
-                newAccountRedeemCap: num("newAccountRedeemCap", mall?.config.newAccountRedeemCap),
-                pixKey: configDraft.pixKey ?? mall?.pixKey ?? "",
-              }, "配置已保存");
-            }}
-            className="mt-4 h-11 rounded-[8px] bg-[var(--accent)] px-6 text-sm font-black text-[var(--accent-ink)]"
-          >保存配置</button>
           <p className="mt-3 text-xs font-bold text-[var(--muted)]">门面：mall.meponto.com · 统一控制台：mall.meponto.com/admin（运营 / 供应商 / 合作方按角色进入，同一登录）</p>
         </div>
       )}

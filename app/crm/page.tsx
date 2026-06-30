@@ -1,6 +1,7 @@
 "use client";
+/* eslint-disable @typescript-eslint/no-explicit-any */
 
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { AddButton, AppShell, Badge, DataTable, Field, PageTitle } from "../components/ui";
 import type { CrmPartner, CrmPartnerCategory, CrmPartnerRisk, CrmPartnerStatus, CrmPartnerTier } from "../lib/crm";
 
@@ -22,6 +23,8 @@ const emptyForm = {
   monthlyVolume: 0,
   vehiclesAvailable: 0,
   services: "",
+  lat: -23.5505,
+  lng: -46.6333,
 };
 
 export default function CrmPage() {
@@ -48,6 +51,34 @@ export default function CrmPage() {
       active = false;
     };
   }, []);
+
+  // Service-location map picker (shown on the rider app). Inits when the form opens.
+  const mapDiv = useRef<HTMLDivElement>(null);
+  const mapRef = useRef<any>(null);
+  useEffect(() => {
+    if (!formOpen) { mapRef.current = null; return; }
+    let disposed = false;
+    const init = () => {
+      const L = (window as any).L;
+      if (!L || disposed || !mapDiv.current || mapRef.current) return;
+      const start: [number, number] = [form.lat || -23.5505, form.lng || -46.6333];
+      const map = L.map(mapDiv.current).setView(start, 12);
+      mapRef.current = map;
+      L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 19, attribution: "© OpenStreetMap" }).addTo(map);
+      const marker = L.marker(start, { draggable: true }).addTo(map);
+      const set = (ll: any) => setForm((f) => ({ ...f, lat: Math.round(ll.lat * 1e6) / 1e6, lng: Math.round(ll.lng * 1e6) / 1e6 }));
+      marker.on("dragend", () => set(marker.getLatLng()));
+      map.on("click", (e: any) => { marker.setLatLng(e.latlng); set(e.latlng); });
+      setTimeout(() => map.invalidateSize(), 120);
+    };
+    if (!document.getElementById("leaflet-css")) {
+      const css = document.createElement("link"); css.id = "leaflet-css"; css.rel = "stylesheet"; css.href = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"; document.head.appendChild(css);
+    }
+    if ((window as any).L) init();
+    else { const js = document.createElement("script"); js.src = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"; js.onload = init; document.body.appendChild(js); }
+    return () => { disposed = true; if (mapRef.current) { mapRef.current.remove?.(); mapRef.current = null; } };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [formOpen]);
 
   const filteredPartners = useMemo(() => {
     const term = query.trim().toLowerCase();
@@ -171,6 +202,11 @@ export default function CrmPage() {
           <input type="number" min="0" value={form.monthlyVolume} onChange={(event) => setForm({ ...form, monthlyVolume: Number(event.target.value) })} className="h-11 rounded border border-[var(--line)] bg-[var(--surface)] px-3 outline-none" placeholder="Monthly cases" />
           <input type="number" min="0" value={form.vehiclesAvailable} onChange={(event) => setForm({ ...form, vehiclesAvailable: Number(event.target.value) })} className="h-11 rounded border border-[var(--line)] bg-[var(--surface)] px-3 outline-none" placeholder="Vehicles" />
           <input value={form.services} onChange={(event) => setForm({ ...form, services: event.target.value })} className="h-11 rounded border border-[var(--line)] bg-[var(--surface)] px-3 outline-none" placeholder="Services, comma separated" />
+          <div className="lg:col-span-4">
+            <div className="mb-1 text-[11px] font-black uppercase text-[var(--muted)]">服务点位置（点地图或拖图钉 · 骑手 App 地图按此显示）</div>
+            <div ref={mapDiv} className="h-56 w-full overflow-hidden rounded-[10px] border border-[var(--line)]" style={{ background: "#dfe7ef" }} />
+            <div className="mt-1 text-[11px] font-bold text-[var(--muted)]">坐标 {form.lat?.toFixed(5)}, {form.lng?.toFixed(5)}</div>
+          </div>
           <div className="flex gap-2 lg:col-span-4">
             <button disabled={isSaving} className="h-11 rounded border border-[var(--accent)] bg-[var(--accent)] px-4 text-sm font-black text-[var(--accent-ink)] disabled:opacity-50">
               {isSaving ? "Saving" : "Create Partner"}
