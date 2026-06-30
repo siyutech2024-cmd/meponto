@@ -1,5 +1,6 @@
 import { createHash, randomBytes } from "node:crypto";
 import { appendServerAudit, makeServerId, memory, jsonResponse } from "../../lib/server/memory";
+import { flushPendingToDatabase, persistDeleteRecord } from "../../lib/server/persistence";
 import { requirePermission } from "../../lib/server/authz";
 import type { CrmPartner, CrmPartnerCategory, CrmPartnerRisk, CrmPartnerStatus } from "../../lib/crm";
 import type { AppUser } from "../../lib/users";
@@ -84,13 +85,34 @@ export async function PATCH(request: Request) {
   if (forbidden) return forbidden;
 
   const body = (await request.json().catch(() => ({}))) as {
-    action?: "setStatus" | "provisionAccount" | "update";
+    action?: "setStatus" | "provisionAccount" | "update" | "delete";
     id?: string;
     status?: CrmPartnerStatus;
     identifier?: string;
   } & Partial<CrmPartner>;
   const partner = memory.crmPartners.find((item) => item.id === body.id);
   if (!partner) return jsonResponse({ error: "partner not found" }, { status: 404 });
+
+  if (body.action === "delete") {
+    // Remove the partner/supplier record AND any login accounts scoped to it
+    // (organization = partner name), so a deleted company can't still sign in.
+    const index = memory.crmPartners.findIndex((item) => item.id === partner.id);
+    memory.crmPartners.splice(index, 1);
+    persistDeleteRecord("crmPartners", partner.id);
+    const linkedAccounts = memory.appUsers.filter(
+      (user) => user.organization === partner.name && (user.portal === "supplier" || user.portal === "partner"),
+    );
+    for (const account of linkedAccounts) {
+      const at = memory.appUsers.findIndex((user) => user.id === account.id);
+      if (at !== -1) {
+        memory.appUsers.splice(at, 1);
+        persistDeleteRecord("appUsers", account.id);
+      }
+    }
+    appendServerAudit({ actor: "Mall Console", action: "CRM_PARTNER_DELETED", entity: "CrmPartner", entityId: partner.id, detail: `${partner.name} (${partner.category}) deleted with ${linkedAccounts.length} login account(s)`, risk: "High" });
+    await flushPendingToDatabase();
+    return jsonResponse({ data: { deleted: partner.id, accountsRemoved: linkedAccounts.length } });
+  }
 
   if (body.action === "update") {
     const index = memory.crmPartners.findIndex((item) => item.id === partner.id);

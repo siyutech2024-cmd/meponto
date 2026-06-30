@@ -80,15 +80,16 @@ export default function SupplierWorkspacePage() {
   const [priceDraft, setPriceDraft] = useState<Record<string, string>>({});
   const [pixDraft, setPixDraft] = useState("");
 
-  // Compress a picked image to a small JPEG data URL (no external storage needed).
-  async function onPickImage(file: File) {
+  // Compress a picked image to a small JPEG and upload it (Supabase Storage when
+  // available, else an inline data URL). Returns the final URL, or null on error.
+  async function processImage(file: File, maxEdge: number): Promise<string | null> {
     if (!file.type.startsWith("image/")) {
       setMessage({ tone: "err", text: "Selecione um arquivo de imagem." });
-      return;
+      return null;
     }
     if (file.size > 15 * 1024 * 1024) {
       setMessage({ tone: "err", text: "Imagem muito grande (máx. 15 MB)." });
-      return;
+      return null;
     }
     setUploading(true);
     try {
@@ -104,16 +105,14 @@ export default function SupplierWorkspacePage() {
         i.onerror = () => reject(new Error("img"));
         i.src = dataUrl;
       });
-      const max = 600;
-      const scale = Math.min(1, max / Math.max(img.width, img.height));
+      const scale = Math.min(1, maxEdge / Math.max(img.width, img.height));
       const w = Math.round(img.width * scale);
       const h = Math.round(img.height * scale);
       const canvas = document.createElement("canvas");
       canvas.width = w;
       canvas.height = h;
       canvas.getContext("2d")?.drawImage(img, 0, 0, w, h);
-      const out = canvas.toDataURL("image/jpeg", 0.62);
-      // Prefer Supabase Storage (small payloads); fall back to the inline data URL.
+      const out = canvas.toDataURL("image/jpeg", 0.72);
       let finalUrl = out;
       try {
         const res = await fetch("/api/mall/upload", { method: "POST", headers, body: JSON.stringify({ dataUrl: out }) });
@@ -122,12 +121,26 @@ export default function SupplierWorkspacePage() {
       } catch {
         /* storage unavailable — keep the inline data URL */
       }
-      setForm((prev) => ({ ...prev, imageUrl: finalUrl }));
+      return finalUrl;
     } catch {
       setMessage({ tone: "err", text: "Não foi possível processar a imagem. Tente JPG ou PNG (HEIC do iPhone pode não funcionar)." });
+      return null;
     } finally {
       setUploading(false);
     }
+  }
+
+  async function onPickImage(file: File) {
+    const url = await processImage(file, 600);
+    if (url) setForm((prev) => ({ ...prev, imageUrl: url }));
+  }
+
+  // Logo upload for the company profile — also auto-saves so it shows immediately.
+  async function onPickLogo(file: File) {
+    const url = await processImage(file, 320);
+    if (!url) return;
+    setProfileForm((prev) => ({ ...prev, logoUrl: url }));
+    await supplierPost({ action: "saveProfile", ...profileForm, logoUrl: url }, "Logo 已更新");
   }
 
   function startEdit(product: MarketplaceProduct) {
@@ -498,8 +511,29 @@ export default function SupplierWorkspacePage() {
       {tab === "company" && (
         <div className="panel p-5">
           <div className="mb-3 flex items-center gap-2 text-xs font-black uppercase text-[var(--muted)]"><Building2 size={14} /> 公司 / 品牌资料</div>
+
+          {/* Logo upload */}
+          <div className="mb-4 flex flex-wrap items-center gap-4 rounded-[10px] border border-[var(--line)] bg-[var(--surface-raised)] p-4">
+            <div className="grid h-20 w-20 shrink-0 place-items-center overflow-hidden rounded-[14px] border border-[var(--line)] bg-[var(--surface)]">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              {profileForm.logoUrl ? <img src={profileForm.logoUrl} alt="" className="h-full w-full object-cover" /> : <span className="text-2xl font-black text-[var(--accent)]">{(profileForm.companyName || supplierName || "S").slice(0, 1).toUpperCase()}</span>}
+            </div>
+            <div className="min-w-0 flex-1">
+              <div className="text-[11px] font-black uppercase text-[var(--muted)]">公司 Logo</div>
+              <p className="mt-0.5 text-[11px] font-bold text-[var(--muted)]">上传方形图片（自动压缩）。会显示在供应商门户与对账单上。</p>
+              <div className="mt-2 flex flex-wrap items-center gap-3">
+                <label className="cursor-pointer rounded-[8px] border border-[var(--line)] px-3 py-2 text-xs font-black text-[var(--muted)] hover:border-[var(--accent)]">
+                  {uploading ? "处理中…" : "上传 Logo"}
+                  <input type="file" accept="image/*" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) void onPickLogo(f); e.target.value = ""; }} />
+                </label>
+                <input value={profileForm.logoUrl.startsWith("data:") ? "" : profileForm.logoUrl} onChange={(e) => setProfileForm((p) => ({ ...p, logoUrl: e.target.value }))} placeholder="或粘贴 Logo URL" className="h-9 min-w-0 flex-1 rounded-[8px] border border-[var(--line)] bg-[var(--surface)] px-3 text-sm font-bold outline-none focus:border-[var(--accent)]" />
+                {profileForm.logoUrl && <button type="button" onClick={() => setProfileForm((p) => ({ ...p, logoUrl: "" }))} className="text-xs font-black text-[#c4423b]">清除</button>}
+              </div>
+            </div>
+          </div>
+
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-            {[{ k: "companyName", l: "公司名称" }, { k: "brand", l: "品牌名" }, { k: "cnpj", l: "CNPJ" }, { k: "contactName", l: "联系人" }, { k: "contactEmail", l: "联系邮箱" }, { k: "contactPhone", l: "联系电话" }, { k: "pixKey", l: "收款 PIX Key" }, { k: "logoUrl", l: "Logo URL" }].map((f) => (
+            {[{ k: "companyName", l: "公司名称" }, { k: "brand", l: "品牌名" }, { k: "cnpj", l: "CNPJ" }, { k: "contactName", l: "联系人" }, { k: "contactEmail", l: "联系邮箱" }, { k: "contactPhone", l: "联系电话" }, { k: "pixKey", l: "收款 PIX Key" }].map((f) => (
               <label key={f.k} className="text-[11px] font-black text-[var(--muted)]">{f.l}
                 <input value={(profileForm as unknown as Record<string, string>)[f.k] ?? ""} onChange={(e) => setProfileForm((p) => ({ ...p, [f.k]: e.target.value }))} className="mt-1 h-10 w-full rounded-[8px] border border-[var(--line)] bg-[var(--surface-raised)] px-3 text-sm font-bold outline-none focus:border-[var(--accent)]" />
               </label>

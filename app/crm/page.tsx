@@ -147,6 +147,23 @@ export default function CrmPage() {
     else setNotice(payload.error ?? "Failed to update status");
   }
 
+  async function deletePartner(partner: CrmPartner) {
+    const label = partner.category === "Supplier" ? "供应商" : "合作方";
+    if (!window.confirm(`确认删除${label}「${partner.name}」？将同时移除其登录账号，且不可恢复。`)) return;
+    const response = await fetch("/api/crm", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "delete", id: partner.id }),
+    });
+    const payload = (await response.json()) as { data?: { deleted: string; accountsRemoved: number }; error?: string };
+    if (payload.data) {
+      setPartners((current) => current.filter((item) => item.id !== partner.id));
+      setNotice(`已删除「${partner.name}」${payload.data.accountsRemoved ? ` 及 ${payload.data.accountsRemoved} 个登录账号` : ""}。`);
+    } else {
+      setNotice(payload.error ?? "删除失败");
+    }
+  }
+
   async function provisionAccount(partner: CrmPartner) {
     const identifier = window.prompt(`Login (e-mail or phone) for ${partner.name}:`, partner.phone || "");
     if (!identifier?.trim()) return;
@@ -281,6 +298,7 @@ export default function CrmPage() {
             )}
             <button type="button" onClick={() => startEdit(partner)} className="h-8 rounded-[7px] border border-[var(--line)] px-2.5 text-xs font-black text-[var(--muted)] hover:border-[var(--accent)]">编辑/改位置</button>
             <button type="button" onClick={() => void provisionAccount(partner)} className="h-8 rounded-[7px] border border-[var(--accent)] px-2.5 text-xs font-black text-[var(--accent)]">开通账号</button>
+            <button type="button" onClick={() => void deletePartner(partner)} className="h-8 rounded-[7px] border border-[#c4423b]/40 px-2.5 text-xs font-black text-[#c4423b] hover:border-[#c4423b]">删除</button>
           </div>,
         ])}
       />
