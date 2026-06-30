@@ -8,6 +8,17 @@ import { useDialog } from "../components/dialog";
 import { readSession } from "../lib/session";
 import { readXlsxRows, rowsToObjects } from "../lib/xlsx-lite";
 import type { EarningAggregate, KpiAggregate, RiderDailyEarning, RiderDailyKpi } from "../lib/performance";
+import { useVentoStore } from "../lib/store";
+import { translate, type TranslationKey } from "../lib/i18n";
+
+function useT() {
+  const language = useVentoStore((s) => s.language);
+  return (k: TranslationKey, vars?: Record<string, string | number | undefined>) => {
+    let s = translate(language, k);
+    if (vars) for (const [key, val] of Object.entries(vars)) s = s.replace(`{${key}}`, String(val ?? ""));
+    return s;
+  };
+}
 
 type EnrichedKpi = RiderDailyKpi & { franchise: string; station: string; riderId: string | null };
 type EnrichedEarning = RiderDailyEarning & { franchise: string; station: string; riderId: string | null };
@@ -30,11 +41,11 @@ type Payload = {
 };
 
 const tabs = [
-  { id: "franchises", label: "按加盟商", icon: Building2 },
-  { id: "stations", label: "按站点", icon: MapPin },
-  { id: "riders", label: "按骑手", icon: Users },
-  { id: "earnings", label: "收入结算", icon: CircleDollarSign },
-  { id: "import", label: "导入报表", icon: Upload },
+  { id: "franchises", labelKey: "pfTabFranchises", icon: Building2 },
+  { id: "stations", labelKey: "pfTabStations", icon: MapPin },
+  { id: "riders", labelKey: "pfTabRiders", icon: Users },
+  { id: "earnings", labelKey: "pfTabEarnings", icon: CircleDollarSign },
+  { id: "import", labelKey: "pfTabImport", icon: Upload },
 ] as const;
 
 /** Header → field mappings for the two Eastwind exports. */
@@ -119,11 +130,11 @@ const KPI_PATTERNS: Array<[string, RegExp]> = [
   ["city", /城市/],
 ];
 
-const WEEKDAYS = ["周日", "周一", "周二", "周三", "周四", "周五", "周六"];
+const WEEKDAY_KEYS = ["pfWdSun", "pfWdMon", "pfWdTue", "pfWdWed", "pfWdThu", "pfWdFri", "pfWdSat"] as const;
 
-function weekdayOf(date: string): string {
+function weekdayKeyOf(date: string): TranslationKey | "" {
   const d = new Date(`${date}T12:00:00Z`);
-  return Number.isNaN(d.getTime()) ? "" : WEEKDAYS[d.getUTCDay()];
+  return Number.isNaN(d.getTime()) ? "" : WEEKDAY_KEYS[d.getUTCDay()];
 }
 
 function normalizeDate(value: string): string {
@@ -169,6 +180,7 @@ function pct(value: number | null | undefined, good: "high" | "low" = "high", th
 
 
 function TrendChart({ trend }: { trend: Array<{ date: string; orders: number; settle: number }> }) {
+  const t = useT();
   if (!trend || trend.length < 2) return null;
   const W = 720;
   const H = 120;
@@ -182,8 +194,8 @@ function TrendChart({ trend }: { trend: Array<{ date: string; orders: number; se
   return (
     <div className="panel mb-4 p-4">
       <div className="mb-1 flex items-center justify-between text-[10px] font-black uppercase text-[var(--muted)]">
-        <span>近 {trend.length} 天趋势</span>
-        <span><span className="text-[var(--accent)]">―</span> 完单 ｜ <span className="text-[#4dd9ff]">―</span> 结算 R$</span>
+        <span>{t("pfTrendDays", { n: trend.length })}</span>
+        <span><span className="text-[var(--accent)]">―</span> {t("pfTrendOrders")} ｜ <span className="text-[#4dd9ff]">―</span> {t("pfTrendSettle")}</span>
       </div>
       <svg viewBox={`0 0 ${W} ${H}`} className="h-28 w-full">
         <path d={line(yo, "orders")} fill="none" stroke="var(--accent)" strokeWidth="2.5" strokeLinejoin="round" />
@@ -194,13 +206,14 @@ function TrendChart({ trend }: { trend: Array<{ date: string; orders: number; se
       </svg>
       <div className="flex justify-between text-[10px] font-bold text-[var(--muted)]">
         <span>{trend[0].date.slice(5)}</span>
-        <span>{trend[trend.length - 1].date.slice(5)}（完单 {trend[trend.length - 1].orders} ｜ R$ {trend[trend.length - 1].settle.toFixed(0)}）</span>
+        <span>{trend[trend.length - 1].date.slice(5)}{t("pfTrendLastLabel", { o: trend[trend.length - 1].orders, s: trend[trend.length - 1].settle.toFixed(0) })}</span>
       </div>
     </div>
   );
 }
 
 export default function PerformancePage() {
+  const t = useT();
   const session = useMemo(() => readSession(), []);
   const scopeFranchise = session?.portal === "franchise" ? session.franchise || session.organization : "";
   const scopeStation = session?.portal === "ponto" ? session.station || session.organization : "";
@@ -247,8 +260,8 @@ export default function PerformancePage() {
   return (
     <AppShell>
       <PageTitle
-        title="T+1 考核看板"
-        eyebrow={scopeStation ? `站点视角 · ${scopeStation}` : scopeFranchise ? `加盟商视角 · ${scopeFranchise}` : "Eastwind T+1 · 骑手/站点/加盟商三级 KPI"}
+        title={t("pfTitle")}
+        eyebrow={scopeStation ? t("pfEyebrowStation", { x: scopeStation }) : scopeFranchise ? t("pfEyebrowFranchise", { x: scopeFranchise }) : t("pfEyebrowDefault")}
         action={
           <div className="flex gap-2">
             <button
@@ -258,12 +271,12 @@ export default function PerformancePage() {
                 if (!data) return;
                 downloadCsv(
                   `kpi-${data.date ?? "all"}`,
-                  ["日期", "骑手", "99ID", "CPF", "电话", "城市", "加盟商", "站点", "完单", "在线时长", "报名班次", "报名时长", "班次内在线", "%TSH", "TSH关键", "AR%", "CAA", "超时"],
+                  [t("pfCsvDate"), t("pfCsvRider"), "99ID", "CPF", t("pfCsvPhone"), t("pfCsvCity"), t("pfCsvFranchise"), t("pfCsvStation"), t("pfCsvCompleted"), t("pfCsvOnlineH"), t("pfCsvSignedShifts"), t("pfCsvSignedH"), t("pfCsvInShift"), "%TSH", t("pfCsvTshKey"), "AR%", "CAA", t("pfCsvOvertime")],
                   data.riders.map((r) => [r.date, r.riderName, r.rider99Id, r.cpf ?? "", r.phone ?? "", r.city ?? "", r.franchise, r.station, r.completedOrders, r.onlineHours, r.signedShifts, r.signedShiftHours, r.inShiftOnlineHours, r.tsh, r.tshCritical, r.ar, r.caa, r.overtime]),
                 );
               }}
             >
-              导出KPI
+              {t("pfExportKpi")}
             </button>
             <button
               type="button"
@@ -272,15 +285,15 @@ export default function PerformancePage() {
                 if (!data) return;
                 downloadCsv(
                   `settlement-${data.date ?? "all"}`,
-                  ["日期", "骑手", "99ID", "CPF", "PIX", "电话", "加盟商", "站点", "完单", "今日统计R$", "行程收入", "现金欠款", "餐损", "奖励", "小费", "人工调整", "推荐奖励", "其他", "结算金额R$"],
+                  [t("pfCsvDate"), t("pfCsvRider"), "99ID", "CPF", "PIX", t("pfCsvPhone"), t("pfCsvFranchise"), t("pfCsvStation"), t("pfCsvCompleted"), t("pfCsvTodayR"), t("pfCsvTripInc"), t("pfCsvCashDebt"), t("pfCsvMeal"), t("pfCsvBonus"), t("pfCsvTips"), t("pfCsvManualAdj"), t("pfCsvReferral"), t("pfCsvOther"), t("pfCsvSettleR")],
                   data.earnings.riders.map((r) => [r.date, r.riderName, r.rider99Id, r.cpf ?? "", r.pix ?? "", r.phone ?? "", r.franchise, r.station, r.orders, r.total, r.tripIncome, r.cashDebt, r.mealDeduction, r.bonus, r.tips, r.manualAdjust, r.referralBonus, r.other, r.settleAmount]),
                 );
               }}
             >
-              导出结算
+              {t("pfExportSettle")}
             </button>
             <button type="button" onClick={() => void load(date)} className="tag inline-flex items-center gap-1">
-              <RefreshCcw size={13} /> 刷新
+              <RefreshCcw size={13} /> {t("pfRefresh")}
             </button>
           </div>
         }
@@ -288,7 +301,7 @@ export default function PerformancePage() {
 
       <div className="mb-4 flex flex-wrap items-center gap-3">
         <div className="flex gap-2 overflow-x-auto">
-          {visibleTabs.map(({ id, label, icon: Icon }) => (
+          {visibleTabs.map(({ id, labelKey, icon: Icon }) => (
             <button
               key={id}
               type="button"
@@ -296,7 +309,7 @@ export default function PerformancePage() {
               className={`inline-flex h-10 items-center gap-2 whitespace-nowrap rounded-[8px] border px-4 text-xs font-black uppercase ${tab === id ? "border-[var(--accent)] bg-[var(--accent-soft)] text-[var(--accent)]" : "border-[var(--line)] bg-[var(--surface)] text-[var(--muted-strong)]"}`}
             >
               <Icon size={15} />
-              {label}
+              {t(labelKey)}
             </button>
           ))}
         </div>
@@ -310,7 +323,7 @@ export default function PerformancePage() {
             className="h-10 rounded-[8px] border border-[var(--line)] bg-[var(--surface)] px-3 text-sm font-black outline-none"
           >
             {data.dates.map((item) => (
-              <option key={item} value={item}>{item} {weekdayOf(item)}</option>
+              <option key={item} value={item}>{item} {(() => { const wk = weekdayKeyOf(item); return wk ? t(wk) : ""; })()}</option>
             ))}
           </select>
         )}
@@ -327,10 +340,10 @@ export default function PerformancePage() {
       {total && tab !== "import" && (
         <div className="mb-4 grid gap-3 md:grid-cols-7">
           {[
-            ["骑手数", String(total.riders)],
-            ["在线时长", total.onlineHours.toFixed(1)],
-            ["完单", String(total.completedOrders)],
-            ["报名时长", total.signedShiftHours.toFixed(1)],
+            [t("pfRiders"), String(total.riders)],
+            [t("pfOnlineHours"), total.onlineHours.toFixed(1)],
+            [t("pfCompleted"), String(total.completedOrders)],
+            [t("pfSignedHours"), total.signedShiftHours.toFixed(1)],
           ].map(([label, value]) => (
             <div key={label} className="panel p-3 text-center">
               <div className="text-[10px] font-black uppercase text-[var(--muted)]">{label}</div>
@@ -339,18 +352,18 @@ export default function PerformancePage() {
           ))}
           <div className="panel p-3 text-center"><div className="text-[10px] font-black uppercase text-[var(--muted)]">%TSH</div><div className="text-xl">{pct(total.tsh)}</div></div>
           <div className="panel p-3 text-center"><div className="text-[10px] font-black uppercase text-[var(--muted)]">AR</div><div className="text-xl">{pct(total.ar, "high", 95)}</div></div>
-          <div className="panel p-3 text-center"><div className="text-[10px] font-black uppercase text-[var(--muted)]">CAA / 超时</div><div className="text-sm">{pct(total.caa, "low", 5)} / {pct(total.overtime, "low", 10)}</div></div>
+          <div className="panel p-3 text-center"><div className="text-[10px] font-black uppercase text-[var(--muted)]">{t("pfCaaOvertime")}</div><div className="text-sm">{pct(total.caa, "low", 5)} / {pct(total.overtime, "low", 10)}</div></div>
         </div>
       )}
 
       {tab !== "import" && (!data || data.riders.length === 0) && (
         <div className="panel p-6 text-sm font-bold text-[var(--muted)]">
-          还没有 T+1 数据。请到「导入 T+1 报表」粘贴 Eastwind 骑手报表。
+          {t("pfNoData")}
         </div>
       )}
 
       {(tab === "franchises" || tab === "stations") && data && data.riders.length > 0 && (
-        <GroupTable rows={tab === "franchises" ? data.franchises : data.stations} label={tab === "franchises" ? "加盟商" : "站点"} showFranchise={tab === "stations" && !scopeFranchise} />
+        <GroupTable rows={tab === "franchises" ? data.franchises : data.stations} label={tab === "franchises" ? t("pfFranchise") : t("pfStation")} showFranchise={tab === "stations" && !scopeFranchise} />
       )}
 
       {tab === "riders" && data && data.riders.length > 0 && <RiderTable rows={data.riders} />}
@@ -367,6 +380,7 @@ export default function PerformancePage() {
 const money = (value: number) => `R$ ${value.toFixed(2)}`;
 
 function EarningsTab({ earnings, scopeFranchise, scopeStation, date, headers }: { earnings: Payload["earnings"]; scopeFranchise: string; scopeStation: string; date: string; headers: Record<string, string> }) {
+  const t = useT();
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [paidNames, setPaidNames] = useState<Set<string>>(new Set());
   const [busy, setBusy] = useState(false);
@@ -390,7 +404,7 @@ function EarningsTab({ earnings, scopeFranchise, scopeStation, date, headers }: 
     const rows = earnings.riders.filter((r) => selected.has(r.id) && !paidNames.has(r.riderName) && r.settleAmount > 0);
     const zero = earnings.riders.filter((r) => selected.has(r.id) && !paidNames.has(r.riderName) && r.settleAmount <= 0).length;
     if (rows.length === 0) {
-      setNote({ tone: "err", text: zero > 0 ? `所选 ${zero} 行结算金额为 0，无需付款。` : "请选择待付骑手。" });
+      setNote({ tone: "err", text: zero > 0 ? t("pfErrZeroSettle", { n: zero }) : t("pfErrSelectRiders") });
       return;
     }
     setBusy(true);
@@ -399,14 +413,14 @@ function EarningsTab({ earnings, scopeFranchise, scopeStation, date, headers }: 
       const response = await fetch("/api/wallet", {
         method: "POST",
         headers,
-        body: JSON.stringify({ action: "recordPayment", target: "rider", refName: row.riderName, franchise: row.franchise, amount: row.settleAmount, period: "daily", weekFrom: date, weekTo: date, note: `T+1 ${date} 日结` }),
+        body: JSON.stringify({ action: "recordPayment", target: "rider", refName: row.riderName, franchise: row.franchise, amount: row.settleAmount, period: "daily", weekFrom: date, weekTo: date, note: t("pfPayNote", { date }) }),
       });
       if (!response.ok) failed += 1;
     }
     setBusy(false);
     setSelected(new Set());
     void loadPaid();
-    setNote(failed ? { tone: "err", text: `${rows.length - failed} 笔已标记，${failed} 笔失败。` } : { tone: "ok", text: `已标记 ${rows.length} 名骑手 ${date} 日结已付款${zero ? `（跳过 ${zero} 行零金额）` : ""}。` });
+    setNote(failed ? { tone: "err", text: t("pfMarkedFailed", { ok: rows.length - failed, failed }) } : { tone: "ok", text: t("pfMarkedPaid", { n: rows.length, date, zero: zero ? t("pfMarkedSkip", { n: zero }) : "" }) });
   }
 
   const toggle = (id: string) => setSelected((prev) => { const next = new Set(prev); next.has(id) ? next.delete(id) : next.add(id); return next; });
@@ -414,29 +428,28 @@ function EarningsTab({ earnings, scopeFranchise, scopeStation, date, headers }: 
   const allSelected = selectableRows.length > 0 && selectableRows.every((r) => selected.has(r.id));
 
   if (earnings.riders.length === 0) {
-    return <div className="panel p-6 text-sm font-bold text-[var(--muted)]">还没有收入数据。请到「导入报表」上传 Eastwind「Ganhos do entregador parceiro」表。</div>;
+    return <div className="panel p-6 text-sm font-bold text-[var(--muted)]">{t("pfNoEarnings")}</div>;
   }
   const total = earnings.total;
   const brokenSettle = total.settleAmount === 0 && total.total > 0;
   const groups: Array<{ title: string; rows: EarningGroupRow[]; showFranchise: boolean }> = [];
-  if (!scopeFranchise && !scopeStation) groups.push({ title: "按加盟商汇总（结算口径）", rows: earnings.franchises, showFranchise: false });
-  if (!scopeStation) groups.push({ title: "按站点汇总", rows: earnings.stations, showFranchise: !scopeFranchise });
+  if (!scopeFranchise && !scopeStation) groups.push({ title: t("pfGroupByFranchise"), rows: earnings.franchises, showFranchise: false });
+  if (!scopeStation) groups.push({ title: t("pfGroupByStation"), rows: earnings.stations, showFranchise: !scopeFranchise });
 
   return (
     <div className="space-y-4">
       {brokenSettle && (
         <div className="rounded-[8px] border border-[var(--warning)] bg-[var(--warning-bg)] px-4 py-3 text-sm font-black text-[var(--warning-ink)]">
-          该日「金额 / 完单」两列在导入时未被识别（早期表头匹配缺陷），结算金额与完单入账为 0。
-          修复：到「导入报表」→ 选择该日期 → 点「清除该日数据」→ 重新上传当天的收入表（新版已兼容表头变体，金额列若仍无法识别会直接报出实际表头）。
+          {t("pfBrokenSettle")}
         </div>
       )}
       <div className="grid gap-3 md:grid-cols-6">
         {[
-          ["骑手数", String(total.riders)],
-          ["完单", String(total.orders)],
-          ["今日统计", money(total.total)],
-          ["行程收入", money(total.tripIncome)],
-          ["奖励+小费", money(total.bonus + total.tips)],
+          [t("pfRiders"), String(total.riders)],
+          [t("pfCompleted"), String(total.orders)],
+          [t("pfEarnTotal"), money(total.total)],
+          [t("pfTripIncome"), money(total.tripIncome)],
+          [t("pfBonusTips"), money(total.bonus + total.tips)],
         ].map(([label, value]) => (
           <div key={label} className="panel p-3 text-center">
             <div className="text-[10px] font-black uppercase text-[var(--muted)]">{label}</div>
@@ -444,7 +457,7 @@ function EarningsTab({ earnings, scopeFranchise, scopeStation, date, headers }: 
           </div>
         ))}
         <div className="panel border-[var(--accent)] p-3 text-center">
-          <div className="text-[10px] font-black uppercase text-[var(--accent)]">结算合计</div>
+          <div className="text-[10px] font-black uppercase text-[var(--accent)]">{t("pfSettleSum")}</div>
           <div className="text-lg font-black text-[var(--accent)]">{money(total.settleAmount)}</div>
         </div>
       </div>
@@ -455,17 +468,17 @@ function EarningsTab({ earnings, scopeFranchise, scopeStation, date, headers }: 
           <table className="w-full min-w-[820px] text-sm">
             <thead>
               <tr className="text-left text-[10px] font-black uppercase text-[var(--muted)]">
-                <th className="pb-2">对象</th>
-                {showFranchise && <th className="pb-2">所属加盟商</th>}
-                <th className="pb-2 text-center">骑手数</th>
-                <th className="pb-2 text-center">完单</th>
-                <th className="pb-2 text-right">今日统计</th>
-                <th className="pb-2 text-right">行程收入</th>
-                <th className="pb-2 text-right">现金欠款</th>
-                <th className="pb-2 text-right">扣款</th>
-                <th className="pb-2 text-right">奖励</th>
-                <th className="pb-2 text-right">小费</th>
-                <th className="pb-2 text-right">结算金额</th>
+                <th className="pb-2">{t("pfHObject")}</th>
+                {showFranchise && <th className="pb-2">{t("pfBelongFranchise")}</th>}
+                <th className="pb-2 text-center">{t("pfRiders")}</th>
+                <th className="pb-2 text-center">{t("pfCompleted")}</th>
+                <th className="pb-2 text-right">{t("pfEarnTotal")}</th>
+                <th className="pb-2 text-right">{t("pfTripIncome")}</th>
+                <th className="pb-2 text-right">{t("pfHCashDebt")}</th>
+                <th className="pb-2 text-right">{t("pfHDeduction")}</th>
+                <th className="pb-2 text-right">{t("pfHBonus")}</th>
+                <th className="pb-2 text-right">{t("pfHTips")}</th>
+                <th className="pb-2 text-right">{t("pfHSettle")}</th>
               </tr>
             </thead>
             <tbody>
@@ -491,7 +504,7 @@ function EarningsTab({ earnings, scopeFranchise, scopeStation, date, headers }: 
 
       <div className="panel overflow-x-auto p-4">
         <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-          <div className="text-xs font-black uppercase text-[var(--accent)]">骑手收入明细 · {date || "全部日期"}（日结口径）</div>
+          <div className="text-xs font-black uppercase text-[var(--accent)]">{t("pfDetailTitle", { date: date || t("pfAllDates") })}</div>
           <div className="flex items-center gap-2">
             <button
               type="button"
@@ -499,12 +512,12 @@ function EarningsTab({ earnings, scopeFranchise, scopeStation, date, headers }: 
               onClick={() =>
                 downloadCsv(
                   `pagamento-${date || "all"}`,
-                  ["日期", "骑手", "99ID", "CPF", "电话", "PIX", "加盟商", "站点", "完单", "今日统计", "行程收入", "现金欠款", "餐损", "奖励", "小费", "人工调整", "推荐奖励", "其他", "结算金额", "付款状态"],
-                  earnings.riders.map((r) => [date, r.riderName, r.rider99Id, r.cpf ?? "", r.phone ?? "", r.pix, r.franchise, r.station, String(r.orders), r.total.toFixed(2), r.tripIncome.toFixed(2), r.cashDebt.toFixed(2), r.mealDeduction.toFixed(2), r.bonus.toFixed(2), r.tips.toFixed(2), r.manualAdjust.toFixed(2), r.referralBonus.toFixed(2), r.other.toFixed(2), r.settleAmount.toFixed(2), paidNames.has(r.riderName) ? "已付" : "待付"]),
+                  [t("pfCsvDate"), t("pfCsvRider"), "99ID", "CPF", t("pfCsvPhone"), "PIX", t("pfCsvFranchise"), t("pfCsvStation"), t("pfCsvCompleted"), t("pfCsvTodayTotal"), t("pfCsvTripInc"), t("pfCsvCashDebt"), t("pfCsvMeal"), t("pfCsvBonus"), t("pfCsvTips"), t("pfCsvManualAdj"), t("pfCsvReferral"), t("pfCsvOther"), t("pfCsvSettle"), t("pfCsvPayStatus")],
+                  earnings.riders.map((r) => [date, r.riderName, r.rider99Id, r.cpf ?? "", r.phone ?? "", r.pix, r.franchise, r.station, String(r.orders), r.total.toFixed(2), r.tripIncome.toFixed(2), r.cashDebt.toFixed(2), r.mealDeduction.toFixed(2), r.bonus.toFixed(2), r.tips.toFixed(2), r.manualAdjust.toFixed(2), r.referralBonus.toFixed(2), r.other.toFixed(2), r.settleAmount.toFixed(2), paidNames.has(r.riderName) ? t("pfPaid") : t("pfUnpaid")]),
                 )
               }
             >
-              导出付款单
+              {t("pfExportPayment")}
             </button>
             <button
               type="button"
@@ -512,7 +525,7 @@ function EarningsTab({ earnings, scopeFranchise, scopeStation, date, headers }: 
               onClick={() => void markPaid()}
               className="inline-flex h-9 items-center rounded-[8px] bg-[var(--accent)] px-4 text-xs font-black uppercase text-[var(--accent-ink)] disabled:opacity-40"
             >
-              批量标记已付（{selected.size}）
+              {t("pfMarkPaidBulk", { n: selected.size })}
             </button>
           </div>
         </div>
@@ -525,21 +538,21 @@ function EarningsTab({ earnings, scopeFranchise, scopeStation, date, headers }: 
               <th className="pb-2">
                 <input type="checkbox" className="h-4 w-4 accent-[var(--accent)]" checked={allSelected} onChange={(e) => setSelected(e.target.checked ? new Set(selectableRows.map((r) => r.id)) : new Set())} />
               </th>
-              <th className="pb-2">骑手</th>
+              <th className="pb-2">{t("pfRider")}</th>
               <th className="pb-2">99 ID</th>
               <th className="pb-2">PIX</th>
-              <th className="pb-2">加盟商</th>
-              <th className="pb-2">站点</th>
-              <th className="pb-2 text-center">完单</th>
-              <th className="pb-2 text-right">今日统计</th>
-              <th className="pb-2 text-right">行程收入</th>
-              <th className="pb-2 text-right">现金欠款</th>
-              <th className="pb-2 text-right">餐损</th>
-              <th className="pb-2 text-right">奖励</th>
-              <th className="pb-2 text-right">小费</th>
-              <th className="pb-2 text-right">调整</th>
-              <th className="pb-2 text-right">推荐</th>
-              <th className="pb-2 text-right">结算金额</th>
+              <th className="pb-2">{t("pfFranchise")}</th>
+              <th className="pb-2">{t("pfStation")}</th>
+              <th className="pb-2 text-center">{t("pfCompleted")}</th>
+              <th className="pb-2 text-right">{t("pfEarnTotal")}</th>
+              <th className="pb-2 text-right">{t("pfTripIncome")}</th>
+              <th className="pb-2 text-right">{t("pfHCashDebt")}</th>
+              <th className="pb-2 text-right">{t("pfHMeal")}</th>
+              <th className="pb-2 text-right">{t("pfHBonus")}</th>
+              <th className="pb-2 text-right">{t("pfHTips")}</th>
+              <th className="pb-2 text-right">{t("pfHAdjust")}</th>
+              <th className="pb-2 text-right">{t("pfHReferral")}</th>
+              <th className="pb-2 text-right">{t("pfHSettle")}</th>
             </tr>
           </thead>
           <tbody>
@@ -547,12 +560,12 @@ function EarningsTab({ earnings, scopeFranchise, scopeStation, date, headers }: 
               <tr key={row.id} className={`border-t border-[var(--line)] ${paidNames.has(row.riderName) ? "opacity-60" : ""}`}>
                 <td className="py-2">
                   {paidNames.has(row.riderName) ? (
-                    <span className="text-[10px] font-black uppercase text-[var(--ok-ink)]">已付</span>
+                    <span className="text-[10px] font-black uppercase text-[var(--ok-ink)]">{t("pfPaid")}</span>
                   ) : (
                     <input type="checkbox" className="h-4 w-4 accent-[var(--accent)]" checked={selected.has(row.id)} onChange={() => toggle(row.id)} />
                   )}
                 </td>
-                <td className="py-2 font-black">{row.riderName}{!row.riderId && <span className="ml-1"><Badge value="未建档" /></span>}</td>
+                <td className="py-2 font-black">{row.riderName}{!row.riderId && <span className="ml-1"><Badge value={t("pfUnregistered")} /></span>}</td>
                 <td className="py-2 text-[11px] font-bold text-[var(--muted)]">{row.rider99Id}</td>
                 <td className="py-2 text-[11px] font-bold">{row.pix || "-"}</td>
                 <td className="py-2"><span className="tag">{row.franchise}</span></td>
@@ -577,23 +590,24 @@ function EarningsTab({ earnings, scopeFranchise, scopeStation, date, headers }: 
 }
 
 function GroupTable({ rows, label, showFranchise }: { rows: GroupRow[]; label: string; showFranchise: boolean }) {
+  const t = useT();
   return (
     <div className="panel overflow-x-auto p-4">
       <table className="w-full min-w-[860px] text-sm">
         <thead>
           <tr className="text-left text-[10px] font-black uppercase text-[var(--muted)]">
             <th className="pb-2">{label}</th>
-            {showFranchise && <th className="pb-2">所属加盟商</th>}
-            <th className="pb-2 text-center">骑手数</th>
-            <th className="pb-2 text-center">在线时长</th>
-            <th className="pb-2 text-center">完单</th>
-            <th className="pb-2 text-center">报名班次</th>
-            <th className="pb-2 text-center">报名时长</th>
-            <th className="pb-2 text-center">实际在线</th>
+            {showFranchise && <th className="pb-2">{t("pfBelongFranchise")}</th>}
+            <th className="pb-2 text-center">{t("pfRiders")}</th>
+            <th className="pb-2 text-center">{t("pfOnlineHours")}</th>
+            <th className="pb-2 text-center">{t("pfCompleted")}</th>
+            <th className="pb-2 text-center">{t("pfHSignedShifts")}</th>
+            <th className="pb-2 text-center">{t("pfSignedHours")}</th>
+            <th className="pb-2 text-center">{t("pfHActualOnline")}</th>
             <th className="pb-2 text-center">%TSH</th>
             <th className="pb-2 text-center">AR</th>
             <th className="pb-2 text-center">CAA</th>
-            <th className="pb-2 text-center">超时</th>
+            <th className="pb-2 text-center">{t("pfCsvOvertime")}</th>
           </tr>
         </thead>
         <tbody>
@@ -620,31 +634,32 @@ function GroupTable({ rows, label, showFranchise }: { rows: GroupRow[]; label: s
 }
 
 function RiderTable({ rows }: { rows: EnrichedKpi[] }) {
+  const t = useT();
   return (
     <div className="panel overflow-x-auto p-4">
       <table className="w-full min-w-[1100px] text-sm">
         <thead>
           <tr className="text-left text-[10px] font-black uppercase text-[var(--muted)]">
-            <th className="pb-2">骑手</th>
+            <th className="pb-2">{t("pfRider")}</th>
             <th className="pb-2">99 ID</th>
-            <th className="pb-2">加盟商</th>
-            <th className="pb-2">站点</th>
-            <th className="pb-2 text-center">在线</th>
-            <th className="pb-2 text-center">完单</th>
-            <th className="pb-2 text-center">报名班次</th>
-            <th className="pb-2 text-center">报名时长</th>
-            <th className="pb-2 text-center">实际在线</th>
+            <th className="pb-2">{t("pfFranchise")}</th>
+            <th className="pb-2">{t("pfStation")}</th>
+            <th className="pb-2 text-center">{t("pfOnline")}</th>
+            <th className="pb-2 text-center">{t("pfCompleted")}</th>
+            <th className="pb-2 text-center">{t("pfHSignedShifts")}</th>
+            <th className="pb-2 text-center">{t("pfSignedHours")}</th>
+            <th className="pb-2 text-center">{t("pfHActualOnline")}</th>
             <th className="pb-2 text-center">%TSH</th>
-            <th className="pb-2 text-center">%TSH 重点</th>
+            <th className="pb-2 text-center">{t("pfTshKey")}</th>
             <th className="pb-2 text-center">AR</th>
             <th className="pb-2 text-center">CAA</th>
-            <th className="pb-2 text-center">超时</th>
+            <th className="pb-2 text-center">{t("pfCsvOvertime")}</th>
           </tr>
         </thead>
         <tbody>
           {rows.map((row) => (
             <tr key={row.id} className="border-t border-[var(--line)]">
-              <td className="py-2 font-black">{row.riderName}{row.riderId ? "" : " "}{!row.riderId && <Badge value="未建档" />}</td>
+              <td className="py-2 font-black">{row.riderName}{row.riderId ? "" : " "}{!row.riderId && <Badge value={t("pfUnregistered")} />}</td>
               <td className="py-2 text-[11px] font-bold text-[var(--muted)]">{row.rider99Id}</td>
               <td className="py-2"><span className="tag">{row.franchise}</span></td>
               <td className="py-2"><span className="tag">{row.station}</span></td>
@@ -667,6 +682,7 @@ function RiderTable({ rows }: { rows: EnrichedKpi[] }) {
 }
 
 function ImportTab({ headers, onDone, onError }: { headers: Record<string, string>; onDone: (text: string) => void; onError: (text: string) => void }) {
+  const t = useT();
   const dialog = useDialog();
   const [raw, setRaw] = useState("");
   const [reportDate, setReportDate] = useState(() => {
@@ -706,7 +722,7 @@ function ImportTab({ headers, onDone, onError }: { headers: Record<string, strin
             })
             .filter((record) => (record.pix ?? "").trim());
           if (pixRecords.length === 0) {
-            log.push(`✕ ${file.name}：未找到带 PIX 的数据行`);
+            log.push(t("pfLogNoPix", { file: file.name }));
             continue;
           }
           const response = await fetch("/api/performance", { method: "POST", headers, body: JSON.stringify({ action: "importPixRecords", records: pixRecords }) });
@@ -715,18 +731,18 @@ function ImportTab({ headers, onDone, onError }: { headers: Record<string, strin
             log.push(`✕ ${file.name}：${payload.error ?? response.status}`);
             continue;
           }
-          log.push(`✓ ${file.name} → PIX 导入：匹配 ${payload.data.matched} 名骑手${payload.data.unmatched.length > 0 ? `；未匹配 ${payload.data.unmatched.length}：${payload.data.unmatched.slice(0, 5).join("、")}` : ""}`);
+          log.push(t("pfLogPixDone", { file: file.name, n: payload.data.matched, un: payload.data.unmatched.length > 0 ? t("pfImpUnmatched", { n: payload.data.unmatched.length, list: payload.data.unmatched.slice(0, 5).join("、") }) : "" }));
           continue;
         }
         if (!isEarnings && !isKpi) {
-          log.push(`✕ ${file.name}：无法识别表头（需要 Eastwind 骑手报表 / 收入表 / PIX 表）。实际表头：${headerRow.filter(Boolean).join(" | ").slice(0, 300)}`);
+          log.push(t("pfLogUnrecognized", { file: file.name, headers: headerRow.filter(Boolean).join(" | ").slice(0, 300) }));
           continue;
         }
         const mapping = isEarnings ? EARNING_HEADERS : KPI_HEADERS;
         const records = mapRecords(objects, mapping, isEarnings ? EARNING_PATTERNS : KPI_PATTERNS);
         if (records.length === 0) {
-          const sample = objects[0] ? Object.entries(objects[0]).slice(0, 6).map(([k, v]) => `${k}=${v}`).join("，") : "（无数据行）";
-          log.push(`✕ ${file.name}：没有可导入的骑手行（需要 6 位以上纯数字 99ID）。表头：${headerRow.filter(Boolean).join(" | ").slice(0, 200)}；首行样例：${String(sample).slice(0, 200)}`);
+          const sample = objects[0] ? Object.entries(objects[0]).slice(0, 6).map(([k, v]) => `${k}=${v}`).join(", ") : "(no rows)";
+          log.push(t("pfLogNoRows", { file: file.name, headers: headerRow.filter(Boolean).join(" | ").slice(0, 200), sample: String(sample).slice(0, 200) }));
           continue;
         }
         // Raw Eastwind export has no 金额/order columns — the server fills
@@ -744,10 +760,10 @@ function ImportTab({ headers, onDone, onError }: { headers: Record<string, strin
           log.push(`✕ ${file.name}：${payload.error ?? response.status}`);
           continue;
         }
-        log.push(`✓ ${file.name} → ${isEarnings ? "收入结算" : "KPI 绩效"} ${date}：${payload.data.parsed} 名骑手（新增 ${payload.data.created}，更新 ${payload.data.updated}）${rawExport ? "｜原始表无「金额」列 → 结算金额留空（0），完单取自同日KPI表；金额以含金额列的表为准" : ""}`);
+        log.push(t("pfLogImportDone", { file: file.name, kind: isEarnings ? t("pfKindEarnings") : t("pfKindKpi"), date, parsed: payload.data.parsed, created: payload.data.created, updated: payload.data.updated, note: rawExport ? t("pfRawExportNote") : "" }));
       }
     } catch (error) {
-      log.push(`✕ 解析失败：${(error as Error).message}`);
+      log.push(t("pfLogImportError", { msg: (error as Error).message }));
     }
     setFileLog(log);
     setBusy(false);
@@ -759,23 +775,22 @@ function ImportTab({ headers, onDone, onError }: { headers: Record<string, strin
     <div className="space-y-4">
       <div className="panel space-y-3 p-5">
         <div className="flex items-center gap-2 text-xs font-black uppercase text-[var(--accent)]">
-          <FileSpreadsheet size={15} /> 上传 Eastwind 表格（自动识别绩效表 / 收入表，可多选）
+          <FileSpreadsheet size={15} /> {t("pfImpUploadTitle")}
         </div>
         <div className="text-sm font-bold leading-6 text-[var(--muted-strong)]">
-          支持「Desempenho do entregador parceiro」（绩效 KPI）与「Ganhos do entregador parceiro」（收入）两类 .xlsx，可同时选择两个文件一起上传。
-          业务日期自动读取表内「日期」列；同一天重复上传会按骑手覆盖更新。结算金额直接取自表内「金额」列（按源数据显示，不做任何换算）。
+          {t("pfImpDesc")}
         </div>
         <label className="flex h-28 cursor-pointer flex-col items-center justify-center gap-2 rounded-[8px] border-2 border-dashed border-[var(--line)] text-sm font-black text-[var(--muted)] hover:border-[var(--accent)] hover:text-[var(--accent)]">
           <Upload size={20} />
-          {busy ? "解析导入中..." : "点击选择 .xlsx 文件（可多选）"}
+          {busy ? t("pfImpParsing") : t("pfImpPickFile")}
           <input type="file" accept=".xlsx" multiple className="hidden" disabled={busy} onChange={(e) => void importFiles(e.target.files)} />
         </label>
         <div className="space-y-2 border-t border-[var(--line)] pt-3">
-          <div className="text-xs font-black uppercase text-[var(--accent)]">粘贴 CPF + PIX（每行一条，自动匹配骑手并更新）</div>
+          <div className="text-xs font-black uppercase text-[var(--accent)]">{t("pfImpPixTitle")}</div>
           <textarea
             value={pixText}
             onChange={(e) => setPixText(e.target.value)}
-            placeholder={"格式：CPF PIX（空格/逗号/Tab 分隔均可）\n例如：\n244.453.288-04 claylton589@gmail.com\n16335625490,11947517910"}
+            placeholder={t("pfImpPixPlaceholder")}
             className="min-h-28 w-full rounded-[8px] border border-[var(--line)] bg-[var(--surface)] p-3 font-mono text-xs leading-5 outline-none focus:border-[var(--accent)]"
           />
           <button
@@ -793,7 +808,7 @@ function ImportTab({ headers, onDone, onError }: { headers: Record<string, strin
                 })
                 .filter((record) => record.cpf && record.pix);
               if (records.length === 0) {
-                onError("没有可解析的行——每行需要一个 CPF（11位）和一个 PIX，用空格或逗号隔开。");
+                onError(t("pfImpPixErr"));
                 return;
               }
               setBusy(true);
@@ -801,14 +816,14 @@ function ImportTab({ headers, onDone, onError }: { headers: Record<string, strin
               const payload = await response.json().catch(() => ({}));
               setBusy(false);
               if (!response.ok) {
-                onError(payload.error ?? "PIX 更新失败");
+                onError(payload.error ?? t("pfImpPixFail"));
                 return;
               }
               setPixText("");
-              onDone(`PIX 已更新 ${payload.data.matched} 名骑手${payload.data.unmatched.length > 0 ? `；未匹配 ${payload.data.unmatched.length} 条：${payload.data.unmatched.slice(0, 5).join("、")}` : ""}。`);
+              onDone(t("pfImpPixDone", { n: payload.data.matched, un: payload.data.unmatched.length > 0 ? t("pfImpUnmatched", { n: payload.data.unmatched.length, list: payload.data.unmatched.slice(0, 5).join("、") }) : "" }));
             }}
           >
-            解析并更新 PIX
+            {t("pfImpPixBtn")}
           </button>
         </div>
         <div className="flex flex-wrap items-center gap-2 border-t border-[var(--line)] pt-3">
@@ -819,14 +834,14 @@ function ImportTab({ headers, onDone, onError }: { headers: Record<string, strin
             onClick={async () => {
               const response = await fetch("/api/performance", { method: "POST", headers, body: JSON.stringify({ action: "syncRiderContacts" }) });
               const payload = await response.json().catch(() => ({}));
-              if (response.ok) onDone(`已从历史收入表回填 ${payload.data.filled} 名骑手的 PIX/CPF/电话。`);
-              else onError(payload.error ?? "同步失败");
+              if (response.ok) onDone(t("pfImpBackfillDone", { n: payload.data.filled }));
+              else onError(payload.error ?? t("pfImpSyncFail"));
             }}
           >
-            从已导入收入表回填 PIX
+            {t("pfImpBackfill")}
           </button>
           <label className="flex items-center gap-2 text-[11px] font-bold text-[var(--muted)]">
-            清除某日数据：
+            {t("pfImpClearDay")}
             <input type="date" value={reportDate} onChange={(e) => setReportDate(e.target.value)} className="h-9 rounded-[8px] border border-[var(--line)] bg-[var(--surface-raised)] px-2 text-xs font-bold outline-none" />
           </label>
           <button
@@ -834,14 +849,14 @@ function ImportTab({ headers, onDone, onError }: { headers: Record<string, strin
             className="tag text-[var(--danger-ink)]"
             disabled={busy}
             onClick={async () => {
-              if (!(await dialog.confirm(`清除 ${reportDate} 的全部 T+1 数据？`, { message: "该日 KPI 与收入两表的导入记录都会删除（用于修正误传），之后可重新上传正确文件。", tone: "danger", confirmText: "清除" }))) return;
+              if (!(await dialog.confirm(t("pfImpClearConfirm", { date: reportDate }), { message: t("pfImpClearMsg"), tone: "danger", confirmText: t("pfImpClearConfirmBtn") }))) return;
               const response = await fetch("/api/performance", { method: "POST", headers, body: JSON.stringify({ action: "purgeDate", date: reportDate }) });
               const payload = await response.json().catch(() => ({}));
-              if (response.ok) onDone(`已清除 ${reportDate}：KPI ${payload.data.kpiRemoved} 行、收入 ${payload.data.earningsRemoved} 行。`);
-              else onError(payload.error ?? "清除失败");
+              if (response.ok) onDone(t("pfImpClearDone", { date: reportDate, kpi: payload.data.kpiRemoved, earn: payload.data.earningsRemoved }));
+              else onError(payload.error ?? t("pfImpClearFail"));
             }}
           >
-            清除该日数据
+            {t("pfImpClearBtn")}
           </button>
         </div>
         {fileLog.length > 0 && (
@@ -855,17 +870,17 @@ function ImportTab({ headers, onDone, onError }: { headers: Record<string, strin
 
       <div className="panel space-y-3 p-5">
         <div className="flex items-center gap-2 text-xs font-black uppercase text-[var(--accent)]">
-          <BarChart3 size={15} /> 或粘贴 Eastwind 骑手报表（网页整页复制）
+          <BarChart3 size={15} /> {t("pfImpPasteTitle")}
         </div>
         <label className="block text-xs font-black uppercase text-[var(--muted)]">
-          报表日期
+          {t("pfImpReportDate")}
           <input type="date" value={reportDate} onChange={(e) => setReportDate(e.target.value)} className="mt-1 h-11 rounded-[8px] border border-[var(--line)] bg-[var(--surface)] px-3 text-sm font-bold outline-none focus:border-[var(--accent)]" />
         </label>
         <textarea
           value={raw}
           onChange={(e) => setRaw(e.target.value)}
           rows={8}
-          placeholder="粘贴 Eastwind 骑手报表内容..."
+          placeholder={t("pfImpPastePlaceholder")}
           className="w-full rounded-[8px] border border-[var(--line)] bg-[var(--surface)] p-3 font-mono text-xs outline-none focus:border-[var(--accent)]"
         />
         <button
@@ -877,15 +892,15 @@ function ImportTab({ headers, onDone, onError }: { headers: Record<string, strin
             const payload = await response.json().catch(() => ({}));
             setBusy(false);
             if (!response.ok) {
-              onError(payload.error ?? `导入失败 (${response.status})`);
+              onError(payload.error ?? t("pfImpImportFail", { status: response.status }));
               return;
             }
             setRaw("");
-            onDone(`已导入 ${reportDate}：解析 ${payload.data.parsed} 名骑手（新增 ${payload.data.created}，更新 ${payload.data.updated}）。`);
+            onDone(t("pfImpImportDone", { date: reportDate, parsed: payload.data.parsed, created: payload.data.created, updated: payload.data.updated }));
           }}
           className="inline-flex h-11 items-center gap-2 rounded-[8px] bg-[var(--accent)] px-6 text-sm font-black uppercase text-[var(--accent-ink)] hover:bg-[var(--accent-strong)] disabled:opacity-50"
         >
-          <Upload size={16} /> {busy ? "导入中..." : "解析并导入"}
+          <Upload size={16} /> {busy ? t("pfImpImporting") : t("pfImpParseImport")}
         </button>
       </div>
     </div>

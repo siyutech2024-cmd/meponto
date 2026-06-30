@@ -5,10 +5,18 @@ import { CheckCircle2, PackageCheck, RefreshCcw } from "lucide-react";
 import { AppShell, Badge, PageTitle } from "../../components/ui";
 import { readSession } from "../../lib/session";
 import type { MarketplaceOrder } from "../../lib/points";
+import { useVentoStore } from "../../lib/store";
+import { translate, type TranslationKey } from "../../lib/i18n";
 
-const statusLabel: Record<string, string> = { created: "在途", arrived: "已到站待取", fulfilled: "已取货", cancelled: "已取消" };
+const statusKey: Record<string, TranslationKey> = { created: "msStCreated", arrived: "msStArrived", fulfilled: "msStFulfilled", cancelled: "msStCancelled" };
 
 export default function MallStationPage() {
+  const language = useVentoStore((s) => s.language);
+  const t = (k: TranslationKey, vars?: Record<string, string | number | undefined>) => {
+    let s = translate(language, k);
+    if (vars) for (const [key, val] of Object.entries(vars)) s = s.replace(`{${key}}`, String(val ?? ""));
+    return s;
+  };
   const session = useMemo(() => readSession(), []);
   const station = session?.station || session?.organization || "Santo Amaro";
   const headers = useMemo(() => ({ "Content-Type": "application/json", "x-vento-role": session?.role ?? "Ponto Manager" }), [session]);
@@ -30,7 +38,7 @@ export default function MallStationPage() {
     const response = await fetch("/api/mall", { method: "POST", headers, body: JSON.stringify({ action, orderId }) });
     const payload = await response.json().catch(() => ({}));
     if (!response.ok) {
-      setMessage({ tone: "err", text: payload.error ?? `操作失败 (${response.status})` });
+      setMessage({ tone: "err", text: payload.error ?? t("msActFail", { status: response.status }) });
       return;
     }
     setMessage({ tone: "ok", text });
@@ -44,9 +52,9 @@ export default function MallStationPage() {
   return (
     <AppShell>
       <PageTitle
-        title="商城到货管理"
-        eyebrow={`站点工作台 · ${station}`}
-        action={<button type="button" onClick={() => void load()} className="tag inline-flex items-center gap-1"><RefreshCcw size={13} /> 刷新</button>}
+        title={t("msTitle")}
+        eyebrow={t("msEyebrow", { x: station })}
+        action={<button type="button" onClick={() => void load()} className="tag inline-flex items-center gap-1"><RefreshCcw size={13} /> {t("pfRefresh")}</button>}
       />
 
       {message && (
@@ -57,30 +65,30 @@ export default function MallStationPage() {
 
       <div className="grid gap-4 lg:grid-cols-3">
         {([
-          ["在途（确认到货）", inTransit, "markArrived", "确认到货", "已确认到货，骑手将收到取货提醒。"],
-          ["待取货（确认领取）", arrived, "markPickedUp", "确认已领取", "已确认骑手领取。"],
-          ["已完成", done, null, "", ""],
+          [t("msColTransit"), inTransit, "markArrived", t("msBtnArrived"), t("msOkArrived")],
+          [t("msColArrived"), arrived, "markPickedUp", t("msBtnPicked"), t("msOkPicked")],
+          [t("msColDone"), done, null, "", ""],
         ] as const).map(([title, list, action, buttonLabel, okText]) => (
           <div key={title} className="panel p-4">
             <div className="mb-3 flex items-center gap-2 text-xs font-black uppercase text-[var(--accent)]"><PackageCheck size={14} /> {title}（{list.length}）</div>
             {list.length === 0 ? (
-              <div className="text-sm font-bold text-[var(--muted)]">暂无订单。</div>
+              <div className="text-sm font-bold text-[var(--muted)]">{t("msNoOrders")}</div>
             ) : (
               <div className="max-h-[480px] space-y-2 overflow-auto pr-1">
                 {list.map((order) => (
                   <div key={order.id} className="rounded-[8px] border border-[var(--line)] bg-[var(--surface-raised)] p-3">
                     <div className="flex items-center justify-between gap-2 text-sm font-black">
                       {order.productName ?? order.productId}
-                      <Badge value={order.reviewStatus === "pending" ? "待总部审核" : statusLabel[order.status] ?? order.status} />
+                      <Badge value={order.reviewStatus === "pending" ? t("dpPendingHq") : (statusKey[order.status] ? t(statusKey[order.status]) : order.status)} />
                     </div>
                     <div className="mt-1 text-[11px] font-bold text-[var(--muted)]">
-                      {order.riderName} ｜ {order.pointsSpent} 分 ｜ 兑换 {order.createdAt}
-                      {order.etaDate && ` ｜ 预计 ${order.etaDate}`}
-                      {order.arrivedAt && ` ｜ 到站 ${order.arrivedAt}`}
-                      {order.pickedUpAt && ` ｜ 领取 ${order.pickedUpAt}`}
+                      {t("msOrderLine", { rider: order.riderName, points: order.pointsSpent, date: order.createdAt })}
+                      {order.etaDate && t("msEta", { x: order.etaDate })}
+                      {order.arrivedAt && t("msArrivedAt", { x: order.arrivedAt })}
+                      {order.pickedUpAt && t("msPickedAt", { x: order.pickedUpAt })}
                     </div>
                     {action && order.reviewStatus === "pending" ? (
-                      <div className="mt-2 text-[11px] font-black text-[#9a7400]">高价值兑换，等待总部审核后可确认到货。</div>
+                      <div className="mt-2 text-[11px] font-black text-[#9a7400]">{t("msHighValue")}</div>
                     ) : action ? (
                       <button
                         type="button"

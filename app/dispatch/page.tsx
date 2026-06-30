@@ -8,29 +8,42 @@ import { downloadCsv } from "../lib/csv";
 import { useDialog } from "../components/dialog";
 import type { Franchise } from "../lib/network";
 import type { Ponto } from "../lib/data";
+import { useVentoStore } from "../lib/store";
+import { translate, type TranslationKey } from "../lib/i18n";
+
+function useT() {
+  const language = useVentoStore((s) => s.language);
+  return (k: TranslationKey, vars?: Record<string, string | number | undefined>) => {
+    let s = translate(language, k);
+    if (vars) for (const [key, val] of Object.entries(vars)) s = s.replace(`{${key}}`, String(val ?? ""));
+    return s;
+  };
+}
 
 type Board = { shifts: DispatchShift[]; quotas: ShiftQuota[]; signups: ShiftSignup[] };
 
 const headers = { "Content-Type": "application/json", "x-vento-role": "Super Admin" };
 
-const statusLabel: Record<string, string> = {
-  scheduling: "排班中",
-  executing: "执行中",
-  finished: "已结束",
-  submitted: "待审核",
-  approved: "已通过",
-  rejected: "已驳回",
-  reported: "已填报",
-  cancelled: "已取消",
+const statusKey: Record<string, TranslationKey> = {
+  scheduling: "dpStScheduling",
+  executing: "dpStExecuting",
+  finished: "dpStFinished",
+  submitted: "dpStSubmitted",
+  approved: "dpStApproved",
+  rejected: "dpStRejected",
+  reported: "dpStReported",
+  cancelled: "dpStCancelled",
 };
 
+const WEEKDAY_KEYS: TranslationKey[] = ["pfWdMon", "pfWdTue", "pfWdWed", "pfWdThu", "pfWdFri", "pfWdSat", "pfWdSun"];
+
 const tabs = [
-  { id: "board", label: "周计划总览", icon: CalendarDays },
-  { id: "setup", label: "排班设置", icon: ClipboardList },
-  { id: "import", label: "导入 99 计划", icon: Upload },
-  { id: "quota", label: "配额分配", icon: Users },
-  { id: "review", label: "报名与审核", icon: ClipboardList },
-  { id: "report", label: "填报工作台", icon: Send },
+  { id: "board", labelKey: "dpTabBoard", icon: CalendarDays },
+  { id: "setup", labelKey: "dpTabSetup", icon: ClipboardList },
+  { id: "import", labelKey: "dpTabImport", icon: Upload },
+  { id: "quota", labelKey: "dpTabQuota", icon: Users },
+  { id: "review", labelKey: "dpTabReview", icon: ClipboardList },
+  { id: "report", labelKey: "dpTabReport", icon: Send },
 ] as const;
 
 const SLOT_RANGES = ["11:00~14:00", "14:00~18:00", "18:00~22:00"] as const;
@@ -51,6 +64,7 @@ function addDays(date: string, days: number): string {
 type TabId = (typeof tabs)[number]["id"];
 
 export default function DispatchPage() {
+  const t = useT();
   const [tab, setTab] = useState<TabId>("board");
   const [board, setBoard] = useState<Board>({ shifts: [], quotas: [], signups: [] });
   const [network, setNetwork] = useState<{ franchises: Franchise[]; stations: Ponto[] }>({ franchises: [], stations: [] });
@@ -84,7 +98,7 @@ export default function DispatchPage() {
     const response = await fetch("/api/dispatch", { method: "POST", headers, body: JSON.stringify(body) });
     const payload = await response.json().catch(() => ({}));
     if (!response.ok) {
-      setMessage({ tone: "err", text: payload.error ?? `请求失败 (${response.status})` });
+      setMessage({ tone: "err", text: payload.error ?? t("dpReqFail", { status: response.status }) });
       return null;
     }
     void load();
@@ -107,11 +121,11 @@ export default function DispatchPage() {
   return (
     <AppShell>
       <PageTitle
-        title="运力调度中心"
-        eyebrow="Eastwind 排班 · 配额 · 报名 · 审核 · 填报"
+        title={t("dpTitle")}
+        eyebrow={t("dpEyebrow")}
         action={
           <button type="button" onClick={() => void load()} className="tag inline-flex items-center gap-1">
-            <RefreshCcw size={13} /> 刷新
+            <RefreshCcw size={13} /> {t("pfRefresh")}
           </button>
         }
       />
@@ -127,7 +141,7 @@ export default function DispatchPage() {
             }}
             className={`inline-flex h-10 items-center gap-2 rounded-[8px] border px-4 text-xs font-black uppercase ${tab === item.id ? "border-[var(--accent)] bg-[var(--accent-glow)] text-[var(--accent)]" : "border-[var(--line)] text-[var(--muted-strong)] hover:border-[var(--muted)]"}`}
           >
-            <item.icon size={15} /> {item.label}
+            <item.icon size={15} /> {t(item.labelKey)}
           </button>
         ))}
       </div>
@@ -158,45 +172,45 @@ function statBadge(value: number, target: number) {
 }
 
 function BoardTab({ board, byShift, loading, onAction, setMessage }: { board: Board; byShift: { quotaMap: Map<string, ShiftQuota[]>; signupMap: Map<string, ShiftSignup[]> }; loading: boolean; onAction: (body: Record<string, unknown>) => Promise<Record<string, unknown> | null>; setMessage: (m: { tone: "ok" | "warn" | "err"; text: string } | null) => void }) {
+  const t = useT();
   const dialog = useDialog();
   const [weekStart, setWeekStart] = useState(() => mondayOf(0));
-  const weekdayName = ["周一", "周二", "周三", "周四", "周五", "周六", "周日"];
   const days = useMemo(() => Array.from({ length: 7 }, (_, index) => addDays(weekStart, index)), [weekStart]);
   const weekShiftCount = board.shifts.filter((shift) => days.includes(shift.date)).length;
 
   if (loading && board.shifts.length === 0) {
-    return <div className="panel p-6 text-sm font-bold text-[var(--muted)]">加载中...</div>;
+    return <div className="panel p-6 text-sm font-bold text-[var(--muted)]">{t("dpLoading")}</div>;
   }
 
   async function quickAdd(date: string, timeRange: string) {
-    const value = await dialog.prompt("排班人数", { message: `${date} ${timeRange} 计划人数`, placeholder: "如 12" });
+    const value = await dialog.prompt(t("dpQaTitle"), { message: t("dpQaMsg", { date, range: timeRange }), placeholder: t("dpQaPlaceholder") });
     if (!value) return;
     const plannedCount = Number(value.replace(/\D/g, ""));
     if (!Number.isFinite(plannedCount) || plannedCount <= 0) {
-      setMessage({ tone: "warn", text: "请输入大于 0 的人数。" });
+      setMessage({ tone: "warn", text: t("dpQaWarn") });
       return;
     }
     const result = await onAction({ action: "setWeek", entries: [{ date, timeRange, plannedCount }] });
-    if (result) setMessage({ tone: "ok", text: `已排班：${date} ${timeRange} 计划 ${plannedCount} 人。` });
+    if (result) setMessage({ tone: "ok", text: t("dpQaOk", { date, range: timeRange, n: plannedCount }) });
   }
 
   async function removeShift(shift: DispatchShift) {
-    if (!(await dialog.confirm("删除班次", { message: `删除 ${shift.date} ${shift.timeRange} ${shift.hotzone}（计划 ${shift.plannedCount} 人）？关联的配额与报名也会一并删除。`, tone: "danger", confirmText: "删除" }))) return;
+    if (!(await dialog.confirm(t("dpDelTitle"), { message: t("dpDelMsg", { date: shift.date, range: shift.timeRange, zone: shift.hotzone, n: shift.plannedCount }), tone: "danger", confirmText: t("dpDelConfirm") }))) return;
     const result = await onAction({ action: "deleteShift", shiftId: shift.id });
-    if (result) setMessage({ tone: "ok", text: "班次已删除。" });
+    if (result) setMessage({ tone: "ok", text: t("dpDelOk") });
   }
 
   return (
     <div className="space-y-4">
       <div className="panel flex flex-wrap items-center gap-3 p-3">
-        <button type="button" className="tag" onClick={() => setWeekStart(addDays(weekStart, -7))}>← 上一周</button>
+        <button type="button" className="tag" onClick={() => setWeekStart(addDays(weekStart, -7))}>{t("dpPrevWeek")}</button>
         <div key={weekStart} translate="no" className="text-sm font-black">
           {weekStart} ~ {addDays(weekStart, 6)}
-          <span className="ml-2 text-[10px] font-black uppercase text-[var(--muted)]">{weekShiftCount} 个班次</span>
+          <span className="ml-2 text-[10px] font-black uppercase text-[var(--muted)]">{t("dpWeekShifts", { n: weekShiftCount })}</span>
         </div>
-        <button type="button" className="tag" onClick={() => setWeekStart(addDays(weekStart, 7))}>下一周 →</button>
-        <button type="button" className="tag" onClick={() => setWeekStart(mondayOf(0))}>本周</button>
-        <button type="button" className="tag" onClick={() => setWeekStart(mondayOf(1))}>下周</button>
+        <button type="button" className="tag" onClick={() => setWeekStart(addDays(weekStart, 7))}>{t("dpNextWeek")}</button>
+        <button type="button" className="tag" onClick={() => setWeekStart(mondayOf(0))}>{t("dpThisWeek")}</button>
+        <button type="button" className="tag" onClick={() => setWeekStart(mondayOf(1))}>{t("dpNextWk")}</button>
       </div>
 
       <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-7">
@@ -207,7 +221,7 @@ function BoardTab({ board, byShift, loading, onAction, setMessage }: { board: Bo
           return (
             <div key={date} className="panel p-3">
               <div className="mb-2 text-center">
-                <div className="text-[10px] font-black uppercase text-[var(--muted)]">{weekdayName[dayIndex]}</div>
+                <div className="text-[10px] font-black uppercase text-[var(--muted)]">{t(WEEKDAY_KEYS[dayIndex])}</div>
                 <div className="text-sm font-black">{date.slice(5)}</div>
               </div>
               <div className="space-y-2">
@@ -222,7 +236,7 @@ function BoardTab({ board, byShift, loading, onAction, setMessage }: { board: Bo
                         className="block w-full rounded-[8px] border border-dashed border-[var(--line)] px-2 py-3 text-center text-[11px] font-black text-[var(--muted)] hover:border-[var(--accent)] hover:text-[var(--accent)]"
                       >
                         {range}
-                        <span className="block">+ 排班</span>
+                        <span className="block">{t("dpAddShift")}</span>
                       </button>
                     );
                   }
@@ -243,31 +257,31 @@ function BoardTab({ board, byShift, loading, onAction, setMessage }: { board: Bo
                             type="button"
                             onClick={() => void removeShift(shift)}
                             className="text-[var(--muted)] hover:text-[var(--danger-ink)]"
-                            aria-label="删除班次"
+                            aria-label={t("dpDelTitle")}
                           >
                             <X size={13} />
                           </button>
                         </div>
                         <div className="text-[10px] font-bold text-[var(--muted)]">{shift.hotzone}</div>
                         <div className="mt-1 flex items-center gap-1">
-                          {shift.reportedAt && <Badge value="已填报" />}
-                          <Badge value={statusLabel[shift.status] ?? shift.status} />
+                          {shift.reportedAt && <Badge value={t("dpStReported")} />}
+                          <Badge value={statusKey[shift.status] ? t(statusKey[shift.status]) : shift.status} />
                         </div>
                         <div className="mt-2 grid grid-cols-2 gap-1 text-center text-[10px] font-black">
                           <div>
-                            <div className="text-[var(--muted)]">99名额</div>
+                            <div className="text-[var(--muted)]">{t("dpQuota99")}</div>
                             <div>{shift.plannedCount}</div>
                           </div>
                           <div>
-                            <div className="text-[var(--muted)]">已分配额</div>
+                            <div className="text-[var(--muted)]">{t("dpAllocated")}</div>
                             <div className={statBadge(franchiseQuota, shift.plannedCount)}>{franchiseQuota}</div>
                           </div>
                           <div>
-                            <div className="text-[var(--muted)]">已审通过</div>
+                            <div className="text-[var(--muted)]">{t("dpApprovedCnt")}</div>
                             <div className={statBadge(approved, shift.plannedCount)}>{approved}</div>
                           </div>
                           <div>
-                            <div className="text-[var(--muted)]">待审核</div>
+                            <div className="text-[var(--muted)]">{t("dpPendingCnt")}</div>
                             <div>{pending}</div>
                           </div>
                         </div>
@@ -285,13 +299,13 @@ function BoardTab({ board, byShift, loading, onAction, setMessage }: { board: Bo
 }
 
 function WeekSetupTab({ board, onSave, setMessage }: { board: Board; onSave: (body: Record<string, unknown>) => Promise<Record<string, unknown> | null>; setMessage: (m: { tone: "ok" | "warn" | "err"; text: string } | null) => void }) {
+  const t = useT();
   const [weekStart, setWeekStart] = useState(() => mondayOf(1));
   const [hotzone, setHotzone] = useState("Santo Amaro");
   const [grid, setGrid] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
 
   const days = useMemo(() => Array.from({ length: 7 }, (_, index) => addDays(weekStart, index)), [weekStart]);
-  const weekdayName = ["周一", "周二", "周三", "周四", "周五", "周六", "周日"];
 
   // Prefill from existing shifts whenever week/hotzone/board changes.
   useEffect(() => {
@@ -310,20 +324,20 @@ function WeekSetupTab({ board, onSave, setMessage }: { board: Board; onSave: (bo
   return (
     <div className="panel space-y-4 p-5">
       <div className="text-sm font-bold leading-6 text-[var(--muted-strong)]">
-        每天固定三个时段，直接填写计划人数（留空 = 不创建）。已有班次会按日期更新人数；保存后到「配额分配」拆给加盟商和站点。
+        {t("dpSetupDesc")}
       </div>
       <div className="grid gap-3 md:grid-cols-3">
         <label className="text-xs font-black uppercase text-[var(--muted)]">
-          周一日期
+          {t("dpMondayDate")}
           <input type="date" className={`${input} mt-1 w-full`} value={weekStart} onChange={(e) => setWeekStart(e.target.value)} />
         </label>
         <label className="text-xs font-black uppercase text-[var(--muted)]">
-          热区
+          {t("dpHotzone")}
           <input className={`${input} mt-1 w-full`} value={hotzone} onChange={(e) => setHotzone(e.target.value)} />
         </label>
         <div className="flex items-end gap-2">
-          <button type="button" onClick={() => setWeekStart(mondayOf(0))} className="tag">本周</button>
-          <button type="button" onClick={() => setWeekStart(mondayOf(1))} className="tag">下周</button>
+          <button type="button" onClick={() => setWeekStart(mondayOf(0))} className="tag">{t("dpThisWeek")}</button>
+          <button type="button" onClick={() => setWeekStart(mondayOf(1))} className="tag">{t("dpNextWk")}</button>
         </div>
       </div>
 
@@ -331,10 +345,10 @@ function WeekSetupTab({ board, onSave, setMessage }: { board: Board; onSave: (bo
         <table className="w-full min-w-[760px] text-center text-sm">
           <thead>
             <tr className="text-[10px] font-black uppercase text-[var(--muted)]">
-              <th className="pb-2 text-left">时段</th>
+              <th className="pb-2 text-left">{t("dpSlot")}</th>
               {days.map((date, index) => (
                 <th key={date} className="pb-2">
-                  <div>{weekdayName[index]}</div>
+                  <div>{t(WEEKDAY_KEYS[index])}</div>
                   <div className="font-bold text-[var(--muted-strong)]">{date.slice(5)}</div>
                 </th>
               ))}
@@ -376,23 +390,24 @@ function WeekSetupTab({ board, onSave, setMessage }: { board: Board; onSave: (bo
               return { date, timeRange, plannedCount: Number(value) };
             });
           if (entries.length === 0) {
-            setMessage({ tone: "warn", text: "请至少填写一个时段的人数。" });
+            setMessage({ tone: "warn", text: t("dpSetupWarn") });
             setBusy(false);
             return;
           }
           const result = await onSave({ action: "setWeek", hotzone: hotzone.trim() || "Santo Amaro", entries });
           setBusy(false);
-          if (result) setMessage({ tone: "ok", text: `排班已保存：新建 ${result.created} 个班次，更新 ${result.updated} 个班次。` });
+          if (result) setMessage({ tone: "ok", text: t("dpSetupOk", { created: String(result.created), updated: String(result.updated) }) });
         }}
         className="inline-flex h-11 items-center gap-2 rounded-[8px] bg-[var(--accent)] px-6 text-sm font-black uppercase text-[var(--accent-ink)] hover:bg-[var(--accent-strong)] disabled:opacity-50"
       >
-        {busy ? "保存中..." : "保存本周排班"}
+        {busy ? t("dpSaving") : t("dpSaveWeek")}
       </button>
     </div>
   );
 }
 
 function ImportTab({ onImport, setMessage }: { onImport: (body: Record<string, unknown>) => Promise<Record<string, unknown> | null>; setMessage: (m: { tone: "ok" | "warn" | "err"; text: string } | null) => void }) {
+  const t = useT();
   const [planId, setPlanId] = useState("");
   const [planName, setPlanName] = useState("");
   const [text, setText] = useState("");
@@ -403,15 +418,15 @@ function ImportTab({ onImport, setMessage }: { onImport: (body: Record<string, u
   return (
     <div className="panel space-y-4 p-5">
       <div className="text-sm font-bold leading-6 text-[var(--muted-strong)]">
-        操作路径：Eastwind → 骑手排班管理 → 排班计划管理 → 详情，全选复制班次表格后粘贴到下方。系统自动识别班次ID、日期、热区、时段、计划人数、重点班次与状态；重复导入会按班次ID更新。
+        {t("dpImpDesc")}
       </div>
       <div className="grid gap-3 md:grid-cols-2">
-        <input className={input} placeholder="排班计划ID（选填，如 5764786272908346848）" value={planId} onChange={(e) => setPlanId(e.target.value)} />
-        <input className={input} placeholder="计划名称（选填，如 Ming 08.06）" value={planName} onChange={(e) => setPlanName(e.target.value)} />
+        <input className={input} placeholder={t("dpImpPlanId")} value={planId} onChange={(e) => setPlanId(e.target.value)} />
+        <input className={input} placeholder={t("dpImpPlanName")} value={planName} onChange={(e) => setPlanName(e.target.value)} />
       </div>
       <textarea
         className="min-h-64 w-full rounded-[8px] border border-[var(--line)] bg-[var(--surface)] p-4 font-mono text-xs leading-5 outline-none focus:border-[var(--accent)]"
-        placeholder={"粘贴 Eastwind 计划详情表格内容...\n例如：\n5764786352616900081  否  2026-06-08  Santo Amaro  --  11:00~14:00  33  ...  31  已结束"}
+        placeholder={t("dpImpPlaceholder")}
         value={text}
         onChange={(e) => setText(e.target.value)}
       />
@@ -424,25 +439,26 @@ function ImportTab({ onImport, setMessage }: { onImport: (body: Record<string, u
           const result = await onImport({ action: "import", planId: planId.trim(), planName: planName.trim(), text });
           setBusy(false);
           if (result) {
-            setMessage({ tone: "ok", text: `导入成功：新增 ${result.created} 个班次，更新 ${result.updated} 个班次。` });
+            setMessage({ tone: "ok", text: t("dpImpOk", { created: String(result.created), updated: String(result.updated) }) });
             setText("");
           }
         }}
         className="inline-flex h-11 items-center gap-2 rounded-[8px] bg-[var(--accent)] px-6 text-sm font-black uppercase text-[var(--accent-ink)] hover:bg-[var(--accent-strong)] disabled:opacity-50"
       >
-        <Upload size={16} /> {busy ? "导入中..." : "解析并导入"}
+        <Upload size={16} /> {busy ? t("pfImpImporting") : t("pfImpParseImport")}
       </button>
     </div>
   );
 }
 
 function ShiftSelect({ shifts, value, onChange }: { shifts: DispatchShift[]; value: string; onChange: (id: string) => void }) {
+  const t = useT();
   return (
     <select value={value} onChange={(e) => onChange(e.target.value)} className="h-11 w-full rounded-[8px] border border-[var(--line)] bg-[var(--surface)] px-3 text-sm font-bold outline-none focus:border-[var(--accent)]">
-      <option value="">选择班次...</option>
+      <option value="">{t("dpSelectShift")}</option>
       {shifts.map((shift) => (
         <option key={shift.id} value={shift.id}>
-          {shift.date} {shift.timeRange} · {shift.hotzone} · 名额{shift.plannedCount}{shift.isCritical ? " ★" : ""}
+          {shift.date} {shift.timeRange} · {shift.hotzone} · {t("dpQuotaLabel")}{shift.plannedCount}{shift.isCritical ? " ★" : ""}
         </option>
       ))}
     </select>
@@ -450,6 +466,7 @@ function ShiftSelect({ shifts, value, onChange }: { shifts: DispatchShift[]; val
 }
 
 function QuotaTab({ board, byShift, onSave, setMessage, network }: { board: Board; byShift: { quotaMap: Map<string, ShiftQuota[]> }; onSave: (body: Record<string, unknown>) => Promise<Record<string, unknown> | null>; setMessage: (m: { tone: "ok" | "warn" | "err"; text: string } | null) => void; network: { franchises: Franchise[]; stations: Ponto[] } }) {
+  const t = useT();
   const [shiftId, setShiftId] = useState("");
   const [level, setLevel] = useState<"franchise" | "station">("franchise");
   const [franchise, setFranchise] = useState("");
@@ -465,69 +482,69 @@ function QuotaTab({ board, byShift, onSave, setMessage, network }: { board: Boar
   return (
     <div className="grid gap-4 lg:grid-cols-[420px_1fr]">
       <div className="panel space-y-3 p-5">
-        <div className="text-xs font-black uppercase text-[var(--accent)]">分配名额</div>
+        <div className="text-xs font-black uppercase text-[var(--accent)]">{t("dpAssignQuota")}</div>
         <ShiftSelect shifts={board.shifts.filter((item) => item.status !== "finished")} value={shiftId} onChange={setShiftId} />
         <div className="flex gap-2">
           {(["franchise", "station"] as const).map((option) => (
             <button key={option} type="button" onClick={() => setLevel(option)} className={`h-10 flex-1 rounded-[8px] border text-xs font-black ${level === option ? "border-[var(--accent)] bg-[var(--accent-glow)] text-[var(--accent)]" : "border-[var(--line)] text-[var(--muted-strong)]"}`}>
-              {option === "franchise" ? "总部 → 加盟商" : "加盟商 → 站点"}
+              {option === "franchise" ? t("dpHqToFranchise") : t("dpFranchiseToStation")}
             </button>
           ))}
         </div>
         <select className={input} value={franchise} onChange={(e) => { setFranchise(e.target.value); setStation(""); }}>
-          <option value="">选择加盟商…</option>
+          <option value="">{t("dpSelectFranchise")}</option>
           {network.franchises.map((item) => (
             <option key={item.id} value={item.name}>{item.name}</option>
           ))}
         </select>
         {level === "station" && (
           <select className={input} value={station} onChange={(e) => setStation(e.target.value)}>
-            <option value="">选择站点…</option>
+            <option value="">{t("dpSelectStation")}</option>
             {network.stations.filter((item) => !franchise || item.franchise === franchise).map((item) => (
               <option key={item.id} value={item.name}>{item.name}</option>
             ))}
           </select>
         )}
-        <input className={input} placeholder="名额数量" inputMode="numeric" value={quota} onChange={(e) => setQuota(e.target.value.replace(/\D/g, ""))} />
+        <input className={input} placeholder={t("dpQuotaCount")} inputMode="numeric" value={quota} onChange={(e) => setQuota(e.target.value.replace(/\D/g, ""))} />
         <button
           type="button"
           disabled={!shiftId || !franchise.trim() || quota === "" || (level === "station" && !station.trim())}
           onClick={async () => {
             setMessage(null);
             const result = await onSave({ action: "quota", shiftId, level, franchise: franchise.trim(), station: station.trim() || undefined, quota: Number(quota) });
-            if (result) setMessage({ tone: "ok", text: "配额已保存。" });
+            if (result) setMessage({ tone: "ok", text: t("dpQuotaOk") });
           }}
           className="inline-flex h-11 w-full items-center justify-center gap-2 rounded-[8px] bg-[var(--accent)] text-sm font-black uppercase text-[var(--accent-ink)] hover:bg-[var(--accent-strong)] disabled:opacity-50"
         >
-          保存配额
+          {t("dpSaveQuota")}
         </button>
         {shift && (
           <div className="rounded-[8px] border border-[var(--line)] bg-[var(--surface-raised)] p-3 text-xs font-bold text-[var(--muted-strong)]">
-            99 计划名额 {shift.plannedCount}，已分配给加盟商 {franchiseTotal}
-            {franchiseTotal > shift.plannedCount && <span className="text-[var(--danger-ink)]">（超额！）</span>}
+            {t("dpQuotaSummary", { planned: shift.plannedCount, allocated: franchiseTotal })}
+            {franchiseTotal > shift.plannedCount && <span className="text-[var(--danger-ink)]">{t("dpOverQuota")}</span>}
           </div>
         )}
       </div>
 
       <div className="panel p-5">
-        <div className="mb-3 text-xs font-black uppercase text-[var(--accent)]">当前班次配额</div>
+        <div className="mb-3 text-xs font-black uppercase text-[var(--accent)]">{t("dpCurrentQuota")}</div>
         {quotas.length === 0 ? (
-          <div className="text-sm font-bold text-[var(--muted)]">选择班次后查看；尚无配额记录。</div>
+          <div className="text-sm font-bold text-[var(--muted)]">{t("dpNoQuota")}</div>
         ) : (
           <table className="w-full text-left text-sm">
             <thead>
               <tr className="text-[10px] font-black uppercase text-[var(--muted)]">
-                <th className="pb-2">层级</th>
-                <th className="pb-2">加盟商</th>
-                <th className="pb-2">站点</th>
-                <th className="pb-2">名额</th>
-                <th className="pb-2">更新时间</th>
+                <th className="pb-2">{t("dpLevel")}</th>
+                <th className="pb-2">{t("pfFranchise")}</th>
+                <th className="pb-2">{t("pfStation")}</th>
+                <th className="pb-2">{t("dpQuotaLabel")}</th>
+                <th className="pb-2">{t("dpUpdatedAt")}</th>
               </tr>
             </thead>
             <tbody>
               {quotas.map((item) => (
                 <tr key={item.id} className="border-t border-[var(--line)] font-bold">
-                  <td className="py-2">{item.level === "franchise" ? "加盟商" : "站点"}</td>
+                  <td className="py-2">{item.level === "franchise" ? t("pfFranchise") : t("pfStation")}</td>
                   <td className="py-2">{item.franchise}</td>
                   <td className="py-2">{item.station ?? "--"}</td>
                   <td className="py-2 font-black">{item.quota}</td>
@@ -543,6 +560,7 @@ function QuotaTab({ board, byShift, onSave, setMessage, network }: { board: Boar
 }
 
 function ReviewTab({ board, onAction, setMessage, network }: { board: Board; onAction: (body: Record<string, unknown>) => Promise<Record<string, unknown> | null>; setMessage: (m: { tone: "ok" | "warn" | "err"; text: string } | null) => void; network: { franchises: Franchise[]; stations: Ponto[] } }) {
+  const t = useT();
   const [shiftId, setShiftId] = useState("");
   const [franchise, setFranchise] = useState("");
   const [station, setStation] = useState("");
@@ -566,7 +584,7 @@ function ReviewTab({ board, onAction, setMessage, network }: { board: Board; onA
     setMessage(null);
     const result = await onAction({ action: "review", signupIds: [...selected], status });
     if (result) {
-      setMessage({ tone: "ok", text: `${status === "approved" ? "已通过" : "已驳回"} ${result.changed} 条报名。` });
+      setMessage({ tone: "ok", text: t("dpReviewOk", { verb: status === "approved" ? t("dpStApproved") : t("dpStRejected"), n: String(result.changed) }) });
       setSelected(new Set());
     }
   }
@@ -580,7 +598,7 @@ function ReviewTab({ board, onAction, setMessage, network }: { board: Board; onA
   // Signups whose franchise isn't in the network → one "unbound" bucket.
   const orphan = board.signups.filter((s) => !s.franchise || !franchiseNames.has(s.franchise));
   if (orphan.length > 0) {
-    progress.push({ name: "未绑定加盟商", pending: orphan.filter((x) => x.status === "submitted").length, approved: orphan.filter((x) => x.status === "approved").length, total: orphan.length, unbound: true });
+    progress.push({ name: t("dpUnbound"), pending: orphan.filter((x) => x.status === "submitted").length, approved: orphan.filter((x) => x.status === "approved").length, total: orphan.length, unbound: true });
   }
   const allPendingSelected = pending.length > 0 && pending.every((s) => selected.has(s.id));
 
@@ -588,19 +606,19 @@ function ReviewTab({ board, onAction, setMessage, network }: { board: Board; onA
     <div className="space-y-4">
       <div className="panel p-4">
         <div className="mb-3 flex items-center justify-between">
-          <div className="text-xs font-black uppercase text-[var(--accent)]">审核进度（以加盟商清单为准）</div>
+          <div className="text-xs font-black uppercase text-[var(--accent)]">{t("dpReviewProgress")}</div>
           <button
             type="button"
             className="tag inline-flex items-center gap-1"
             onClick={() => {
               downloadCsv(
                 `signups-${new Date().toISOString().slice(0, 10)}`,
-                ["骑手", "99ID", "加盟商", "站点", "班次", "状态", "提交时间"],
+                [t("pfRider"), "99ID", t("pfFranchise"), t("pfStation"), t("dpShift"), t("dpStatus"), t("dpSubmittedAt")],
                 board.signups.map((x) => [x.riderName, x.rider99Id, x.franchise, x.station, x.shiftId, x.status, x.createdAt]),
               );
             }}
           >
-            <Download size={13} /> 导出报名 CSV
+            <Download size={13} /> {t("dpExportSignups")}
           </button>
         </div>
         <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
@@ -614,37 +632,37 @@ function ReviewTab({ board, onAction, setMessage, network }: { board: Board; onA
                     className="rounded-full bg-[var(--accent)] px-2.5 py-1 text-[10px] font-black uppercase text-[var(--accent-ink)]"
                     onClick={async () => {
                       const result = await onAction({ action: "nudge", scope: "franchise", name: row.name });
-                      if (result) setMessage({ tone: "ok", text: `已向 ${row.name} 发送催审提醒（${row.pending} 条待审）。` });
+                      if (result) setMessage({ tone: "ok", text: t("dpNudgeOk", { name: row.name, n: row.pending }) });
                     }}
                   >
-                    催审核
+                    {t("dpNudge")}
                   </button>
                 )}
               </div>
               <div className="mt-1 text-[11px] font-bold text-[var(--muted-strong)]">
-                待审 <span className={row.pending > 0 ? "text-[var(--warning-ink)]" : ""}>{row.pending}</span> ｜ 已通过 {row.approved} ｜ 共 {row.total}
+                {t("dpProgressLine", { pending: row.pending, approved: row.approved, total: row.total })}
               </div>
             </div>
           ))}
-          {progress.length === 0 && <div className="text-sm font-bold text-[var(--muted)]">还没有加盟商档案——请到「网络架构」创建。</div>}
+          {progress.length === 0 && <div className="text-sm font-bold text-[var(--muted)]">{t("dpNoFranchise")}</div>}
         </div>
       </div>
 
       <div className="grid gap-4 lg:grid-cols-[420px_1fr]">
       <div className="panel space-y-3 p-5">
-        <div className="text-xs font-black uppercase text-[var(--accent)]">代录站点报名</div>
+        <div className="text-xs font-black uppercase text-[var(--accent)]">{t("dpProxySignup")}</div>
         <ShiftSelect shifts={board.shifts.filter((item) => item.status === "scheduling")} value={shiftId} onChange={setShiftId} />
         <select className={input} value={franchise} onChange={(e) => { setFranchise(e.target.value); setStation(""); }}>
-          <option value="">选择加盟商</option>
+          <option value="">{t("dpSelectFranchise")}</option>
           {network.franchises.map((f) => <option key={f.id} value={f.name}>{f.name}</option>)}
         </select>
         <select className={input} value={station} onChange={(e) => setStation(e.target.value)}>
-          <option value="">选择站点</option>
+          <option value="">{t("dpSelectStation")}</option>
           {network.stations.filter((st) => !franchise || st.franchise === franchise).map((st) => <option key={st.id} value={st.name}>{st.name}</option>)}
         </select>
         <textarea
           className="min-h-40 w-full rounded-[8px] border border-[var(--line)] bg-[var(--surface)] p-3 font-mono text-xs leading-5 outline-none focus:border-[var(--accent)]"
-          placeholder={"一行一个骑手：姓名,99骑手ID[,CPF]\n例如：\nCARLOS SILVA,650911813042436,24445328804"}
+          placeholder={t("dpRidersPlaceholder")}
           value={ridersText}
           onChange={(e) => setRidersText(e.target.value)}
         />
@@ -666,14 +684,14 @@ function ReviewTab({ board, onAction, setMessage, network }: { board: Board; onA
               const skipped = (result.skipped as string[]) ?? [];
               setMessage({
                 tone: skipped.length > 0 ? "warn" : "ok",
-                text: `已录入 ${result.created} 条报名${skipped.length > 0 ? `；跳过 ${skipped.length} 条：${skipped.slice(0, 5).join("、")}` : "。"}`,
+                text: skipped.length > 0 ? t("dpSignupOkSkip", { created: String(result.created), n: skipped.length, list: skipped.slice(0, 5).join("、") }) : t("dpSignupOk", { created: String(result.created) }),
               });
               setRidersText("");
             }
           }}
           className="inline-flex h-11 w-full items-center justify-center gap-2 rounded-[8px] bg-[var(--accent)] text-sm font-black uppercase text-[var(--accent-ink)] hover:bg-[var(--accent-strong)] disabled:opacity-50"
         >
-          <Users size={16} /> 提交报名
+          <Users size={16} /> {t("dpSubmitSignup")}
         </button>
       </div>
 
@@ -686,19 +704,19 @@ function ReviewTab({ board, onAction, setMessage, network }: { board: Board; onA
               checked={allPendingSelected}
               onChange={(e) => setSelected(e.target.checked ? new Set(pending.map((s) => s.id)) : new Set())}
             />
-            待审核队列（{pending.length}）· 全选
+            {t("dpPendingQueue", { n: pending.length })}
           </label>
           <div className="flex gap-2">
             <button type="button" onClick={() => void review("approved")} disabled={selected.size === 0} className="inline-flex h-9 items-center gap-1 rounded-[8px] bg-[var(--accent)] px-4 text-xs font-black uppercase text-[var(--accent-ink)] disabled:opacity-40">
-              <CheckCircle2 size={14} /> 通过（{selected.size}）
+              <CheckCircle2 size={14} /> {t("dpApproveN", { n: selected.size })}
             </button>
             <button type="button" onClick={() => void review("rejected")} disabled={selected.size === 0} className="inline-flex h-9 items-center gap-1 rounded-[8px] border border-[var(--danger)] px-4 text-xs font-black uppercase text-[var(--danger-ink)] disabled:opacity-40">
-              驳回
+              {t("dpReject")}
             </button>
           </div>
         </div>
         {pending.length === 0 ? (
-          <div className="text-sm font-bold text-[var(--muted)]">暂无待审核报名。</div>
+          <div className="text-sm font-bold text-[var(--muted)]">{t("dpNoPending")}</div>
         ) : (
           <div className="max-h-[520px] space-y-2 overflow-auto pr-1">
             {pending.map((signup) => {
@@ -715,7 +733,7 @@ function ReviewTab({ board, onAction, setMessage, network }: { board: Board; onA
                       {shift ? `${shift.date} ${shift.timeRange} · ${shift.hotzone}` : signup.shiftId} ｜ {signup.franchise} / {signup.station}
                     </div>
                   </div>
-                  <Badge value={statusLabel[signup.status]} />
+                  <Badge value={statusKey[signup.status] ? t(statusKey[signup.status]) : signup.status} />
                 </label>
               );
             })}
@@ -728,6 +746,7 @@ function ReviewTab({ board, onAction, setMessage, network }: { board: Board; onA
 }
 
 function ReportTab({ board, byShift, onAction, setMessage }: { board: Board; byShift: { signupMap: Map<string, ShiftSignup[]> }; onAction: (body: Record<string, unknown>) => Promise<Record<string, unknown> | null>; setMessage: (m: { tone: "ok" | "warn" | "err"; text: string } | null) => void }) {
+  const t = useT();
   const candidates = board.shifts.filter((shift) => shift.status !== "finished");
 
   async function copyRoster(shiftId: string) {
@@ -736,37 +755,37 @@ function ReportTab({ board, byShift, onAction, setMessage }: { board: Board; byS
     if (!result) return;
     const text = String(result.rosterText ?? "");
     if (!text) {
-      setMessage({ tone: "warn", text: "该班次还没有已通过的报名。" });
+      setMessage({ tone: "warn", text: t("dpNoApproved") });
       return;
     }
     try {
       await navigator.clipboard.writeText(text);
-      setMessage({ tone: "ok", text: `已复制 ${result.count} 个骑手ID（一行一个），到 Eastwind「骑手排班」弹窗粘贴提交即可。` });
+      setMessage({ tone: "ok", text: t("dpCopyOk", { n: String(result.count) }) });
     } catch {
-      setMessage({ tone: "warn", text: `复制失败，请手动复制：\n${text.slice(0, 200)}...` });
+      setMessage({ tone: "warn", text: t("dpCopyFail", { text: text.slice(0, 200) }) });
     }
   }
 
   async function markReported(shiftId: string) {
     const result = await onAction({ action: "report", shiftId, confirm: true });
-    if (result) setMessage({ tone: "ok", text: `班次已标记为已填报（${result.count} 人）。` });
+    if (result) setMessage({ tone: "ok", text: t("dpMarkReportedOk", { n: String(result.count) }) });
   }
 
   return (
     <div className="panel p-5">
-      <div className="mb-3 text-xs font-black uppercase text-[var(--accent)]">填报工作台 · 复制清单 → Eastwind 提交 → 标记完成</div>
+      <div className="mb-3 text-xs font-black uppercase text-[var(--accent)]">{t("dpReportTitle")}</div>
       {candidates.length === 0 ? (
-        <div className="text-sm font-bold text-[var(--muted)]">暂无可填报的班次。</div>
+        <div className="text-sm font-bold text-[var(--muted)]">{t("dpNoReportable")}</div>
       ) : (
         <table className="w-full text-left text-sm">
           <thead>
             <tr className="text-[10px] font-black uppercase text-[var(--muted)]">
-              <th className="pb-2">班次</th>
-              <th className="pb-2">99名额</th>
-              <th className="pb-2">已通过</th>
-              <th className="pb-2">缺口</th>
-              <th className="pb-2">状态</th>
-              <th className="pb-2">操作</th>
+              <th className="pb-2">{t("dpShift")}</th>
+              <th className="pb-2">{t("dpQuota99")}</th>
+              <th className="pb-2">{t("dpStApproved")}</th>
+              <th className="pb-2">{t("dpGap")}</th>
+              <th className="pb-2">{t("dpStatus")}</th>
+              <th className="pb-2">{t("dpAction")}</th>
             </tr>
           </thead>
           <tbody>
@@ -786,14 +805,14 @@ function ReportTab({ board, byShift, onAction, setMessage }: { board: Board; byS
                   <td className="py-2">{shift.plannedCount}</td>
                   <td className={`py-2 font-black ${statBadge(approved, shift.plannedCount)}`}>{approved}</td>
                   <td className={`py-2 font-black ${gap > 0 ? "text-[var(--danger-ink)]" : "text-[var(--ok-ink)]"}`}>{gap > 0 ? gap : 0}</td>
-                  <td className="py-2">{shift.reportedAt ? <Badge value={`已填报 ${shift.reportedAt}`} /> : <Badge value="未填报" />}</td>
+                  <td className="py-2">{shift.reportedAt ? <Badge value={t("dpReportedAt", { x: shift.reportedAt })} /> : <Badge value={t("dpNotReported")} />}</td>
                   <td className="py-2">
                     <div className="flex flex-wrap gap-2">
                       <button type="button" onClick={() => void copyRoster(shift.id)} className="tag inline-flex items-center gap-1">
-                        <ClipboardCopy size={13} /> 复制清单
+                        <ClipboardCopy size={13} /> {t("dpCopyRoster")}
                       </button>
                       <button type="button" onClick={() => void markReported(shift.id)} className="tag inline-flex items-center gap-1">
-                        <Download size={13} /> 标记已填报
+                        <Download size={13} /> {t("dpMarkReported")}
                       </button>
                     </div>
                   </td>

@@ -6,11 +6,13 @@ import { AppShell, Badge, PageTitle } from "../../components/ui";
 import { readSession } from "../../lib/session";
 import type { DispatchShift, ShiftQuota, ShiftSignup } from "../../lib/dispatch";
 import { ShiftRiderPicker } from "../../components/shift-rider-picker";
+import { useVentoStore } from "../../lib/store";
+import { translate, type TranslationKey } from "../../lib/i18n";
 
 type Board = { shifts: DispatchShift[]; quotas: ShiftQuota[]; signups: ShiftSignup[] };
 
-const statusLabel: Record<string, string> = { scheduling: "排班中", executing: "执行中", finished: "已结束" };
-const WEEKDAYS = ["周一", "周二", "周三", "周四", "周五", "周六", "周日"];
+const statusKey: Record<string, TranslationKey> = { scheduling: "dpStScheduling", executing: "dpStExecuting", finished: "dpStFinished" };
+const WEEKDAY_KEYS: TranslationKey[] = ["pfWdMon", "pfWdTue", "pfWdWed", "pfWdThu", "pfWdFri", "pfWdSat", "pfWdSun"];
 
 function addDays(iso: string, delta: number): string {
   const d = new Date(`${iso}T12:00:00Z`);
@@ -26,6 +28,12 @@ function mondayOf(): string {
 }
 
 export default function FranchiseDispatchPage() {
+  const language = useVentoStore((s) => s.language);
+  const t = (k: TranslationKey, vars?: Record<string, string | number | undefined>) => {
+    let s = translate(language, k);
+    if (vars) for (const [key, val] of Object.entries(vars)) s = s.replace(`{${key}}`, String(val ?? ""));
+    return s;
+  };
   const session = useMemo(() => readSession(), []);
   // SERVER session is the source of truth for identity — localStorage can be
   // stale after account switches and would query the wrong franchise.
@@ -86,7 +94,7 @@ export default function FranchiseDispatchPage() {
     const response = await fetch("/api/dispatch", { method: "POST", headers, body: JSON.stringify(body) });
     const payload = await response.json().catch(() => ({}));
     if (!response.ok) {
-      setMessage({ tone: "err", text: payload.error ?? `请求失败 (${response.status})` });
+      setMessage({ tone: "err", text: payload.error ?? t("dpReqFail", { status: response.status }) });
       return null;
     }
     void load();
@@ -108,8 +116,8 @@ export default function FranchiseDispatchPage() {
   return (
     <AppShell>
       <PageTitle
-        title="排班配额与审核"
-        eyebrow={hqMode ? `总部督导视角 · ${franchise || "选择加盟商"}` : `加盟商工作台 · ${franchise}`}
+        title={t("dfTitle")}
+        eyebrow={hqMode ? t("dfEyebrowHq", { x: franchise || t("dfPickFranchise") }) : t("dfEyebrowFr", { x: franchise })}
         action={
           <div className="flex items-center gap-2">
             {hqMode && (
@@ -121,7 +129,7 @@ export default function FranchiseDispatchPage() {
                 {allFranchises.map((name) => <option key={name} value={name}>{name}</option>)}
               </select>
             )}
-            <button type="button" onClick={() => void load()} className="tag inline-flex items-center gap-1"><RefreshCcw size={13} /> 刷新</button>
+            <button type="button" onClick={() => void load()} className="tag inline-flex items-center gap-1"><RefreshCcw size={13} /> {t("pfRefresh")}</button>
           </div>
         }
       />
@@ -137,16 +145,16 @@ export default function FranchiseDispatchPage() {
       <div className="grid gap-4 xl:grid-cols-[1fr_minmax(400px,460px)]">
         <div className="panel p-4">
           <div className="mb-3 flex flex-wrap items-center justify-between gap-2" data-i18n-skip>
-            <div className="text-xs font-black uppercase text-[var(--accent)]">总部分配给我的班次配额 → 拆分给站点</div>
+            <div className="text-xs font-black uppercase text-[var(--accent)]">{t("dfAllocTitle")}</div>
             <div className="flex items-center gap-2">
-              <button type="button" className="tag" onClick={() => setWeekStart(addDays(weekStart, -7))}>← 上一周</button>
-              <span className="text-sm font-black">{weekStart} ~ {addDays(weekStart, 6)}<span className="ml-2 text-[10px] font-bold text-[var(--muted)]">{myShifts.filter(({ shift }) => shift.date >= weekStart && shift.date <= addDays(weekStart, 6)).length} 个班次</span></span>
-              <button type="button" className="tag" onClick={() => setWeekStart(addDays(weekStart, 7))}>下一周 →</button>
-              <button type="button" className="tag" onClick={() => setWeekStart(mondayOf())}>本周</button>
+              <button type="button" className="tag" onClick={() => setWeekStart(addDays(weekStart, -7))}>{t("dpPrevWeek")}</button>
+              <span className="text-sm font-black">{weekStart} ~ {addDays(weekStart, 6)}<span className="ml-2 text-[10px] font-bold text-[var(--muted)]">{t("dpWeekShifts", { n: myShifts.filter(({ shift }) => shift.date >= weekStart && shift.date <= addDays(weekStart, 6)).length })}</span></span>
+              <button type="button" className="tag" onClick={() => setWeekStart(addDays(weekStart, 7))}>{t("dpNextWeek")}</button>
+              <button type="button" className="tag" onClick={() => setWeekStart(mondayOf())}>{t("dpThisWeek")}</button>
             </div>
           </div>
           {myShifts.length === 0 ? (
-            <div className="text-sm font-bold text-[var(--muted)]">总部还没有给 {franchise} 分配班次配额。</div>
+            <div className="text-sm font-bold text-[var(--muted)]">{t("dfNoQuota", { x: franchise })}</div>
           ) : (
             <div className="grid grid-cols-2 gap-2 md:grid-cols-4 2xl:grid-cols-7">
               {Array.from({ length: 7 }, (_, index) => addDays(weekStart, index)).map((day, index) => {
@@ -154,7 +162,7 @@ export default function FranchiseDispatchPage() {
                 return (
                   <div key={day} className="min-w-0 space-y-2">
                     <div className="rounded-[8px] bg-[var(--surface-raised)] py-1.5 text-center">
-                      <div className="text-[10px] font-black text-[var(--muted)]">{WEEKDAYS[index]}</div>
+                      <div className="text-[10px] font-black text-[var(--muted)]">{t(WEEKDAY_KEYS[index])}</div>
                       <div className="text-sm font-black">{day.slice(5)}</div>
                     </div>
                     {dayRows.length === 0 && <div className="rounded-[8px] border border-dashed border-[var(--line)] py-4 text-center text-[10px] font-bold text-[var(--muted)]">—</div>}
@@ -175,9 +183,9 @@ export default function FranchiseDispatchPage() {
                             <span className="truncate">{shift.timeRange}</span>
                           </div>
                           <div className="mt-0.5 truncate text-[10px] font-bold text-[var(--muted)]">{shift.hotzone}</div>
-                          <div className="mt-1"><Badge value={statusLabel[shift.status] ?? shift.status} /></div>
+                          <div className="mt-1"><Badge value={statusKey[shift.status] ? t(statusKey[shift.status]) : shift.status} /></div>
                           <div className="mt-2 grid grid-cols-2 gap-x-2 gap-y-1 text-center">
-                            {[["我的配额", franchiseQuota?.quota ?? 0, ""], ["已拆", allocated, allocated > (franchiseQuota?.quota ?? 0) ? "text-[var(--danger-ink)]" : "text-[var(--accent)]"], ["已审通过", approved, "text-[var(--ok-ink)]"], ["待审核", waiting, waiting > 0 ? "text-[var(--warning-ink)]" : ""]].map(([label, value, cls]) => (
+                            {[[t("dfMyQuota"), franchiseQuota?.quota ?? 0, ""], [t("dfAllocated"), allocated, allocated > (franchiseQuota?.quota ?? 0) ? "text-[var(--danger-ink)]" : "text-[var(--accent)]"], [t("dpApprovedCnt"), approved, "text-[var(--ok-ink)]"], [t("dpPendingCnt"), waiting, waiting > 0 ? "text-[var(--warning-ink)]" : ""]].map(([label, value, cls]) => (
                               <div key={String(label)}>
                                 <div className="text-[9px] font-black text-[var(--muted)]">{label}</div>
                                 <div className={`text-sm font-black ${cls}`}>{value}</div>
@@ -186,7 +194,7 @@ export default function FranchiseDispatchPage() {
                           </div>
                           {active && (
                             <div className="mt-2 space-y-1.5 border-t border-[var(--line)] pt-2" onClick={(e) => e.stopPropagation()}>
-                              <div className="text-[9px] font-black uppercase text-[var(--muted)]">拆分给站点</div>
+                              <div className="text-[9px] font-black uppercase text-[var(--muted)]">{t("dfSplitToStation")}</div>
                               {(myStations.length > 0 ? myStations : knownStations).map((station) => {
                                 const existing = stationQuotas.find((quota) => quota.station === station);
                                 const key = `${shift.id}|${station}`;
@@ -205,10 +213,10 @@ export default function FranchiseDispatchPage() {
                                       onClick={async () => {
                                         const quota = Number(stationInputs[key] ?? existing?.quota ?? 0);
                                         const result = await post({ action: "quota", shiftId: shift.id, level: "station", franchise, station, quota });
-                                        if (result) setMessage({ tone: "ok", text: `${station} 配额已更新为 ${quota}。` });
+                                        if (result) setMessage({ tone: "ok", text: t("dfQuotaUpdated", { station, quota }) });
                                       }}
                                     >
-                                      存
+                                      {t("dfSave")}
                                     </button>
                                   </div>
                                 );
@@ -238,8 +246,8 @@ export default function FranchiseDispatchPage() {
       {/* 已提报 · 全宽清晰表格 */}
       <div className="panel mt-4 p-4">
         <div className="mb-3 flex flex-wrap items-center gap-2">
-          <span className="text-xs font-black uppercase text-[var(--accent)]">已提报 · 待总部审核（{pending.length}）</span>
-          <span className="ml-auto inline-flex items-center gap-1 text-[11px] font-bold text-[var(--muted)]"><Send size={12} /> 提报后直达总部,由总部统一审核并填报 Eastwind。</span>
+          <span className="text-xs font-black uppercase text-[var(--accent)]">{t("dfSubmittedTitle", { n: pending.length })}</span>
+          <span className="ml-auto inline-flex items-center gap-1 text-[11px] font-bold text-[var(--muted)]"><Send size={12} /> {t("dfSubmittedHint")}</span>
         </div>
         {(() => {
           const stations = [...new Set(board.signups.map((x) => x.station))];
@@ -253,20 +261,20 @@ export default function FranchiseDispatchPage() {
               {rows.map((row) => (
                 <div key={row.name} className={`flex items-center justify-between gap-2 rounded-[8px] border px-3 py-2 text-[12px] font-bold ${row.pending > 0 ? "border-[var(--warning)] bg-[var(--warning-bg)]" : "border-[var(--line)] bg-[var(--surface-raised)]"}`}>
                   <span className="truncate font-black">{row.name}</span>
-                  <span className="shrink-0">待审 {row.pending}/{row.total}</span>
+                  <span className="shrink-0">{t("dfWaitingRatio", { pending: row.pending, total: row.total })}</span>
                 </div>
               ))}
             </div>
           ) : null;
         })()}
         {pending.length === 0 ? (
-          <div className="py-6 text-center text-sm font-bold text-[var(--muted)]">暂无待审核报名。</div>
+          <div className="py-6 text-center text-sm font-bold text-[var(--muted)]">{t("dpNoPending")}</div>
         ) : (
           <div className="overflow-x-auto rounded-[8px] border border-[var(--line)]">
             <table className="w-full text-sm">
               <thead>
                 <tr className="bg-[var(--surface-raised)] text-left text-[11px] font-black uppercase text-[var(--muted)]">
-                  <th className="px-3 py-2">骑手</th><th className="px-3 py-2">站点</th><th className="px-3 py-2">日期</th><th className="px-3 py-2">时段</th><th className="px-3 py-2">99 ID</th><th className="px-3 py-2 text-right">状态</th>
+                  <th className="px-3 py-2">{t("pfRider")}</th><th className="px-3 py-2">{t("pfStation")}</th><th className="px-3 py-2">{t("dfDate")}</th><th className="px-3 py-2">{t("dpSlot")}</th><th className="px-3 py-2">99 ID</th><th className="px-3 py-2 text-right">{t("dpStatus")}</th>
                 </tr>
               </thead>
               <tbody>
@@ -279,7 +287,7 @@ export default function FranchiseDispatchPage() {
                       <td className="px-3 py-2 text-[var(--muted)]">{shift?.date ?? "—"}</td>
                       <td className="px-3 py-2">{shift?.timeRange ?? signup.shiftId}</td>
                       <td className="px-3 py-2 font-mono text-[11px] text-[var(--muted)]">{signup.rider99Id}</td>
-                      <td className="px-3 py-2 text-right"><Badge value="待总部审核" /></td>
+                      <td className="px-3 py-2 text-right"><Badge value={t("dpPendingHq")} /></td>
                     </tr>
                   );
                 })}
@@ -294,6 +302,12 @@ export default function FranchiseDispatchPage() {
 
 /** Franchise identity card + this-week KPI strip (own data only). */
 function FranchiseOverview({ franchise, headers }: { franchise: string; headers: Record<string, string> }) {
+  const language = useVentoStore((s) => s.language);
+  const t = (k: TranslationKey, vars?: Record<string, string | number | undefined>) => {
+    let s = translate(language, k);
+    if (vars) for (const [key, val] of Object.entries(vars)) s = s.replace(`{${key}}`, String(val ?? ""));
+    return s;
+  };
   const [info, setInfo] = useState<{ owner?: string; phone?: string; city?: string; depositBalance?: number; stations: number; riders: number } | null>(null);
   const [kpi, setKpi] = useState<{ orders: number; settle: number; ar: number | null; reportDate: string } | null>(null);
   const [week, setWeek] = useState<{ from: string; to: string } | null>(null);
@@ -336,17 +350,17 @@ function FranchiseOverview({ franchise, headers }: { franchise: string; headers:
   return (
     <div className="mb-4 grid gap-3 md:grid-cols-2 xl:grid-cols-6">
       <div className="panel p-3 md:col-span-2">
-        <div className="text-[10px] font-black uppercase text-[var(--muted)]">加盟商档案</div>
+        <div className="text-[10px] font-black uppercase text-[var(--muted)]">{t("dfProfile")}</div>
         <div className="mt-1 text-sm font-black">{franchise}</div>
         <div className="mt-1 text-[11px] font-bold text-[var(--muted)]">
-          {info ? `${info.owner || "—"}${info.phone ? ` ｜ ${info.phone}` : ""} ｜ ${info.city || "São Paulo"}` : "加载中..."}
+          {info ? `${info.owner || "—"}${info.phone ? ` ｜ ${info.phone}` : ""} ｜ ${info.city || "São Paulo"}` : t("dpLoading")}
         </div>
       </div>
       {[
-        ["下属站点", info ? String(info.stations) : "—"],
-        ["骑手数", info ? String(info.riders) : "—"],
-        ["预存余额", info ? `R$ ${(info.depositBalance ?? 0).toFixed(2)}` : "—"],
-        [week ? `本周完单（${md(week.from)}–${md(week.to)}）` : "本周完单", kpi ? String(kpi.orders) : "—"],
+        [t("dfStations"), info ? String(info.stations) : "—"],
+        [t("pfRiders"), info ? String(info.riders) : "—"],
+        [t("dfDeposit"), info ? `R$ ${(info.depositBalance ?? 0).toFixed(2)}` : "—"],
+        [week ? t("dfWeekOrders", { from: md(week.from), to: md(week.to) }) : t("dfWeekOrdersShort"), kpi ? String(kpi.orders) : "—"],
       ].map(([label, value]) => (
         <div key={label} className="panel p-3 text-center">
           <div className="text-[10px] font-black uppercase text-[var(--muted)]">{label}</div>
@@ -354,7 +368,7 @@ function FranchiseOverview({ franchise, headers }: { franchise: string; headers:
         </div>
       ))}
       <div className="panel border-[var(--accent)] p-3 text-center">
-        <div className="text-[10px] font-black uppercase text-[var(--accent)]">本周应结{kpi?.ar !== null && kpi?.ar !== undefined ? ` ｜ AR ${kpi.ar}%` : ""}</div>
+        <div className="text-[10px] font-black uppercase text-[var(--accent)]">{t("dfWeekDue")}{kpi?.ar !== null && kpi?.ar !== undefined ? t("dfWeekDueAr", { ar: kpi.ar }) : ""}</div>
         <div className="mt-1 text-lg font-black text-[var(--accent)]">{kpi ? `R$ ${kpi.settle.toFixed(2)}` : "—"}</div>
       </div>
     </div>

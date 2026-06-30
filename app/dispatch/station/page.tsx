@@ -6,10 +6,12 @@ import { AppShell, Badge, PageTitle } from "../../components/ui";
 import { readSession } from "../../lib/session";
 import type { DispatchShift, ShiftQuota, ShiftSignup } from "../../lib/dispatch";
 import { ShiftRiderPicker } from "../../components/shift-rider-picker";
+import { useVentoStore } from "../../lib/store";
+import { translate, type TranslationKey } from "../../lib/i18n";
 
 type Board = { shifts: DispatchShift[]; quotas: ShiftQuota[]; signups: ShiftSignup[] };
 
-const WEEKDAYS = ["周一", "周二", "周三", "周四", "周五", "周六", "周日"];
+const WEEKDAY_KEYS: TranslationKey[] = ["pfWdMon", "pfWdTue", "pfWdWed", "pfWdThu", "pfWdFri", "pfWdSat", "pfWdSun"];
 
 function addDays(iso: string, delta: number): string {
   const d = new Date(`${iso}T12:00:00Z`);
@@ -24,15 +26,21 @@ function mondayOf(): string {
   return d.toISOString().slice(0, 10);
 }
 
-const signupLabel: Record<string, string> = {
-  submitted: "待审核",
-  approved: "已通过",
-  rejected: "已驳回",
-  reported: "已填报",
-  cancelled: "已取消",
+const signupKey: Record<string, TranslationKey> = {
+  submitted: "dpStSubmitted",
+  approved: "dpStApproved",
+  rejected: "dpStRejected",
+  reported: "dpStReported",
+  cancelled: "dpStCancelled",
 };
 
 export default function StationDispatchPage() {
+  const language = useVentoStore((s) => s.language);
+  const t = (k: TranslationKey, vars?: Record<string, string | number | undefined>) => {
+    let s = translate(language, k);
+    if (vars) for (const [key, val] of Object.entries(vars)) s = s.replace(`{${key}}`, String(val ?? ""));
+    return s;
+  };
   const session = useMemo(() => readSession(), []);
   // SERVER session wins — stale localStorage must not point at another station.
   const [identity, setIdentity] = useState({ station: session?.station || "", franchise: session?.franchise || "" });
@@ -96,8 +104,8 @@ export default function StationDispatchPage() {
   return (
     <AppShell>
       <PageTitle
-        title="排班提报"
-        eyebrow={`站点工作台 · ${station}（${franchise}）`}
+        title={t("dsTitle")}
+        eyebrow={t("dsEyebrow", { station, franchise })}
         action={
           <div className="flex items-center gap-2">
             {pickerMode && (
@@ -112,7 +120,7 @@ export default function StationDispatchPage() {
                 {stationOptions.map((item) => <option key={item.name} value={item.name}>{item.name}</option>)}
               </select>
             )}
-            <button type="button" onClick={() => void load()} className="tag inline-flex items-center gap-1"><RefreshCcw size={13} /> 刷新</button>
+            <button type="button" onClick={() => void load()} className="tag inline-flex items-center gap-1"><RefreshCcw size={13} /> {t("pfRefresh")}</button>
           </div>
         }
       />
@@ -127,17 +135,17 @@ export default function StationDispatchPage() {
         <div className="panel p-4">
           <div className="mb-3 flex flex-wrap items-center justify-between gap-2" data-i18n-skip>
             <div className="flex items-center gap-2 text-xs font-black uppercase text-[var(--accent)]">
-              <ClipboardList size={14} /> 本站班次与报名状态
+              <ClipboardList size={14} /> {t("dsBoardTitle")}
             </div>
             <div className="flex items-center gap-2">
-              <button type="button" className="tag" onClick={() => setWeekStart(addDays(weekStart, -7))}>← 上一周</button>
+              <button type="button" className="tag" onClick={() => setWeekStart(addDays(weekStart, -7))}>{t("dpPrevWeek")}</button>
               <span className="text-sm font-black">{weekStart} ~ {addDays(weekStart, 6)}</span>
-              <button type="button" className="tag" onClick={() => setWeekStart(addDays(weekStart, 7))}>下一周 →</button>
-              <button type="button" className="tag" onClick={() => setWeekStart(mondayOf())}>本周</button>
+              <button type="button" className="tag" onClick={() => setWeekStart(addDays(weekStart, 7))}>{t("dpNextWeek")}</button>
+              <button type="button" className="tag" onClick={() => setWeekStart(mondayOf())}>{t("dpThisWeek")}</button>
             </div>
           </div>
           {myRows.length === 0 ? (
-            <div className="text-sm font-bold text-[var(--muted)]">加盟商还没有给 {station} 分配班次配额。</div>
+            <div className="text-sm font-bold text-[var(--muted)]">{t("dsNoQuota", { x: station })}</div>
           ) : (
             <div className="grid grid-cols-2 gap-2 md:grid-cols-4 2xl:grid-cols-7">
               {Array.from({ length: 7 }, (_, index) => addDays(weekStart, index)).map((day, index) => {
@@ -145,7 +153,7 @@ export default function StationDispatchPage() {
                 return (
                   <div key={day} className="min-w-0 space-y-2">
                     <div className="rounded-[8px] bg-[var(--surface-raised)] py-1.5 text-center">
-                      <div className="text-[10px] font-black text-[var(--muted)]">{WEEKDAYS[index]}</div>
+                      <div className="text-[10px] font-black text-[var(--muted)]">{t(WEEKDAY_KEYS[index])}</div>
                       <div className="text-sm font-black">{day.slice(5)}</div>
                     </div>
                     {dayRows.length === 0 && <div className="rounded-[8px] border border-dashed border-[var(--line)] py-4 text-center text-[10px] font-bold text-[var(--muted)]">—</div>}
@@ -165,7 +173,7 @@ export default function StationDispatchPage() {
                           </div>
                           <div className="mt-0.5 truncate text-[10px] font-bold text-[var(--muted)]">{shift.hotzone}</div>
                           <div className="mt-2 grid grid-cols-2 gap-x-2 gap-y-1 text-center">
-                            {[["本站配额", quota?.quota ?? 0, "text-[var(--accent)]"], ["已提报", signups.length, ""], ["已通过", approved, "text-[var(--ok-ink)]"], ["待审核", waiting, waiting > 0 ? "text-[var(--warning-ink)]" : ""]].map(([label, value, cls]) => (
+                            {[[t("dsStationQuota"), quota?.quota ?? 0, "text-[var(--accent)]"], [t("dsSubmittedCnt"), signups.length, ""], [t("dpStApproved"), approved, "text-[var(--ok-ink)]"], [t("dpPendingCnt"), waiting, waiting > 0 ? "text-[var(--warning-ink)]" : ""]].map(([label, value, cls]) => (
                               <div key={String(label)}>
                                 <div className="text-[9px] font-black text-[var(--muted)]">{label}</div>
                                 <div className={`text-sm font-black ${cls}`}>{value}</div>
@@ -176,7 +184,7 @@ export default function StationDispatchPage() {
                             <div className="mt-2 flex flex-wrap gap-1 border-t border-[var(--line)] pt-2" onClick={(e) => e.stopPropagation()}>
                               {signups.map((signup) => (
                                 <span key={signup.id} className="tag text-[9px]">
-                                  {signup.riderName || signup.rider99Id}·{signupLabel[signup.status] ?? signup.status}
+                                  {signup.riderName || signup.rider99Id}·{signupKey[signup.status] ? t(signupKey[signup.status]) : signup.status}
                                 </span>
                               ))}
                             </div>
