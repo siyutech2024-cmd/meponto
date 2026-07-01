@@ -237,7 +237,7 @@ export default function CrmPage() {
     if (payload.data) {
       setPartners((current) => current.map((item) => (item.id === partner.id ? { ...item, status: "Active" as CrmPartnerStatus } : item)));
       setAccounts((current) => ({ ...current, [partner.id]: { identifier: payload.data!.identifier, status: "active", portal: payload.data!.portal, total: 1, active: 1 } }));
-      setNotice(`Conta criada — ${payload.data.identifier} · portal ${payload.data.portal} · senha temporária: ${payload.data.tempPassword}. Entregue com segurança; o parceiro troca no primeiro acesso.`);
+      setNotice(`账号已开通 ✓ 登录地址 mall.meponto.com · 账号 ${payload.data.identifier} · 一次性临时密码 ${payload.data.tempPassword}。请安全转交给对方；对方登录后点右上角头像「修改密码」自行设置新密码。`);
     } else {
       setNotice(payload.error ?? "Failed to create account");
     }
