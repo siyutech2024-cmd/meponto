@@ -27,8 +27,11 @@ const emptyForm = {
   lng: -46.6333,
 };
 
+type AccountInfo = { identifier: string; status: string; portal: string; total: number; active: number };
+
 export default function CrmPage() {
   const [partners, setPartners] = useState<CrmPartner[]>([]);
+  const [accounts, setAccounts] = useState<Record<string, AccountInfo>>({});
   const [query, setQuery] = useState("");
   const [categoryFilter, setCategoryFilter] = useState("All Categories");
   const [statusFilter, setStatusFilter] = useState("All Status");
@@ -54,9 +57,10 @@ export default function CrmPage() {
     let active = true;
     fetch("/api/crm", { cache: "no-store" })
       .then((response) => response.json())
-      .then((payload: { data: CrmPartner[] }) => {
+      .then((payload: { data: CrmPartner[]; accounts?: Record<string, AccountInfo> }) => {
         if (active) {
           setPartners(payload.data);
+          setAccounts(payload.accounts ?? {});
         }
       });
 
@@ -147,6 +151,31 @@ export default function CrmPage() {
     else setNotice(payload.error ?? "Failed to update status");
   }
 
+  async function resetAccountPassword(partner: CrmPartner) {
+    if (!window.confirm(`重置「${partner.name}」主账号的登录密码？将生成一次性临时密码。`)) return;
+    const response = await fetch("/api/crm", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "resetAccountPassword", id: partner.id }),
+    });
+    const payload = (await response.json()) as { data?: { identifier: string; tempPassword: string }; error?: string };
+    if (payload.data) setNotice(`已重置 ${payload.data.identifier} 的密码 · 一次性临时密码：${payload.data.tempPassword}，请安全转交，登录后立即修改。`);
+    else setNotice(payload.error ?? "重置失败");
+  }
+
+  async function setAccountStatus(partner: CrmPartner, accountStatus: "active" | "disabled") {
+    const response = await fetch("/api/crm", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "setAccountStatus", id: partner.id, accountStatus }),
+    });
+    const payload = (await response.json()) as { data?: { identifier: string; status: string }; error?: string };
+    if (payload.data) {
+      setAccounts((current) => ({ ...current, [partner.id]: { ...current[partner.id], status: payload.data!.status, active: payload.data!.status === "active" ? Math.max(1, current[partner.id]?.active ?? 1) : Math.max(0, (current[partner.id]?.active ?? 1) - 1) } }));
+      setNotice(`账号 ${payload.data.identifier} 已${payload.data.status === "active" ? "启用" : "停用"}。`);
+    } else setNotice(payload.error ?? "操作失败");
+  }
+
   async function deletePartner(partner: CrmPartner) {
     const label = partner.category === "Supplier" ? "供应商" : "合作方";
     if (!window.confirm(`确认删除${label}「${partner.name}」？将同时移除其登录账号，且不可恢复。`)) return;
@@ -175,6 +204,7 @@ export default function CrmPage() {
     const payload = (await response.json()) as { data?: { identifier: string; portal: string; tempPassword: string }; error?: string };
     if (payload.data) {
       setPartners((current) => current.map((item) => (item.id === partner.id ? { ...item, status: "Active" as CrmPartnerStatus } : item)));
+      setAccounts((current) => ({ ...current, [partner.id]: { identifier: payload.data!.identifier, status: "active", portal: payload.data!.portal, total: 1, active: 1 } }));
       setNotice(`Conta criada — ${payload.data.identifier} · portal ${payload.data.portal} · senha temporária: ${payload.data.tempPassword}. Entregue com segurança; o parceiro troca no primeiro acesso.`);
     } else {
       setNotice(payload.error ?? "Failed to create account");
@@ -271,7 +301,7 @@ export default function CrmPage() {
       </div>
 
       <DataTable
-        headers={["Partner", "Category", "Contact", "Bairro", "Status", "Risk", "Services", "Ações"]}
+        headers={["Partner", "Category", "Contact", "Bairro", "Status", "Risk", "Services", "登录账号", "Ações"]}
         rows={filteredPartners.map((partner) => [
           <div key="partner">
             <div className="font-black">{partner.name}</div>
@@ -290,6 +320,19 @@ export default function CrmPage() {
               <span className="tag" key={service}>{service}</span>
             ))}
           </div>,
+          <div key="account" className="text-xs">
+            {accounts[partner.id] ? (
+              <>
+                <div className="font-mono text-[var(--muted)] break-all">{accounts[partner.id].identifier}</div>
+                <div className="mt-0.5 flex items-center gap-1">
+                  <Badge value={accounts[partner.id].status === "active" ? "启用中" : "已停用"} />
+                  {accounts[partner.id].total > 1 ? <span className="text-[var(--muted)]">共 {accounts[partner.id].total} 个</span> : null}
+                </div>
+              </>
+            ) : (
+              <span className="text-[var(--muted)]">未开通</span>
+            )}
+          </div>,
           <div key="actions" className="flex flex-wrap gap-1.5">
             {partner.status !== "Active" ? (
               <button type="button" onClick={() => void setStatus(partner, "Active")} className="h-8 rounded-[7px] bg-[var(--accent)] px-2.5 text-xs font-black text-[var(--accent-ink)]">批准</button>
@@ -297,7 +340,18 @@ export default function CrmPage() {
               <button type="button" onClick={() => void setStatus(partner, "Suspended")} className="h-8 rounded-[7px] border border-[var(--line)] px-2.5 text-xs font-black text-[var(--muted)]">挂起</button>
             )}
             <button type="button" onClick={() => startEdit(partner)} className="h-8 rounded-[7px] border border-[var(--line)] px-2.5 text-xs font-black text-[var(--muted)] hover:border-[var(--accent)]">编辑/改位置</button>
-            <button type="button" onClick={() => void provisionAccount(partner)} className="h-8 rounded-[7px] border border-[var(--accent)] px-2.5 text-xs font-black text-[var(--accent)]">开通账号</button>
+            {accounts[partner.id] ? (
+              <>
+                <button type="button" onClick={() => void resetAccountPassword(partner)} className="h-8 rounded-[7px] border border-[var(--line)] px-2.5 text-xs font-black text-[var(--muted)] hover:border-[var(--accent)]">重置密码</button>
+                {accounts[partner.id].status === "active" ? (
+                  <button type="button" onClick={() => void setAccountStatus(partner, "disabled")} className="h-8 rounded-[7px] border border-[var(--line)] px-2.5 text-xs font-black text-[var(--muted)]">停用账号</button>
+                ) : (
+                  <button type="button" onClick={() => void setAccountStatus(partner, "active")} className="h-8 rounded-[7px] border border-[var(--accent)] px-2.5 text-xs font-black text-[var(--accent)]">启用账号</button>
+                )}
+              </>
+            ) : (
+              <button type="button" onClick={() => void provisionAccount(partner)} className="h-8 rounded-[7px] border border-[var(--accent)] px-2.5 text-xs font-black text-[var(--accent)]">开通账号</button>
+            )}
             <button type="button" onClick={() => void deletePartner(partner)} className="h-8 rounded-[7px] border border-[#c4423b]/40 px-2.5 text-xs font-black text-[#c4423b] hover:border-[#c4423b]">删除</button>
           </div>,
         ])}

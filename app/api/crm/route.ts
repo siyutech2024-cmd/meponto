@@ -18,6 +18,26 @@ function hashPassword(salt: string, password: string): string {
 }
 
 export function GET() {
+  // Per-company login-account visibility for the mall office: the main account
+  // (provisioned from CRM, tenantId === partner.id) plus a count of all logins
+  // under the company (main + team sub-accounts). Lets the office see & manage
+  // every supplier/partner account from one place; suppliers stay isolated.
+  const accounts: Record<string, { identifier: string; status: string; portal: string; total: number; active: number }> = {};
+  for (const partner of memory.crmPartners) {
+    const under = memory.appUsers.filter(
+      (user) => user.organization === partner.name && (user.portal === "supplier" || user.portal === "partner"),
+    );
+    if (under.length === 0) continue;
+    const main = under.find((user) => user.tenantId === partner.id) ?? under[0];
+    accounts[partner.id] = {
+      identifier: main.identifier,
+      status: main.status,
+      portal: main.portal,
+      total: under.length,
+      active: under.filter((user) => user.status === "active").length,
+    };
+  }
+
   const summary = memory.crmPartners.reduce(
     (acc, partner) => {
       acc.byCategory[partner.category] = (acc.byCategory[partner.category] ?? 0) + 1;
@@ -34,7 +54,7 @@ export function GET() {
     },
   );
 
-  return jsonResponse({ data: memory.crmPartners, summary });
+  return jsonResponse({ data: memory.crmPartners, summary, accounts });
 }
 
 export async function POST(request: Request) {
@@ -85,13 +105,45 @@ export async function PATCH(request: Request) {
   if (forbidden) return forbidden;
 
   const body = (await request.json().catch(() => ({}))) as {
-    action?: "setStatus" | "provisionAccount" | "update" | "delete";
+    action?: "setStatus" | "provisionAccount" | "update" | "delete" | "resetAccountPassword" | "setAccountStatus";
     id?: string;
     status?: CrmPartnerStatus;
     identifier?: string;
+    accountStatus?: "active" | "disabled";
   } & Partial<CrmPartner>;
   const partner = memory.crmPartners.find((item) => item.id === body.id);
   if (!partner) return jsonResponse({ error: "partner not found" }, { status: 404 });
+
+  // Find the company's main login (provisioned from CRM), falling back to any
+  // account under the same organization.
+  const mainAccountIndex = () => {
+    const scoped = memory.appUsers
+      .map((user, i) => ({ user, i }))
+      .filter(({ user }) => user.organization === partner.name && (user.portal === "supplier" || user.portal === "partner"));
+    const primary = scoped.find(({ user }) => user.tenantId === partner.id) ?? scoped[0];
+    return primary ? primary.i : -1;
+  };
+
+  if (body.action === "resetAccountPassword") {
+    const idx = mainAccountIndex();
+    if (idx === -1) return jsonResponse({ error: "该公司还没有登录账号，请先开通账号" }, { status: 404 });
+    const tempPassword = randomBytes(5).toString("hex");
+    const salt = randomBytes(8).toString("hex");
+    memory.appUsers[idx] = { ...memory.appUsers[idx], salt, passwordHash: hashPassword(salt, tempPassword) };
+    appendServerAudit({ actor: "Mall Console", action: "CRM_ACCOUNT_PASSWORD_RESET", entity: "AppUser", entityId: memory.appUsers[idx].id, detail: `${partner.name} (${memory.appUsers[idx].identifier})`, risk: "Medium" });
+    await flushPendingToDatabase();
+    return jsonResponse({ data: { identifier: memory.appUsers[idx].identifier, tempPassword } });
+  }
+
+  if (body.action === "setAccountStatus") {
+    const idx = mainAccountIndex();
+    if (idx === -1) return jsonResponse({ error: "该公司还没有登录账号" }, { status: 404 });
+    const nextStatus = body.accountStatus === "disabled" ? "disabled" : "active";
+    memory.appUsers[idx] = { ...memory.appUsers[idx], status: nextStatus };
+    appendServerAudit({ actor: "Mall Console", action: "CRM_ACCOUNT_STATUS", entity: "AppUser", entityId: memory.appUsers[idx].id, detail: `${partner.name} (${memory.appUsers[idx].identifier}) → ${nextStatus}`, risk: nextStatus === "disabled" ? "Medium" : "Low" });
+    await flushPendingToDatabase();
+    return jsonResponse({ data: { identifier: memory.appUsers[idx].identifier, status: nextStatus } });
+  }
 
   if (body.action === "delete") {
     // Remove the partner/supplier record AND any login accounts scoped to it
