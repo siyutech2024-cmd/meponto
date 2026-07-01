@@ -40,7 +40,7 @@ export default function PrivacyPage() {
       </p>
       <h2>6. Contato</h2>
       <p>
-        Encarregado de dados: siyutech2024@gmail.com — meponto.com
+        Encarregado de dados: ishak.ma@meponto.com — meponto.com
       </p>
     </main>
   );

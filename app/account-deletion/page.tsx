@@ -10,7 +10,7 @@ export default function AccountDeletionPage() {
       <h2>Como solicitar a exclusão (Português)</h2>
       <p>
         Para solicitar a exclusão da sua conta MePonto (entregador parceiro / membro) e dos dados associados,
-        envie um e-mail para <strong>siyutech2024@gmail.com</strong> com o assunto
+        envie um e-mail para <strong>ishak.ma@meponto.com</strong> com o assunto
         &quot;Exclusão de conta&quot;, informando o telefone cadastrado e/ou o CPF vinculado à conta.
         Concluímos a exclusão em até 30 dias e confirmamos por e-mail.
       </p>
@@ -27,7 +27,7 @@ export default function AccountDeletionPage() {
       <h2>How to request deletion (English)</h2>
       <p>
         To request deletion of your MePonto account (partner rider / member) and associated data, email
-        <strong> siyutech2024@gmail.com</strong> with the subject &quot;Account deletion&quot;, including the phone
+        <strong> ishak.ma@meponto.com</strong> with the subject &quot;Account deletion&quot;, including the phone
         number and/or CPF linked to the account. Deletion is completed within 30 days and confirmed by email.
       </p>
       <p>
@@ -43,7 +43,7 @@ export default function AccountDeletionPage() {
       <h2>如何申请删除(中文)</h2>
       <p>
         如需删除您的 MePonto 账户(骑手 / 会员)及相关数据,请发送邮件至
-        <strong> siyutech2024@gmail.com</strong>,主题为&quot;账户删除&quot;,并提供与账户绑定的手机号和/或 CPF。
+        <strong> ishak.ma@meponto.com</strong>,主题为&quot;账户删除&quot;,并提供与账户绑定的手机号和/或 CPF。
         我们将在 30 天内完成删除并通过邮件确认。
       </p>
       <p>
