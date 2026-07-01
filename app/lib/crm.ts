@@ -1,4 +1,20 @@
-export type CrmPartnerCategory = "Repair Shop" | "Partner Vehicle Shop" | "Supplier" | "Vehicle Partner";
+// Category labels are configurable at runtime from the CRM back office (see
+// `crmCategories`), so the type is a plain string — any label the office adds is
+// valid. The four values below are the seeded defaults.
+export type CrmPartnerCategory = string;
+
+/** Which back office a category's provisioned login lands in. */
+export type CrmAccountType = "supplier" | "partner";
+
+/** A configurable CRM partner category with its account-type routing rule. */
+export type CrmCategory = {
+  id: string;
+  label: string;
+  accountType: CrmAccountType; // supplier → /mall/supplier ; partner → /partner-points
+  sort: number;
+  active: boolean;
+};
+
 export type CrmPartnerStatus = "Active" | "Prospect" | "Review" | "Suspended";
 export type CrmPartnerTier = "Strategic" | "Preferred" | "Standard" | "Watchlist";
 export type CrmPartnerRisk = "Low" | "Medium" | "High";
@@ -28,6 +44,16 @@ export type CrmPartner = {
   riderDiscountBRL?: number;
   riderRewardPoints?: number;
 };
+
+/** Seeded default categories. Only "Supplier" routes to the supply-chain
+ *  console (/mall/supplier); the rest are Partner service points. Editable from
+ *  the CRM back office at runtime. */
+export const crmCategories: CrmCategory[] = [
+  { id: "cat-repair", label: "Repair Shop", accountType: "partner", sort: 1, active: true },
+  { id: "cat-partner-vehicle", label: "Partner Vehicle Shop", accountType: "partner", sort: 2, active: true },
+  { id: "cat-supplier", label: "Supplier", accountType: "supplier", sort: 3, active: true },
+  { id: "cat-vehicle-partner", label: "Vehicle Partner", accountType: "partner", sort: 4, active: true },
+];
 
 export const crmPartners: CrmPartner[] = [
   {

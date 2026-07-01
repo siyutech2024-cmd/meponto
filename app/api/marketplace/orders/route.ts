@@ -1,6 +1,7 @@
 import { getAvailablePartnerPoints, getAvailablePoints, type PointsAccountType } from "../../../lib/points";
 import { appendServerAudit, jsonResponse, makeServerId, memory } from "../../../lib/server/memory";
 import { requirePermission } from "../../../lib/server/authz";
+import { isSupplierCategory } from "../../../lib/server/crm-categories";
 
 export function GET() {
   return jsonResponse({ data: memory.marketplaceOrders });
@@ -24,7 +25,7 @@ export async function POST(request: Request) {
   }
   if (accountType === "rider" && !rider) return jsonResponse({ error: "Rider not found" }, { status: 404 });
   if (accountType === "partner" && !partner) return jsonResponse({ error: "Partner not found" }, { status: 404 });
-  if (accountType === "partner" && partner?.category === "Supplier") {
+  if (accountType === "partner" && partner && isSupplierCategory(partner.category)) {
     return jsonResponse({ error: "Suppliers do not participate in points accounts" }, { status: 400 });
   }
   if (!product) return jsonResponse({ error: "Product not found" }, { status: 404 });

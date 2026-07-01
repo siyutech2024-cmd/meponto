@@ -2,6 +2,7 @@ import { appendServerAudit, jsonResponse, makeServerId, memory } from "../../../
 import { flushPendingToDatabase, refreshCollectionsFromDatabase } from "../../../lib/server/persistence";
 import { requirePermission } from "../../../lib/server/authz";
 import { sessionFromRequest } from "../../../lib/auth-session";
+import { isSupplierCategory } from "../../../lib/server/crm-categories";
 import { getAvailablePartnerPoints, partnerServiceBenefitRules, type PartnerServiceCategory, type PartnerServiceRecord } from "../../../lib/points";
 
 /**
@@ -37,7 +38,7 @@ async function handlePost(request: Request) {
   const partner = memory.crmPartners.find((p) => p.id === code || p.id === key || p.name === code);
   if (!partner) return jsonResponse({ error: "Parceiro não encontrado.", code: "partner_not_found" }, { status: 404 });
   if (partner.status !== "Active") return jsonResponse({ error: "Parceiro indisponível.", code: "partner_not_found" }, { status: 404 });
-  if (partner.category === "Supplier") return jsonResponse({ error: "Fornecedores não participam.", code: "partner_not_found" }, { status: 400 });
+  if (isSupplierCategory(partner.category)) return jsonResponse({ error: "Fornecedores não participam.", code: "partner_not_found" }, { status: 400 });
 
   const rule = partnerServiceBenefitRules[category];
 

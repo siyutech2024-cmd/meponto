@@ -77,7 +77,7 @@ async function findAppUserAccount(identifier: string, password: string): Promise
   const { memory } = await import("../../../lib/server/memory");
   const { refreshCollectionsFromDatabase } = await import("../../../lib/server/persistence");
 
-  await refreshCollectionsFromDatabase(["appUsers", "crmPartners"]);
+  await refreshCollectionsFromDatabase(["appUsers", "crmPartners", "crmCategories"]);
 
   const normalized = identifier.trim().toLowerCase();
   const compactPhone = identifier.replace(/\s/g, "");
@@ -97,7 +97,8 @@ async function findAppUserAccount(identifier: string, password: string): Promise
   if (portal === "supplier" || portal === "partner") {
     const company = memory.crmPartners.find((p) => p.name === user.organization);
     if (company) {
-      const wantSupplier = company.category === "Supplier";
+      const { isSupplierCategory } = await import("../../../lib/server/crm-categories");
+      const wantSupplier = isSupplierCategory(company.category);
       const wantPortal = wantSupplier ? "supplier" : "partner";
       if (portal !== wantPortal) {
         portal = wantPortal;

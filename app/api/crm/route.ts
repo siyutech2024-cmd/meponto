@@ -2,14 +2,17 @@ import { createHash, randomBytes } from "node:crypto";
 import { appendServerAudit, makeServerId, memory, jsonResponse } from "../../lib/server/memory";
 import { flushPendingToDatabase, persistDeleteRecord } from "../../lib/server/persistence";
 import { requirePermission } from "../../lib/server/authz";
-import type { CrmPartner, CrmPartnerCategory, CrmPartnerRisk, CrmPartnerStatus } from "../../lib/crm";
+import { isSupplierCategory } from "../../lib/server/crm-categories";
+import type { CrmCategory, CrmPartner, CrmPartnerCategory, CrmPartnerRisk, CrmPartnerStatus } from "../../lib/crm";
 import type { AppUser } from "../../lib/users";
 import type { PortalId } from "../../lib/portals";
 import type { Role } from "../../lib/rbac";
 
-/** Suppliers get the supplier portal/workspace; everyone else is a Partner. */
+/** Suppliers get the supplier portal/workspace; everyone else is a Partner.
+ *  The supplier-vs-partner decision comes from the category's configurable
+ *  account-type rule (`crmCategories`), not a hardcoded label. */
 function accountShapeForCategory(category: CrmPartnerCategory): { portal: PortalId; role: Role; defaultPath: string } {
-  if (category === "Supplier") return { portal: "supplier", role: "Supplier Admin", defaultPath: "/mall/supplier" };
+  if (isSupplierCategory(category)) return { portal: "supplier", role: "Supplier Admin", defaultPath: "/mall/supplier" };
   return { portal: "partner", role: "Partner Operator", defaultPath: "/partner-points" };
 }
 
@@ -54,7 +57,8 @@ export function GET() {
     },
   );
 
-  return jsonResponse({ data: memory.crmPartners, summary, accounts });
+  const categories = [...memory.crmCategories].sort((a, b) => a.sort - b.sort);
+  return jsonResponse({ data: memory.crmPartners, summary, accounts, categories });
 }
 
 export async function POST(request: Request) {
@@ -105,12 +109,77 @@ export async function PATCH(request: Request) {
   if (forbidden) return forbidden;
 
   const body = (await request.json().catch(() => ({}))) as {
-    action?: "setStatus" | "provisionAccount" | "update" | "delete" | "resetAccountPassword" | "setAccountStatus";
+    action?: "setStatus" | "provisionAccount" | "update" | "delete" | "resetAccountPassword" | "setAccountStatus" | "addCategory" | "updateCategory" | "deleteCategory";
     id?: string;
     status?: CrmPartnerStatus;
     identifier?: string;
     accountStatus?: "active" | "disabled";
+    categoryId?: string;
+    label?: string;
+    accountType?: "supplier" | "partner";
+    sort?: number;
+    active?: boolean;
   } & Partial<CrmPartner>;
+
+  // ---- Configurable category management (no partner id needed) -------------
+  if (body.action === "addCategory") {
+    const label = String(body.label ?? "").trim().slice(0, 40);
+    if (!label) return jsonResponse({ error: "类型名称必填" }, { status: 400 });
+    if (memory.crmCategories.some((c) => c.label.toLowerCase() === label.toLowerCase())) {
+      return jsonResponse({ error: "已存在同名类型" }, { status: 409 });
+    }
+    const category: CrmCategory = {
+      id: makeServerId("cat", memory.crmCategories.length + 1),
+      label,
+      accountType: body.accountType === "supplier" ? "supplier" : "partner",
+      sort: Number.isFinite(body.sort) ? Number(body.sort) : memory.crmCategories.length + 1,
+      active: true,
+    };
+    memory.crmCategories.push(category);
+    appendServerAudit({ actor: "Mall Console", action: "CRM_CATEGORY_CREATED", entity: "CrmCategory", entityId: category.id, detail: `${label} → ${category.accountType}`, risk: "Low" });
+    await flushPendingToDatabase();
+    return jsonResponse({ data: category }, { status: 201 });
+  }
+
+  if (body.action === "updateCategory") {
+    const index = memory.crmCategories.findIndex((c) => c.id === body.categoryId);
+    if (index === -1) return jsonResponse({ error: "类型不存在" }, { status: 404 });
+    const current = memory.crmCategories[index];
+    const nextLabel = body.label !== undefined ? String(body.label).trim().slice(0, 40) : current.label;
+    if (!nextLabel) return jsonResponse({ error: "类型名称必填" }, { status: 400 });
+    if (memory.crmCategories.some((c) => c.id !== current.id && c.label.toLowerCase() === nextLabel.toLowerCase())) {
+      return jsonResponse({ error: "已存在同名类型" }, { status: 409 });
+    }
+    // Renaming a category in use: keep existing partners pointing at the new label.
+    if (nextLabel !== current.label) {
+      for (let i = 0; i < memory.crmPartners.length; i += 1) {
+        if (memory.crmPartners[i].category === current.label) memory.crmPartners[i] = { ...memory.crmPartners[i], category: nextLabel };
+      }
+    }
+    memory.crmCategories[index] = {
+      ...current,
+      label: nextLabel,
+      ...(body.accountType !== undefined ? { accountType: body.accountType === "supplier" ? "supplier" : "partner" } : {}),
+      ...(body.sort !== undefined ? { sort: Number(body.sort) || current.sort } : {}),
+      ...(body.active !== undefined ? { active: body.active === true } : {}),
+    };
+    appendServerAudit({ actor: "Mall Console", action: "CRM_CATEGORY_UPDATED", entity: "CrmCategory", entityId: current.id, detail: `${current.label} → ${nextLabel} (${memory.crmCategories[index].accountType})`, risk: "Low" });
+    await flushPendingToDatabase();
+    return jsonResponse({ data: memory.crmCategories[index] });
+  }
+
+  if (body.action === "deleteCategory") {
+    const index = memory.crmCategories.findIndex((c) => c.id === body.categoryId);
+    if (index === -1) return jsonResponse({ error: "类型不存在" }, { status: 404 });
+    const inUse = memory.crmPartners.filter((p) => p.category === memory.crmCategories[index].label).length;
+    if (inUse > 0) return jsonResponse({ error: `该类型下还有 ${inUse} 家公司，请先改类型或删除公司` }, { status: 409 });
+    const [removed] = memory.crmCategories.splice(index, 1);
+    persistDeleteRecord("crmCategories", removed.id);
+    appendServerAudit({ actor: "Mall Console", action: "CRM_CATEGORY_DELETED", entity: "CrmCategory", entityId: removed.id, detail: removed.label, risk: "Low" });
+    await flushPendingToDatabase();
+    return jsonResponse({ data: { deleted: removed.id } });
+  }
+
   const partner = memory.crmPartners.find((item) => item.id === body.id);
   if (!partner) return jsonResponse({ error: "partner not found" }, { status: 404 });
 

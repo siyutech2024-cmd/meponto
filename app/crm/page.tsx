@@ -3,9 +3,9 @@
 
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { AddButton, AppShell, Badge, DataTable, Field, PageTitle } from "../components/ui";
-import type { CrmPartner, CrmPartnerCategory, CrmPartnerRisk, CrmPartnerStatus, CrmPartnerTier } from "../lib/crm";
+import type { CrmCategory, CrmPartner, CrmPartnerCategory, CrmPartnerRisk, CrmPartnerStatus, CrmPartnerTier } from "../lib/crm";
 
-const categories: CrmPartnerCategory[] = ["Repair Shop", "Partner Vehicle Shop", "Supplier", "Vehicle Partner"];
+const DEFAULT_CATEGORIES: CrmPartnerCategory[] = ["Repair Shop", "Partner Vehicle Shop", "Supplier", "Vehicle Partner"];
 const statuses: CrmPartnerStatus[] = ["Active", "Prospect", "Review", "Suspended"];
 const tiers: CrmPartnerTier[] = ["Strategic", "Preferred", "Standard", "Watchlist"];
 const risks: CrmPartnerRisk[] = ["Low", "Medium", "High"];
@@ -32,6 +32,14 @@ type AccountInfo = { identifier: string; status: string; portal: string; total: 
 export default function CrmPage() {
   const [partners, setPartners] = useState<CrmPartner[]>([]);
   const [accounts, setAccounts] = useState<Record<string, AccountInfo>>({});
+  const [catConfig, setCatConfig] = useState<CrmCategory[]>([]);
+  const [catManagerOpen, setCatManagerOpen] = useState(false);
+  const [catForm, setCatForm] = useState<{ id: string | null; label: string; accountType: "supplier" | "partner" }>({ id: null, label: "", accountType: "partner" });
+
+  // Active category labels for the dropdowns (config first, seeded fallback).
+  const categories = catConfig.length ? catConfig.filter((c) => c.active).map((c) => c.label) : DEFAULT_CATEGORIES;
+  const accountTypeOf = (label: string): "supplier" | "partner" =>
+    catConfig.find((c) => c.label === label)?.accountType ?? (label === "Supplier" ? "supplier" : "partner");
   const [query, setQuery] = useState("");
   const [categoryFilter, setCategoryFilter] = useState("All Categories");
   const [statusFilter, setStatusFilter] = useState("All Status");
@@ -57,10 +65,11 @@ export default function CrmPage() {
     let active = true;
     fetch("/api/crm", { cache: "no-store" })
       .then((response) => response.json())
-      .then((payload: { data: CrmPartner[]; accounts?: Record<string, AccountInfo> }) => {
+      .then((payload: { data: CrmPartner[]; accounts?: Record<string, AccountInfo>; categories?: CrmCategory[] }) => {
         if (active) {
           setPartners(payload.data);
           setAccounts(payload.accounts ?? {});
+          setCatConfig(payload.categories ?? []);
         }
       });
 
@@ -151,6 +160,29 @@ export default function CrmPage() {
     else setNotice(payload.error ?? "Failed to update status");
   }
 
+  async function saveCategory() {
+    const label = catForm.label.trim();
+    if (!label) return;
+    const body = catForm.id
+      ? { action: "updateCategory", categoryId: catForm.id, label, accountType: catForm.accountType }
+      : { action: "addCategory", label, accountType: catForm.accountType };
+    const response = await fetch("/api/crm", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+    const payload = (await response.json()) as { data?: CrmCategory; error?: string };
+    if (payload.data) {
+      const saved = payload.data;
+      setCatConfig((current) => (catForm.id ? current.map((c) => (c.id === saved.id ? saved : c)) : [...current, saved]));
+      setCatForm({ id: null, label: "", accountType: "partner" });
+    } else setNotice(payload.error ?? "保存类型失败");
+  }
+
+  async function removeCategory(category: CrmCategory) {
+    if (!window.confirm(`删除类型「${category.label}」？`)) return;
+    const response = await fetch("/api/crm", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "deleteCategory", categoryId: category.id }) });
+    const payload = (await response.json()) as { data?: { deleted: string }; error?: string };
+    if (payload.data) setCatConfig((current) => current.filter((c) => c.id !== category.id));
+    else setNotice(payload.error ?? "删除失败");
+  }
+
   async function resetAccountPassword(partner: CrmPartner) {
     if (!window.confirm(`重置「${partner.name}」主账号的登录密码？将生成一次性临时密码。`)) return;
     const response = await fetch("/api/crm", {
@@ -177,7 +209,7 @@ export default function CrmPage() {
   }
 
   async function deletePartner(partner: CrmPartner) {
-    const label = partner.category === "Supplier" ? "供应商" : "合作方";
+    const label = accountTypeOf(partner.category) === "supplier" ? "供应商" : "合作方";
     if (!window.confirm(`确认删除${label}「${partner.name}」？将同时移除其登录账号，且不可恢复。`)) return;
     const response = await fetch("/api/crm", {
       method: "PATCH",
@@ -213,7 +245,45 @@ export default function CrmPage() {
 
   return (
     <AppShell>
-      <PageTitle title="Partner CRM" eyebrow="Repair, fleet, supplier network" action={<AddButton label="Add Partner" onClick={() => setFormOpen((open) => !open)} />} />
+      <PageTitle title="Partner CRM" eyebrow="Repair, fleet, supplier network" action={
+        <div className="flex items-center gap-2">
+          <button type="button" onClick={() => setCatManagerOpen((v) => !v)} className="h-10 rounded-[8px] border border-[var(--line)] px-3 text-sm font-black text-[var(--muted)] hover:border-[var(--accent)]">类型管理</button>
+          <AddButton label="Add Partner" onClick={() => setFormOpen((open) => !open)} />
+        </div>
+      } />
+
+      {catManagerOpen ? (
+        <div className="panel mt-3 p-4">
+          <div className="mb-2 flex items-center gap-2 text-xs font-black uppercase text-[var(--muted)]">合作伙伴类型 · 每个类型决定开通账号后进哪个后台</div>
+          <p className="mb-3 text-[11px] font-bold text-[var(--muted)]">落点「供应链」→ 登录进 /mall/supplier(供应链后台);落点「Partner」→ 进 /partner-points(服务点)。</p>
+          <div className="space-y-2">
+            {[...catConfig].sort((a, b) => a.sort - b.sort).map((c) => (
+              <div key={c.id} className="flex flex-wrap items-center gap-2 rounded-[8px] border border-[var(--line)] bg-[var(--surface-raised)] px-3 py-2 text-sm">
+                <span className="font-black">{c.label}</span>
+                <Badge value={c.accountType === "supplier" ? "供应链 → /mall/supplier" : "Partner → /partner-points"} />
+                {!c.active && <span className="text-[11px] font-bold text-[var(--muted)]">已停用</span>}
+                <div className="ml-auto flex gap-1.5">
+                  <button type="button" onClick={() => setCatForm({ id: c.id, label: c.label, accountType: c.accountType })} className="h-8 rounded-[7px] border border-[var(--line)] px-2.5 text-xs font-black text-[var(--muted)] hover:border-[var(--accent)]">编辑</button>
+                  <button type="button" onClick={() => void removeCategory(c)} className="h-8 rounded-[7px] border border-[#c4423b]/40 px-2.5 text-xs font-black text-[#c4423b]">删除</button>
+                </div>
+              </div>
+            ))}
+          </div>
+          <div className="mt-3 flex flex-wrap items-end gap-2 border-t border-[var(--line)] pt-3">
+            <label className="text-[11px] font-black text-[var(--muted)]">类型名称
+              <input value={catForm.label} onChange={(e) => setCatForm((f) => ({ ...f, label: e.target.value }))} placeholder="如 供应商 / 加油站" className="mt-1 h-10 w-56 rounded-[8px] border border-[var(--line)] bg-[var(--surface)] px-3 text-sm font-bold outline-none focus:border-[var(--accent)]" />
+            </label>
+            <label className="text-[11px] font-black text-[var(--muted)]">落点(账号类型)
+              <select value={catForm.accountType} onChange={(e) => setCatForm((f) => ({ ...f, accountType: e.target.value as "supplier" | "partner" }))} className="mt-1 h-10 rounded-[8px] border border-[var(--line)] bg-[var(--surface)] px-3 text-sm font-bold outline-none">
+                <option value="partner">Partner 服务点 → /partner-points</option>
+                <option value="supplier">供应链 → /mall/supplier</option>
+              </select>
+            </label>
+            <button type="button" disabled={!catForm.label.trim()} onClick={() => void saveCategory()} className="h-10 rounded-[8px] bg-[var(--accent)] px-4 text-sm font-black text-[var(--accent-ink)] disabled:opacity-50">{catForm.id ? "保存修改" : "新增类型"}</button>
+            {catForm.id && <button type="button" onClick={() => setCatForm({ id: null, label: "", accountType: "partner" })} className="h-10 rounded-[8px] border border-[var(--line)] px-3 text-sm font-black text-[var(--muted)]">取消</button>}
+          </div>
+        </div>
+      ) : null}
       {notice ? (
         <div className="panel mb-3 flex items-start justify-between gap-3 border-l-4 border-[var(--accent)] p-3 text-sm font-bold">
           <span className="break-all">{notice}</span>
@@ -305,7 +375,7 @@ export default function CrmPage() {
         rows={filteredPartners.map((partner) => [
           <div key="partner">
             <div className="font-black">{partner.name}</div>
-            <div className="text-xs text-[var(--muted)]">{partner.tier} · {partner.category === "Supplier" ? "供应商" : "合作方"}</div>
+            <div className="text-xs text-[var(--muted)]">{partner.tier} · {accountTypeOf(partner.category) === "supplier" ? "供应商" : "合作方"}</div>
           </div>,
           partner.category,
           <div key="contact">

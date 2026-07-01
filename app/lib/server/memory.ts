@@ -30,7 +30,7 @@ function scheduleResponseFlush() {
   }
 }
 import { seedNotificationsFromIncidents, type NotificationItem } from "../notifications";
-import { crmPartners, type CrmPartner } from "../crm";
+import { crmPartners, crmCategories, type CrmPartner, type CrmCategory } from "../crm";
 import {
   marketplaceOrders,
   marketplaceProducts,
@@ -89,6 +89,7 @@ const globalState = globalThis as typeof globalThis & {
     ledgerEntries: LedgerEntry[];
     notifications: NotificationItem[];
     crmPartners: CrmPartner[];
+    crmCategories: CrmCategory[];
     pointsLedgerEntries: PointsLedgerEntry[];
     partnerServiceRecords: PartnerServiceRecord[];
     partnerPointsLedgerEntries: PartnerPointsLedgerEntry[];
@@ -146,6 +147,7 @@ export const memory =
     ledgerEntries: trackCollection("ledgerEntries", [...ledgerEntries]),
     notifications: trackCollection("notifications", seedNotificationsFromIncidents(incidents)),
     crmPartners: trackCollection("crmPartners", [...crmPartners]),
+    crmCategories: trackCollection("crmCategories", [...crmCategories]),
     pointsLedgerEntries: trackCollection("pointsLedgerEntries", [...pointsLedgerEntries]),
     partnerServiceRecords: trackCollection("partnerServiceRecords", [...partnerServiceRecords]),
     partnerPointsLedgerEntries: trackCollection("partnerPointsLedgerEntries", [...partnerPointsLedgerEntries]),
@@ -197,6 +199,7 @@ void hydrateFromDatabase();
 memory.ledgerEntries ??= [...ledgerEntries];
 memory.notifications ??= seedNotificationsFromIncidents(memory.incidents);
 memory.crmPartners ??= [...crmPartners];
+memory.crmCategories ??= [...crmCategories];
 memory.pointsLedgerEntries ??= [...pointsLedgerEntries];
 memory.partnerServiceRecords ??= [...partnerServiceRecords];
 memory.partnerPointsLedgerEntries ??= [...partnerPointsLedgerEntries];
@@ -219,6 +222,7 @@ memory.rewards = trackCollection("rewards", memory.rewards);
 memory.ledgerEntries = trackCollection("ledgerEntries", memory.ledgerEntries);
 memory.notifications = trackCollection("notifications", memory.notifications);
 memory.crmPartners = trackCollection("crmPartners", memory.crmPartners);
+memory.crmCategories = trackCollection("crmCategories", memory.crmCategories);
 memory.pointsLedgerEntries = trackCollection("pointsLedgerEntries", memory.pointsLedgerEntries);
 memory.partnerServiceRecords = trackCollection("partnerServiceRecords", memory.partnerServiceRecords);
 memory.partnerPointsLedgerEntries = trackCollection("partnerPointsLedgerEntries", memory.partnerPointsLedgerEntries);
