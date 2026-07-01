@@ -140,7 +140,8 @@ export default function SupplierWorkspacePage() {
     const url = await processImage(file, 320);
     if (!url) return;
     setProfileForm((prev) => ({ ...prev, logoUrl: url }));
-    await supplierPost({ action: "saveProfile", ...profileForm, logoUrl: url }, "Logo 已更新");
+    const saved = await supplierPost({ action: "saveProfile", ...profileForm, logoUrl: url }, "Logo 已更新");
+    if (saved) setSup((prev) => (prev ? { ...prev, profile: saved as SupplierProfileT } : prev));
   }
 
   function startEdit(product: MarketplaceProduct) {
@@ -548,7 +549,7 @@ export default function SupplierWorkspacePage() {
             </label>
           </div>
           <div className="mt-4 flex items-center gap-3">
-            <button type="button" onClick={() => void supplierPost({ action: "saveProfile", ...profileForm }, "公司资料已保存")} className="h-10 rounded-[8px] bg-[var(--accent)] px-5 text-sm font-black text-[var(--accent-ink)]">保存资料</button>
+            <button type="button" onClick={async () => { const saved = await supplierPost({ action: "saveProfile", ...profileForm }, "公司资料已保存"); if (saved) setSup((prev) => (prev ? { ...prev, profile: saved as SupplierProfileT } : prev)); }} className="h-10 rounded-[8px] bg-[var(--accent)] px-5 text-sm font-black text-[var(--accent-ink)]">保存资料</button>
             {sup?.profile.updatedAt && <span className="text-[11px] font-bold text-[var(--muted)]">上次更新 {sup.profile.updatedAt}</span>}
           </div>
         </div>
