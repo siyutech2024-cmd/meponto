@@ -39,7 +39,7 @@ export default function CrmPage() {
   // Active category labels for the dropdowns (config first, seeded fallback).
   const categories = catConfig.length ? catConfig.filter((c) => c.active).map((c) => c.label) : DEFAULT_CATEGORIES;
   const accountTypeOf = (label: string): "supplier" | "partner" =>
-    catConfig.find((c) => c.label === label)?.accountType ?? (label === "Supplier" ? "supplier" : "partner");
+    catConfig.find((c) => c.label === label)?.accountType ?? (["Supplier", "供应商", "Fornecedor"].includes(label) ? "supplier" : "partner");
   const [query, setQuery] = useState("");
   const [categoryFilter, setCategoryFilter] = useState("All Categories");
   const [statusFilter, setStatusFilter] = useState("All Status");
@@ -302,7 +302,7 @@ export default function CrmPage() {
           <input required value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} className="h-11 rounded border border-[var(--line)] bg-[var(--surface)] px-3 outline-none" placeholder="Partner name" />
           <select value={form.category} onChange={(event) => setForm({ ...form, category: event.target.value as CrmPartnerCategory })} className="h-11 rounded border border-[var(--line)] bg-[var(--surface)] px-3 outline-none">
             {categories.map((category) => (
-              <option key={category}>{category}</option>
+              <option key={category} value={category}>{category}</option>
             ))}
           </select>
           <input required value={form.contactName} onChange={(event) => setForm({ ...form, contactName: event.target.value })} className="h-11 rounded border border-[var(--line)] bg-[var(--surface)] px-3 outline-none" placeholder="Contact" />
@@ -311,17 +311,17 @@ export default function CrmPage() {
           <input value={form.owner} onChange={(event) => setForm({ ...form, owner: event.target.value })} className="h-11 rounded border border-[var(--line)] bg-[var(--surface)] px-3 outline-none" placeholder="Owner" />
           <select value={form.status} onChange={(event) => setForm({ ...form, status: event.target.value as CrmPartnerStatus })} className="h-11 rounded border border-[var(--line)] bg-[var(--surface)] px-3 outline-none">
             {statuses.map((status) => (
-              <option key={status}>{status}</option>
+              <option key={status} value={status}>{status}</option>
             ))}
           </select>
           <select value={form.tier} onChange={(event) => setForm({ ...form, tier: event.target.value as CrmPartnerTier })} className="h-11 rounded border border-[var(--line)] bg-[var(--surface)] px-3 outline-none">
             {tiers.map((tier) => (
-              <option key={tier}>{tier}</option>
+              <option key={tier} value={tier}>{tier}</option>
             ))}
           </select>
           <select value={form.risk} onChange={(event) => setForm({ ...form, risk: event.target.value as CrmPartnerRisk })} className="h-11 rounded border border-[var(--line)] bg-[var(--surface)] px-3 outline-none">
             {risks.map((risk) => (
-              <option key={risk}>{risk}</option>
+              <option key={risk} value={risk}>{risk}</option>
             ))}
           </select>
           <input type="number" min="0" value={form.monthlyVolume} onChange={(event) => setForm({ ...form, monthlyVolume: Number(event.target.value) })} className="h-11 rounded border border-[var(--line)] bg-[var(--surface)] px-3 outline-none" placeholder="Monthly cases" />
@@ -351,21 +351,21 @@ export default function CrmPage() {
           placeholder="Search partners, contacts, phone, bairro"
         />
         <select value={categoryFilter} onChange={(event) => setCategoryFilter(event.target.value)} className="h-11 rounded border border-[var(--line)] bg-[var(--surface)] px-3 outline-none">
-          <option>All Categories</option>
+          <option value="All Categories">All Categories</option>
           {categories.map((category) => (
-            <option key={category}>{category}</option>
+            <option key={category} value={category}>{category}</option>
           ))}
         </select>
         <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)} className="h-11 rounded border border-[var(--line)] bg-[var(--surface)] px-3 outline-none">
-          <option>All Status</option>
+          <option value="All Status">All Status</option>
           {statuses.map((status) => (
-            <option key={status}>{status}</option>
+            <option key={status} value={status}>{status}</option>
           ))}
         </select>
         <select value={riskFilter} onChange={(event) => setRiskFilter(event.target.value)} className="h-11 rounded border border-[var(--line)] bg-[var(--surface)] px-3 outline-none">
-          <option>All Risk</option>
+          <option value="All Risk">All Risk</option>
           {risks.map((risk) => (
-            <option key={risk}>{risk}</option>
+            <option key={risk} value={risk}>{risk}</option>
           ))}
         </select>
       </div>
