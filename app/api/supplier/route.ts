@@ -35,7 +35,7 @@ export async function GET(request: Request) {
 
   const team = memory.appUsers
     .filter((u) => u.portal === "supplier" && u.organization === org)
-    .map((u) => ({ id: u.id, name: u.name, identifier: u.identifier, phone: u.phone, role: u.role, status: u.status, createdAt: u.createdAt, lastLoginAt: u.lastLoginAt }));
+    .map((u) => ({ id: u.id, name: u.name, identifier: u.identifier, phone: u.phone, role: u.role, status: u.status, organization: u.organization, createdAt: u.createdAt, lastLoginAt: u.lastLoginAt }));
 
   const productById = new Map(memory.marketplaceProducts.map((p) => [p.id, p]));
   const orders = memory.marketplaceOrders

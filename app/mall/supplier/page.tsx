@@ -11,7 +11,7 @@ import { useVentoStore } from "../../lib/store";
 import { translate, type TranslationKey } from "../../lib/i18n";
 
 type SupplierProfileT = { id: string; companyName: string; brand: string; cnpj: string; contactName: string; contactEmail: string; contactPhone: string; address: string; pixKey: string; logoUrl: string; about: string; updatedAt?: string };
-type TeamMember = { id: string; name: string; identifier: string; phone: string; role: string; status: string; createdAt: string; lastLoginAt?: string };
+type TeamMember = { id: string; name: string; identifier: string; phone: string; role: string; status: string; organization?: string; createdAt: string; lastLoginAt?: string };
 type SupplierOrder = { id: string; productName: string; createdAt: string; status: string; accountType: string; supplyPrice: number; station: string; franchise: string };
 type SupplierData = { profile: SupplierProfileT; team: TeamMember[]; orders: SupplierOrder[] };
 
@@ -172,7 +172,9 @@ export default function SupplierWorkspacePage() {
     if (mallRes.ok) {
       const payload = await mallRes.json();
       const rows = (payload.data?.products ?? []) as MarketplaceProduct[];
-      setProducts(organization ? rows.filter((product) => product.supplierName === organization) : rows);
+      // Strictly scope to this supplier's own SKUs. An empty org shows nothing
+      // (never the full catalog) so an unbound account can't see other suppliers.
+      setProducts(rows.filter((product) => Boolean(organization) && product.supplierName === organization));
     }
     if (opsRes.ok) setOps((await opsRes.json()).data);
     const supRes = await fetch("/api/supplier", { headers, cache: "no-store" }).catch(() => null);
@@ -555,6 +557,10 @@ export default function SupplierWorkspacePage() {
       {/* ============ 团队账户 ============ */}
       {tab === "team" && (
         <div className="space-y-4">
+          <div className="rounded-[10px] border border-[var(--line)] bg-[var(--surface-raised)] px-4 py-3 text-[12px] font-bold text-[var(--muted)]">
+            数据隔离：本后台只显示并管理公司 <b className="text-[var(--text)]">{supplierName || "（未绑定公司）"}</b> 的团队与商品。你创建的成员都归属本公司，其它供应商互相不可见。
+            {!supplierName && <span className="text-[#c4423b]"> · 当前账号未绑定公司，请联系总部在 CRM 重新开通。</span>}
+          </div>
           <div className="panel p-5">
             <div className="mb-3 flex items-center gap-2 text-xs font-black uppercase text-[var(--muted)]"><UserPlus size={14} /> 新增团队成员（同公司多人协作)</div>
             <div className="grid gap-2 md:grid-cols-[1.2fr_1.4fr_1fr_auto]">
@@ -572,6 +578,7 @@ export default function SupplierWorkspacePage() {
                 <div key={m.id} className="flex flex-wrap items-center gap-2 rounded-[8px] border border-[var(--line)] bg-[var(--surface-raised)] px-3 py-2 text-sm">
                   <span className="font-black">{m.name}</span>
                   <span className="font-mono text-xs text-[var(--muted)]">{m.identifier}</span>
+                  {m.organization && <span className="tag text-[10px]">🏢 {m.organization}</span>}
                   <Badge value={m.status === "active" ? "启用中" : "已停用"} />
                   <button type="button" onClick={() => void supplierPost({ action: "toggleMember", userId: m.id }, m.status === "active" ? "已停用" : "已启用")} className="ml-auto h-8 rounded-[8px] border border-[var(--line)] px-3 text-xs font-black text-[var(--muted)] hover:border-[var(--accent)]">{m.status === "active" ? "停用" : "启用"}</button>
                 </div>
