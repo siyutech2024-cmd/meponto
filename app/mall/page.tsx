@@ -48,7 +48,7 @@ const extraPoLabel: Record<string, string> = { draft: "草稿·待确认" };
 type ProcApproval = { id: string; name?: string; supplierName?: string; wholesalePrice?: number; createdAt?: string };
 type ProcPO = PurchaseOrder & { buyerType?: string; franchise?: string; goodsTotal?: number; feeBRL?: number; paymentStatus?: "pending" | "paid" };
 type ProcFeeEntry = { id?: string; month?: string; franchise?: string; supplierName?: string; goodsTotal?: number; goodsBRL?: number; feeBRL?: number; status?: string; createdAt?: string };
-type ProcStatement = { id: string; month?: string; franchise?: string; supplierName?: string; total?: number; status?: string; paidAt?: string; lines?: unknown[] };
+type ProcStatement = { id: string; month?: string; franchise?: string; supplierName?: string; total?: number; status?: string; paidAt?: string; disputeNote?: string; lines?: unknown[] };
 type ProcPayload = { enabled?: boolean; pendingApprovals?: ProcApproval[]; allPOs?: ProcPO[]; feeEntries?: ProcFeeEntry[]; statements?: ProcStatement[] };
 const procFeeStatusLabel: Record<string, string> = { accrued: "已计提", pending: "待结算", settled: "已结算", paid: "已结算" };
 
@@ -891,16 +891,22 @@ export default function MallAdminPage() {
                 </div>
                 <div className="space-y-2">
                   {(proc.statements ?? []).map((s) => (
-                    <div key={s.id} className="flex flex-wrap items-center gap-2 rounded-[10px] border border-[var(--line)] bg-[var(--surface-raised)] px-3.5 py-2.5">
-                      <CircleDollarSign size={15} className="text-[var(--muted)]" />
-                      <span className="text-sm font-black">{s.supplierName ?? s.franchise ?? "—"} · {s.month ?? "—"}</span>
-                      <Badge value={(statementStatusLabel as Record<string, string>)[s.status ?? ""] ?? extraStatementLabel[s.status ?? ""] ?? s.status ?? "—"} />
-                      <span className="text-xs font-bold text-[var(--muted)]"><b>R$ {(s.total ?? 0).toFixed(2)}</b>{s.paidAt ? ` · 付款于 ${s.paidAt}` : ""}</span>
-                      <span className="ml-auto flex gap-1.5">
-                        {s.status === "confirmed" && (
-                          <button type="button" onClick={async () => { if (!(await dialog.confirm("标记付款", { message: `确认「${s.supplierName ?? s.franchise ?? s.id} · ${s.month ?? ""}」直采对账单已付款 R$ ${(s.total ?? 0).toFixed(2)}？` }))) return; void post("/api/mall/procurement", { action: "payProcurementStatement", statementId: s.id }, "已标记付款"); }} className="h-8 rounded-[8px] bg-[var(--accent)] px-3 text-xs font-black text-[var(--accent-ink)]">标记已付款</button>
-                        )}
-                      </span>
+                    <div key={s.id} className="rounded-[10px] border border-[var(--line)] bg-[var(--surface-raised)] px-3.5 py-2.5">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <CircleDollarSign size={15} className="text-[var(--muted)]" />
+                        <span className="text-sm font-black">{s.supplierName ?? s.franchise ?? "—"} · {s.month ?? "—"}</span>
+                        <Badge value={(statementStatusLabel as Record<string, string>)[s.status ?? ""] ?? extraStatementLabel[s.status ?? ""] ?? s.status ?? "—"} />
+                        <span className="text-xs font-bold text-[var(--muted)]"><b>R$ {(s.total ?? 0).toFixed(2)}</b>{s.paidAt ? ` · 付款于 ${s.paidAt}` : ""}</span>
+                        <span className="ml-auto flex gap-1.5">
+                          {s.status === "confirmed" && (
+                            <button type="button" onClick={async () => { if (!(await dialog.confirm("标记付款", { message: `确认「${s.supplierName ?? s.franchise ?? s.id} · ${s.month ?? ""}」直采对账单已付款 R$ ${(s.total ?? 0).toFixed(2)}？` }))) return; void post("/api/mall/procurement", { action: "payProcurementStatement", statementId: s.id }, "已标记付款"); }} className="h-8 rounded-[8px] bg-[var(--accent)] px-3 text-xs font-black text-[var(--accent-ink)]">标记已付款</button>
+                          )}
+                          {s.status === "disputed" && (
+                            <button type="button" onClick={async () => { if (!(await dialog.confirm("重新打开直采对账单", { message: `将「${s.supplierName ?? s.id} · ${s.month ?? ""}」重置为待确认，供应商可重新核对。` }))) return; void post("/api/mall/procurement", { action: "reopenProcurementStatement", statementId: s.id }, "已重新打开，等待供应商确认"); }} className="h-8 rounded-[8px] border border-[var(--warn)]/50 px-3 text-xs font-black text-[var(--warn)]">重新打开</button>
+                          )}
+                        </span>
+                      </div>
+                      {s.status === "disputed" && s.disputeNote && <div className="mt-1 text-xs font-bold" style={{ color: "var(--warn)" }}>异议原因：{s.disputeNote}</div>}
                     </div>
                   ))}
                   {(proc.statements ?? []).length === 0 && <div className="py-3 text-center text-xs font-bold text-[var(--muted)]">选择月份生成直采对账单：按「直采单 × 分销价」汇总每个供应商的应付货款。</div>}

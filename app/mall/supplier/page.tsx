@@ -616,6 +616,18 @@ export default function SupplierWorkspacePage() {
                       {statement.status === "draft" && (
                         <button type="button" onClick={() => void confirmProcStatement(statement)} className="h-8 rounded-[8px] bg-[var(--accent)] px-3 text-xs font-black text-[var(--accent-ink)]">确认对账单</button>
                       )}
+                      {(statement.status === "draft" || statement.status === "confirmed") && (
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            const note = await dialog.prompt("直采对账单异议", { message: `对「${statement.month}」直采对账单（${statement.lines.length} 单 · R$ ${statement.total.toFixed(2)}）提出异议，说明与实际不符之处（必填，总部会复核后重新打开）。`, placeholder: "如：缺少直采单 xxx / 分销价不符…" });
+                            if (note === null) return;
+                            if (!note.trim()) { setMessage({ tone: "err", text: "请填写异议原因" }); return; }
+                            void procPost({ action: "disputeProcurementStatement", statementId: statement.id, note: note.trim() }, "异议已提交，等待总部处理");
+                          }}
+                          className="h-8 rounded-[8px] border border-[var(--danger)]/40 px-3 text-xs font-black text-[var(--danger)]"
+                        >有异议</button>
+                      )}
                     </span>
                   </div>
                   {openStmt.has(statement.id) && (
@@ -629,6 +641,9 @@ export default function SupplierWorkspacePage() {
                         </tbody>
                       </table>
                     </div>
+                  )}
+                  {statement.status === "disputed" && statement.disputeNote && (
+                    <div className="mt-1 text-xs font-bold" style={{ color: "var(--warn)" }}>异议原因：{statement.disputeNote} · 等待总部复核后重新打开</div>
                   )}
                   {statement.status === "confirmed" && <div className="mt-1 text-xs font-bold text-[var(--muted)]">已确认{statement.confirmedAt ? ` · ${statement.confirmedAt}` : ""}{statement.pixKey ? ` · 收款 PIX ${statement.pixKey}` : ""} · 等待总部付款</div>}
                   {statement.paidAt && <div className="mt-1 text-xs font-bold" style={{ color: "var(--success)" }}>已付款 · {statement.paidAt}{statement.receiptNote ? ` · ${statement.receiptNote}` : ""}</div>}

@@ -178,8 +178,8 @@ export async function GET(request: Request) {
 
 type Body = { action?: string } & Record<string, unknown>;
 
-const HQ_ACTIONS = new Set(["approveDistribution", "confirmProcurementPayment", "generateProcurementStatement", "payProcurementStatement"]);
-const SUPPLIER_ACTIONS = new Set(["setDistributable", "confirmProcurementStatement"]);
+const HQ_ACTIONS = new Set(["approveDistribution", "confirmProcurementPayment", "generateProcurementStatement", "payProcurementStatement", "reopenProcurementStatement"]);
+const SUPPLIER_ACTIONS = new Set(["setDistributable", "confirmProcurementStatement", "disputeProcurementStatement"]);
 const FRANCHISE_ACTIONS = new Set(["createProcurementPO", "receiveProcurementPO"]);
 
 async function handlePost(request: Request) {
@@ -348,6 +348,33 @@ async function handlePost(request: Request) {
       if (supplierName && statement.supplierName !== supplierName) return jsonResponse({ error: "只能确认自己的对账单" }, { status: 403 });
       if (statement.status !== "draft") return jsonResponse({ error: "对账单已确认过" }, { status: 409 });
       memory.procurementSupplierStatements[index] = { ...statement, status: "confirmed", confirmedAt: nowStamp(), pixKey: String(body.pixKey ?? statement.pixKey ?? "").slice(0, 120) || undefined };
+      return jsonResponse({ data: memory.procurementSupplierStatements[index] });
+    }
+    case "disputeProcurementStatement": {
+      // Supplier contests its own draft/confirmed statement (mirrors the
+      // supplier-statement disputeStatement in /api/mall/ops). Paid statements
+      // are immutable and cannot be disputed.
+      const index = memory.procurementSupplierStatements.findIndex((item) => item.id === body.statementId);
+      if (index === -1) return jsonResponse({ error: "statement not found" }, { status: 404 });
+      const statement = memory.procurementSupplierStatements[index];
+      if (supplierName && statement.supplierName !== supplierName) return jsonResponse({ error: "只能争议自己的对账单" }, { status: 403 });
+      if (statement.status !== "draft" && statement.status !== "confirmed") return jsonResponse({ error: "已付款或已在争议中的对账单不可争议" }, { status: 409 });
+      const note = String(body.note ?? "").trim().slice(0, 200);
+      if (!note) return jsonResponse({ error: "informe o motivo da contestação" }, { status: 400 });
+      memory.procurementSupplierStatements[index] = { ...statement, status: "disputed", disputeNote: note };
+      appendServerAudit({ actor, action: "PROCUREMENT_STATEMENT_DISPUTED", entity: "ProcurementSupplierStatement", entityId: statement.id, detail: `${statement.supplierName} ${statement.month}: ${note}`, risk: "Medium" });
+      return jsonResponse({ data: memory.procurementSupplierStatements[index] });
+    }
+    case "reopenProcurementStatement": {
+      // HQ resolves a dispute — disputed → draft (regenerable via
+      // runGenerateProcurementStatements, which only touches drafts). The
+      // disputeNote is kept for history; confirmation is invalidated.
+      const index = memory.procurementSupplierStatements.findIndex((item) => item.id === body.statementId);
+      if (index === -1) return jsonResponse({ error: "statement not found" }, { status: 404 });
+      const statement = memory.procurementSupplierStatements[index];
+      if (statement.status !== "disputed") return jsonResponse({ error: "只有争议中的对账单可重新打开" }, { status: 409 });
+      memory.procurementSupplierStatements[index] = { ...statement, status: "draft", confirmedAt: undefined };
+      appendServerAudit({ actor, action: "PROCUREMENT_STATEMENT_REOPENED", entity: "ProcurementSupplierStatement", entityId: statement.id, detail: `${statement.supplierName} ${statement.month}: disputed → draft`, risk: "Medium" });
       return jsonResponse({ data: memory.procurementSupplierStatements[index] });
     }
     case "payProcurementStatement": {

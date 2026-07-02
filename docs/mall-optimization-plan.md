@@ -4,6 +4,18 @@
 > 依据:代码审查结论(`api/mall`、`api/mall/ops`、`api/supplier`、`api/marketplace/orders`、`lib/mall-ops.ts`、`lib/points.ts` 及各端页面)
 > 工作方式:遵循 `CLAUDE.md` / `AGENTS.md` — 一支一模块(`codex/<task>`)、feature flag、账本式记录、统一 RBAC、三语、`npm run codex:preflight` 全绿才算完成。
 
+## 执行状态(2026-07-02)
+
+**全部任务已实施**,按批次提交(叠层分支,基于 `main`):
+
+| 批次 | 分支 / 提交 | 覆盖任务 |
+| --- | --- | --- |
+| 批次1 | `codex/mall-batch1-closure-and-ui` · `7f1d323` | P0-1~P0-4、P1-3、P2-1/3/4/5/6/9、库存账本 |
+| 批次2 | `codex/mall-batch2-automation` · `f6b50a8` | P1-1/2/4/5/7、P2-2/7/8、P1-6(方案文档 `docs/psp-mercadopago-integration.md`) |
+| 批次3 | `codex/mall-batch3-franchise-procurement` · `f43fbd6` + 异议通道补丁 | P3 全部(契约 `docs/franchise-procurement-contract.md`,flag `franchiseProcurementEnabled` 默认关) |
+
+沙箱验证:`module:guard` + `tsc --noEmit` 全绿。**待本机终验**:`npm run codex:preflight:full`(next build 与 check 冒烟需 macOS 本机环境)。已知例外:总部 `/mall` 控制台文案按仓库现有惯例为中文单语(契约文档 §9 已登记);P1-6 PSP 为方案文档,代码集成待商户凭证后单独立项。
+
 ---
 
 ## 阶段总览
