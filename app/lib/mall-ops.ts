@@ -74,7 +74,9 @@ export type PriceChangeRequest = {
   decisionNote?: string;
 };
 
-export type PurchaseOrderStatus = "ordered" | "confirmed" | "shipped" | "received" | "cancelled";
+/** "draft" = auto-replenish draft (P1-2) — becomes "ordered" only after the
+ *  mall office confirms it (ops action `confirmDraftPO`). */
+export type PurchaseOrderStatus = "draft" | "ordered" | "confirmed" | "shipped" | "received" | "cancelled";
 
 export type PurchaseOrderItem = {
   productId: string;
@@ -100,7 +102,9 @@ export type PurchaseOrder = {
   receivedBy?: string;
 };
 
-export type StatementStatus = "draft" | "confirmed" | "paid";
+/** "disputed" (P1-4): supplier/franchise contests a draft/confirmed statement;
+ *  HQ reopens it back to "draft" for regeneration. "paid" is immutable. */
+export type StatementStatus = "draft" | "confirmed" | "disputed" | "paid";
 
 export type SupplierStatementLine = {
   orderId: string;
@@ -127,6 +131,8 @@ export type SupplierStatement = {
   /** PIX key the supplier wants to receive on (snapshot at confirmation). */
   pixKey?: string;
   receiptNote?: string;
+  /** Supplier's dispute reason (status "disputed"); kept after reopen for history. */
+  disputeNote?: string;
 };
 
 export type MallPaymentStatus = "pending" | "submitted" | "confirmed" | "rejected";
@@ -151,6 +157,7 @@ export type MallPayment = {
 };
 
 export const poStatusLabel: Record<PurchaseOrderStatus, string> = {
+  draft: "补货草稿",
   ordered: "已下单",
   confirmed: "供应商已确认",
   shipped: "已发货",
@@ -161,6 +168,7 @@ export const poStatusLabel: Record<PurchaseOrderStatus, string> = {
 export const statementStatusLabel: Record<StatementStatus, string> = {
   draft: "待供应商确认",
   confirmed: "待付款",
+  disputed: "有争议",
   paid: "已付款",
 };
 
@@ -274,11 +282,14 @@ export type RevenueShareStatement = {
   paidAt?: string;
   paidBy?: string;
   note?: string;
+  /** Franchise's dispute reason (status "disputed"); kept after reopen for history. */
+  disputeNote?: string;
 };
 
 export const revShareStatementStatusLabel: Record<StatementStatus, string> = {
   draft: "待加盟商确认",
   confirmed: "待付款",
+  disputed: "有争议",
   paid: "已付款",
 };
 

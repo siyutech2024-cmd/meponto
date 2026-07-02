@@ -1,8 +1,22 @@
 import type { CrmPartnerRisk, CrmPartnerStatus } from "./crm";
 
+/**
+ * Append-only ledger types. "hold"/"release" back the high-value redemption
+ * freeze (P1-5, sourceType "marketplace_order_hold", sourceId = orderId):
+ *  - "hold"    subtracts from the available balance WITHOUT recording a final
+ *              spend (points are frozen, not consumed).
+ *  - "release" offsets exactly one earlier "hold" (same sourceId, same points).
+ * Invariants:
+ *  1. available = Σ(earn + refund + release + adjust) − Σ(spend + expire +
+ *     reverse + hold) — i.e. the original口径 minus un-released holds.
+ *  2. Every "release" pairs 1:1 with a prior "hold"; the pair nets to zero.
+ *     Review-approve writes release + the formal "spend" (so spend-based
+ *     stats keep their口径); review-reject / cancel writes release only —
+ *     never a "refund", because no spend ever happened.
+ */
 export type PointsLedgerType = "earn" | "spend" | "refund" | "expire" | "reverse" | "adjust" | "hold" | "release";
 export type PointsLedgerStatus = "pending" | "approved" | "rejected" | "reversed";
-export type PointsSourceType = "delivery" | "mission" | "partner_service" | "marketplace_order" | "admin_adjustment" | "expiry";
+export type PointsSourceType = "delivery" | "mission" | "partner_service" | "marketplace_order" | "marketplace_order_hold" | "admin_adjustment" | "expiry";
 export type PointsAccountType = "rider" | "partner";
 
 export type PointsLedgerEntry = {
@@ -82,6 +96,10 @@ export type MarketplaceProduct = {
   supplierName?: string;
   /** Supplier delivery cycle in days — drives the pickup ETA estimate. */
   deliveryCycleDays?: number;
+  /** Low-stock threshold for auto-replenish PO drafts (undefined = 默认视为 3). */
+  restockThreshold?: number;
+  /** Creation stamp "YYYY-MM-DD HH:mm" — drives pending-pricing aging (P1-7). */
+  createdAt?: string;
   /** HQ-defined revenue-share percentage on top of the supply price. */
   marginPct?: number;
   description?: string;

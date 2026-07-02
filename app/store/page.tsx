@@ -48,8 +48,10 @@ const ledgerTypeLabel: Record<string, string> = {
   expire: "Expirado",
   reverse: "Revertido",
   adjust: "Ajuste",
-  release: "Liberado",
-  hold: "Reservado",
+  // "hold"/"release" back the high-value redemption freeze; the pt labels
+  // below are auto-translated by I18nRuntime (zh 冻结/解冻 · en Hold/Release).
+  release: "Liberação",
+  hold: "Bloqueio",
 };
 const ledgerSourceLabel: Record<string, string> = {
   delivery: "Entregas",

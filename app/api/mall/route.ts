@@ -1,4 +1,4 @@
-import { appendInventoryLedger, appendServerAudit, jsonResponse, makeServerId, memory } from "../../lib/server/memory";
+import { appendInventoryLedger, appendServerAudit, jsonResponse, makeServerId, maybeAutoReplenishDraft, memory } from "../../lib/server/memory";
 import { appendEvent, MARKETPLACE_EVENTS, recentEvents } from "../../lib/server/events";
 import { flushPendingToDatabase, persistDeleteRecord, refreshCollectionsFromDatabase } from "../../lib/server/persistence";
 import { requirePermission, roleFromRequest } from "../../lib/server/authz";
@@ -141,6 +141,25 @@ function applyPointsExpiry(riderId: string): number {
     createdAt: nowStamp(),
   });
   return toExpire;
+}
+
+/**
+ * P1-5: does this order still carry an un-released points hold? High-value
+ * redemptions write type:"hold" (sourceType "marketplace_order_hold",
+ * sourceId = orderId); approve/reject/cancel must pair it with exactly one
+ * "release". Legacy pending orders (created before hold/release shipped)
+ * wrote a "spend" instead — for those this returns false and the old
+ * refund path still applies.
+ */
+function hasOpenHold(order: MarketplaceOrder): boolean {
+  let holds = 0;
+  let releases = 0;
+  for (const entry of memory.pointsLedgerEntries) {
+    if (entry.riderId !== order.riderId || entry.sourceId !== order.id) continue;
+    if (entry.type === "hold") holds += 1;
+    else if (entry.type === "release") releases += 1;
+  }
+  return holds > releases;
 }
 
 /** Achievement badges driven by lifetime completed orders. */
@@ -443,7 +462,7 @@ type Body =
   | { action: "supplierAddProduct"; name: string; supplierName: string; supplyPrice: number; deliveryCycleDays: number; stock: number; description?: string; imageUrl?: string; category?: string; isVirtual?: boolean; audience?: "rider" | "partner" | "both"; type?: string }
   | { action: "supplierUpdateProduct"; productId: string; name?: string; supplyPrice?: number; description?: string; imageUrl?: string; category?: string; stock?: number; deliveryCycleDays?: number; isVirtual?: boolean; audience?: "rider" | "partner" | "both"; type?: string }
   | { action: "supplierDeleteProduct"; productId: string }
-  | { action: "updateProduct"; productId: string; name?: string; description?: string; imageUrl?: string; category?: string; stock?: number; deliveryCycleDays?: number; purchaseLimit?: number; reason?: string }
+  | { action: "updateProduct"; productId: string; name?: string; description?: string; imageUrl?: string; category?: string; stock?: number; deliveryCycleDays?: number; purchaseLimit?: number; restockThreshold?: number; reason?: string }
   | { action: "priceProduct"; productId: string; pointsPrice: number; marginPct?: number; status?: "active" | "paused" }
   | { action: "deleteProduct"; productId: string }
   | { action: "redeem"; productId: string; riderId?: string; riderName?: string; accountType?: "rider" | "partner" }
@@ -527,6 +546,7 @@ async function handlePost(request: Request) {
         isVirtual: isVirtual === true,
         imageUrl: String(imageUrl).slice(0, 400000),
         category: String(category).slice(0, 40),
+        createdAt: nowStamp(),
       };
       memory.marketplaceProducts.unshift(product);
       appendServerAudit({ actor, action: "MALL_PRODUCT_SUBMITTED", entity: "MarketplaceProduct", entityId: product.id, detail: `${product.name} by ${supplierName} @ R$${supplyPrice} (cycle ${deliveryCycleDays}d, ${audience}/${type}).`, risk: "Low" });
@@ -632,6 +652,8 @@ async function handlePost(request: Request) {
         ...(fields.stock !== undefined ? { stock: Math.max(0, Number(fields.stock) || 0) } : {}),
         ...(fields.deliveryCycleDays !== undefined ? { deliveryCycleDays: Math.max(0, Number(fields.deliveryCycleDays) || 0) } : {}),
         ...(fields.purchaseLimit !== undefined ? { purchaseLimit: Math.max(0, Math.floor(Number(fields.purchaseLimit) || 0)) } : {}),
+        // Low-stock auto-replenish threshold (P1-2); undefined keeps default 3.
+        ...(fields.restockThreshold !== undefined ? { restockThreshold: Math.max(0, Math.floor(Number(fields.restockThreshold) || 0)) } : {}),
       };
       // Manual stock edit → append-only inventory ledger record. `reason` is
       // optional for now (the back-office UI will make it mandatory later).
@@ -744,6 +766,7 @@ async function handlePost(request: Request) {
         if (partnerProductIndex !== -1) {
           memory.marketplaceProducts[partnerProductIndex] = { ...product, stock: product.stock - 1 };
           appendInventoryLedger({ productId: product.id, productName: product.name, type: "redeem", qty: -1, stockAfter: product.stock - 1, sourceId: order.id, createdBy: "PontoMall" });
+          maybeAutoReplenishDraft(product.id, actor); // P1-2 low-stock draft PO
         }
         appendServerAudit({ actor, action: "MALL_REDEEMED", entity: "MarketplaceOrder", entityId: order.id, detail: `${partner.name} (parceiro) resgatou ${product.name} por ${price} pts.`, risk: price >= 8000 ? "High" : "Low" });
         appendEvent(MARKETPLACE_EVENTS.orderCreated, { orderId: order.id, accountType: "partner", partnerId: partner.id, productId: product.id, productName: product.name, pointsSpent: price }, actor);
@@ -910,18 +933,23 @@ async function handlePost(request: Request) {
         memory.cashLedgerEntries.unshift(ledgerEntry);
       }
 
+      // P1-5: high-value orders FREEZE the points ("hold") instead of spending
+      // them. The formal "spend" is written only when the review is approved;
+      // reject/cancel writes a "release" (never a refund — nothing was spent).
+      // Either way the available balance drops by `price` right now (see the
+      // hold/release invariants in app/lib/points.ts).
       const entry: PointsLedgerEntry = {
         id: makeServerId("pts", memory.pointsLedgerEntries.length + 1),
         riderId: rider.id,
         accountId: `pts-${rider.id}`,
-        type: "spend",
+        type: heldForReview ? "hold" : "spend",
         points: price,
         status: "approved",
-        sourceType: "marketplace_order",
+        sourceType: heldForReview ? "marketplace_order_hold" : "marketplace_order",
         sourceId: order.id,
         marketplaceOrderId: order.id,
         balanceAfter: available - price,
-        reasonCode: "MALL_REDEMPTION",
+        reasonCode: heldForReview ? "MALL_REDEMPTION_HOLD" : "MALL_REDEMPTION",
         note: `${product.name}（${tier.label}${tier.redeemDiscount < 1 ? ` ${Math.round(tier.redeemDiscount * 100)}折` : ""}${couponDiscount > 0 ? ` · cupom -${couponDiscount}` : ""}）`,
         createdBy: "PontoMall",
         createdAt,
@@ -932,6 +960,7 @@ async function handlePost(request: Request) {
       if (productIndex !== -1) {
         memory.marketplaceProducts[productIndex] = { ...product, stock: product.stock - 1 };
         appendInventoryLedger({ productId: product.id, productName: product.name, type: "redeem", qty: -1, stockAfter: product.stock - 1, sourceId: order.id, createdBy: "PontoMall" });
+        maybeAutoReplenishDraft(product.id, actor); // P1-2 low-stock draft PO
       }
 
       appendServerAudit({ actor, action: heldForReview ? "MALL_REDEEM_HELD_REVIEW" : "MALL_REDEEMED", entity: "MarketplaceOrder", entityId: order.id, detail: `${rider.name} redeemed ${product.name} for ${price} pts${heldForReview ? " — HELD for review" : `, pickup at ${order.station}, ETA ${order.etaDate}`}.`, risk: heldForReview ? "High" : "Low" });
@@ -965,24 +994,45 @@ async function handlePost(request: Request) {
       }
 
       const stamp = nowStamp();
-      // Refund points (auditable refund ledger entry).
       const pointsAvailable = getAvailablePoints(memory.pointsLedgerEntries, order.riderId);
-      memory.pointsLedgerEntries.unshift({
-        id: makeServerId("pts", memory.pointsLedgerEntries.length + 1),
-        riderId: order.riderId,
-        accountId: `pts-${order.riderId}`,
-        type: "refund",
-        points: order.pointsSpent,
-        status: "approved",
-        sourceType: "marketplace_order",
-        sourceId: order.id,
-        marketplaceOrderId: order.id,
-        balanceAfter: pointsAvailable + order.pointsSpent,
-        reasonCode: "MALL_REFUND",
-        note: `Cancelamento de ${order.productName ?? "resgate"}`,
-        createdBy: "PontoMall",
-        createdAt: stamp,
-      });
+      if (order.reviewStatus === "pending" && hasOpenHold(order)) {
+        // P1-5 e): held high-value order — release the hold. No refund entry:
+        // the points were frozen, never spent (hold + release nets to zero).
+        memory.pointsLedgerEntries.unshift({
+          id: makeServerId("pts", memory.pointsLedgerEntries.length + 1),
+          riderId: order.riderId,
+          accountId: `pts-${order.riderId}`,
+          type: "release",
+          points: order.pointsSpent,
+          status: "approved",
+          sourceType: "marketplace_order_hold",
+          sourceId: order.id,
+          marketplaceOrderId: order.id,
+          balanceAfter: pointsAvailable + order.pointsSpent,
+          reasonCode: "MALL_HOLD_RELEASED",
+          note: `Cancelamento de ${order.productName ?? "resgate"} (pontos liberados da análise)`,
+          createdBy: "PontoMall",
+          createdAt: stamp,
+        });
+      } else {
+        // Refund points (auditable refund ledger entry).
+        memory.pointsLedgerEntries.unshift({
+          id: makeServerId("pts", memory.pointsLedgerEntries.length + 1),
+          riderId: order.riderId,
+          accountId: `pts-${order.riderId}`,
+          type: "refund",
+          points: order.pointsSpent,
+          status: "approved",
+          sourceType: "marketplace_order",
+          sourceId: order.id,
+          marketplaceOrderId: order.id,
+          balanceAfter: pointsAvailable + order.pointsSpent,
+          reasonCode: "MALL_REFUND",
+          note: `Cancelamento de ${order.productName ?? "resgate"}`,
+          createdBy: "PontoMall",
+          createdAt: stamp,
+        });
+      }
 
       // Refund the cash part to the prepaid balance, if any was charged.
       const cashRefund = Math.round((order.cashDue ?? 0) * 100) / 100;
@@ -1121,6 +1171,45 @@ async function handlePost(request: Request) {
       const stamp = nowStamp();
 
       if (decision === "approve") {
+        // P1-5 c): settle the freeze — write "release" (pairs off the hold,
+        // net zero) plus the FORMAL "spend", so every downstream stat that
+        // counts type "spend" keeps its口径. Available balance is unchanged
+        // here: it already dropped when the hold was written at redeem time.
+        if (order.accountType === "rider" && order.riderId && hasOpenHold(order)) {
+          const availableBefore = getAvailablePoints(memory.pointsLedgerEntries, order.riderId);
+          memory.pointsLedgerEntries.unshift({
+            id: makeServerId("pts", memory.pointsLedgerEntries.length + 1),
+            riderId: order.riderId,
+            accountId: `pts-${order.riderId}`,
+            type: "release",
+            points: order.pointsSpent,
+            status: "approved",
+            sourceType: "marketplace_order_hold",
+            sourceId: order.id,
+            marketplaceOrderId: order.id,
+            balanceAfter: availableBefore + order.pointsSpent,
+            reasonCode: "MALL_REVIEW_RELEASE",
+            note: `Análise aprovada: ${order.productName ?? "resgate"} (hold liberado)`,
+            createdBy: actor,
+            createdAt: stamp,
+          });
+          memory.pointsLedgerEntries.unshift({
+            id: makeServerId("pts", memory.pointsLedgerEntries.length + 1),
+            riderId: order.riderId,
+            accountId: `pts-${order.riderId}`,
+            type: "spend",
+            points: order.pointsSpent,
+            status: "approved",
+            sourceType: "marketplace_order",
+            sourceId: order.id,
+            marketplaceOrderId: order.id,
+            balanceAfter: availableBefore,
+            reasonCode: "MALL_REDEMPTION",
+            note: `${order.productName ?? "resgate"} (aprovado na análise de alto valor)`,
+            createdBy: actor,
+            createdAt: stamp,
+          });
+        }
         const product = memory.marketplaceProducts.find((item) => item.id === order.productId);
         const isVirtual = product?.isVirtual === true;
         if (isVirtual) {
@@ -1136,25 +1225,48 @@ async function handlePost(request: Request) {
         return jsonResponse({ data: memory.marketplaceOrders[index] });
       }
 
-      // Reject → refund points (+ cash), restock and cancel.
+      // Reject → release the hold (P1-5 d — points were frozen, not spent, so
+      // NO refund entry), restock and cancel. Cash was actually charged at
+      // redeem time, so the cash refund below stays.
       if (order.accountType === "rider" && order.riderId) {
         const pointsAvailable = getAvailablePoints(memory.pointsLedgerEntries, order.riderId);
-        memory.pointsLedgerEntries.unshift({
-          id: makeServerId("pts", memory.pointsLedgerEntries.length + 1),
-          riderId: order.riderId,
-          accountId: `pts-${order.riderId}`,
-          type: "refund",
-          points: order.pointsSpent,
-          status: "approved",
-          sourceType: "marketplace_order",
-          sourceId: order.id,
-          marketplaceOrderId: order.id,
-          balanceAfter: pointsAvailable + order.pointsSpent,
-          reasonCode: "MALL_REVIEW_REJECTED",
-          note: `Revisão recusada: ${order.productName ?? "resgate"}`,
-          createdBy: actor,
-          createdAt: stamp,
-        });
+        if (hasOpenHold(order)) {
+          memory.pointsLedgerEntries.unshift({
+            id: makeServerId("pts", memory.pointsLedgerEntries.length + 1),
+            riderId: order.riderId,
+            accountId: `pts-${order.riderId}`,
+            type: "release",
+            points: order.pointsSpent,
+            status: "approved",
+            sourceType: "marketplace_order_hold",
+            sourceId: order.id,
+            marketplaceOrderId: order.id,
+            balanceAfter: pointsAvailable + order.pointsSpent,
+            reasonCode: "MALL_REVIEW_REJECTED",
+            note: `Revisão recusada: ${order.productName ?? "resgate"} (hold liberado)`,
+            createdBy: actor,
+            createdAt: stamp,
+          });
+        } else {
+          // Legacy pending order that debited a real spend before hold/release
+          // shipped — keep the historical refund path for it.
+          memory.pointsLedgerEntries.unshift({
+            id: makeServerId("pts", memory.pointsLedgerEntries.length + 1),
+            riderId: order.riderId,
+            accountId: `pts-${order.riderId}`,
+            type: "refund",
+            points: order.pointsSpent,
+            status: "approved",
+            sourceType: "marketplace_order",
+            sourceId: order.id,
+            marketplaceOrderId: order.id,
+            balanceAfter: pointsAvailable + order.pointsSpent,
+            reasonCode: "MALL_REVIEW_REJECTED",
+            note: `Revisão recusada: ${order.productName ?? "resgate"}`,
+            createdBy: actor,
+            createdAt: stamp,
+          });
+        }
         const cashRefund = Math.round((order.cashDue ?? 0) * 100) / 100;
         if (cashRefund > 0) {
           const cashAvailable = cashBalanceOf(order.riderId);

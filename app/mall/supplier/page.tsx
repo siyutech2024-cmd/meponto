@@ -2,7 +2,8 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Boxes, Building2, ChevronRight, CircleDollarSign, ClipboardList, Download, LayoutDashboard, PackagePlus, RefreshCcw, Tags, Truck, UserPlus, Users } from "lucide-react";
-import { AppShell, Badge } from "../../components/ui";
+import { AppShell, Badge, FormDialog } from "../../components/ui";
+import { useDialog } from "../../components/dialog";
 import { downloadCsv } from "../../lib/csv";
 import type { MarketplaceProduct } from "../../lib/points";
 import type { PriceChangeRequest, PurchaseOrder, SupplierStatement } from "../../lib/mall-ops";
@@ -54,7 +55,11 @@ function Stat({ label, value, hint, onClick }: { label: string; value: string; h
   );
 }
 
+/** Page-local fallback while the ops backend rolls out the "disputed" state. */
+const extraStatementLabel: Record<string, string> = { disputed: "有异议·待总部处理" };
+
 export default function SupplierWorkspacePage() {
+  const dialog = useDialog();
   const language = useVentoStore((s) => s.language);
   const t = (k: TranslationKey, vars?: Record<string, string | number | undefined>) => {
     let s = translate(language, k);
@@ -80,6 +85,8 @@ export default function SupplierWorkspacePage() {
   const [priceDraft, setPriceDraft] = useState<Record<string, string>>({});
   const [pixDraft, setPixDraft] = useState("");
   const [orderFilter, setOrderFilter] = useState("");
+  /** PO currently being shipped via the structured ship dialog (tracking no + note). */
+  const [shipTarget, setShipTarget] = useState<PurchaseOrder | null>(null);
 
   // Compress a picked image to a small JPEG and upload it (Supabase Storage when
   // available, else an inline data URL). Returns the final URL, or null on error.
@@ -236,10 +243,30 @@ export default function SupplierWorkspacePage() {
   return (
     <AppShell>
       {message && (
-        <div className="mb-4 rounded-[10px] border px-4 py-3 text-sm font-bold" style={message.tone === "ok" ? { borderColor: "rgba(29,122,62,.4)", background: "rgba(29,122,62,.08)", color: "#1d7a3e" } : { borderColor: "rgba(196,66,59,.4)", background: "rgba(196,66,59,.08)", color: "#c4423b" }}>
+        <div className={`mb-4 rounded-[10px] border px-4 py-3 text-sm font-bold ${message.tone === "ok" ? "border-[var(--success)]/40 bg-[var(--success)]/10 text-[var(--success)]" : "border-[var(--danger)]/40 bg-[var(--danger)]/10 text-[var(--danger)]"}`}>
           {message.text}
         </div>
       )}
+
+      {/* Structured ship dialog: tracking number + note → merged shipNote text. */}
+      <FormDialog
+        open={shipTarget !== null}
+        title="标记发货"
+        body={shipTarget ? `补货单 ${shipTarget.id} · ${shipTarget.items.reduce((sum, item) => sum + item.qty, 0)} 件。填写物流信息后通知商城收货。` : undefined}
+        fields={[
+          { key: "trackingNo", label: "物流单号", placeholder: "如 BR123456789" },
+          { key: "note", label: "备注（可空）", placeholder: "承运商 / 预计送达等" },
+        ]}
+        confirmText="确认发货"
+        onClose={() => setShipTarget(null)}
+        onConfirm={(values) => {
+          if (!shipTarget) return;
+          const parts = [values.trackingNo.trim() ? `单号: ${values.trackingNo.trim()}` : "", values.note.trim()].filter(Boolean);
+          const poId = shipTarget.id;
+          setShipTarget(null);
+          void post("/api/mall/ops", { action: "shipPO", poId, shipNote: parts.join(" · ") }, "已标记发货");
+        }}
+      />
 
       <div className="lg:grid lg:grid-cols-[220px_1fr] lg:items-start lg:gap-6">
         {/* Left rail — company card + vertical section nav */}
@@ -262,8 +289,8 @@ export default function SupplierWorkspacePage() {
             {TABS.map(({ id, label, icon: Icon }) => (
               <button key={id} type="button" onClick={() => setTab(id)} className={`inline-flex h-10 shrink-0 items-center gap-2.5 rounded-[10px] px-3.5 text-[13px] font-black transition-colors lg:w-full ${tab === id ? "bg-[var(--accent)] text-[var(--accent-ink)]" : "text-[var(--muted)] hover:bg-[var(--surface-hover)] hover:text-[var(--text)]"}`}>
                 <Icon size={16} /> <span className="whitespace-nowrap">{label}</span>
-                {id === "pos" && (ops?.purchaseOrders ?? []).some((po) => po.status === "ordered") && <span className="ml-auto h-2 w-2 rounded-full bg-[#e2554d]" />}
-                {id === "statements" && (ops?.statements ?? []).some((s) => s.status === "draft") && <span className="ml-auto h-2 w-2 rounded-full bg-[#e2554d]" />}
+                {id === "pos" && (ops?.purchaseOrders ?? []).some((po) => po.status === "ordered") && <span className="ml-auto h-2 w-2 rounded-full bg-[var(--danger)]" />}
+                {id === "statements" && (ops?.statements ?? []).some((s) => s.status === "draft") && <span className="ml-auto h-2 w-2 rounded-full bg-[var(--danger)]" />}
               </button>
             ))}
           </nav>
@@ -324,7 +351,7 @@ export default function SupplierWorkspacePage() {
                     <input type="file" accept="image/*" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) void onPickImage(f); e.target.value = ""; }} />
                   </label>
                   <input value={form.imageUrl.startsWith("data:") ? "" : form.imageUrl} onChange={(e) => setForm((prev) => ({ ...prev, imageUrl: e.target.value }))} placeholder="或粘贴图片 URL" className="h-9 min-w-0 flex-1 rounded-[8px] border border-[var(--line)] bg-[var(--surface-raised)] px-3 text-sm font-bold outline-none focus:border-[var(--accent)]" />
-                  {form.imageUrl && <button type="button" onClick={() => setForm((prev) => ({ ...prev, imageUrl: "" }))} className="text-xs font-black text-[#c4423b]">清除</button>}
+                  {form.imageUrl && <button type="button" onClick={() => setForm((prev) => ({ ...prev, imageUrl: "" }))} className="text-xs font-black text-[var(--danger)]">清除</button>}
                 </div>
               </div>
               <div className="flex flex-wrap items-center gap-3 md:col-span-3">
@@ -364,7 +391,7 @@ export default function SupplierWorkspacePage() {
                   {product.supplierName === supplierName && product.status === "pending_pricing" ? (
                     <>
                       <button type="button" onClick={() => startEdit(product)} className="h-9 rounded-[8px] border border-[var(--line)] px-3 text-xs font-black text-[var(--muted)] hover:border-[var(--accent)]">编辑</button>
-                      <button type="button" onClick={() => { if (confirm(t("dynDelUnpriced", { n: product.name }))) void post("/api/mall", { action: "supplierDeleteProduct", productId: product.id }, "已删除"); }} className="h-9 rounded-[8px] border border-[#c4423b]/40 px-3 text-xs font-black text-[#c4423b]">删除</button>
+                      <button type="button" onClick={async () => { if (await dialog.confirm("删除商品", { message: t("dynDelUnpriced", { n: product.name }), confirmText: "删除", tone: "danger" })) void post("/api/mall", { action: "supplierDeleteProduct", productId: product.id }, "已删除"); }} className="h-9 rounded-[8px] border border-[var(--danger)]/40 px-3 text-xs font-black text-[var(--danger)]">删除</button>
                     </>
                   ) : (
                     <>
@@ -414,7 +441,7 @@ export default function SupplierWorkspacePage() {
                   <span className="text-xs font-bold text-[var(--muted)]">{po.items.reduce((sum, item) => sum + item.qty, 0)} 件 · 备货参考成本 R$ {po.totalCost.toFixed(2)} · {po.createdAt}</span>
                   <span className="ml-auto flex gap-1.5">
                     {po.status === "ordered" && <button type="button" onClick={() => void post("/api/mall/ops", { action: "confirmPO", poId: po.id }, "已确认，请按周期发货")} className="h-8 rounded-[8px] bg-[var(--accent)] px-3 text-xs font-black text-[var(--accent-ink)]">确认接单</button>}
-                    {po.status === "confirmed" && <button type="button" onClick={() => { const note = prompt("物流/送货备注（可空）") ?? ""; void post("/api/mall/ops", { action: "shipPO", poId: po.id, shipNote: note }, "已标记发货"); }} className="h-8 rounded-[8px] bg-[var(--accent)] px-3 text-xs font-black text-[var(--accent-ink)]">标记发货</button>}
+                    {po.status === "confirmed" && <button type="button" onClick={() => setShipTarget(po)} className="h-8 rounded-[8px] bg-[var(--accent)] px-3 text-xs font-black text-[var(--accent-ink)]">标记发货</button>}
                   </span>
                 </div>
                 <div className="mt-1 text-xs font-bold text-[var(--muted)]">{po.items.map((item) => `${item.name}×${item.qty}`).join("、")}{po.note ? t("dynNote", { x: po.note }) : ""}{po.shipNote ? t("dynLogistics", { x: po.shipNote }) : ""}</div>
@@ -435,7 +462,7 @@ export default function SupplierWorkspacePage() {
                 <div className="flex flex-wrap items-center gap-2">
                   <CircleDollarSign size={15} className="text-[var(--muted)]" />
                   <span className="text-sm font-black">{statement.month}</span>
-                  <Badge value={statementStatusLabel[statement.status]} />
+                  <Badge value={(statementStatusLabel as Record<string, string>)[statement.status] ?? extraStatementLabel[statement.status] ?? statement.status} />
                   <button type="button" onClick={() => setOpenStmt((prev) => { const n = new Set(prev); n.has(statement.id) ? n.delete(statement.id) : n.add(statement.id); return n; })} className="inline-flex items-center gap-1 text-xs font-bold text-[var(--muted)] hover:text-[var(--accent)]">
                     <ChevronRight size={13} className={`transition-transform ${openStmt.has(statement.id) ? "rotate-90" : ""}`} />{statement.lines.length} 笔 · <b className="text-[var(--text)]">R$ {statement.total.toFixed(2)}</b>
                   </button>
@@ -446,6 +473,18 @@ export default function SupplierWorkspacePage() {
                         <input value={pixDraft} onChange={(e) => setPixDraft(e.target.value)} placeholder="收款 PIX Key" className="h-8 w-44 rounded-[8px] border border-[var(--line)] bg-[var(--surface)] px-2 font-mono text-xs font-bold outline-none focus:border-[var(--accent)]" />
                         <button type="button" onClick={() => void post("/api/mall/ops", { action: "confirmStatement", statementId: statement.id, pixKey: pixDraft }, "已确认对账单，等待商城付款")} className="h-8 rounded-[8px] bg-[var(--accent)] px-3 text-xs font-black text-[var(--accent-ink)]">确认无误</button>
                       </>
+                    )}
+                    {(statement.status === "draft" || statement.status === "confirmed") && (
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          const note = await dialog.prompt("对账单异议", { message: `对「${statement.month}」对账单（${statement.lines.length} 笔 · R$ ${statement.total.toFixed(2)}）提出异议，说明与实际不符之处（必填，总部会复核后重新打开）。`, placeholder: "如：缺少订单 xxx / 供货价不符…" });
+                          if (note === null) return;
+                          if (!note.trim()) { setMessage({ tone: "err", text: "请填写异议原因" }); return; }
+                          void post("/api/mall/ops", { action: "disputeStatement", statementId: statement.id, note: note.trim() }, "异议已提交，等待总部处理");
+                        }}
+                        className="h-8 rounded-[8px] border border-[var(--danger)]/40 px-3 text-xs font-black text-[var(--danger)]"
+                      >有异议</button>
                     )}
                   </span>
                 </div>
@@ -461,7 +500,10 @@ export default function SupplierWorkspacePage() {
                     </table>
                   </div>
                 )}
-                {statement.paidAt && <div className="mt-1 text-xs font-bold" style={{ color: "#1d7a3e" }}>已付款 · {statement.paidAt}{statement.receiptNote ? ` · ${statement.receiptNote}` : ""}</div>}
+                {(statement.status as string) === "disputed" && (statement as SupplierStatement & { disputeNote?: string }).disputeNote && (
+                  <div className="mt-1 text-xs font-bold" style={{ color: "var(--warn)" }}>异议原因：{(statement as SupplierStatement & { disputeNote?: string }).disputeNote} · 等待总部复核后重新打开</div>
+                )}
+                {statement.paidAt && <div className="mt-1 text-xs font-bold" style={{ color: "var(--success)" }}>已付款 · {statement.paidAt}{statement.receiptNote ? ` · ${statement.receiptNote}` : ""}</div>}
               </div>
             ))}
             {(ops?.statements ?? []).length === 0 && <div className="py-6 text-center text-xs font-bold text-[var(--muted)]">商城生成对账单后会出现在这里（自然月：履约订单 × 供货价）。</div>}
@@ -545,7 +587,7 @@ export default function SupplierWorkspacePage() {
                   <input type="file" accept="image/*" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) void onPickLogo(f); e.target.value = ""; }} />
                 </label>
                 <input value={profileForm.logoUrl.startsWith("data:") ? "" : profileForm.logoUrl} onChange={(e) => setProfileForm((p) => ({ ...p, logoUrl: e.target.value }))} placeholder="或粘贴 Logo URL" className="h-9 min-w-0 flex-1 rounded-[8px] border border-[var(--line)] bg-[var(--surface)] px-3 text-sm font-bold outline-none focus:border-[var(--accent)]" />
-                {profileForm.logoUrl && <button type="button" onClick={() => setProfileForm((p) => ({ ...p, logoUrl: "" }))} className="text-xs font-black text-[#c4423b]">清除</button>}
+                {profileForm.logoUrl && <button type="button" onClick={() => setProfileForm((p) => ({ ...p, logoUrl: "" }))} className="text-xs font-black text-[var(--danger)]">清除</button>}
               </div>
             </div>
           </div>
@@ -575,7 +617,7 @@ export default function SupplierWorkspacePage() {
         <div className="space-y-4">
           <div className="rounded-[10px] border border-[var(--line)] bg-[var(--surface-raised)] px-4 py-3 text-[12px] font-bold text-[var(--muted)]">
             数据隔离：本后台只显示并管理公司 <b className="text-[var(--text)]">{supplierName || "（未绑定公司）"}</b> 的团队与商品。你创建的成员都归属本公司，其它供应商互相不可见。
-            {!supplierName && <span className="text-[#c4423b]"> · 当前账号未绑定公司，请联系总部在 CRM 重新开通。</span>}
+            {!supplierName && <span className="text-[var(--danger)]"> · 当前账号未绑定公司，请联系总部在 CRM 重新开通。</span>}
           </div>
           <div className="panel p-5">
             <div className="mb-3 flex items-center gap-2 text-xs font-black uppercase text-[var(--muted)]"><UserPlus size={14} /> 新增团队成员（同公司多人协作)</div>

@@ -340,6 +340,45 @@ export function appendInventoryLedger(entry: Omit<InventoryLedgerEntry, "id" | "
   return row;
 }
 
+/**
+ * P1-2 low-stock auto-replenish: called right after a redemption decrements
+ * `product.stock` (mall route + marketplace/orders share this single point).
+ * Creates a status:"draft" PO (needs `confirmDraftPO` in the mall office to
+ * become "ordered") when:
+ *  - the product has a supplierName, AND
+ *  - stock ≤ (restockThreshold ?? 3), AND
+ *  - no open PO (draft/ordered/confirmed/shipped) already covers this product.
+ * qty = max(ceil(30-day redemptions × (deliveryCycleDays ?? 7) / 30), threshold × 2).
+ */
+export function maybeAutoReplenishDraft(productId: string, actor: string): PurchaseOrder | null {
+  const product = memory.marketplaceProducts.find((item) => item.id === productId);
+  if (!product?.supplierName) return null;
+  const threshold = product.restockThreshold ?? 3;
+  if (product.stock > threshold) return null;
+  const OPEN_PO = new Set<PurchaseOrder["status"]>(["draft", "ordered", "confirmed", "shipped"]);
+  if (memory.purchaseOrders.some((po) => OPEN_PO.has(po.status) && po.items.some((item) => item.productId === product.id))) return null;
+  const since = Date.now() - 30 * 24 * 3600 * 1000;
+  const recentRedemptions = memory.marketplaceOrders.filter(
+    (order) => order.productId === product.id && order.status !== "cancelled" && new Date(order.createdAt.replace(" ", "T")).getTime() >= since,
+  ).length;
+  const cycleDays = product.deliveryCycleDays ?? 7;
+  const qty = Math.max(Math.ceil((recentRedemptions * cycleDays) / 30), threshold * 2);
+  const supplyPrice = product.supplyPrice ?? 0;
+  const po: PurchaseOrder = {
+    id: makeServerId("mpo", memory.purchaseOrders.length + 1),
+    supplierName: product.supplierName,
+    items: [{ productId: product.id, name: product.name, qty, supplyPrice }],
+    totalCost: Math.round(qty * supplyPrice * 100) / 100,
+    note: `auto-replenish: estoque ${product.stock} ≤ limiar ${threshold}`,
+    status: "draft",
+    createdAt: new Date().toISOString().slice(0, 16).replace("T", " "),
+    createdBy: "System",
+  };
+  memory.purchaseOrders.unshift(po);
+  appendServerAudit({ actor, action: "MALL_PO_AUTODRAFT", entity: "PurchaseOrder", entityId: po.id, detail: `${product.name} (${product.supplierName}): estoque ${product.stock} ≤ ${threshold} → rascunho de ${qty} un.`, risk: "Low" });
+  return po;
+}
+
 export function appendServerAudit(entry: Omit<ServerAuditEntry, "id" | "createdAt">) {
   const auditEntry: ServerAuditEntry = {
     id: makeServerId("aud", memory.auditEntries.length + 1),

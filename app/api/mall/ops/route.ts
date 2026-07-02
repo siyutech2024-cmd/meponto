@@ -46,6 +46,94 @@ function nowStamp() {
   return new Date().toISOString().slice(0, 16).replace("T", " ");
 }
 
+/**
+ * Build/refresh the supplier statements for a natural month. Shared by the
+ * `generateStatement` action and the lazy month-close autogen in GET (P1-1).
+ * Regenerates only statements still in "draft" — confirmed/disputed/paid are
+ * immutable here (a disputed statement must be reopened by HQ first).
+ */
+function runGenerateSupplierStatements(month: string): SupplierStatement[] {
+  const productMap = new Map(memory.marketplaceProducts.map((product) => [product.id, product]));
+  const linesBySupplier = new Map<string, SupplierStatementLine[]>();
+  for (const order of memory.marketplaceOrders) {
+    // Rider AND Partner redemptions both owe the supplier (P0-1); the
+    // fulfilled/arrived scope matches the supplierSettlement read model.
+    if (order.status !== "fulfilled" && order.status !== "arrived") continue;
+    // Attribute to the FULFILMENT month (P0-3): a redemption picked up (or
+    // arrived) in a later month settles in that month, not the order month.
+    const fulfilledAt = order.pickedUpAt ?? order.arrivedAt ?? order.createdAt;
+    if (!fulfilledAt.startsWith(month)) continue;
+    const product = productMap.get(order.productId);
+    if (!product?.supplierName) continue;
+    const lines = linesBySupplier.get(product.supplierName) ?? [];
+    lines.push({ orderId: order.id, productId: product.id, productName: product.name, supplyPrice: product.supplyPrice ?? 0, date: fulfilledAt.slice(0, 10) });
+    linesBySupplier.set(product.supplierName, lines);
+  }
+  const created: SupplierStatement[] = [];
+  for (const [supplier, lines] of linesBySupplier) {
+    const id = `mst-${month}-${supplier.toLowerCase().replace(/[^a-z0-9]+/g, "-").slice(0, 30)}`;
+    const existingIndex = memory.supplierStatements.findIndex((item) => item.id === id);
+    const total = Math.round(lines.reduce((sum, line) => sum + line.supplyPrice, 0) * 100) / 100;
+    if (existingIndex !== -1) {
+      // Regenerate only while still a draft — confirmed/paid statements are immutable.
+      if (memory.supplierStatements[existingIndex].status !== "draft") continue;
+      memory.supplierStatements[existingIndex] = { ...memory.supplierStatements[existingIndex], lines, total };
+      created.push(memory.supplierStatements[existingIndex]);
+      continue;
+    }
+    const statement: SupplierStatement = { id, supplierName: supplier, month, lines, total, status: "draft", createdAt: nowStamp() };
+    memory.supplierStatements.unshift(statement);
+    created.push(statement);
+  }
+  return created;
+}
+
+/** Build/refresh the franchise revenue-share statements for a natural month.
+ *  Shared by `generateRevShareStatement` and the GET autogen (P1-1). */
+function runGenerateRevShareStatements(month: string): RevenueShareStatement[] {
+  const r2 = (n: number) => Math.round(n * 100) / 100;
+  const byFranchise = new Map<string, RevenueShareEntry[]>();
+  for (const e of memory.mallRevenueShareEntries) {
+    if (e.month !== month) continue;
+    const arr = byFranchise.get(e.franchise) ?? [];
+    arr.push(e);
+    byFranchise.set(e.franchise, arr);
+  }
+  const created: RevenueShareStatement[] = [];
+  for (const [franchise, entries] of byFranchise) {
+    const id = `rst-${month}-${franchise.toLowerCase().replace(/[^a-z0-9]+/g, "-").slice(0, 30)}`;
+    const existingIndex = memory.revenueShareStatements.findIndex((s) => s.id === id);
+    if (existingIndex !== -1 && memory.revenueShareStatements[existingIndex].status !== "draft") continue;
+    const stationMap = new Map<string, { orders: number; stationShareBRL: number }>();
+    let franchiseNetTotal = 0;
+    let stationShareTotal = 0;
+    for (const e of entries) {
+      const st = stationMap.get(e.pickupStoreName) ?? { orders: 0, stationShareBRL: 0 };
+      st.orders += 1;
+      st.stationShareBRL = r2(st.stationShareBRL + e.stationShareBRL);
+      stationMap.set(e.pickupStoreName, st);
+      franchiseNetTotal = r2(franchiseNetTotal + e.franchiseNetBRL);
+      stationShareTotal = r2(stationShareTotal + e.stationShareBRL);
+    }
+    const statement: RevenueShareStatement = {
+      id,
+      franchise,
+      month,
+      stations: [...stationMap.entries()].map(([store, v]) => ({ store, orders: v.orders, stationShareBRL: v.stationShareBRL })),
+      orders: entries.length,
+      franchiseNetTotal,
+      stationShareTotal,
+      total: r2(franchiseNetTotal + stationShareTotal),
+      status: "draft",
+      createdAt: nowStamp(),
+    };
+    if (existingIndex !== -1) memory.revenueShareStatements[existingIndex] = statement;
+    else memory.revenueShareStatements.unshift(statement);
+    created.push(statement);
+  }
+  return created;
+}
+
 export async function GET(request: Request) {
   const session = await sessionFromRequest(request);
   if (!session) return jsonResponse({ error: "login required" }, { status: 401 });
@@ -55,6 +143,22 @@ export async function GET(request: Request) {
   if (!isOffice && !supplierName && !scope.franchise && !scope.station) return jsonResponse({ error: "forbidden" }, { status: 403 });
 
   await refreshCollectionsFromDatabase(COLLECTIONS);
+
+  // P1-1 lazy month-close (no cron): when HQ opens the ops console and the
+  // PREVIOUS natural month has no statements yet (any status counts as
+  // generated — idempotent), draft them now with the same shared logic as the
+  // generateStatement / generateRevShareStatement actions.
+  if (isOffice) {
+    const prev = new Date();
+    prev.setUTCDate(1);
+    prev.setUTCMonth(prev.getUTCMonth() - 1);
+    const prevMonth = prev.toISOString().slice(0, 7);
+    const autoSupplier = memory.supplierStatements.some((s) => s.month === prevMonth) ? 0 : runGenerateSupplierStatements(prevMonth).length;
+    const autoRevShare = memory.revenueShareStatements.some((s) => s.month === prevMonth) ? 0 : runGenerateRevShareStatements(prevMonth).length;
+    if (autoSupplier > 0 || autoRevShare > 0) {
+      appendServerAudit({ actor: session.name || "System", action: "MALL_STATEMENTS_AUTOGEN", entity: "SupplierStatement", entityId: prevMonth, detail: `Fecho automático ${prevMonth}: ${autoSupplier} fornecedores, ${autoRevShare} 加盟商 (draft).`, risk: "Low" });
+    }
+  }
 
   // Franchise / station portals: read-only sales revenue-share view. Franchise
   // sees its own entries + monthly statements (can confirm); station sees only
@@ -103,6 +207,15 @@ export async function GET(request: Request) {
   }
   const topProducts = [...topMap.entries()].sort((a, b) => b[1] - a[1]).slice(0, 5).map(([name, count]) => ({ name, count }));
 
+  // P1-7 aging: office-only backlog counters — records sitting unprocessed for
+  // more than 48 hours (createdAt format "YYYY-MM-DD HH:mm").
+  const over48h = (ts?: string) => !!ts && Date.now() - new Date(ts.replace(" ", "T")).getTime() > 48 * 3600 * 1000;
+  const aging = {
+    pricingOver48h: isOffice ? memory.marketplaceProducts.filter((p) => p.status === "pending_pricing" && over48h(p.createdAt)).length : 0,
+    priceChangesOver48h: isOffice ? memory.priceChangeRequests.filter((r) => r.status === "pending" && over48h(r.createdAt)).length : 0,
+    topUpsOver48h: isOffice ? memory.cashTopUps.filter((t) => t.status === "submitted" && over48h(t.createdAt)).length : 0,
+  };
+
   // Unified external GMV in BRL — single canonical conversion: points are
   // valued at the reference rate (`pointsPerBrlReference` pts ≈ R$1) and added
   // to the cash actually collected. Gives one comparable figure across the
@@ -134,6 +247,7 @@ export async function GET(request: Request) {
         partnerOrders,
         partnerPointsSpent,
         topProducts,
+        aging,
         daily: [...last30.entries()].map(([date, count]) => ({ date, count })),
       },
     },
@@ -151,19 +265,22 @@ const OFFICE_ACTIONS = new Set([
   "deleteBanner",
   "decidePriceChange",
   "createPO",
+  "confirmDraftPO",
   "cancelPO",
   "receivePO",
   "generateStatement",
   "payStatement",
+  "reopenStatement",
   "generateRevShareStatement",
   "payRevShareStatement",
+  "reopenRevShareStatement",
   "confirmPayment",
   "rejectPayment",
   "confirmTopUp",
   "rejectTopUp",
   "adjustCash",
 ]);
-const SUPPLIER_ACTIONS = new Set(["requestPriceChange", "confirmPO", "shipPO", "confirmStatement"]);
+const SUPPLIER_ACTIONS = new Set(["requestPriceChange", "confirmPO", "shipPO", "confirmStatement", "disputeStatement"]);
 
 async function handlePost(request: Request) {
   const body = (await request.json().catch(() => ({}))) as Body;
@@ -185,8 +302,8 @@ async function handlePost(request: Request) {
   } else if (action === "submitPaymentRef" || action === "requestTopUp" || action === "submitTopUpRef") {
     const forbidden = requirePermission(request, "use_rider_app");
     if (forbidden) return forbidden;
-  } else if (action === "setStationShare" || action === "confirmRevShareStatement") {
-    // Franchise (or HQ) actions: set station share / confirm the share statement.
+  } else if (action === "setStationShare" || action === "confirmRevShareStatement" || action === "disputeRevShareStatement") {
+    // Franchise (or HQ) actions: set station share / confirm or dispute the share statement.
     if (!session || (session.portal !== "franchise" && session.portal !== "pontomall" && session.portal !== "pontosys")) {
       return jsonResponse({ error: "仅加盟商或总部可执行此操作" }, { status: 403 });
     }
@@ -408,10 +525,22 @@ async function handlePost(request: Request) {
       appendServerAudit({ actor, action: "MALL_PO_RECEIVED", entity: "PurchaseOrder", entityId: po.id, detail: `${po.supplierName}: +${po.items.reduce((sum, item) => sum + item.qty, 0)} unidades em estoque`, risk: "Low" });
       return jsonResponse({ data: memory.purchaseOrders[index] });
     }
+    case "confirmDraftPO": {
+      // P1-2: promote an auto-replenish draft to a real order (same permission
+      // class as createPO — office only via OFFICE_ACTIONS).
+      const index = memory.purchaseOrders.findIndex((item) => item.id === body.poId);
+      if (index === -1) return jsonResponse({ error: "PO not found" }, { status: 404 });
+      const po = memory.purchaseOrders[index];
+      if (po.status !== "draft") return jsonResponse({ error: "只有补货草稿可确认下单" }, { status: 409 });
+      memory.purchaseOrders[index] = { ...po, status: "ordered" };
+      appendServerAudit({ actor, action: "MALL_PO_DRAFT_CONFIRMED", entity: "PurchaseOrder", entityId: po.id, detail: `${po.supplierName}: rascunho → ordered, ${po.items.reduce((sum, item) => sum + item.qty, 0)} un, R$${po.totalCost}`, risk: "Low" });
+      return jsonResponse({ data: memory.purchaseOrders[index] });
+    }
     case "cancelPO": {
       const index = memory.purchaseOrders.findIndex((item) => item.id === body.poId);
       if (index === -1) return jsonResponse({ error: "PO not found" }, { status: 404 });
       const po = memory.purchaseOrders[index];
+      // "draft" (auto-replenish) POs are cancellable like any not-yet-received PO.
       if (po.status === "received") return jsonResponse({ error: "已入库的补货单不能取消" }, { status: 409 });
       memory.purchaseOrders[index] = { ...po, status: "cancelled" };
       return jsonResponse({ data: memory.purchaseOrders[index] });
@@ -420,38 +549,7 @@ async function handlePost(request: Request) {
     // ---- Statements -----------------------------------------------------------
     case "generateStatement": {
       const month = /^\d{4}-\d{2}$/.test(String(body.month)) ? String(body.month) : new Date().toISOString().slice(0, 7);
-      const productMap = new Map(memory.marketplaceProducts.map((product) => [product.id, product]));
-      const linesBySupplier = new Map<string, SupplierStatementLine[]>();
-      for (const order of memory.marketplaceOrders) {
-        // Rider AND Partner redemptions both owe the supplier (P0-1); the
-        // fulfilled/arrived scope matches the supplierSettlement read model.
-        if (order.status !== "fulfilled" && order.status !== "arrived") continue;
-        // Attribute to the FULFILMENT month (P0-3): a redemption picked up (or
-        // arrived) in a later month settles in that month, not the order month.
-        const fulfilledAt = order.pickedUpAt ?? order.arrivedAt ?? order.createdAt;
-        if (!fulfilledAt.startsWith(month)) continue;
-        const product = productMap.get(order.productId);
-        if (!product?.supplierName) continue;
-        const lines = linesBySupplier.get(product.supplierName) ?? [];
-        lines.push({ orderId: order.id, productId: product.id, productName: product.name, supplyPrice: product.supplyPrice ?? 0, date: fulfilledAt.slice(0, 10) });
-        linesBySupplier.set(product.supplierName, lines);
-      }
-      const created: SupplierStatement[] = [];
-      for (const [supplier, lines] of linesBySupplier) {
-        const id = `mst-${month}-${supplier.toLowerCase().replace(/[^a-z0-9]+/g, "-").slice(0, 30)}`;
-        const existingIndex = memory.supplierStatements.findIndex((item) => item.id === id);
-        const total = Math.round(lines.reduce((sum, line) => sum + line.supplyPrice, 0) * 100) / 100;
-        if (existingIndex !== -1) {
-          // Regenerate only while still a draft — confirmed/paid statements are immutable.
-          if (memory.supplierStatements[existingIndex].status !== "draft") continue;
-          memory.supplierStatements[existingIndex] = { ...memory.supplierStatements[existingIndex], lines, total };
-          created.push(memory.supplierStatements[existingIndex]);
-          continue;
-        }
-        const statement: SupplierStatement = { id, supplierName: supplier, month, lines, total, status: "draft", createdAt: nowStamp() };
-        memory.supplierStatements.unshift(statement);
-        created.push(statement);
-      }
+      const created = runGenerateSupplierStatements(month);
       appendServerAudit({ actor, action: "MALL_STATEMENTS_GENERATED", entity: "SupplierStatement", entityId: month, detail: `${created.length} fornecedores, mês ${month}`, risk: "Low" });
       return jsonResponse({ data: { created: created.length, statements: created } });
     }
@@ -471,6 +569,31 @@ async function handlePost(request: Request) {
       if (statement.status !== "confirmed") return jsonResponse({ error: "供应商确认后才能付款" }, { status: 409 });
       memory.supplierStatements[index] = { ...statement, status: "paid", paidAt: nowStamp(), paidBy: actor, receiptNote: String(body.receiptNote ?? "").slice(0, 200) || undefined };
       appendServerAudit({ actor, action: "MALL_STATEMENT_PAID", entity: "SupplierStatement", entityId: statement.id, detail: `${statement.supplierName} ${statement.month}: R$${statement.total}`, risk: "Medium" });
+      return jsonResponse({ data: memory.supplierStatements[index] });
+    }
+    case "disputeStatement": {
+      // P1-4: a supplier contests its own draft/confirmed statement. Paid
+      // statements are immutable and cannot be disputed.
+      const index = memory.supplierStatements.findIndex((item) => item.id === body.statementId);
+      if (index === -1) return jsonResponse({ error: "statement not found" }, { status: 404 });
+      const statement = memory.supplierStatements[index];
+      if (supplierName && statement.supplierName !== supplierName) return jsonResponse({ error: "只能争议自己的对账单" }, { status: 403 });
+      if (statement.status !== "draft" && statement.status !== "confirmed") return jsonResponse({ error: "已付款或已在争议中的对账单不可争议" }, { status: 409 });
+      const note = String(body.note ?? "").trim().slice(0, 200);
+      if (!note) return jsonResponse({ error: "informe o motivo da contestação" }, { status: 400 });
+      memory.supplierStatements[index] = { ...statement, status: "disputed", disputeNote: note };
+      appendServerAudit({ actor, action: "MALL_STATEMENT_DISPUTED", entity: "SupplierStatement", entityId: statement.id, detail: `${statement.supplierName} ${statement.month}: ${note}`, risk: "Medium" });
+      return jsonResponse({ data: memory.supplierStatements[index] });
+    }
+    case "reopenStatement": {
+      // P1-4: HQ resolves a dispute — disputed → draft (regenerable). The
+      // disputeNote is kept for history; confirmation is invalidated.
+      const index = memory.supplierStatements.findIndex((item) => item.id === body.statementId);
+      if (index === -1) return jsonResponse({ error: "statement not found" }, { status: 404 });
+      const statement = memory.supplierStatements[index];
+      if (statement.status !== "disputed") return jsonResponse({ error: "只有争议中的对账单可重新打开" }, { status: 409 });
+      memory.supplierStatements[index] = { ...statement, status: "draft", confirmedAt: undefined };
+      appendServerAudit({ actor, action: "MALL_STATEMENT_REOPENED", entity: "SupplierStatement", entityId: statement.id, detail: `${statement.supplierName} ${statement.month}: disputed → draft`, risk: "Medium" });
       return jsonResponse({ data: memory.supplierStatements[index] });
     }
 
@@ -600,46 +723,7 @@ async function handlePost(request: Request) {
     }
     case "generateRevShareStatement": {
       const month = /^\d{4}-\d{2}$/.test(String(body.month)) ? String(body.month) : new Date().toISOString().slice(0, 7);
-      const r2 = (n: number) => Math.round(n * 100) / 100;
-      const byFranchise = new Map<string, RevenueShareEntry[]>();
-      for (const e of memory.mallRevenueShareEntries) {
-        if (e.month !== month) continue;
-        const arr = byFranchise.get(e.franchise) ?? [];
-        arr.push(e);
-        byFranchise.set(e.franchise, arr);
-      }
-      const created: RevenueShareStatement[] = [];
-      for (const [franchise, entries] of byFranchise) {
-        const id = `rst-${month}-${franchise.toLowerCase().replace(/[^a-z0-9]+/g, "-").slice(0, 30)}`;
-        const existingIndex = memory.revenueShareStatements.findIndex((s) => s.id === id);
-        if (existingIndex !== -1 && memory.revenueShareStatements[existingIndex].status !== "draft") continue;
-        const stationMap = new Map<string, { orders: number; stationShareBRL: number }>();
-        let franchiseNetTotal = 0;
-        let stationShareTotal = 0;
-        for (const e of entries) {
-          const st = stationMap.get(e.pickupStoreName) ?? { orders: 0, stationShareBRL: 0 };
-          st.orders += 1;
-          st.stationShareBRL = r2(st.stationShareBRL + e.stationShareBRL);
-          stationMap.set(e.pickupStoreName, st);
-          franchiseNetTotal = r2(franchiseNetTotal + e.franchiseNetBRL);
-          stationShareTotal = r2(stationShareTotal + e.stationShareBRL);
-        }
-        const statement: RevenueShareStatement = {
-          id,
-          franchise,
-          month,
-          stations: [...stationMap.entries()].map(([store, v]) => ({ store, orders: v.orders, stationShareBRL: v.stationShareBRL })),
-          orders: entries.length,
-          franchiseNetTotal,
-          stationShareTotal,
-          total: r2(franchiseNetTotal + stationShareTotal),
-          status: "draft",
-          createdAt: nowStamp(),
-        };
-        if (existingIndex !== -1) memory.revenueShareStatements[existingIndex] = statement;
-        else memory.revenueShareStatements.unshift(statement);
-        created.push(statement);
-      }
+      const created = runGenerateRevShareStatements(month);
       appendServerAudit({ actor, action: "MALL_REVSHARE_STATEMENTS_GENERATED", entity: "RevenueShareStatement", entityId: month, detail: `${created.length} 加盟商, ${month}`, risk: "Low" });
       return jsonResponse({ data: { created: created.length, statements: created } });
     }
@@ -664,6 +748,30 @@ async function handlePost(request: Request) {
       }
       memory.revenueShareStatements[index] = { ...st, status: "paid", paidAt: nowStamp(), paidBy: actor, note: String(body.note ?? "").slice(0, 200) || undefined };
       appendServerAudit({ actor, action: "MALL_REVSHARE_PAID", entity: "RevenueShareStatement", entityId: st.id, detail: `${st.franchise} ${st.month}: R$${st.total}`, risk: "Medium" });
+      return jsonResponse({ data: memory.revenueShareStatements[index] });
+    }
+    case "disputeRevShareStatement": {
+      // P1-4: a franchise contests its own draft/confirmed share statement.
+      const index = memory.revenueShareStatements.findIndex((s) => s.id === body.statementId);
+      if (index === -1) return jsonResponse({ error: "对账单不存在" }, { status: 404 });
+      const st = memory.revenueShareStatements[index];
+      const franchiseName = session?.portal === "franchise" ? (session.franchise || session.organization || "") : st.franchise;
+      if (st.franchise !== franchiseName) return jsonResponse({ error: "只能争议本加盟商对账单" }, { status: 403 });
+      if (st.status !== "draft" && st.status !== "confirmed") return jsonResponse({ error: "已付款或已在争议中的对账单不可争议" }, { status: 409 });
+      const note = String(body.note ?? "").trim().slice(0, 200);
+      if (!note) return jsonResponse({ error: "请填写争议原因" }, { status: 400 });
+      memory.revenueShareStatements[index] = { ...st, status: "disputed", disputeNote: note };
+      appendServerAudit({ actor, action: "MALL_REVSHARE_STATEMENT_DISPUTED", entity: "RevenueShareStatement", entityId: st.id, detail: `${st.franchise} ${st.month}: ${note}`, risk: "Medium" });
+      return jsonResponse({ data: memory.revenueShareStatements[index] });
+    }
+    case "reopenRevShareStatement": {
+      // P1-4: HQ only — disputed → draft (regenerable); disputeNote kept.
+      const index = memory.revenueShareStatements.findIndex((s) => s.id === body.statementId);
+      if (index === -1) return jsonResponse({ error: "对账单不存在" }, { status: 404 });
+      const st = memory.revenueShareStatements[index];
+      if (st.status !== "disputed") return jsonResponse({ error: "只有争议中的对账单可重新打开" }, { status: 409 });
+      memory.revenueShareStatements[index] = { ...st, status: "draft", confirmedAt: undefined };
+      appendServerAudit({ actor, action: "MALL_REVSHARE_STATEMENT_REOPENED", entity: "RevenueShareStatement", entityId: st.id, detail: `${st.franchise} ${st.month}: disputed → draft`, risk: "Medium" });
       return jsonResponse({ data: memory.revenueShareStatements[index] });
     }
 

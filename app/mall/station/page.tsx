@@ -77,7 +77,7 @@ export default function MallStationPage() {
 
   const actionButton = (order: MarketplaceOrder, action: "markArrived" | "markPickedUp", label: string, okText: string) =>
     order.reviewStatus === "pending" ? (
-      <div className="mt-2 text-[11px] font-black text-[#9a7400]">{t("msHighValue")}</div>
+      <div className="mt-2 text-[11px] font-black text-[var(--warn)]">{t("msHighValue")}</div>
     ) : (
       <button
         type="button"

@@ -41,7 +41,7 @@ function RiderPayrollWallet() {
   const [payAmount, setPayAmount] = useState("");
   const [payPeriod, setPayPeriod] = useState<"weekly" | "daily">("weekly");
   const [payNote, setPayNote] = useState("");
-  type RevStatement = { id: string; franchise: string; month: string; status: "draft" | "confirmed" | "paid"; total: number; orders: number; stationShareTotal: number; franchiseNetTotal: number };
+  type RevStatement = { id: string; franchise: string; month: string; status: "draft" | "confirmed" | "paid" | "disputed"; total: number; orders: number; stationShareTotal: number; franchiseNetTotal: number; disputeNote?: string };
   type RevEntry = { id: string; orderId: string; productName: string; pickupStoreName: string; franchise: string; month: string; franchiseNetBRL: number; stationShareBRL: number };
   const [revStatements, setRevStatements] = useState<RevStatement[]>([]);
   const [revEntries, setRevEntries] = useState<RevEntry[]>([]);
@@ -238,13 +238,29 @@ function RiderPayrollWallet() {
                 <div key={s.id} className="rounded-[8px] border border-[var(--line)] bg-[var(--surface-raised)] px-3 py-2 text-sm">
                   <div className="flex flex-wrap items-center gap-2">
                     <span className="font-black">{s.month}</span>
-                    <Badge value={{ draft: t("wlRsDraft"), confirmed: t("wlRsConfirmed"), paid: t("wlRsPaid") }[s.status]} />
+                    <Badge value={{ draft: t("wlRsDraft"), confirmed: t("wlRsConfirmed"), paid: t("wlRsPaid"), disputed: t("wlRsDisputed") }[s.status] ?? s.status} />
                     <span className="text-xs font-bold text-[var(--muted)]">{t("wlRsLine", { orders: s.orders, net: `R$ ${s.franchiseNetTotal.toFixed(2)}`, station: `R$ ${s.stationShareTotal.toFixed(2)}`, total: `R$ ${s.total.toFixed(2)}` })}</span>
                     <button type="button" className="tag ml-auto" onClick={() => toggleStmt(s.id)}>{expanded ? t("wlHideDetail") : t("wlViewDetail")}</button>
                     {s.status === "draft" && (
                       <button type="button" onClick={async () => { const res = await fetch("/api/mall/ops", { method: "POST", headers, body: JSON.stringify({ action: "confirmRevShareStatement", statementId: s.id }) }); if (res.ok) { setMessage({ tone: "ok", text: t("wlStmtConfirmed") }); void loadRevShare(); } }} className="h-8 rounded-[8px] bg-[var(--accent)] px-3 text-xs font-black text-[var(--accent-ink)]">{t("wlConfirmStmt")}</button>
                     )}
+                    {(s.status === "draft" || s.status === "confirmed") && (
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          const note = await dialog.prompt(t("wlDisputeTitle"), { message: t("wlDisputeMsg") });
+                          if (note === null || !note.trim()) return;
+                          const res = await fetch("/api/mall/ops", { method: "POST", headers, body: JSON.stringify({ action: "disputeRevShareStatement", statementId: s.id, note: note.trim() }) });
+                          const payload = await res.json().catch(() => ({}));
+                          if (!res.ok) { setMessage({ tone: "err", text: payload.error ?? t("wlOpFailed", { s: res.status }) }); return; }
+                          setMessage({ tone: "ok", text: t("wlDisputeSent") });
+                          void loadRevShare();
+                        }}
+                        className="h-8 rounded-[8px] border border-[var(--danger)]/40 px-3 text-xs font-black text-[var(--danger-ink)]"
+                      >{t("wlDisputeBtn")}</button>
+                    )}
                   </div>
+                  {s.status === "disputed" && s.disputeNote && <div className="mt-1 text-xs font-bold text-[var(--warning-ink)]">{t("wlDisputeNote", { x: s.disputeNote })}</div>}
                   {expanded && (
                     <div className="mt-2 border-t border-[var(--line)] pt-2">
                       {details.length === 0 ? (
@@ -425,14 +441,14 @@ function RiderPayrollWallet() {
 // ---------------------------------------------------------------------------
 
 type FinanceSummary = { orders: number; pointsGmv: number; cashGmv: number; gmvBRL: number; pointsToBrlRate: number; pendingPayments: number };
-type SupplierStmt = { id: string; supplierName: string; month: string; total: number; status: "draft" | "confirmed" | "paid"; paidAt?: string };
-type RevShareStmt = { id: string; franchise: string; month: string; status: "draft" | "confirmed" | "paid"; total: number; orders: number; stationShareTotal: number; franchiseNetTotal: number; paidAt?: string };
+type SupplierStmt = { id: string; supplierName: string; month: string; total: number; status: "draft" | "confirmed" | "paid" | "disputed"; paidAt?: string; disputeNote?: string };
+type RevShareStmt = { id: string; franchise: string; month: string; status: "draft" | "confirmed" | "paid" | "disputed"; total: number; orders: number; stationShareTotal: number; franchiseNetTotal: number; paidAt?: string; disputeNote?: string };
 type HybridPayment = { id: string; orderId: string; riderName: string; productName: string; amountBRL: number; status: string; reference?: string; createdAt?: string };
 type TopUpRow = { id: string; riderName: string; amountBRL: number; reference?: string; status: string; createdAt: string };
 type OfficeFinance = { summary?: FinanceSummary; statements?: SupplierStmt[]; revShareStatements?: RevShareStmt[]; payments?: HybridPayment[]; topUps?: TopUpRow[] };
 
-const stmtStatusLabel = (s: "draft" | "confirmed" | "paid", who: string, t: (k: TranslationKey, vars?: Record<string, string | number | undefined>) => string) =>
-  ({ draft: t("dynAwaitConfirm", { who }), confirmed: t("dynPayPending"), paid: t("dynPaid") }[s]);
+const stmtStatusLabel = (s: "draft" | "confirmed" | "paid" | "disputed", who: string, t: (k: TranslationKey, vars?: Record<string, string | number | undefined>) => string) =>
+  ({ draft: t("dynAwaitConfirm", { who }), confirmed: t("dynPayPending"), paid: t("dynPaid"), disputed: t("wlRsDisputed") }[s]);
 
 function MallFinanceWallet() {
   const language = useVentoStore((s) => s.language);
@@ -523,6 +539,7 @@ function MallFinanceWallet() {
                 <button type="button" onClick={() => void post({ action: "payRevShareStatement", statementId: s.id }, "已标记付款")} className="ml-auto h-8 rounded-[8px] bg-[var(--accent)] px-3 text-xs font-black text-[var(--accent-ink)]">标记已付款</button>
               )}
               {s.status === "paid" && <span className="ml-auto text-[11px] font-bold text-[var(--ok-ink)]">已付 {s.paidAt ?? ""}</span>}
+              {s.status === "disputed" && s.disputeNote && <span className="ml-auto text-[11px] font-bold text-[var(--warning-ink)]">异议：{s.disputeNote} · 在商城后台「供应链」处理</span>}
             </div>
           ))}
           {revStmts.length === 0 && <div className="py-4 text-center text-xs font-bold text-[var(--muted)]">暂无分成对账单。选择月份后点「生成分成对账单」:按「已取货订单 × 产品加盟商分成」自动汇总。</div>}
@@ -547,6 +564,7 @@ function MallFinanceWallet() {
                 <button type="button" onClick={() => void post({ action: "payStatement", statementId: s.id }, "已标记付款")} className="ml-auto h-8 rounded-[8px] bg-[var(--accent)] px-3 text-xs font-black text-[var(--accent-ink)]">标记已付款</button>
               )}
               {s.status === "paid" && <span className="ml-auto text-[11px] font-bold text-[var(--ok-ink)]">已付 {s.paidAt ?? ""}</span>}
+              {s.status === "disputed" && s.disputeNote && <span className="ml-auto text-[11px] font-bold text-[var(--warning-ink)]">异议：{s.disputeNote} · 在商城后台「供应链」处理</span>}
             </div>
           ))}
           {supplierStmts.length === 0 && <div className="py-4 text-center text-xs font-bold text-[var(--muted)]">暂无供应商对账单。按「履约订单 × 供货价」自动汇总每个供应商。</div>}
