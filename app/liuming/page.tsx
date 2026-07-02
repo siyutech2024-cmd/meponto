@@ -7,7 +7,7 @@ import { useEffect, useState } from "react";
  * /liuming — Ming Liu's digital business card (standalone premium page).
  * Same functions as the original e-card: tri-lingual switcher, WhatsApp QR
  * modal, tel/mail/site/maps links, vCard download, Web Share, QR codes.
- * Brand-matched to the marketing homepage (#0b0e14 · #f5b301).
+ * Brand-matched to the marketing homepage (#0b0e14 · #FFD400).
  */
 
 type Lang = "pt" | "zh" | "en";
@@ -179,7 +179,7 @@ export default function LiumingPage() {
   return (
     <main className="relative flex min-h-screen items-start justify-center overflow-hidden px-4 py-8 md:items-center md:py-14" style={{ background: "#0b0e14", color: "#fff7ef", fontFamily: "Outfit, Inter, system-ui, sans-serif" }}>
       <style>{`
-        .lm ::selection { background:#f5b301; color:#0b0e14; }
+        .lm ::selection { background:#FFD400; color:#0b0e14; }
         @keyframes lmRise { from { opacity:0; transform:translateY(26px) } to { opacity:1; transform:translateY(0) } }
         @keyframes lmGlow { 0%,100%{opacity:.5} 50%{opacity:.9} }
         .lm-rise { animation: lmRise .8s cubic-bezier(.22,.8,.26,1) both; }
@@ -191,29 +191,33 @@ export default function LiumingPage() {
 
       {/* ambient glow */}
       <div className="pointer-events-none fixed inset-0" aria-hidden>
-        <div className="absolute -top-32 left-1/2 h-96 w-[560px] -translate-x-1/2 rounded-full" style={{ background: "radial-gradient(ellipse, rgba(245,179,1,.14), transparent 70%)", animation: "lmGlow 7s ease-in-out infinite" }} />
-        <div className="absolute -bottom-40 left-1/2 h-96 w-[640px] -translate-x-1/2 rounded-full" style={{ background: "radial-gradient(ellipse, rgba(245,179,1,.07), transparent 70%)" }} />
+        <div className="absolute -top-32 left-1/2 h-96 w-[560px] -translate-x-1/2 rounded-full" style={{ background: "radial-gradient(ellipse, rgba(255,212,0,.14), transparent 70%)", animation: "lmGlow 7s ease-in-out infinite" }} />
+        <div className="absolute -bottom-40 left-1/2 h-96 w-[640px] -translate-x-1/2 rounded-full" style={{ background: "radial-gradient(ellipse, rgba(255,212,0,.07), transparent 70%)" }} />
       </div>
 
       <div className="lm relative w-full max-w-[420px]">
+        {/* language switcher — own row above the card */}
+        <div className="lm-rise mb-3.5 flex justify-end">
+          <div className="flex gap-1 rounded-full border p-1" style={{ borderColor: "rgba(255,255,255,.14)", background: "rgba(255,255,255,.04)", backdropFilter: "blur(4px)" }}>
+            {(["pt", "zh", "en"] as Lang[]).map((code) => (
+              <button
+                key={code}
+                type="button"
+                onClick={() => setLang(code)}
+                className="rounded-full px-3 py-1 text-[10px] font-black uppercase tracking-wider transition-colors"
+                style={lang === code ? { background: "#FFD400", color: "#0b0e14" } : { color: "rgba(255,255,255,.55)" }}
+              >
+                {code === "zh" ? "中" : code}
+              </button>
+            ))}
+          </div>
+        </div>
+
         {/* card with gradient border */}
-        <div className="lm-rise rounded-[30px] p-px" style={{ background: "linear-gradient(160deg, rgba(245,179,1,.65), rgba(245,179,1,.12) 38%, rgba(255,255,255,.08) 70%, rgba(245,179,1,.3))" }}>
+        <div className="lm-rise rounded-[30px] p-px" style={{ background: "linear-gradient(160deg, rgba(255,212,0,.65), rgba(255,212,0,.12) 38%, rgba(255,255,255,.08) 70%, rgba(255,212,0,.3))" }}>
           <div className="overflow-hidden rounded-[29px]" style={{ background: "#11141f" }}>
             {/* yellow header */}
-            <div className="relative px-7 pb-7 pt-8" style={{ background: "#f5b301", color: "#0b0e14" }}>
-              <div className="absolute right-4 top-4 z-10 flex gap-1 rounded-full p-1" style={{ background: "rgba(11,14,20,.14)", backdropFilter: "blur(4px)" }}>
-                {(["pt", "zh", "en"] as Lang[]).map((code) => (
-                  <button
-                    key={code}
-                    type="button"
-                    onClick={() => setLang(code)}
-                    className="rounded-full px-2.5 py-1 text-[10px] font-black uppercase tracking-wider transition-colors"
-                    style={lang === code ? { background: "#0b0e14", color: "#f5b301" } : { color: "rgba(11,14,20,.66)" }}
-                  >
-                    {code === "zh" ? "中" : code}
-                  </button>
-                ))}
-              </div>
+            <div className="relative px-7 py-7" style={{ background: "#FFD400", color: "#0b0e14" }}>
               <div className="flex items-center gap-4">
                 <img
                   src="/contact/ming-liu.jpg"
@@ -240,12 +244,12 @@ export default function LiumingPage() {
             <div className="flex flex-col gap-6 px-7 pb-8 pt-6">
               <div className="lm-rise-2">
                 <div className="text-[26px] font-black leading-none">{CONTACT.nameZh}</div>
-                <div className="mt-2 text-[12px] font-black uppercase tracking-[0.14em]" style={{ color: "#f5b301" }}>{CONTACT.nameEn}</div>
+                <div className="mt-2 text-[12px] font-black uppercase tracking-[0.14em]" style={{ color: "#FFD400" }}>{CONTACT.nameEn}</div>
                 <div className="mt-1.5 text-[11px] font-bold" style={{ color: "rgba(255,255,255,.55)" }}>{t.role}</div>
               </div>
 
-              <div className="lm-rise-2 border-l-[2.5px] pl-3.5 text-[17px] font-bold italic leading-snug" style={{ borderColor: "#f5b301" }}>
-                {t.vision[0]}<span style={{ color: "#f5b301" }}>meponto</span>{t.vision[1]}
+              <div className="lm-rise-2 border-l-[2.5px] pl-3.5 text-[17px] font-bold italic leading-snug" style={{ borderColor: "#FFD400" }}>
+                {t.vision[0]}<span style={{ color: "#FFD400" }}>meponto</span>{t.vision[1]}
               </div>
 
               {/* action tiles */}
@@ -253,14 +257,14 @@ export default function LiumingPage() {
                 {tiles.map((tile) => {
                   const inner = (
                     <>
-                      <span className="h-[19px] w-[19px] flex-none" style={{ color: "#f5b301" }}>{tile.icon}</span>
+                      <span className="h-[19px] w-[19px] flex-none" style={{ color: "#FFD400" }}>{tile.icon}</span>
                       <span className="flex min-w-0 flex-col text-left">
                         <span className="text-[8.5px] font-black uppercase tracking-[0.12em]" style={{ color: "rgba(255,255,255,.45)" }}>{tile.label}</span>
                         <span className="truncate text-[11.5px] font-bold" style={{ color: "rgba(255,255,255,.9)" }}>{tile.value}</span>
                       </span>
                     </>
                   );
-                  const cls = `flex items-center gap-2.5 rounded-2xl border px-3.5 py-3 transition-all hover:-translate-y-px hover:border-[#f5b301] active:scale-[0.97]${tile.wide ? " col-span-2" : ""}`;
+                  const cls = `flex items-center gap-2.5 rounded-2xl border px-3.5 py-3 transition-all hover:-translate-y-px hover:border-[#FFD400] active:scale-[0.97]${tile.wide ? " col-span-2" : ""}`;
                   const sty = { borderColor: "rgba(255,255,255,.09)", background: "rgba(255,255,255,.035)" };
                   return tile.href ? (
                     <a key={tile.label} href={tile.href} target={tile.external ? "_blank" : undefined} rel={tile.external ? "noopener noreferrer" : undefined} className={cls} style={sty}>
@@ -279,7 +283,7 @@ export default function LiumingPage() {
                 type="button"
                 onClick={saveContact}
                 className="lm-rise-3 flex w-full items-center justify-center gap-2.5 rounded-2xl py-4 text-[14px] font-black transition-transform hover:scale-[1.015] active:scale-[0.98]"
-                style={{ background: "#f5b301", color: "#0b0e14", boxShadow: "0 10px 30px -10px rgba(245,179,1,.45)" }}
+                style={{ background: "#FFD400", color: "#0b0e14", boxShadow: "0 10px 30px -10px rgba(255,212,0,.45)" }}
               >
                 <span className="h-[18px] w-[18px]">{ICONS.plus}</span>
                 {t.save}
@@ -305,7 +309,7 @@ export default function LiumingPage() {
 
               {/* share */}
               <div className="lm-rise-4 flex justify-center">
-                <button type="button" onClick={shareCard} className="flex items-center gap-2 px-3 py-1.5 text-[12.5px] font-black transition-colors hover:opacity-80" style={{ color: "#f5b301" }}>
+                <button type="button" onClick={shareCard} className="flex items-center gap-2 px-3 py-1.5 text-[12.5px] font-black transition-colors hover:opacity-80" style={{ color: "#FFD400" }}>
                   <span className="h-[15px] w-[15px]">{ICONS.share}</span>
                   {t.share}
                 </button>
