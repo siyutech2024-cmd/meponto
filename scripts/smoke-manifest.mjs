@@ -5,7 +5,10 @@ export const smokeChecks = [
   // they 404 on a direct path fetch and were removed from this smoke list.
   { path: "/login", text: "MePonto" },
   { path: "/reset-password", text: "Reset Password" },
-  { path: "/dashboard", text: "Control Dashboard" },
+  // Dashboard title is hardcoded zh in app/dashboard/page.tsx ("总部仪表盘");
+  // the old "Control Dashboard" copy only lives in the client-side i18n bundle
+  // and never appears in SSR HTML, so match the real server-rendered text.
+  { path: "/dashboard", text: "总部仪表盘" },
   { path: "/riders", text: "Rider Management" },
   { path: "/rider-app", text: "MePonto" },
   { path: "/pontos", text: "Ponto Network" },
