@@ -151,6 +151,11 @@ export async function proxy(request: NextRequest) {
     return NextResponse.next();
   }
 
+  // Short alias for the business card.
+  if (pathname === "/ishak") {
+    return NextResponse.redirect(new URL("/ishak.ma", request.url));
+  }
+
   // Legacy import URL → the real upload lives on the KPI board.
   if (pathname === "/ninety-nine-import" || pathname.startsWith("/ninety-nine-import/")) {
     return NextResponse.redirect(new URL("/performance", request.url));
@@ -160,7 +165,7 @@ export async function proxy(request: NextRequest) {
   // Each portal domain only serves ITS OWN pages. Opening another system's
   // path (e.g. franchise.meponto.com/pontosys) bounces to the owning domain —
   // regardless of who is logged in.
-  const publicPaths = ["/rider-login", "/register", "/scan", "/privacy", "/home", "/store", "/partner-register", "/systems", "/contact", "/liuming", "/ishak", "/llms.txt", "/og.png", "/480d2d55480284b1ce870c54bf62e21a.txt"];
+  const publicPaths = ["/rider-login", "/register", "/scan", "/privacy", "/home", "/store", "/partner-register", "/systems", "/contact", "/liuming", "/ishak.ma", "/llms.txt", "/og.png", "/480d2d55480284b1ce870c54bf62e21a.txt"];
   if (hostPortalId && !publicPaths.some((p) => pathname === p || pathname.startsWith(`${p}/`))) {
     const belongsTo = (portal: (typeof portalConfigs)[keyof typeof portalConfigs]) =>
       pathname === portal.homePath ||
