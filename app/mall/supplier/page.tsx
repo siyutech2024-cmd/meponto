@@ -44,9 +44,9 @@ const TABS = [
 const orderStatusLabel: Record<string, string> = { created: "待履约", arrived: "已到站", fulfilled: "已完成", held: "审核中" };
 
 
-function Stat({ label, value, hint }: { label: string; value: string; hint?: string }) {
+function Stat({ label, value, hint, onClick }: { label: string; value: string; hint?: string; onClick?: () => void }) {
   return (
-    <div className="panel p-4">
+    <div className={`panel p-4${onClick ? " cursor-pointer transition-colors hover:border-[var(--accent)]" : ""}`} onClick={onClick} role={onClick ? "button" : undefined}>
       <div className="text-[11px] font-black uppercase text-[var(--muted)]">{label}</div>
       <div className="mt-1 text-2xl font-black">{value}</div>
       {hint && <div className="mt-0.5 text-[11px] font-bold text-[var(--muted)]">{hint}</div>}
@@ -79,6 +79,7 @@ export default function SupplierWorkspacePage() {
   const [uploading, setUploading] = useState(false);
   const [priceDraft, setPriceDraft] = useState<Record<string, string>>({});
   const [pixDraft, setPixDraft] = useState("");
+  const [orderFilter, setOrderFilter] = useState("");
 
   // Compress a picked image to a small JPEG and upload it (Supabase Storage when
   // available, else an inline data URL). Returns the final URL, or null on error.
@@ -219,14 +220,18 @@ export default function SupplierWorkspacePage() {
   }
 
   function exportStatement(statement: SupplierStatement) {
-    const rows = statement.lines.map((l) => [l.date, l.productName, l.orderId, l.supplyPrice.toFixed(2)]);
+    const rows = statement.lines.map((l) => [l.date, l.orderId, l.productName, l.supplyPrice.toFixed(2)]);
     rows.push(["合计", "", "", statement.total.toFixed(2)]);
-    downloadCsv(`extrato-${supplierName}-${statement.month}`, ["日期", "商品", "订单号", "供货价 R$"], rows);
+    downloadCsv(`extrato-${supplierName}-${statement.month}`, ["日期", "订单", "商品", "供货价"], rows);
   }
 
   const payableTotal = (ops?.statements ?? []).filter((statement) => statement.status !== "paid").reduce((sum, statement) => sum + statement.total, 0);
   const paidTotal = (ops?.statements ?? []).filter((statement) => statement.status === "paid").reduce((sum, statement) => sum + statement.total, 0);
   const maxDaily = Math.max(1, ...(ops?.summary.daily ?? []).map((day) => day.count));
+  const monthKey = new Date().toISOString().slice(0, 7);
+  const monthExpected = (sup?.orders ?? []).filter((o) => o.createdAt.slice(0, 7) === monthKey && (o.status === "fulfilled" || o.status === "arrived")).reduce((sum, o) => sum + o.supplyPrice, 0);
+  const draftStatementCount = (ops?.statements ?? []).filter((statement) => statement.status === "draft").length;
+  const filteredOrders = (sup?.orders ?? []).filter((o) => !orderFilter || o.status === orderFilter);
 
   return (
     <AppShell>
@@ -467,11 +472,13 @@ export default function SupplierWorkspacePage() {
       {/* ============ 概览 ============ */}
       {tab === "overview" && (
         <div className="space-y-5">
-          <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+          <div className="grid grid-cols-2 gap-3 md:grid-cols-3">
             <Stat label="累计售出（件）" value={String(ops?.summary.orders ?? 0)} hint="兑换订单数" />
             <Stat label="在售商品" value={String(products.filter((product) => product.status === "active").length)} hint={t("dynSkuCount", { n: products.length })} />
             <Stat label="待收货款" value={`R$ ${payableTotal.toFixed(2)}`} hint="未付对账单合计" />
             <Stat label="已结货款" value={`R$ ${paidTotal.toFixed(2)}`} hint="历史已付合计" />
+            <Stat label="本月预计回款" value={`R$ ${monthExpected.toFixed(2)}`} hint="实时口径，以月度对账单为准" />
+            <Stat label="待确认对账单" value={String(draftStatementCount)} hint="点击前往账单确认" onClick={() => setTab("statements")} />
           </div>
           <div className="panel p-5">
             <div className="mb-3 text-xs font-black uppercase text-[var(--muted)]">近 30 天售出趋势</div>
@@ -489,11 +496,19 @@ export default function SupplierWorkspacePage() {
       {tab === "orders" && (
         <div className="panel p-5">
           <div className="mb-3 text-xs font-black uppercase text-[var(--muted)]">本供应商履约订单 · 计入月度对账</div>
+          <div className="mb-3 flex flex-wrap items-center gap-2">
+            {["", "created", "arrived", "fulfilled"].map((status) => (
+              <button key={status || "all"} type="button" onClick={() => setOrderFilter(status)} className={`rounded-full border px-3.5 py-1.5 text-xs font-black ${orderFilter === status ? "border-[var(--accent)] bg-[var(--accent)] text-[var(--accent-ink)]" : "border-[var(--line)] text-[var(--muted)]"}`}>
+                {status === "" ? "全部" : orderStatusLabel[status]}
+              </button>
+            ))}
+            <button type="button" onClick={() => downloadCsv(`supplier-orders-${supplierName || "meponto"}`, ["订单", "商品", "站点", "加盟商", "状态", "供货价", "时间"], filteredOrders.map((o) => [o.id, o.productName, o.station, o.franchise, orderStatusLabel[o.status] ?? o.status, o.supplyPrice.toFixed(2), o.createdAt]))} className="ml-auto inline-flex h-9 items-center gap-1 rounded-[8px] border border-[var(--line)] px-3 text-xs font-black text-[var(--muted)] hover:border-[var(--accent)]"><Download size={12} /> 导出 CSV</button>
+          </div>
           <div className="overflow-x-auto rounded-[8px] border border-[var(--line)]">
             <table className="w-full text-sm">
               <thead><tr className="bg-[var(--surface-raised)] text-left text-[11px] font-black uppercase text-[var(--muted)]"><th className="px-3 py-2">订单号</th><th className="px-3 py-2">商品</th><th className="px-3 py-2">日期</th><th className="px-3 py-2">类型</th><th className="px-3 py-2">状态</th><th className="px-3 py-2 text-right">供货价</th></tr></thead>
               <tbody>
-                {(sup?.orders ?? []).map((o) => (
+                {filteredOrders.map((o) => (
                   <tr key={o.id} className="border-t border-[var(--line)] font-bold">
                     <td className="px-3 py-2 font-mono text-xs text-[var(--muted)]">{o.id}</td>
                     <td className="px-3 py-2">{o.productName}</td>
@@ -505,7 +520,7 @@ export default function SupplierWorkspacePage() {
                 ))}
               </tbody>
             </table>
-            {(sup?.orders ?? []).length === 0 && <div className="py-8 text-center text-xs font-bold text-[var(--muted)]">暂无履约订单。骑手/合作方兑换你的商品并完成后,会计入对账并出现在这里。</div>}
+            {filteredOrders.length === 0 && <div className="py-8 text-center text-xs font-bold text-[var(--muted)]">暂无履约订单。骑手/合作方兑换你的商品并完成后,会计入对账并出现在这里。</div>}
           </div>
         </div>
       )}

@@ -42,15 +42,36 @@ function RiderPayrollWallet() {
   const [payPeriod, setPayPeriod] = useState<"weekly" | "daily">("weekly");
   const [payNote, setPayNote] = useState("");
   type RevStatement = { id: string; franchise: string; month: string; status: "draft" | "confirmed" | "paid"; total: number; orders: number; stationShareTotal: number; franchiseNetTotal: number };
+  type RevEntry = { id: string; orderId: string; productName: string; pickupStoreName: string; franchise: string; month: string; franchiseNetBRL: number; stationShareBRL: number };
   const [revStatements, setRevStatements] = useState<RevStatement[]>([]);
+  const [revEntries, setRevEntries] = useState<RevEntry[]>([]);
+  const [openStmt, setOpenStmt] = useState<Set<string>>(new Set());
   const [stationShare, setStationShare] = useState("");
 
   const loadRevShare = useCallback(async () => {
     if (!scopeFranchise) return;
     const r = await fetch("/api/mall/ops", { headers, cache: "no-store" }).catch(() => null);
-    if (r && r.ok) setRevStatements(((await r.json()).data?.revShareStatements ?? []) as RevStatement[]);
+    if (r && r.ok) {
+      const data = (await r.json()).data ?? {};
+      setRevStatements((data.revShareStatements ?? []) as RevStatement[]);
+      setRevEntries((data.revShareEntries ?? []) as RevEntry[]);
+    }
   }, [headers, scopeFranchise]);
   useEffect(() => { void loadRevShare(); }, [loadRevShare]);
+
+  // Order-level entries backing one monthly statement (so the franchise can
+  // inspect what it is confirming instead of blind-signing).
+  const entriesOf = (s: RevStatement) => revEntries.filter((e) => e.month === s.month && e.franchise === s.franchise);
+  const toggleStmt = (id: string) => setOpenStmt((prev) => { const next = new Set(prev); next.has(id) ? next.delete(id) : next.add(id); return next; });
+
+  function exportRevDetailCsv(s: RevStatement) {
+    const rows = entriesOf(s);
+    const header = [t("wlColOrderId"), t("wlColProduct"), t("wlColPickupStore"), t("wlColFrNet"), t("wlColStShare")];
+    const body = rows.map((e) => [e.orderId, e.productName, e.pickupStoreName, e.franchiseNetBRL.toFixed(2), e.stationShareBRL.toFixed(2)]);
+    body.push([t("wlCsvTotal"), "", "", rows.reduce((a, e) => a + e.franchiseNetBRL, 0).toFixed(2), rows.reduce((a, e) => a + e.stationShareBRL, 0).toFixed(2)]);
+    downloadCsv(`revshare-detail-${s.franchise}-${s.month}`, header, body);
+    setMessage({ tone: "ok", text: t("wlDetailExported", { n: rows.length, m: s.month }) });
+  }
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -210,16 +231,60 @@ function RiderPayrollWallet() {
             <button type="button" onClick={async () => { const res = await fetch("/api/mall/ops", { method: "POST", headers, body: JSON.stringify({ action: "setStationShare", stationShareBRL: Number(stationShare) || 0 }) }); setMessage(res.ok ? { tone: "ok", text: t("wlStationShareSet", { x: Number(stationShare) || 0 }) } : { tone: "err", text: t("wlSetFailed") }); }} className="h-9 rounded-[8px] bg-[var(--accent)] px-3 text-xs font-black text-[var(--accent-ink)]">{t("wlSetStationShare")}</button>
           </div>
           <div className="space-y-2">
-            {revStatements.map((s) => (
-              <div key={s.id} className="flex flex-wrap items-center gap-2 rounded-[8px] border border-[var(--line)] bg-[var(--surface-raised)] px-3 py-2 text-sm">
-                <span className="font-black">{s.month}</span>
-                <Badge value={{ draft: t("wlRsDraft"), confirmed: t("wlRsConfirmed"), paid: t("wlRsPaid") }[s.status]} />
-                <span className="text-xs font-bold text-[var(--muted)]">{t("wlRsLine", { orders: s.orders, net: `R$ ${s.franchiseNetTotal.toFixed(2)}`, station: `R$ ${s.stationShareTotal.toFixed(2)}`, total: `R$ ${s.total.toFixed(2)}` })}</span>
-                {s.status === "draft" && (
-                  <button type="button" onClick={async () => { const res = await fetch("/api/mall/ops", { method: "POST", headers, body: JSON.stringify({ action: "confirmRevShareStatement", statementId: s.id }) }); if (res.ok) { setMessage({ tone: "ok", text: t("wlStmtConfirmed") }); void loadRevShare(); } }} className="ml-auto h-8 rounded-[8px] bg-[var(--accent)] px-3 text-xs font-black text-[var(--accent-ink)]">{t("wlConfirmStmt")}</button>
-                )}
-              </div>
-            ))}
+            {revStatements.map((s) => {
+              const expanded = openStmt.has(s.id);
+              const details = expanded ? entriesOf(s) : [];
+              return (
+                <div key={s.id} className="rounded-[8px] border border-[var(--line)] bg-[var(--surface-raised)] px-3 py-2 text-sm">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="font-black">{s.month}</span>
+                    <Badge value={{ draft: t("wlRsDraft"), confirmed: t("wlRsConfirmed"), paid: t("wlRsPaid") }[s.status]} />
+                    <span className="text-xs font-bold text-[var(--muted)]">{t("wlRsLine", { orders: s.orders, net: `R$ ${s.franchiseNetTotal.toFixed(2)}`, station: `R$ ${s.stationShareTotal.toFixed(2)}`, total: `R$ ${s.total.toFixed(2)}` })}</span>
+                    <button type="button" className="tag ml-auto" onClick={() => toggleStmt(s.id)}>{expanded ? t("wlHideDetail") : t("wlViewDetail")}</button>
+                    {s.status === "draft" && (
+                      <button type="button" onClick={async () => { const res = await fetch("/api/mall/ops", { method: "POST", headers, body: JSON.stringify({ action: "confirmRevShareStatement", statementId: s.id }) }); if (res.ok) { setMessage({ tone: "ok", text: t("wlStmtConfirmed") }); void loadRevShare(); } }} className="h-8 rounded-[8px] bg-[var(--accent)] px-3 text-xs font-black text-[var(--accent-ink)]">{t("wlConfirmStmt")}</button>
+                    )}
+                  </div>
+                  {expanded && (
+                    <div className="mt-2 border-t border-[var(--line)] pt-2">
+                      {details.length === 0 ? (
+                        <div className="py-2 text-center text-xs font-bold text-[var(--muted)]">{t("wlDetailEmpty")}</div>
+                      ) : (
+                        <>
+                          <div className="max-h-64 overflow-auto pr-1">
+                            <table className="w-full text-xs">
+                              <thead>
+                                <tr className="text-left text-[10px] font-black uppercase text-[var(--muted)]">
+                                  <th className="pb-1.5">{t("wlColOrderId")}</th>
+                                  <th className="pb-1.5">{t("wlColProduct")}</th>
+                                  <th className="pb-1.5">{t("wlColPickupStore")}</th>
+                                  <th className="pb-1.5 text-right">{t("wlColFrNet")}</th>
+                                  <th className="pb-1.5 text-right">{t("wlColStShare")}</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {details.map((e) => (
+                                  <tr key={e.id} className="border-t border-[var(--line)]">
+                                    <td className="py-1.5 font-bold">{e.orderId}</td>
+                                    <td className="py-1.5">{e.productName}</td>
+                                    <td className="py-1.5">{e.pickupStoreName}</td>
+                                    <td className="py-1.5 text-right font-black">{money(e.franchiseNetBRL)}</td>
+                                    <td className="py-1.5 text-right">{money(e.stationShareBRL)}</td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                          <div className="mt-2 flex justify-end">
+                            <button type="button" className="tag" onClick={() => exportRevDetailCsv(s)}>CSV</button>
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
             {revStatements.length === 0 && <div className="py-2 text-center text-xs font-bold text-[var(--muted)]">{t("wlNoRevStmt")}</div>}
           </div>
         </div>

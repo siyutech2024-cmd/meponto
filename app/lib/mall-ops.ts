@@ -206,6 +206,27 @@ export type CashLedgerEntry = {
   createdAt: string;
 };
 
+/**
+ * Append-only inventory ledger — every mutation of `product.stock` keeps a
+ * record (PO receipt, redemption, cancel/review restock, manual adjust), so
+ * stock movements reconcile the same way as points/cash (Hard Rule #4).
+ */
+export type InventoryLedgerEntry = {
+  id: string;
+  productId: string;
+  productName: string;
+  type: "po_receive" | "redeem" | "cancel_restock" | "review_reject_restock" | "manual_adjust";
+  /** Signed quantity delta: + inbound/restock, − outbound. */
+  qty: number;
+  /** Product stock right after this movement. */
+  stockAfter: number;
+  /** Source record: PO id / order id / manual adjustment reference. */
+  sourceId: string;
+  note?: string;
+  createdBy: string;
+  createdAt: string;
+};
+
 export const topUpStatusLabel: Record<CashTopUpStatus, string> = {
   pending: "待转账",
   submitted: "待核销",

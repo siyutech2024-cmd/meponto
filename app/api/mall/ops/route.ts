@@ -1,4 +1,4 @@
-import { appendServerAudit, jsonResponse, makeServerId, memory } from "../../../lib/server/memory";
+import { appendInventoryLedger, appendServerAudit, jsonResponse, makeServerId, memory } from "../../../lib/server/memory";
 import { flushPendingToDatabase, persistDeleteRecord, refreshCollectionsFromDatabase } from "../../../lib/server/persistence";
 import { requirePermission, roleFromRequest, scopeFromRequest } from "../../../lib/server/authz";
 import { sessionFromRequest } from "../../../lib/auth-session";
@@ -17,6 +17,7 @@ import type { CashLedgerEntry, CashTopUp, MallBanner, MallCategory, MallCoupon, 
 const COLLECTIONS = [
   "cashTopUps",
   "cashLedgerEntries",
+  "inventoryLedgerEntries",
   "mallCategories",
   "mallBanners",
   "mallCoupons",
@@ -400,6 +401,7 @@ async function handlePost(request: Request) {
         const productIndex = memory.marketplaceProducts.findIndex((product) => product.id === item.productId);
         if (productIndex !== -1) {
           memory.marketplaceProducts[productIndex] = { ...memory.marketplaceProducts[productIndex], stock: memory.marketplaceProducts[productIndex].stock + item.qty };
+          appendInventoryLedger({ productId: item.productId, productName: item.name, type: "po_receive", qty: item.qty, stockAfter: memory.marketplaceProducts[productIndex].stock, sourceId: po.id, createdBy: actor });
         }
       }
       memory.purchaseOrders[index] = { ...po, status: "received", receivedAt: nowStamp(), receivedBy: actor };
@@ -421,12 +423,17 @@ async function handlePost(request: Request) {
       const productMap = new Map(memory.marketplaceProducts.map((product) => [product.id, product]));
       const linesBySupplier = new Map<string, SupplierStatementLine[]>();
       for (const order of memory.marketplaceOrders) {
-        if (order.accountType !== "rider" || (order.status !== "fulfilled" && order.status !== "arrived")) continue;
-        if (!order.createdAt.startsWith(month)) continue;
+        // Rider AND Partner redemptions both owe the supplier (P0-1); the
+        // fulfilled/arrived scope matches the supplierSettlement read model.
+        if (order.status !== "fulfilled" && order.status !== "arrived") continue;
+        // Attribute to the FULFILMENT month (P0-3): a redemption picked up (or
+        // arrived) in a later month settles in that month, not the order month.
+        const fulfilledAt = order.pickedUpAt ?? order.arrivedAt ?? order.createdAt;
+        if (!fulfilledAt.startsWith(month)) continue;
         const product = productMap.get(order.productId);
         if (!product?.supplierName) continue;
         const lines = linesBySupplier.get(product.supplierName) ?? [];
-        lines.push({ orderId: order.id, productId: product.id, productName: product.name, supplyPrice: product.supplyPrice ?? 0, date: order.createdAt.slice(0, 10) });
+        lines.push({ orderId: order.id, productId: product.id, productName: product.name, supplyPrice: product.supplyPrice ?? 0, date: fulfilledAt.slice(0, 10) });
         linesBySupplier.set(product.supplierName, lines);
       }
       const created: SupplierStatement[] = [];

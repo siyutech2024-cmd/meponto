@@ -42,6 +42,9 @@ const orderStatusLabel: Record<string, string> = { created: "在途", arrived: "
 const productStatusLabel: Record<string, string> = { active: "已上架", paused: "已下架", pending_pricing: "待定价" };
 const payChipTone: Record<string, string> = { pending: "#b3540a", submitted: "#9a7400", paid: "#1d7a3e" };
 
+const PRODUCT_PAGE_SIZE = 20;
+const ORDER_PAGE_SIZE = 50;
+
 const TABS = [
   { id: "overview", label: "总览", icon: BarChart3 },
   { id: "products", label: "商品与定价", icon: ShoppingBag },
@@ -52,6 +55,16 @@ const TABS = [
   { id: "settings", label: "设置", icon: Settings2 },
 ] as const;
 
+
+function Pager({ page, pages, total, onPage }: { page: number; pages: number; total: number; onPage: (page: number) => void }) {
+  return (
+    <div className="flex items-center gap-2 text-xs font-black text-[var(--muted)]">
+      <button type="button" disabled={page <= 1} onClick={() => onPage(page - 1)} className="h-8 rounded-[8px] border border-[var(--line)] px-3 disabled:opacity-40">上一页</button>
+      <span>第 {page} / {pages} 页 · 共 {total} 条</span>
+      <button type="button" disabled={page >= pages} onClick={() => onPage(page + 1)} className="h-8 rounded-[8px] border border-[var(--line)] px-3 disabled:opacity-40">下一页</button>
+    </div>
+  );
+}
 
 function Stat({ label, value, hint }: { label: string; value: string; hint?: string }) {
   return (
@@ -82,6 +95,13 @@ export default function MallAdminPage() {
   const [bannerDraft, setBannerDraft] = useState({ title: "", imageUrl: "", href: "" });
   const [couponDraft, setCouponDraft] = useState({ title: "", type: "points_off", value: "", minPoints: "", minTier: "member", perRiderLimit: "", expiresAt: "" });
   const [orderFilter, setOrderFilter] = useState("");
+  const [productSearch, setProductSearch] = useState("");
+  const [productStatusFilter, setProductStatusFilter] = useState("");
+  const [productPage, setProductPage] = useState(1);
+  const [orderSearch, setOrderSearch] = useState("");
+  const [orderDateFrom, setOrderDateFrom] = useState("");
+  const [orderDateTo, setOrderDateTo] = useState("");
+  const [orderPage, setOrderPage] = useState(1);
   const [poSupplier, setPoSupplier] = useState("");
   const [poItems, setPoItems] = useState<Record<string, string>>({});
   const [statementMonth, setStatementMonth] = useState(() => {
@@ -122,8 +142,40 @@ export default function MallAdminPage() {
     return payload.data;
   }
 
-  const products = mall?.products ?? [];
-  const orders = (mall?.orders ?? []).filter((order) => !orderFilter || order.status === orderFilter);
+  const products = useMemo(() => mall?.products ?? [], [mall]);
+  /** Money equivalence reference: how many points ≈ R$1 (from GET /api/mall config). */
+  const pointsPerBrlRate = mall?.config?.pointsPerBrl || 10;
+
+  // ---- Products tab: keyword + status filter + pagination (client-side) ----
+  const filteredProducts = useMemo(() => {
+    const q = productSearch.trim().toLowerCase();
+    return products.filter((product) => {
+      if (productStatusFilter && product.status !== productStatusFilter) return false;
+      if (!q) return true;
+      return [product.name, product.supplierName ?? "", product.category ?? ""].some((text) => text.toLowerCase().includes(q));
+    });
+  }, [products, productSearch, productStatusFilter]);
+  const productPages = Math.max(1, Math.ceil(filteredProducts.length / PRODUCT_PAGE_SIZE));
+  const safeProductPage = Math.min(productPage, productPages);
+  const pagedProducts = useMemo(() => filteredProducts.slice((safeProductPage - 1) * PRODUCT_PAGE_SIZE, safeProductPage * PRODUCT_PAGE_SIZE), [filteredProducts, safeProductPage]);
+
+  // ---- Orders tab: status + keyword + date range filter + pagination ----
+  const allOrders = useMemo(() => mall?.orders ?? [], [mall]);
+  const filteredOrders = useMemo(() => {
+    const q = orderSearch.trim().toLowerCase();
+    return allOrders.filter((order) => {
+      if (orderFilter && order.status !== orderFilter) return false;
+      if (q && ![order.productName ?? "", order.riderName ?? "", order.station ?? "", order.id].some((text) => text.toLowerCase().includes(q))) return false;
+      const day = (order.createdAt ?? "").slice(0, 10);
+      if (orderDateFrom && day < orderDateFrom) return false;
+      if (orderDateTo && day > orderDateTo) return false;
+      return true;
+    });
+  }, [allOrders, orderFilter, orderSearch, orderDateFrom, orderDateTo]);
+  const orderPages = Math.max(1, Math.ceil(filteredOrders.length / ORDER_PAGE_SIZE));
+  const safeOrderPage = Math.min(orderPage, orderPages);
+  const pagedOrders = useMemo(() => filteredOrders.slice((safeOrderPage - 1) * ORDER_PAGE_SIZE, safeOrderPage * ORDER_PAGE_SIZE), [filteredOrders, safeOrderPage]);
+
   const suppliers = useMemo(() => [...new Set(products.map((product) => product.supplierName).filter(Boolean))] as string[], [products]);
   const summary = ops?.summary;
   const pendingPricing = products.filter((product) => product.status === "pending_pricing").length;
@@ -231,10 +283,32 @@ export default function MallAdminPage() {
       {/* ================= 商品与定价 ================= */}
       {tab === "products" && (
         <div className="space-y-3">
+          <div className="panel flex flex-wrap items-center gap-2 p-4">
+            <input value={productSearch} onChange={(e) => { setProductSearch(e.target.value); setProductPage(1); }} placeholder="搜索商品名 / 供应商 / 分类…" className="h-10 w-64 rounded-[8px] border border-[var(--line)] bg-[var(--surface-raised)] px-3 text-sm font-bold outline-none focus:border-[var(--accent)]" />
+            {["", "active", "paused", "pending_pricing"].map((status) => (
+              <button key={status || "all"} type="button" onClick={() => { setProductStatusFilter(status); setProductPage(1); }} className={`rounded-full border px-3.5 py-1.5 text-xs font-black ${productStatusFilter === status ? "border-[var(--accent)] bg-[var(--accent)] text-[var(--accent-ink)]" : "border-[var(--line)] text-[var(--muted)]"}`}>
+                {status === "" ? "全部" : productStatusLabel[status]}
+              </button>
+            ))}
+            <div className="ml-auto">
+              <Pager page={safeProductPage} pages={productPages} total={filteredProducts.length} onPage={setProductPage} />
+            </div>
+          </div>
           {products.length === 0 && <div className="panel p-10 text-center text-sm font-bold text-[var(--muted)]">还没有商品——等供应商在供应链后台提报。</div>}
-          {products.map((product) => {
+          {products.length > 0 && filteredProducts.length === 0 && <div className="panel p-10 text-center text-sm font-bold text-[var(--muted)]">没有匹配的商品——换个关键字或状态试试。</div>}
+          {pagedProducts.map((product) => {
             const draft = priceDrafts[product.id] ?? { points: String(product.pointsPrice || ""), cash: product.cashPriceBRL ? String(product.cashPriceBRL) : "", share: product.franchiseShareBRL ? String(product.franchiseShareBRL) : "" };
             const editing = editOpen === product.id;
+            // Pricing margin context: points value in R$ at the reference rate,
+            // total revenue vs. supply cost + franchise share.
+            const draftPoints = Number(draft.points) || 0;
+            const draftCash = Number(draft.cash) || 0;
+            const draftShare = Number(draft.share) || 0;
+            const pointsAsBrl = pointsPerBrlRate > 0 ? draftPoints / pointsPerBrlRate : 0;
+            const grossRevenue = pointsAsBrl + draftCash;
+            const grossCost = (product.supplyPrice ?? 0) + draftShare;
+            const grossMargin = grossRevenue - grossCost;
+            const grossMarginPct = grossRevenue > 0 ? (grossMargin / grossRevenue) * 100 : 0;
             return (
               <div key={product.id} className="panel p-4">
                 <div className="flex flex-wrap items-center gap-3">
@@ -264,12 +338,15 @@ export default function MallAdminPage() {
                     <label className="text-[11px] font-black text-[var(--muted)]" title="每次成功取货付给取货门店加盟商的固定 R$（销售分成）">加盟商分成 R$
                       <input value={draft.share} onChange={(e) => setPriceDrafts((prev) => ({ ...prev, [product.id]: { ...draft, share: e.target.value } }))} placeholder="0" className="ml-1.5 h-9 w-20 rounded-[8px] border border-[var(--line)] bg-[var(--surface-raised)] px-2 text-sm font-bold outline-none focus:border-[var(--accent)]" />
                     </label>
-                    <button type="button" onClick={() => void post("/api/mall", { action: "priceProduct", productId: product.id, pointsPrice: Number(draft.points) || 0, cashPriceBRL: Number(draft.cash) || 0, franchiseShareBRL: Number(draft.share) || 0, status: "active" }, "已定价上架")} className="h-9 rounded-[8px] bg-[var(--accent)] px-3 text-xs font-black text-[var(--accent-ink)]">定价上架</button>
+                    <button type="button" onClick={() => { if (grossMargin < 0 && !confirm(`当前定价为负毛利：每单亏损 R$ ${Math.abs(grossMargin).toFixed(2)}（收入 R$ ${grossRevenue.toFixed(2)} − 成本 R$ ${grossCost.toFixed(2)}）。确认仍要定价上架？`)) return; void post("/api/mall", { action: "priceProduct", productId: product.id, pointsPrice: draftPoints, cashPriceBRL: draftCash, franchiseShareBRL: draftShare, status: "active" }, "已定价上架"); }} className="h-9 rounded-[8px] bg-[var(--accent)] px-3 text-xs font-black text-[var(--accent-ink)]">定价上架</button>
                     {product.status === "active" && (
                       <button type="button" onClick={() => void post("/api/mall", { action: "priceProduct", productId: product.id, pointsPrice: product.pointsPrice, cashPriceBRL: product.cashPriceBRL ?? 0, status: "paused" }, "已下架")} className="h-9 rounded-[8px] border border-[var(--line)] px-3 text-xs font-black text-[var(--muted)]">下架</button>
                     )}
                     <button type="button" onClick={() => { setEditOpen(editing ? "" : product.id); setEditDraft({ name: product.name, description: product.description ?? "", imageUrl: product.imageUrl ?? "", category: product.category ?? "", stock: String(product.stock), purchaseLimit: String(product.purchaseLimit ?? 0) }); }} className="h-9 rounded-[8px] border border-[var(--line)] px-3 text-xs font-black text-[var(--muted)]">{editing ? "收起" : "编辑"}</button>
                   </div>
+                </div>
+                <div className="mt-2 text-right text-[11px] font-bold" style={{ color: grossMargin < 0 ? "#c4423b" : "var(--muted)" }}>
+                  积分价折合 R$ {pointsAsBrl.toFixed(2)}（{pointsPerBrlRate} 分 = R$1） · 总收入 R$ {grossRevenue.toFixed(2)} · 成本 R$ {grossCost.toFixed(2)}（供货 {(product.supplyPrice ?? 0).toFixed(2)} + 分成 {draftShare.toFixed(2)}） · 毛利 R$ {grossMargin.toFixed(2)}（{grossMarginPct.toFixed(1)}%）{grossMargin < 0 ? " ⚠ 负毛利" : ""}
                 </div>
                 {editing && (
                   <div className="mt-3 grid gap-2 border-t border-[var(--line)] pt-3 md:grid-cols-3">
@@ -286,8 +363,18 @@ export default function MallAdminPage() {
                       </label>
                     ))}
                     <div className="flex items-end gap-2">
-                      <button type="button" onClick={() => void post("/api/mall", { action: "updateProduct", productId: product.id, name: editDraft.name, description: editDraft.description, imageUrl: editDraft.imageUrl, category: editDraft.category, stock: Number(editDraft.stock) || 0, purchaseLimit: Number(editDraft.purchaseLimit) || 0 }, "商品已更新").then(() => setEditOpen(""))} className="h-9 rounded-[8px] bg-[var(--accent)] px-4 text-xs font-black text-[var(--accent-ink)]">保存</button>
-                      <button type="button" onClick={() => { if (confirm(t("dynDelProduct", { n: product.name }))) void post("/api/mall", { action: "deleteProduct", productId: product.id }, "已删除"); }} className="h-9 rounded-[8px] border border-[#c4423b]/40 px-4 text-xs font-black text-[#c4423b]">删除</button>
+                      <button type="button" onClick={() => {
+                        const newStock = Number(editDraft.stock) || 0;
+                        let reason: string | undefined;
+                        if (newStock !== product.stock) {
+                          const input = prompt(`库存将由 ${product.stock} 改为 ${newStock}，请填写修改原因（必填，将随库存台账记录）：`);
+                          if (input === null) return;
+                          if (!input.trim()) { setMessage({ tone: "err", text: "库存变更必须填写修改原因" }); return; }
+                          reason = input.trim();
+                        }
+                        void post("/api/mall", { action: "updateProduct", productId: product.id, name: editDraft.name, description: editDraft.description, imageUrl: editDraft.imageUrl, category: editDraft.category, stock: newStock, purchaseLimit: Number(editDraft.purchaseLimit) || 0, ...(reason ? { reason } : {}) }, "商品已更新").then(() => setEditOpen(""));
+                      }} className="h-9 rounded-[8px] bg-[var(--accent)] px-4 text-xs font-black text-[var(--accent-ink)]">保存</button>
+                      <button type="button" onClick={() => { if (confirm(`删除商品「${product.name}」？当前库存 ${product.stock}、状态「${productStatusLabel[product.status] ?? product.status}」。删除后不可恢复。`)) void post("/api/mall", { action: "deleteProduct", productId: product.id }, "已删除"); }} className="h-9 rounded-[8px] border border-[#c4423b]/40 px-4 text-xs font-black text-[#c4423b]">删除</button>
                     </div>
                   </div>
                 )}
@@ -387,17 +474,29 @@ export default function MallAdminPage() {
         <div className="panel p-5">
           <div className="mb-3 flex flex-wrap items-center gap-2">
             {["", "created", "arrived", "fulfilled", "cancelled"].map((status) => (
-              <button key={status || "all"} type="button" onClick={() => setOrderFilter(status)} className={`rounded-full border px-3.5 py-1.5 text-xs font-black ${orderFilter === status ? "border-[var(--accent)] bg-[var(--accent)] text-[var(--accent-ink)]" : "border-[var(--line)] text-[var(--muted)]"}`}>
+              <button key={status || "all"} type="button" onClick={() => { setOrderFilter(status); setOrderPage(1); }} className={`rounded-full border px-3.5 py-1.5 text-xs font-black ${orderFilter === status ? "border-[var(--accent)] bg-[var(--accent)] text-[var(--accent-ink)]" : "border-[var(--line)] text-[var(--muted)]"}`}>
                 {status === "" ? "全部" : orderStatusLabel[status]}
               </button>
             ))}
-            <button type="button" onClick={() => downloadCsv("pontomall-orders.csv", ["订单", "商品", "骑手", "站点", "积分", "现金", "支付", "状态", "创建时间"], orders.map((order) => [order.id, order.productName ?? "", order.riderName ?? "", order.station ?? "", String(order.pointsSpent), order.cashDue ? order.cashDue.toFixed(2) : "", order.paymentStatus ?? "", orderStatusLabel[order.status] ?? order.status, order.createdAt]))} className="ml-auto h-9 rounded-[8px] border border-[var(--line)] px-3 text-xs font-black text-[var(--muted)] hover:border-[var(--accent)]">导出 CSV</button>
+            <button type="button" onClick={() => downloadCsv("pontomall-orders.csv", ["订单", "商品", "骑手", "站点", "积分", "现金", "支付", "状态", "创建时间"], filteredOrders.map((order) => [order.id, order.productName ?? "", order.riderName ?? "", order.station ?? "", String(order.pointsSpent), order.cashDue ? order.cashDue.toFixed(2) : "", order.paymentStatus ?? "", orderStatusLabel[order.status] ?? order.status, order.createdAt]))} className="ml-auto h-9 rounded-[8px] border border-[var(--line)] px-3 text-xs font-black text-[var(--muted)] hover:border-[var(--accent)]">导出 CSV（当前筛选）</button>
+          </div>
+          <div className="mb-3 flex flex-wrap items-center gap-2">
+            <input value={orderSearch} onChange={(e) => { setOrderSearch(e.target.value); setOrderPage(1); }} placeholder="搜索商品 / 骑手 / 站点 / 订单号…" className="h-9 w-64 rounded-[8px] border border-[var(--line)] bg-[var(--surface-raised)] px-3 text-sm font-bold outline-none focus:border-[var(--accent)]" />
+            <label className="text-[11px] font-black text-[var(--muted)]">从
+              <input type="date" value={orderDateFrom} onChange={(e) => { setOrderDateFrom(e.target.value); setOrderPage(1); }} className="ml-1.5 h-9 rounded-[8px] border border-[var(--line)] bg-[var(--surface-raised)] px-2 text-sm font-bold outline-none focus:border-[var(--accent)]" />
+            </label>
+            <label className="text-[11px] font-black text-[var(--muted)]">至
+              <input type="date" value={orderDateTo} onChange={(e) => { setOrderDateTo(e.target.value); setOrderPage(1); }} className="ml-1.5 h-9 rounded-[8px] border border-[var(--line)] bg-[var(--surface-raised)] px-2 text-sm font-bold outline-none focus:border-[var(--accent)]" />
+            </label>
+            <div className="ml-auto">
+              <Pager page={safeOrderPage} pages={orderPages} total={filteredOrders.length} onPage={setOrderPage} />
+            </div>
           </div>
           <div className="overflow-x-auto">
             <table className="w-full min-w-[860px] text-sm">
               <thead><tr className="text-left text-[11px] font-black uppercase text-[var(--muted)]"><th className="py-2">商品</th><th>骑手</th><th>站点</th><th>金额</th><th>支付</th><th>状态</th><th>时间</th><th className="text-right">操作</th></tr></thead>
               <tbody>
-                {orders.map((order) => (
+                {pagedOrders.map((order) => (
                   <tr key={order.id} className="border-t border-[var(--line)] font-bold">
                     <td className="py-2.5">{order.productName}</td>
                     <td>{order.riderName}</td>
@@ -423,7 +522,7 @@ export default function MallAdminPage() {
                     </td>
                   </tr>
                 ))}
-                {orders.length === 0 && <tr><td colSpan={8} className="py-8 text-center font-bold text-[var(--muted)]">暂无订单。</td></tr>}
+                {filteredOrders.length === 0 && <tr><td colSpan={8} className="py-8 text-center font-bold text-[var(--muted)]">{allOrders.length === 0 ? "暂无订单。" : "没有匹配的订单——调整关键字、状态或日期范围。"}</td></tr>}
               </tbody>
             </table>
           </div>
@@ -608,7 +707,7 @@ export default function MallAdminPage() {
                     <span className="text-xs font-bold text-[var(--muted)]">{statement.lines.length} 笔 · <b>R$ {statement.total.toFixed(2)}</b>{statement.pixKey ? ` · PIX ${statement.pixKey}` : ""}</span>
                     <span className="ml-auto flex gap-1.5">
                       {statement.status === "confirmed" && (
-                        <button type="button" onClick={() => { const note = prompt("付款凭证备注（转账ID等，可空）") ?? ""; void post("/api/mall/ops", { action: "payStatement", statementId: statement.id, receiptNote: note }, "已标记付款"); }} className="h-8 rounded-[8px] bg-[var(--accent)] px-3 text-xs font-black text-[var(--accent-ink)]">标记已付款</button>
+                        <button type="button" onClick={() => { if (!confirm(`确认向供应商「${statement.supplierName}」标记已付款 R$ ${statement.total.toFixed(2)}（${statement.month} 月对账单，${statement.lines.length} 笔）？`)) return; const note = prompt("付款凭证备注（转账ID等，可空）") ?? ""; void post("/api/mall/ops", { action: "payStatement", statementId: statement.id, receiptNote: note }, "已标记付款"); }} className="h-8 rounded-[8px] bg-[var(--accent)] px-3 text-xs font-black text-[var(--accent-ink)]">标记已付款</button>
                       )}
                       <button type="button" onClick={() => downloadCsv(`statement-${statement.supplierName}-${statement.month}.csv`, ["日期", "订单", "商品", "供货价"], statement.lines.map((line) => [line.date, line.orderId, line.productName, line.supplyPrice.toFixed(2)]))} className="h-8 rounded-[8px] border border-[var(--line)] px-3 text-xs font-black text-[var(--muted)]">明细 CSV</button>
                     </span>
@@ -635,7 +734,7 @@ export default function MallAdminPage() {
                     <Badge value={{ draft: "待加盟商确认", confirmed: "待付款", paid: "已付款" }[s.status]} />
                     <span className="text-xs font-bold text-[var(--muted)]">{s.orders} 单 · 加盟商净 R$ {s.franchiseNetTotal.toFixed(2)} · 站点 R$ {s.stationShareTotal.toFixed(2)} · 合计 <b>R$ {s.total.toFixed(2)}</b></span>
                     {s.status === "confirmed" && (
-                      <button type="button" onClick={() => { const note = prompt("付款凭证备注（可空）") ?? ""; void post("/api/mall/ops", { action: "payRevShareStatement", statementId: s.id, note }, "已标记付款"); }} className="ml-auto h-8 rounded-[8px] bg-[var(--accent)] px-3 text-xs font-black text-[var(--accent-ink)]">标记已付款</button>
+                      <button type="button" onClick={() => { if (!confirm(`确认向加盟商「${s.franchise}」标记已付款 R$ ${s.total.toFixed(2)}（${s.month} 月分成对账单，${s.orders} 单）？`)) return; const note = prompt("付款凭证备注（可空）") ?? ""; void post("/api/mall/ops", { action: "payRevShareStatement", statementId: s.id, note }, "已标记付款"); }} className="ml-auto h-8 rounded-[8px] bg-[var(--accent)] px-3 text-xs font-black text-[var(--accent-ink)]">标记已付款</button>
                     )}
                   </div>
                   {s.paidAt && <div className="mt-1 text-xs font-bold text-[var(--muted)]">{t("dynPaidOn", { d: s.paidAt })}</div>}

@@ -1,4 +1,4 @@
-import { appendServerAudit, jsonResponse, makeServerId, memory } from "../../lib/server/memory";
+import { appendInventoryLedger, appendServerAudit, jsonResponse, makeServerId, memory } from "../../lib/server/memory";
 import { appendEvent, MARKETPLACE_EVENTS, recentEvents } from "../../lib/server/events";
 import { flushPendingToDatabase, persistDeleteRecord, refreshCollectionsFromDatabase } from "../../lib/server/persistence";
 import { requirePermission, roleFromRequest } from "../../lib/server/authz";
@@ -50,7 +50,7 @@ function cashBalanceOf(riderId: string): number {
   return Math.round(balance * 100) / 100;
 }
 
-const COLLECTIONS = ["mallConfigs", "marketplaceProducts", "marketplaceOrders", "pointsLedgerEntries", "partnerPointsLedgerEntries", "riders", "riderDailyKpis", "mallCategories", "mallBanners", "mallCoupons", "mallPayments", "cashTopUps", "cashLedgerEntries", "memberMessages", "franchises", "pontos", "mallRevenueShareEntries"];
+const COLLECTIONS = ["mallConfigs", "marketplaceProducts", "marketplaceOrders", "pointsLedgerEntries", "partnerPointsLedgerEntries", "riders", "riderDailyKpis", "mallCategories", "mallBanners", "mallCoupons", "mallPayments", "cashTopUps", "cashLedgerEntries", "inventoryLedgerEntries", "memberMessages", "franchises", "pontos", "mallRevenueShareEntries", "purchaseOrders"];
 
 const PRODUCT_TYPES = ["equipment", "fuel_coupon", "maintenance_coupon", "phone_data", "safety_item", "partner_voucher"] as const;
 
@@ -204,6 +204,25 @@ function accrueRevenueShare(order: MarketplaceOrder, actor: string) {
     createdAt: nowStamp(),
   });
   appendServerAudit({ actor, action: "MALL_REVSHARE_ACCRUED", entity: "MarketplaceOrder", entityId: order.id, detail: `${franchise} 净 R$${franchiseNetBRL} · 站点 ${order.pickupStoreName ?? order.station} R$${stationShareBRL}（产品分成 R$${franchiseShareBRL}）`, risk: "Low" });
+}
+
+/** Full arrival transition for one order (shared by markArrived and
+ *  batchArrived): status → arrived + audit + versioned event + in-app inbox
+ *  message (站内信) + push. `index` must point at memory.marketplaceOrders. */
+async function markOrderArrived(index: number, actor: string): Promise<MarketplaceOrder> {
+  const order = memory.marketplaceOrders[index];
+  const stamp = nowStamp();
+  memory.marketplaceOrders[index] = { ...order, status: "arrived", arrivedAt: stamp, notifiedAt: stamp };
+  appendServerAudit({ actor, action: "MALL_ORDER_ARRIVED", entity: "MarketplaceOrder", entityId: order.id, detail: `${order.productName} for ${order.riderName} at ${order.station}.`, risk: "Low" });
+  appendEvent(MARKETPLACE_EVENTS.orderArrived, { orderId: order.id, accountType: order.accountType, riderId: order.riderId, partnerId: order.partnerId, productId: order.productId, station: order.station }, actor);
+  if (order.riderName) {
+    const title = "Seu resgate chegou! 🎁";
+    const msgBody = `「${order.productName}」já está em ${order.station}. Retire quando puder.`;
+    // 站内信 (in-app inbox) — reaches members even without the app/push.
+    memory.memberMessages.unshift({ id: makeServerId("msg", memory.memberMessages.length + 1), riderName: order.riderName, riderId: order.riderId, title, body: msgBody, href: "/mall", createdAt: nowStamp() });
+    await sendPushToRider(order.riderName, title, msgBody, "/rider-app/mall");
+  }
+  return memory.marketplaceOrders[index];
 }
 
 export async function GET(request: Request) {
@@ -424,7 +443,7 @@ type Body =
   | { action: "supplierAddProduct"; name: string; supplierName: string; supplyPrice: number; deliveryCycleDays: number; stock: number; description?: string; imageUrl?: string; category?: string; isVirtual?: boolean; audience?: "rider" | "partner" | "both"; type?: string }
   | { action: "supplierUpdateProduct"; productId: string; name?: string; supplyPrice?: number; description?: string; imageUrl?: string; category?: string; stock?: number; deliveryCycleDays?: number; isVirtual?: boolean; audience?: "rider" | "partner" | "both"; type?: string }
   | { action: "supplierDeleteProduct"; productId: string }
-  | { action: "updateProduct"; productId: string; name?: string; description?: string; imageUrl?: string; category?: string; stock?: number; deliveryCycleDays?: number; purchaseLimit?: number }
+  | { action: "updateProduct"; productId: string; name?: string; description?: string; imageUrl?: string; category?: string; stock?: number; deliveryCycleDays?: number; purchaseLimit?: number; reason?: string }
   | { action: "priceProduct"; productId: string; pointsPrice: number; marginPct?: number; status?: "active" | "paused" }
   | { action: "deleteProduct"; productId: string }
   | { action: "redeem"; productId: string; riderId?: string; riderName?: string; accountType?: "rider" | "partner" }
@@ -432,6 +451,7 @@ type Body =
   | { action: "markMessagesRead"; riderId?: string; riderName?: string; messageId?: string }
   | { action: "confirmReceipt"; orderId: string }
   | { action: "markArrived"; orderId: string }
+  | { action: "batchArrived"; orderIds?: string[]; poId?: string }
   | { action: "markPickedUp"; orderId: string }
   | { action: "reviewOrder"; orderId: string; decision: "approve" | "reject" }
   | { action: "awardReferral"; inviterRiderId: string; newRiderName: string }
@@ -452,7 +472,7 @@ async function handlePost(request: Request) {
       ? requirePermission(request, "manage_partner_services")
       : peek.action === "scanPartner" || peek.action === "cancelOrder" || peek.action === "markMessagesRead"
         ? requirePermission(request, "use_rider_app")
-        : peek.action === "markArrived" || peek.action === "markPickedUp"
+        : peek.action === "markArrived" || peek.action === "markPickedUp" || peek.action === "batchArrived"
         ? requirePermission(request, "manage_slots")
         : peek.action === "supplierAddProduct" || peek.action === "updateProduct" || peek.action === "supplierUpdateProduct" || peek.action === "supplierDeleteProduct"
           ? requirePermission(request, "manage_supplier_catalog")
@@ -540,6 +560,20 @@ async function handlePost(request: Request) {
         ...((PRODUCT_TYPES as readonly string[]).includes(String(fields.type)) ? { type: String(fields.type) as MarketplaceProduct["type"] } : {}),
         ...((["rider", "partner", "both"] as readonly string[]).includes(String(fields.audience)) ? { audience: String(fields.audience) as MarketplaceProduct["audience"] } : {}),
       };
+      // Supplier self-edit may change stock → append-only inventory ledger record.
+      const supplierNewStock = memory.marketplaceProducts[index].stock;
+      if (fields.stock !== undefined && supplierNewStock !== current.stock) {
+        appendInventoryLedger({
+          productId: current.id,
+          productName: memory.marketplaceProducts[index].name,
+          type: "manual_adjust",
+          qty: supplierNewStock - current.stock,
+          stockAfter: supplierNewStock,
+          sourceId: current.id,
+          note: `supplier self-edit (${supplier})`,
+          createdBy: session?.name || actor,
+        });
+      }
       appendServerAudit({ actor, action: "MALL_PRODUCT_SUPPLIER_UPDATED", entity: "MarketplaceProduct", entityId: productId ?? "", detail: `${supplier} editou ${current.name}.`, risk: "Low" });
       return jsonResponse({ data: memory.marketplaceProducts[index] });
     }
@@ -599,6 +633,21 @@ async function handlePost(request: Request) {
         ...(fields.deliveryCycleDays !== undefined ? { deliveryCycleDays: Math.max(0, Number(fields.deliveryCycleDays) || 0) } : {}),
         ...(fields.purchaseLimit !== undefined ? { purchaseLimit: Math.max(0, Math.floor(Number(fields.purchaseLimit) || 0)) } : {}),
       };
+      // Manual stock edit → append-only inventory ledger record. `reason` is
+      // optional for now (the back-office UI will make it mandatory later).
+      const newStock = memory.marketplaceProducts[index].stock;
+      if (fields.stock !== undefined && newStock !== current.stock) {
+        appendInventoryLedger({
+          productId: current.id,
+          productName: memory.marketplaceProducts[index].name,
+          type: "manual_adjust",
+          qty: newStock - current.stock,
+          stockAfter: newStock,
+          sourceId: `manual-${Date.now()}`,
+          note: String(fields.reason ?? "").trim().slice(0, 200) || undefined,
+          createdBy: actor,
+        });
+      }
       appendServerAudit({ actor, action: "MALL_PRODUCT_UPDATED", entity: "MarketplaceProduct", entityId: productId ?? "", detail: JSON.stringify(fields).slice(0, 180), risk: "Low" });
       return jsonResponse({ data: memory.marketplaceProducts[index] });
     }
@@ -692,7 +741,10 @@ async function handlePost(request: Request) {
         };
         memory.partnerPointsLedgerEntries.unshift(ledger);
         const partnerProductIndex = memory.marketplaceProducts.findIndex((item) => item.id === product.id);
-        if (partnerProductIndex !== -1) memory.marketplaceProducts[partnerProductIndex] = { ...product, stock: product.stock - 1 };
+        if (partnerProductIndex !== -1) {
+          memory.marketplaceProducts[partnerProductIndex] = { ...product, stock: product.stock - 1 };
+          appendInventoryLedger({ productId: product.id, productName: product.name, type: "redeem", qty: -1, stockAfter: product.stock - 1, sourceId: order.id, createdBy: "PontoMall" });
+        }
         appendServerAudit({ actor, action: "MALL_REDEEMED", entity: "MarketplaceOrder", entityId: order.id, detail: `${partner.name} (parceiro) resgatou ${product.name} por ${price} pts.`, risk: price >= 8000 ? "High" : "Low" });
         appendEvent(MARKETPLACE_EVENTS.orderCreated, { orderId: order.id, accountType: "partner", partnerId: partner.id, productId: product.id, productName: product.name, pointsSpent: price }, actor);
         return jsonResponse({ data: { order, balance: available - price } }, { status: 201 });
@@ -879,6 +931,7 @@ async function handlePost(request: Request) {
       const productIndex = memory.marketplaceProducts.findIndex((item) => item.id === product.id);
       if (productIndex !== -1) {
         memory.marketplaceProducts[productIndex] = { ...product, stock: product.stock - 1 };
+        appendInventoryLedger({ productId: product.id, productName: product.name, type: "redeem", qty: -1, stockAfter: product.stock - 1, sourceId: order.id, createdBy: "PontoMall" });
       }
 
       appendServerAudit({ actor, action: heldForReview ? "MALL_REDEEM_HELD_REVIEW" : "MALL_REDEEMED", entity: "MarketplaceOrder", entityId: order.id, detail: `${rider.name} redeemed ${product.name} for ${price} pts${heldForReview ? " — HELD for review" : `, pickup at ${order.station}, ETA ${order.etaDate}`}.`, risk: heldForReview ? "High" : "Low" });
@@ -950,11 +1003,12 @@ async function handlePost(request: Request) {
         memory.cashLedgerEntries.unshift(refundEntry);
       }
 
-      // Restock the item.
+      // Restock the item (with an append-only inventory ledger record).
       const productIndex = memory.marketplaceProducts.findIndex((item) => item.id === order.productId);
       if (productIndex !== -1) {
         const product = memory.marketplaceProducts[productIndex];
         memory.marketplaceProducts[productIndex] = { ...product, stock: product.stock + 1 };
+        appendInventoryLedger({ productId: product.id, productName: product.name, type: "cancel_restock", qty: 1, stockAfter: product.stock + 1, sourceId: order.id, createdBy: "PontoMall" });
       }
 
       memory.marketplaceOrders[index] = { ...order, status: "cancelled" };
@@ -1006,26 +1060,53 @@ async function handlePost(request: Request) {
       if (order.reviewStatus === "pending") {
         return jsonResponse({ error: "Resgate em análise — aprove a revisão antes de avançar." }, { status: 409 });
       }
-      const stamp = nowStamp();
       if (body.action === "markArrived") {
-        memory.marketplaceOrders[index] = { ...order, status: "arrived", arrivedAt: stamp, notifiedAt: stamp };
-      } else {
-        if (order.paymentStatus && order.paymentStatus !== "paid") {
-          return jsonResponse({ error: "现金部分尚未核销，不能交付（先在商城后台确认收款）。" }, { status: 409 });
-        }
-        memory.marketplaceOrders[index] = { ...order, status: "fulfilled", pickedUpAt: stamp };
-        accrueRevenueShare(memory.marketplaceOrders[index], actor);
+        return jsonResponse({ data: await markOrderArrived(index, actor) });
       }
-      appendServerAudit({ actor, action: body.action === "markArrived" ? "MALL_ORDER_ARRIVED" : "MALL_ORDER_PICKED_UP", entity: "MarketplaceOrder", entityId: orderId ?? "", detail: `${order.productName} for ${order.riderName} at ${order.station}.`, risk: "Low" });
-      appendEvent(body.action === "markArrived" ? MARKETPLACE_EVENTS.orderArrived : MARKETPLACE_EVENTS.orderFulfilled, { orderId: order.id, accountType: order.accountType, riderId: order.riderId, partnerId: order.partnerId, productId: order.productId, station: order.station }, actor);
-      if (body.action === "markArrived" && order.riderName) {
-        const title = "Seu resgate chegou! 🎁";
-        const msgBody = `「${order.productName}」já está em ${order.station}. Retire quando puder.`;
-        // 站内信 (in-app inbox) — reaches members even without the app/push.
-        memory.memberMessages.unshift({ id: makeServerId("msg", memory.memberMessages.length + 1), riderName: order.riderName, riderId: order.riderId, title, body: msgBody, href: "/mall", createdAt: nowStamp() });
-        await sendPushToRider(order.riderName, title, msgBody, "/rider-app/mall");
+      const stamp = nowStamp();
+      if (order.paymentStatus && order.paymentStatus !== "paid") {
+        return jsonResponse({ error: "现金部分尚未核销，不能交付（先在商城后台确认收款）。" }, { status: 409 });
       }
+      memory.marketplaceOrders[index] = { ...order, status: "fulfilled", pickedUpAt: stamp };
+      accrueRevenueShare(memory.marketplaceOrders[index], actor);
+      appendServerAudit({ actor, action: "MALL_ORDER_PICKED_UP", entity: "MarketplaceOrder", entityId: orderId ?? "", detail: `${order.productName} for ${order.riderName} at ${order.station}.`, risk: "Low" });
+      appendEvent(MARKETPLACE_EVENTS.orderFulfilled, { orderId: order.id, accountType: order.accountType, riderId: order.riderId, partnerId: order.partnerId, productId: order.productId, station: order.station }, actor);
       return jsonResponse({ data: memory.marketplaceOrders[index] });
+    }
+
+    case "batchArrived": {
+      // Bulk arrival (P1-3): apply the SAME full markArrived flow (audit,
+      // versioned event, 站内信, push, ETA-aware inbox copy) to every eligible
+      // order — status "created", physical (non-virtual), not held for review.
+      // Input: explicit orderIds, or a poId → all pending orders of the PO's
+      // products (the replenishment that just landed at the station).
+      const { orderIds, poId } = body as { orderIds?: unknown; poId?: string };
+      let targetIds: string[] = [];
+      if (Array.isArray(orderIds)) {
+        targetIds = orderIds.filter((id): id is string => typeof id === "string");
+      } else if (poId) {
+        const po = memory.purchaseOrders.find((p) => p.id === poId);
+        if (!po) return jsonResponse({ error: "PO not found" }, { status: 404 });
+        const poProductIds = new Set(po.items.map((item) => item.productId));
+        targetIds = memory.marketplaceOrders.filter((o) => o.status === "created" && poProductIds.has(o.productId)).map((o) => o.id);
+      }
+      if (targetIds.length === 0 && !poId) return jsonResponse({ error: "orderIds ou poId são obrigatórios" }, { status: 400 });
+      const virtualProductIds = new Set(memory.marketplaceProducts.filter((p) => p.isVirtual === true).map((p) => p.id));
+      let arrived = 0;
+      let skipped = 0;
+      const updated: MarketplaceOrder[] = [];
+      for (const id of new Set(targetIds)) {
+        const index = memory.marketplaceOrders.findIndex((o) => o.id === id);
+        const order = index === -1 ? undefined : memory.marketplaceOrders[index];
+        if (!order || order.status !== "created" || order.reviewStatus === "pending" || virtualProductIds.has(order.productId)) {
+          skipped += 1;
+          continue;
+        }
+        updated.push(await markOrderArrived(index, actor));
+        arrived += 1;
+      }
+      appendServerAudit({ actor, action: "MALL_ORDERS_BATCH_ARRIVED", entity: "MarketplaceOrder", entityId: poId ?? `batch-${Date.now()}`, detail: `Chegada em lote: ${arrived} marcados, ${skipped} pulados${poId ? ` (PO ${poId})` : ""}.`, risk: "Low" });
+      return jsonResponse({ data: { arrived, skipped, orders: updated } });
     }
 
     case "reviewOrder": {
@@ -1096,6 +1177,7 @@ async function handlePost(request: Request) {
       if (productIndex !== -1) {
         const product = memory.marketplaceProducts[productIndex];
         memory.marketplaceProducts[productIndex] = { ...product, stock: product.stock + 1 };
+        appendInventoryLedger({ productId: product.id, productName: product.name, type: "review_reject_restock", qty: 1, stockAfter: product.stock + 1, sourceId: order.id, createdBy: actor });
       }
       memory.marketplaceOrders[index] = { ...order, status: "cancelled", reviewStatus: "rejected" };
       appendServerAudit({ actor, action: "MALL_REVIEW_REJECTED", entity: "MarketplaceOrder", entityId: order.id, detail: `${order.riderName}: ${order.productName} recusado, ${order.pointsSpent} pts estornados.`, risk: "Medium" });
