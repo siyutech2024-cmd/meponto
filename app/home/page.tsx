@@ -19,6 +19,19 @@ const copy: Record<Lang, {
   pontos: string;
   chapters: Array<{ tag: string; title: string[]; text: string; cta?: { label: string; href: string } }>;
   finale: { title: string[]; text: string; rider: string; franchise: string };
+  contact: {
+    toggle: string;
+    founderRole: string;
+    businessRole: string;
+    whatsapp: string;
+    waAdd: string;
+    wechat: string;
+    email: string;
+    address: string;
+    wcCap: string;
+    waCap: string;
+    vcCap: string;
+  };
   footer: { tagline: string; systems: Array<{ label: string; href: string }> };
 }> = {
   pt: {
@@ -56,6 +69,19 @@ const copy: Record<Lang, {
       rider: "Quero entregar",
       franchise: "Quero ser parceiro regional",
     },
+    contact: {
+      toggle: "Contato",
+      founderRole: "Fundador",
+      businessRole: "Responsável comercial",
+      whatsapp: "WhatsApp",
+      waAdd: "Adicionar",
+      wechat: "WeChat / Telefone",
+      email: "E-mail",
+      address: "Endereço",
+      wcCap: "Escaneie para adicionar no WeChat",
+      waCap: "Escaneie para adicionar no WhatsApp",
+      vcCap: "Escaneie para salvar o contato",
+    },
     footer: {
       tagline: "Conectar · Apoiar · Entregar",
       systems: [
@@ -77,6 +103,19 @@ const copy: Record<Lang, {
       { tag: "合作", title: ["用系统", "运营一片区域"], text: "区域伙伴获得验证过的模型、完整的运营/排班/财务系统，以及 MePonto 网络的支持。", cta: { label: "我要成为区域伙伴", href: "https://franchise.meponto.com" } },
     ],
     finale: { title: ["共同定义", "配送的明天"], text: "加入正在让巴西最后一公里专业化的网络。", rider: "我要跑单", franchise: "我要成为区域伙伴" },
+    contact: {
+      toggle: "联系我们",
+      founderRole: "创始人",
+      businessRole: "业务负责人",
+      whatsapp: "WhatsApp",
+      waAdd: "添加好友",
+      wechat: "微信 / 电话",
+      email: "邮箱",
+      address: "地址",
+      wcCap: "扫码添加微信",
+      waCap: "扫码添加 WhatsApp",
+      vcCap: "扫码保存联系人",
+    },
     footer: {
       tagline: "连接 · 支持 · 送达",
       systems: [
@@ -98,6 +137,19 @@ const copy: Record<Lang, {
       { tag: "Partnership", title: ["Run a", "territory", "with a system"], text: "Regional partners get a validated model, full operations, scheduling and finance systems, plus MePonto network support.", cta: { label: "Become a regional partner", href: "https://franchise.meponto.com" } },
     ],
     finale: { title: ["And define the", "tomorrow of delivery"], text: "Join the network professionalizing the last mile in Brazil.", rider: "I want to deliver", franchise: "Become a regional partner" },
+    contact: {
+      toggle: "Contact",
+      founderRole: "Founder",
+      businessRole: "Business lead",
+      whatsapp: "WhatsApp",
+      waAdd: "Add me",
+      wechat: "WeChat / Phone",
+      email: "Email",
+      address: "Address",
+      wcCap: "Scan to add on WeChat",
+      waCap: "Scan to add on WhatsApp",
+      vcCap: "Scan to save contact",
+    },
     footer: {
       tagline: "Connect · Support · Deliver",
       systems: [
@@ -134,6 +186,19 @@ const CAMERA = [
   "translate(6%, 5%) scale(1.75)",
   "translate(0%, 1%) scale(1.2)",
 ];
+
+/** Contact details (language-independent values; labels live in `copy`). */
+const CONTACT = {
+  founderNameZh: "刘鸣",
+  founderNameEn: "Ming Liu",
+  founderEmail: "ming.liu@meponto.com",
+  businessEmail: "ishak.ma@meponto.com",
+  phone: "+86 18686514086",
+  whatsappUrl: "https://wa.me/qr/X664AQ52MOPHL1",
+  addressText: "Av. Paulista, 2537 · Bela Vista, São Paulo · SP",
+  addressUrl:
+    "https://www.google.com/maps/search/?api=1&query=Av.+Paulista+2537+Bela+Vista+Sao+Paulo+SP+01311-300",
+};
 
 const MARKER_POS = [
   { left: "64%", top: "63%" },
@@ -177,6 +242,7 @@ export default function HomePage() {
   const [lang, setLang] = useState<Lang>("pt");
   const [chapter, setChapter] = useState(0);
   const [markers, setMarkers] = useState<Array<{ name: string; count: number }>>([]);
+  const [contactOpen, setContactOpen] = useState(false);
   const sectionsRef = useRef<Array<HTMLElement | null>>([]);
   const t = copy[lang];
   const ready = true; // no loader — the map is visible immediately
@@ -438,7 +504,110 @@ export default function HomePage() {
           })()}
 
           <footer className="absolute inset-x-0 bottom-0 border-t px-6 py-5" style={{ borderColor: "rgba(255,255,255,.08)", background: "rgba(11,14,20,.6)", backdropFilter: "blur(6px)" }}>
-            <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-3">
+            {/* ---- Collapsible contact panel -------------------------------- */}
+            <div className="mx-auto max-w-6xl">
+              <button
+                type="button"
+                onClick={() => setContactOpen((open) => !open)}
+                aria-expanded={contactOpen}
+                aria-controls="mp-contact-panel"
+                className="group flex items-center gap-2.5 pb-3 text-[11px] font-black uppercase tracking-[0.25em] transition-colors hover:text-[#f5b301]"
+                style={{ color: contactOpen ? "#f5b301" : "rgba(255,255,255,.55)" }}
+              >
+                <span
+                  className="grid h-6 w-6 place-items-center rounded-full border text-[12px] transition-transform duration-500"
+                  style={{ borderColor: contactOpen ? "#f5b301" : "rgba(255,255,255,.25)", transform: contactOpen ? "rotate(45deg)" : "none" }}
+                >
+                  +
+                </span>
+                {t.contact.toggle}
+              </button>
+              <div
+                id="mp-contact-panel"
+                className="grid transition-[grid-template-rows] duration-500"
+                style={{ gridTemplateRows: contactOpen ? "1fr" : "0fr", transitionTimingFunction: "cubic-bezier(.22,.9,.24,1)" }}
+              >
+                <div className="overflow-hidden">
+                  <div className="grid gap-4 pb-6 pt-2 md:grid-cols-[1.15fr_1fr_1.4fr]" aria-hidden={contactOpen ? undefined : true}>
+                    {/* founder card */}
+                    <div className="rounded-2xl border p-5" style={{ borderColor: "rgba(245,179,1,.30)", background: "rgba(11,14,20,.72)", backdropFilter: "blur(6px)" }}>
+                      <div className="flex items-center gap-3.5">
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img src="/contact/ming-liu.jpg" alt="Ming Liu" className="h-[52px] w-[52px] rounded-full border-2 object-cover" style={{ borderColor: "#f5b301" }} />
+                        <div>
+                          <div className="text-[15px] font-black leading-tight">{CONTACT.founderNameZh} · {CONTACT.founderNameEn}</div>
+                          <div className="mt-1 text-[9px] font-black uppercase tracking-[0.22em]" style={{ color: "#f5b301" }}>{t.contact.founderRole}</div>
+                        </div>
+                      </div>
+                      <div className="mt-4 flex flex-col gap-2">
+                        {[
+                          { label: t.contact.email, value: CONTACT.founderEmail, href: `mailto:${CONTACT.founderEmail}` },
+                          { label: t.contact.whatsapp, value: t.contact.waAdd, href: CONTACT.whatsappUrl, external: true },
+                          { label: t.contact.wechat, value: CONTACT.phone, href: `tel:${CONTACT.phone.replace(/\s/g, "")}` },
+                        ].map((row) => (
+                          <a
+                            key={row.label}
+                            href={row.href}
+                            target={row.external ? "_blank" : undefined}
+                            rel={row.external ? "noopener noreferrer" : undefined}
+                            className="rounded-xl border px-3.5 py-2 transition-colors hover:border-[#f5b301]"
+                            style={{ borderColor: "rgba(255,255,255,.10)", background: "rgba(255,255,255,.03)" }}
+                          >
+                            <span className="block text-[8.5px] font-black uppercase tracking-[0.2em]" style={{ color: "rgba(255,255,255,.4)" }}>{row.label}</span>
+                            <span className="mt-0.5 block truncate text-[12.5px] font-bold" style={{ color: "rgba(255,255,255,.85)" }}>{row.value}</span>
+                          </a>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* business lead + address card */}
+                    <div className="flex flex-col gap-2 rounded-2xl border p-5" style={{ borderColor: "rgba(255,255,255,.10)", background: "rgba(11,14,20,.72)", backdropFilter: "blur(6px)" }}>
+                      <div className="text-[9px] font-black uppercase tracking-[0.22em]" style={{ color: "#f5b301" }}>{t.contact.businessRole}</div>
+                      <a
+                        href={`mailto:${CONTACT.businessEmail}`}
+                        className="rounded-xl border px-3.5 py-2 transition-colors hover:border-[#f5b301]"
+                        style={{ borderColor: "rgba(255,255,255,.10)", background: "rgba(255,255,255,.03)" }}
+                      >
+                        <span className="block text-[8.5px] font-black uppercase tracking-[0.2em]" style={{ color: "rgba(255,255,255,.4)" }}>{t.contact.email}</span>
+                        <span className="mt-0.5 block truncate text-[12.5px] font-bold" style={{ color: "rgba(255,255,255,.85)" }}>{CONTACT.businessEmail}</span>
+                      </a>
+                      <div className="mt-3 text-[9px] font-black uppercase tracking-[0.22em]" style={{ color: "#f5b301" }}>{t.contact.address}</div>
+                      <a
+                        href={CONTACT.addressUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="rounded-xl border px-3.5 py-2 text-[12px] font-bold leading-5 transition-colors hover:border-[#f5b301]"
+                        style={{ borderColor: "rgba(255,255,255,.10)", background: "rgba(255,255,255,.03)", color: "rgba(255,255,255,.85)" }}
+                      >
+                        {CONTACT.addressText}
+                      </a>
+                    </div>
+
+                    {/* QR codes card */}
+                    <div className="grid grid-cols-3 gap-3 rounded-2xl border p-5" style={{ borderColor: "rgba(255,255,255,.10)", background: "rgba(11,14,20,.72)", backdropFilter: "blur(6px)" }}>
+                      {[
+                        { src: "/contact/wechat-qr.png", title: "WeChat", cap: t.contact.wcCap },
+                        { src: "/contact/whatsapp-qr.png", title: "WhatsApp", cap: t.contact.waCap },
+                        { src: "/contact/vcard-qr.png", title: "vCard", cap: t.contact.vcCap },
+                      ].map((qr) => (
+                        <div key={qr.title} className="flex flex-col items-center gap-2">
+                          <div className="w-full rounded-xl bg-white p-1.5" style={{ boxShadow: "0 6px 20px -8px rgba(0,0,0,.5)" }}>
+                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                            <img src={qr.src} alt={`${qr.title} QR`} className="aspect-square w-full object-contain" />
+                          </div>
+                          <div className="text-center">
+                            <div className="text-[10px] font-black" style={{ color: "#f5b301" }}>{qr.title}</div>
+                            <div className="mt-0.5 text-[8.5px] font-bold leading-tight" style={{ color: "rgba(255,255,255,.5)" }}>{qr.cap}</div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-3 border-t pt-4" style={{ borderColor: "rgba(255,255,255,.08)" }}>
               <div className="text-[11px] font-black uppercase tracking-[0.25em]" style={{ color: "rgba(255,255,255,.45)" }}>MePonto · {t.footer.tagline}</div>
               <div className="flex flex-wrap items-center gap-x-5 gap-y-1.5">
                 {t.footer.systems.map((system) => (
