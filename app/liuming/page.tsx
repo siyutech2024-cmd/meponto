@@ -177,7 +177,7 @@ export default function LiumingPage() {
   ];
 
   return (
-    <main data-i18n-skip className="relative flex min-h-screen items-start justify-center overflow-hidden px-4 pb-8 pt-14 md:items-center md:py-14" style={{ background: "#0b0e14", color: "#fff7ef", fontFamily: "Outfit, Inter, system-ui, sans-serif" }}>
+    <main data-i18n-skip className="relative flex min-h-screen items-start justify-center overflow-hidden px-4 py-8 md:items-center md:py-14" style={{ background: "#0b0e14", color: "#fff7ef", fontFamily: "Outfit, Inter, system-ui, sans-serif" }}>
       <style>{`
         .lm ::selection { background:#FFD400; color:#0b0e14; }
         @keyframes lmRise { from { opacity:0; transform:translateY(26px) } to { opacity:1; transform:translateY(0) } }
@@ -195,27 +195,38 @@ export default function LiumingPage() {
         <div className="absolute -bottom-40 left-1/2 h-96 w-[640px] -translate-x-1/2 rounded-full" style={{ background: "radial-gradient(ellipse, rgba(255,212,0,.07), transparent 70%)" }} />
       </div>
 
-      {/* language switcher — fixed, page top-right corner */}
-      <div className="fixed right-4 top-4 z-40 flex gap-0.5 rounded-full border p-0.5" style={{ borderColor: "rgba(255,255,255,.14)", background: "rgba(11,14,20,.6)", backdropFilter: "blur(6px)" }}>
-        {(["pt", "zh", "en"] as Lang[]).map((code) => (
-          <button
-            key={code}
-            type="button"
-            onClick={() => setLang(code)}
-            className="rounded-full px-2 py-[3px] text-[9px] font-black uppercase tracking-wider transition-colors"
-            style={lang === code ? { background: "#FFD400", color: "#0b0e14" } : { color: "rgba(255,255,255,.55)" }}
-          >
-            {code === "zh" ? "中" : code}
-          </button>
-        ))}
-      </div>
-
       <div className="lm relative w-full max-w-[420px]">
         {/* card with gradient border */}
         <div className="lm-rise rounded-[30px] p-px" style={{ background: "linear-gradient(160deg, rgba(255,212,0,.65), rgba(255,212,0,.12) 38%, rgba(255,255,255,.08) 70%, rgba(255,212,0,.3))" }}>
           <div className="overflow-hidden rounded-[29px]" style={{ background: "#11141f" }}>
             {/* yellow header */}
             <div className="relative px-7 py-7" style={{ background: "#FFD400", color: "#0b0e14" }}>
+              {/* language switcher — sliding-thumb pill, header top-right */}
+              <div className="absolute right-5 top-5 z-10">
+                <div className="relative flex rounded-full p-[3px]" style={{ background: "rgba(11,14,20,.15)", boxShadow: "inset 0 1px 3px rgba(11,14,20,.2)" }}>
+                  <span
+                    aria-hidden
+                    className="absolute left-[3px] top-[3px] h-[calc(100%-6px)] w-8 rounded-full transition-transform duration-300"
+                    style={{
+                      background: "#0b0e14",
+                      transform: `translateX(${(["pt", "zh", "en"] as Lang[]).indexOf(lang) * 32}px)`,
+                      transitionTimingFunction: "cubic-bezier(.22,.9,.24,1)",
+                      boxShadow: "0 2px 8px rgba(11,14,20,.35)",
+                    }}
+                  />
+                  {(["pt", "zh", "en"] as Lang[]).map((code) => (
+                    <button
+                      key={code}
+                      type="button"
+                      onClick={() => setLang(code)}
+                      className="relative z-10 w-8 rounded-full py-[5px] text-center text-[10px] font-black uppercase tracking-wide transition-colors duration-300"
+                      style={{ color: lang === code ? "#FFD400" : "rgba(11,14,20,.62)" }}
+                    >
+                      {code === "zh" ? "中" : code}
+                    </button>
+                  ))}
+                </div>
+              </div>
               <div className="flex items-center gap-4">
                 <img
                   src="/contact/ming-liu.jpg"
