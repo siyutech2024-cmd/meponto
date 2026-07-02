@@ -116,6 +116,15 @@ export type MarketplaceProduct = {
   /** Sales revenue share (level 1): fixed R$ paid to the pickup store's franchise
    *  per fulfilled order. HQ sets this per product in the mall back office. */
   franchiseShareBRL?: number;
+  /** Franchise direct procurement (加盟商直采): supplier opted this product into
+   *  distribution. Franchises may only order when this is true AND HQ approved. */
+  distributable?: boolean;
+  /** Distribution (wholesale) price in R$ per unit for franchise procurement —
+   *  set by the supplier; the franchise pays wholesalePrice × 1.08 (8% fee). */
+  wholesalePrice?: number;
+  /** HQ approval of the distribution listing. Reset to false whenever the
+   *  supplier changes distributable/wholesalePrice (re-review required). */
+  distributionApproved?: boolean;
 };
 
 export type MarketplaceOrderStatus = "created" | "arrived" | "fulfilled" | "cancelled";

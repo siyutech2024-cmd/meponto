@@ -100,6 +100,19 @@ export type PurchaseOrder = {
   shipNote?: string;
   receivedAt?: string;
   receivedBy?: string;
+  /** Buyer of this PO. undefined = "hq" (legacy replenishment into platform
+   *  stock). "franchise" = direct procurement — goods ship supplier→franchise
+   *  and NEVER enter platform stock (no stock delta, no inventory ledger). */
+  buyerType?: "hq" | "franchise";
+  /** Buying franchise (only when buyerType === "franchise"). */
+  franchise?: string;
+  /** Franchise procurement: goods total = Σ wholesalePrice × qty (R$). */
+  goodsTotal?: number;
+  /** Platform commission on top of goodsTotal (fixed 8%), paid by the franchise. */
+  feeBRL?: number;
+  /** V1 prepaid flow: franchise pays platform first; HQ confirms the PIX
+   *  manually ("paid") before the supplier may confirm/ship. */
+  paymentStatus?: "pending" | "paid";
 };
 
 /** "disputed" (P1-4): supplier/franchise contests a draft/confirmed statement;
@@ -291,6 +304,68 @@ export const revShareStatementStatusLabel: Record<StatementStatus, string> = {
   confirmed: "待付款",
   disputed: "有争议",
   paid: "已付款",
+};
+
+/** Fixed platform commission on franchise direct procurement (加价在分销价之上):
+ *  the franchise pays goodsTotal × 1.08, the supplier receives the full
+ *  goodsTotal, the platform keeps the 8%. */
+export const PROCUREMENT_FEE_PCT = 8;
+
+/**
+ * Append-only commission ledger for franchise direct procurement (Hard Rule
+ * #4). One entry per prepaid PO, written when HQ confirms the franchise PIX
+ * ("accrued"); flipped to "settled" when the monthly procurement supplier
+ * statement is paid. Never mutated otherwise, never deleted.
+ */
+export type ProcurementFeeEntry = {
+  id: string;
+  poId: string;
+  franchise: string;
+  supplierName: string;
+  /** Σ wholesalePrice × qty of the PO (R$). */
+  goodsTotal: number;
+  /** Snapshot of the commission percentage (8 in V1). */
+  feePct: number;
+  feeBRL: number;
+  /** Natural month of the payment confirmation, e.g. "2026-07". */
+  month: string;
+  status: "accrued" | "settled";
+  createdAt: string;
+};
+
+export type ProcurementSupplierStatementLine = {
+  poId: string;
+  franchise: string;
+  /** Goods payable to the supplier for this PO (distribution price total). */
+  goodsTotal: number;
+  /** Total units in the PO. */
+  units: number;
+  /** Receipt date "YYYY-MM-DD" (statements attribute to the RECEIVED month). */
+  receivedAt: string;
+};
+
+/** Monthly payable to a supplier for franchise direct-procurement POs
+ *  received in the month × distribution price. Mirrors SupplierStatement:
+ *  draft → (supplier) confirmed → (HQ) paid, disputes reuse StatementStatus. */
+export type ProcurementSupplierStatement = {
+  id: string; // pst-<month>-<supplier>
+  supplierName: string;
+  /** Natural month, e.g. "2026-07". */
+  month: string;
+  lines: ProcurementSupplierStatementLine[];
+  total: number;
+  status: StatementStatus;
+  createdAt: string;
+  /** Supplier confirmation. */
+  confirmedAt?: string;
+  /** HQ payment. */
+  paidAt?: string;
+  paidBy?: string;
+  /** PIX key the supplier wants to receive on (snapshot at confirmation). */
+  pixKey?: string;
+  receiptNote?: string;
+  /** Supplier's dispute reason (status "disputed"); kept for history. */
+  disputeNote?: string;
 };
 
 /** In-app message (站内信) delivered to a member/rider — shown in the storefront

@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { AlertTriangle, CalendarDays, CheckCircle2, FileText, MapPinned, Store, Target, TrendingUp } from "lucide-react";
+import { useCallback, useEffect, useState } from "react";
+import { AlertTriangle, CalendarDays, CheckCircle2, FileText, MapPinned, PackageSearch, Store, Target, TrendingUp } from "lucide-react";
 import { AppShell, Badge, PageTitle } from "../components/ui";
 import { translate, type Language, type TranslationKey } from "../lib/i18n";
 import { readSession } from "../lib/session";
@@ -442,6 +442,229 @@ function useMallShareSummary(): MallShareSummary | null {
   return summary;
 }
 
+// ---------------------------------------------------------------------------
+// Franchise direct procurement (加盟商直采) — /api/mall/procurement contract.
+// Local declarations while the backend module lands in parallel; the section
+// hides itself entirely on 403 / enabled === false (feature-flagged module).
+// ---------------------------------------------------------------------------
+
+type TFunc = (key: TranslationKey, vars?: Record<string, string | number | undefined>) => string;
+
+type ProcCatalogItem = {
+  productId: string;
+  name: string;
+  imageUrl?: string;
+  category?: string;
+  supplierName?: string;
+  wholesalePrice?: number;
+  /** Commission on top of the wholesale price — percent (8) or fraction (0.08). */
+  feePct?: number;
+  deliveryCycleDays?: number;
+};
+
+type ProcurementPO = {
+  id: string;
+  status: string;
+  createdAt: string;
+  items: Array<{ productId: string; name: string; qty: number }>;
+  supplierName?: string;
+  totalCost?: number;
+  goodsTotal?: number;
+  feeBRL?: number;
+  paymentStatus?: "pending" | "paid";
+  buyerType?: string;
+  franchise?: string;
+  shipNote?: string;
+};
+
+type ProcurementPayload = {
+  enabled?: boolean;
+  feePct?: number;
+  catalog?: ProcCatalogItem[];
+  myPOs?: ProcurementPO[];
+  pixKey?: string;
+};
+
+function procPoStatusKey(po: ProcurementPO): TranslationKey {
+  if (po.status === "cancelled") return "frPcStCancelled";
+  if (po.status === "received") return "frPcStReceived";
+  if (po.status === "shipped") return "frPcStShipped";
+  if (po.paymentStatus !== "paid") return "frPcStUnpaid";
+  if (po.status === "confirmed") return "frPcStConfirmed";
+  return "frPcStPaidWait";
+}
+
+function FranchiseProcurement({ t }: { t: TFunc }) {
+  const [proc, setProc] = useState<ProcurementPayload | null>(null);
+  const [qty, setQty] = useState<Record<string, string>>({});
+  const [msg, setMsg] = useState<{ tone: "ok" | "err"; text: string } | null>(null);
+  const [payGuide, setPayGuide] = useState<{ amount: number; pixKey: string } | null>(null);
+
+  const load = useCallback(async () => {
+    const session = readSession();
+    if (!session) return;
+    try {
+      const response = await fetch("/api/mall/procurement", { headers: { "x-vento-role": session.role ?? "" }, cache: "no-store" });
+      if (!response.ok) { setProc(null); return; } // 403 / disabled → hide the whole block.
+      const data = (await response.json())?.data as ProcurementPayload | undefined;
+      if (!data || data.enabled === false) { setProc(null); return; }
+      setProc(data);
+    } catch {
+      setProc(null); // network failure → keep the page working without the block.
+    }
+  }, []);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  useEffect(() => {
+    if (!msg) return;
+    const timer = setTimeout(() => setMsg(null), 4500);
+    return () => clearTimeout(timer);
+  }, [msg]);
+
+  const post = useCallback(async (body: Record<string, unknown>) => {
+    const session = readSession();
+    const response = await fetch("/api/mall/procurement", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-vento-role": session?.role ?? "" },
+      body: JSON.stringify(body),
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      setMsg({ tone: "err", text: payload.error ?? t("dynReqFail", { s: response.status }) });
+      return null;
+    }
+    return (payload.data ?? {}) as Record<string, unknown>;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  if (!proc) return null;
+
+  const catalog = proc.catalog ?? [];
+  // Backend sends feePct per catalog item as a percent (8); normalize to a fraction.
+  const rawPct = typeof proc.feePct === "number" ? proc.feePct : catalog[0]?.feePct;
+  const feePct = typeof rawPct === "number" && rawPct > 0 ? (rawPct > 1 ? rawPct / 100 : rawPct) : 0.08;
+  const pctLabel = Math.round(feePct * 1000) / 10;
+  const myPOs = proc.myPOs ?? [];
+  const cartItems = catalog.map((item) => ({ item, q: Math.floor(Number(qty[item.productId]) || 0) })).filter((x) => x.q > 0);
+  const cartGoods = Math.round(cartItems.reduce((sum, x) => sum + (x.item.wholesalePrice ?? 0) * x.q, 0) * 100) / 100;
+  const cartFee = Math.round(cartGoods * feePct * 100) / 100;
+  const cartTotal = Math.round((cartGoods + cartFee) * 100) / 100;
+
+  async function submitPO() {
+    if (cartItems.length === 0) { setMsg({ tone: "err", text: t("frPcNeedQty") }); return; }
+    const data = await post({ action: "createProcurementPO", items: cartItems.map((x) => ({ productId: x.item.productId, qty: x.q })) });
+    if (!data) return;
+    const d = data as { payableTotal?: number; totalDue?: number; total?: number; pixKey?: string };
+    setQty({});
+    setPayGuide({ amount: Number(d.payableTotal ?? d.totalDue ?? d.total ?? cartTotal), pixKey: String(d.pixKey ?? proc?.pixKey ?? "") });
+    setMsg({ tone: "ok", text: t("frPcCreated") });
+    void load();
+  }
+
+  async function receivePO(poId: string) {
+    const data = await post({ action: "receiveProcurementPO", poId });
+    if (!data) return;
+    setMsg({ tone: "ok", text: t("frPcReceived") });
+    void load();
+  }
+
+  return (
+    <section className="mt-5">
+      <Panel title={t("frPcTitle")} eyebrow={t("frPcEyebrow")}>
+        {msg && (
+          <div className={`mb-4 rounded-lg border px-4 py-3 text-sm font-bold ${msg.tone === "ok" ? "border-[var(--success)]/40 bg-[var(--success)]/10 text-[var(--success)]" : "border-[var(--danger)]/40 bg-[var(--danger)]/10 text-[var(--danger)]"}`}>
+            {msg.text}
+          </div>
+        )}
+        {payGuide && (
+          <div className="mb-4 rounded-lg border border-[var(--accent)] bg-[var(--surface-raised)] p-4">
+            <div className="text-xs font-black uppercase text-[var(--accent)]">{t("frPcPayTitle")}</div>
+            <p className="mt-1 text-sm font-bold leading-6 text-[var(--text)]">{t("frPcPayBody", { amt: payGuide.amount.toFixed(2), pix: payGuide.pixKey })}</p>
+          </div>
+        )}
+        <p className="mb-4 text-sm leading-6 text-[var(--text-soft)]">{t("frPcIntro", { pct: pctLabel })}</p>
+
+        {/* ---- Catalog + cart ---- */}
+        <div className="mb-2 flex items-center gap-2 text-xs font-black uppercase text-[var(--muted)]"><PackageSearch size={14} /> {t("frPcCatalog")}</div>
+        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+          {catalog.map((item) => {
+            const wholesale = item.wholesalePrice ?? 0;
+            const landed = Math.round(wholesale * (1 + feePct) * 100) / 100;
+            return (
+              <div key={item.productId} className="rounded-lg border border-[var(--line)] bg-[var(--surface-raised)] p-4">
+                <div className="flex items-center gap-3">
+                  <div className="h-12 w-12 shrink-0 overflow-hidden rounded-[10px] border border-[var(--line)] bg-[var(--surface)]">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    {item.imageUrl ? <img src={item.imageUrl} alt="" className="h-full w-full object-cover" /> : <div className="grid h-full w-full place-items-center text-lg">📦</div>}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="truncate text-sm font-black text-[var(--text)]">{item.name}</div>
+                    <div className="truncate text-[11px] font-bold text-[var(--muted)]">{t("frPcSupplier")} {item.supplierName}{item.category ? ` · ${item.category}` : ""}</div>
+                  </div>
+                </div>
+                <div className="mt-2 text-xs font-bold leading-5 text-[var(--muted)]">
+                  {t("frPcWholesale")} R$ {wholesale.toFixed(2)} · <b className="text-[var(--text)]">{t("frPcLanded", { pct: pctLabel })} R$ {landed.toFixed(2)}</b>
+                  {item.deliveryCycleDays ? ` · ${t("frPcCycleDays", { d: item.deliveryCycleDays })}` : ""}
+                </div>
+                <input
+                  value={qty[item.productId] ?? ""}
+                  onChange={(e) => setQty((prev) => ({ ...prev, [item.productId]: e.target.value.replace(/[^0-9]/g, "") }))}
+                  placeholder={t("frPcQtyPh")}
+                  inputMode="numeric"
+                  className="mt-2 h-9 w-24 rounded-[8px] border border-[var(--line)] bg-[var(--surface)] px-2 text-sm font-bold outline-none focus:border-[var(--accent)]"
+                />
+              </div>
+            );
+          })}
+          {catalog.length === 0 && <div className="rounded-lg border border-[var(--line)] bg-[var(--surface-raised)] p-6 text-center text-xs font-bold text-[var(--muted)] md:col-span-2 xl:col-span-3">{t("frPcNoCatalog")}</div>}
+        </div>
+        {catalog.length > 0 && (
+          <div className="mt-4 flex flex-wrap items-center gap-3 rounded-lg border border-[var(--line)] bg-[var(--surface-raised)] p-4">
+            <span className="text-sm font-bold text-[var(--text-soft)]">{t("frPcCartGoods")} R$ {cartGoods.toFixed(2)} + {t("frPcCartFee", { pct: pctLabel })} R$ {cartFee.toFixed(2)}</span>
+            <span className="text-base font-black text-[var(--text)]">{t("frPcCartTotal")} R$ {cartTotal.toFixed(2)}</span>
+            <button type="button" disabled={cartItems.length === 0} onClick={() => void submitPO()} className="ml-auto h-10 rounded-lg bg-[var(--accent)] px-5 text-sm font-black text-[var(--accent-ink)] disabled:opacity-50">
+              {t("frPcSubmit")}
+            </button>
+          </div>
+        )}
+
+        {/* ---- My purchase orders ---- */}
+        <div className="mt-5">
+          <div className="mb-2 text-xs font-black uppercase text-[var(--muted)]">{t("frPcMyPos")}</div>
+          <div className="space-y-2">
+            {myPOs.map((po) => {
+              const goodsAmt = po.goodsTotal ?? po.totalCost ?? 0;
+              const feeAmt = po.feeBRL ?? Math.round(goodsAmt * feePct * 100) / 100;
+              const due = Math.round((goodsAmt + feeAmt) * 100) / 100;
+              const unpaid = po.paymentStatus !== "paid" && po.status !== "cancelled" && po.status !== "received";
+              return (
+                <div key={po.id} className="rounded-lg border border-[var(--line)] bg-[var(--surface-raised)] px-4 py-3">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="text-sm font-black text-[var(--text)]">{po.id}</span>
+                    <Badge value={t(procPoStatusKey(po))} />
+                    <span className="text-xs font-bold text-[var(--muted)]">{po.supplierName ? `${po.supplierName} · ` : ""}{t("frPcGoodsFee", { g: goodsAmt.toFixed(2), f: feeAmt.toFixed(2) })} · {po.createdAt}</span>
+                    {po.status === "shipped" && (
+                      <button type="button" onClick={() => void receivePO(po.id)} className="ml-auto h-8 rounded-lg bg-[var(--accent)] px-3 text-xs font-black text-[var(--accent-ink)]">
+                        {t("frPcReceive")}
+                      </button>
+                    )}
+                  </div>
+                  <div className="mt-1 text-xs font-bold text-[var(--muted)]">{po.items.map((item) => `${item.name}×${item.qty}`).join(", ")}{po.shipNote ? t("dynLogistics", { x: po.shipNote }) : ""}</div>
+                  {unpaid && <div className="mt-1 text-xs font-black text-[var(--accent)]">{t("frPcPixLine", { amt: due.toFixed(2), pix: proc.pixKey ?? "" })}</div>}
+                </div>
+              );
+            })}
+            {myPOs.length === 0 && <div className="rounded-lg border border-[var(--line)] bg-[var(--surface-raised)] p-6 text-center text-xs font-bold text-[var(--muted)]">{t("frPcNoPos")}</div>}
+          </div>
+        </div>
+      </Panel>
+    </section>
+  );
+}
+
 export default function FranchisePage() {
   const language = useVentoStore((state) => state.language);
   const copy = franchiseCopies[language];
@@ -489,6 +712,8 @@ export default function FranchisePage() {
           </div>
         </section>
       )}
+
+      <FranchiseProcurement t={t} />
 
       <section className="mt-5 rounded-xl border border-[#5542a0] bg-[#151129] p-5">
         <div className="mb-4 flex flex-wrap items-start justify-between gap-3">

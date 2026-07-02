@@ -39,6 +39,9 @@ export type MallConfig = {
   highValueReviewPoints?: number;
   newAccountWindowDays?: number;
   newAccountRedeemCap?: number;
+  /** Feature flag (Hard Rule #3): franchise direct procurement (加盟商直采).
+   *  Default false — HQ enables it via the mall `setConfig` action. */
+  franchiseProcurementEnabled?: boolean;
   updatedAt: string;
   updatedBy: string;
 };
@@ -58,6 +61,7 @@ export const defaultMallConfig: MallConfig = {
   highValueReviewPoints: 8000,
   newAccountWindowDays: 7,
   newAccountRedeemCap: 0,
+  franchiseProcurementEnabled: false,
   updatedAt: "",
   updatedBy: "seed",
 };

@@ -103,5 +103,6 @@ The Compose stack includes the Next.js application, PostgreSQL 16, and Redis 7.
 - `GET /api/access-control`
 - `GET /api/security`
 - `GET, POST /api/settings`
+- `GET, POST /api/mall/procurement`
 
 The API currently uses in-memory demo data. The frontend uses persisted browser state for fast MVP interaction.

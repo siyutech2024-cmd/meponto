@@ -6,7 +6,7 @@ import { AppShell, Badge, FormDialog } from "../../components/ui";
 import { useDialog } from "../../components/dialog";
 import { downloadCsv } from "../../lib/csv";
 import type { MarketplaceProduct } from "../../lib/points";
-import type { PriceChangeRequest, PurchaseOrder, SupplierStatement } from "../../lib/mall-ops";
+import type { PriceChangeRequest, ProcurementSupplierStatement, PurchaseOrder, SupplierStatement } from "../../lib/mall-ops";
 import { poStatusLabel, statementStatusLabel } from "../../lib/mall-ops";
 import { useVentoStore } from "../../lib/store";
 import { translate, type TranslationKey } from "../../lib/i18n";
@@ -15,6 +15,11 @@ type SupplierProfileT = { id: string; companyName: string; brand: string; cnpj: 
 type TeamMember = { id: string; name: string; identifier: string; phone: string; role: string; status: string; organization?: string; createdAt: string; lastLoginAt?: string };
 type SupplierOrder = { id: string; productName: string; createdAt: string; status: string; accountType: string; supplyPrice: number; station: string; franchise: string };
 type SupplierData = { profile: SupplierProfileT; team: TeamMember[]; orders: SupplierOrder[] };
+
+/** 加盟商直采（/api/mall/procurement）——后端契约的本地声明，403 时整体隐藏。 */
+type ProcDistribution = { productId: string; distributable?: boolean; wholesalePrice?: number; distributionApproved?: boolean };
+type ProcPO = PurchaseOrder & { buyerType?: string; franchise?: string; goodsTotal?: number; feeBRL?: number; paymentStatus?: "pending" | "paid" };
+type SupplierProcPayload = { myDistribution?: ProcDistribution[]; procurementPOs?: ProcPO[]; statements?: ProcurementSupplierStatement[] };
 
 /**
  * Supplier supply-chain workspace (supplier.meponto.com): catalog + quotes,
@@ -83,6 +88,8 @@ export default function SupplierWorkspacePage() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
   const [priceDraft, setPriceDraft] = useState<Record<string, string>>({});
+  const [proc, setProc] = useState<SupplierProcPayload | null>(null);
+  const [distDraft, setDistDraft] = useState<Record<string, { on?: boolean; price?: string }>>({});
   const [pixDraft, setPixDraft] = useState("");
   const [orderFilter, setOrderFilter] = useState("");
   /** PO currently being shipped via the structured ship dialog (tracking no + note). */
@@ -186,6 +193,14 @@ export default function SupplierWorkspacePage() {
       setProducts(rows.filter((product) => Boolean(organization) && product.supplierName === organization));
     }
     if (opsRes.ok) setOps((await opsRes.json()).data);
+    // 加盟商直采（feature-flagged）：403 / 未启用时保持 null，相关 UI 整体隐藏。
+    const procRes = await fetch("/api/mall/procurement", { headers, cache: "no-store" }).catch(() => null);
+    if (procRes && procRes.ok) {
+      const procPayload = (await procRes.json().catch(() => ({})))?.data as SupplierProcPayload | undefined;
+      setProc(procPayload ?? null);
+    } else {
+      setProc(null);
+    }
     const supRes = await fetch("/api/supplier", { headers, cache: "no-store" }).catch(() => null);
     if (supRes && supRes.ok) {
       const d = (await supRes.json()).data as SupplierData;
@@ -226,10 +241,39 @@ export default function SupplierWorkspacePage() {
     return payload.data;
   }
 
+  async function procPost(body: Record<string, unknown>, okText?: string) {
+    const response = await fetch("/api/mall/procurement", { method: "POST", headers, body: JSON.stringify(body) });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) { setMessage({ tone: "err", text: payload.error ?? t("dynReqFail", { s: response.status }) }); return null; }
+    if (okText) setMessage({ tone: "ok", text: okText });
+    void load();
+    return payload.data;
+  }
+
   function exportStatement(statement: SupplierStatement) {
     const rows = statement.lines.map((l) => [l.date, l.orderId, l.productName, l.supplyPrice.toFixed(2)]);
     rows.push(["合计", "", "", statement.total.toFixed(2)]);
     downloadCsv(`extrato-${supplierName}-${statement.month}`, ["日期", "订单", "商品", "供货价"], rows);
+  }
+
+  /** CSV do extrato de compra direta (直采对账单明细). */
+  function exportProcStatement(statement: ProcurementSupplierStatement) {
+    const rows = statement.lines.map((l) => [l.receivedAt, l.poId, l.franchise, String(l.units), l.goodsTotal.toFixed(2)]);
+    rows.push(["合计", "", "", "", statement.total.toFixed(2)]);
+    downloadCsv(`extrato-direto-${supplierName}-${statement.month}`, ["收货日期", "直采单", "加盟商", "件数", "货款"], rows);
+  }
+
+  /** Confirm a draft procurement statement — prompt/confirm the payout PIX key first. */
+  async function confirmProcStatement(statement: ProcurementSupplierStatement) {
+    const pix = await dialog.prompt("确认直采对账单", {
+      message: `确认「${statement.month}」直采对账单（${statement.lines.length} 单 · R$ ${statement.total.toFixed(2)}）无误。请填写/确认收款 PIX Key，总部将按此付款。`,
+      placeholder: "收款 PIX Key",
+      defaultValue: statement.pixKey || sup?.profile.pixKey || pixDraft || "",
+      confirmText: "确认无误",
+    });
+    if (pix === null) return;
+    if (!pix.trim()) { setMessage({ tone: "err", text: "请填写收款 PIX Key" }); return; }
+    void procPost({ action: "confirmProcurementStatement", statementId: statement.id, pixKey: pix.trim() }, "已确认直采对账单，等待总部付款");
   }
 
   const payableTotal = (ops?.statements ?? []).filter((statement) => statement.status !== "paid").reduce((sum, statement) => sum + statement.total, 0);
@@ -239,6 +283,14 @@ export default function SupplierWorkspacePage() {
   const monthExpected = (sup?.orders ?? []).filter((o) => o.createdAt.slice(0, 7) === monthKey && (o.status === "fulfilled" || o.status === "arrived")).reduce((sum, o) => sum + o.supplyPrice, 0);
   const draftStatementCount = (ops?.statements ?? []).filter((statement) => statement.status === "draft").length;
   const filteredOrders = (sup?.orders ?? []).filter((o) => !orderFilter || o.status === orderFilter);
+  // 物流·补货：HQ 补货单与加盟商直采单同列表展示（按 id 去重，直采数据优先）。
+  const procurementPOs = proc?.procurementPOs ?? [];
+  // 直采月度对账单（feature-flagged 数据，403 时 proc 为 null,小节整体隐藏）。
+  const procStatements = proc?.statements ?? [];
+  const combinedPOs: ProcPO[] = [
+    ...(ops?.purchaseOrders ?? []).filter((po) => (po as ProcPO).buyerType !== "franchise" && !procurementPOs.some((f) => f.id === po.id)).map((po) => po as ProcPO),
+    ...procurementPOs,
+  ].sort((a, b) => (a.createdAt < b.createdAt ? 1 : a.createdAt > b.createdAt ? -1 : 0));
 
   return (
     <AppShell>
@@ -290,7 +342,7 @@ export default function SupplierWorkspacePage() {
               <button key={id} type="button" onClick={() => setTab(id)} className={`inline-flex h-10 shrink-0 items-center gap-2.5 rounded-[10px] px-3.5 text-[13px] font-black transition-colors lg:w-full ${tab === id ? "bg-[var(--accent)] text-[var(--accent-ink)]" : "text-[var(--muted)] hover:bg-[var(--surface-hover)] hover:text-[var(--text)]"}`}>
                 <Icon size={16} /> <span className="whitespace-nowrap">{label}</span>
                 {id === "pos" && (ops?.purchaseOrders ?? []).some((po) => po.status === "ordered") && <span className="ml-auto h-2 w-2 rounded-full bg-[var(--danger)]" />}
-                {id === "statements" && (ops?.statements ?? []).some((s) => s.status === "draft") && <span className="ml-auto h-2 w-2 rounded-full bg-[var(--danger)]" />}
+                {id === "statements" && [...(ops?.statements ?? []), ...(proc?.statements ?? [])].some((s) => s.status === "draft") && <span className="ml-auto h-2 w-2 rounded-full bg-[var(--danger)]" />}
               </button>
             ))}
           </nav>
@@ -400,6 +452,29 @@ export default function SupplierWorkspacePage() {
                     </>
                   )}
                 </div>
+                {proc && (() => {
+                  const entry = (proc.myDistribution ?? []).find((d) => d.productId === product.id);
+                  const draft = distDraft[product.id] ?? {};
+                  const on = draft.on ?? entry?.distributable ?? false;
+                  const price = draft.price ?? (entry?.wholesalePrice != null ? String(entry.wholesalePrice) : "");
+                  const approved = entry?.distributionApproved === true;
+                  return (
+                    <div className="mt-1 w-full border-t border-[var(--line)] pt-2.5">
+                      <div className="flex flex-wrap items-center gap-3">
+                        <span className="text-[10px] font-black uppercase tracking-[0.12em] text-[var(--accent)]">分销 · 加盟商直采</span>
+                        <label className="flex cursor-pointer items-center gap-1.5 text-xs font-black text-[var(--muted)]">
+                          <input type="checkbox" checked={on} onChange={(e) => setDistDraft((prev) => ({ ...prev, [product.id]: { ...prev[product.id], on: e.target.checked } }))} className="h-4 w-4 accent-[var(--accent)]" /> 可分销
+                        </label>
+                        <label className="text-[11px] font-black text-[var(--muted)]">分销价 R$
+                          <input value={price} onChange={(e) => setDistDraft((prev) => ({ ...prev, [product.id]: { ...prev[product.id], price: e.target.value } }))} placeholder="批发价" className="ml-1.5 h-9 w-24 rounded-[8px] border border-[var(--line)] bg-[var(--surface-raised)] px-2 text-sm font-bold outline-none focus:border-[var(--accent)]" />
+                        </label>
+                        <button type="button" disabled={on && !(Number(price) > 0)} onClick={() => void procPost({ action: "setDistributable", productId: product.id, distributable: on, ...(Number(price) > 0 ? { wholesalePrice: Number(price) } : {}) }, "分销设置已保存").then((d) => { if (d) setDistDraft((prev) => ({ ...prev, [product.id]: {} })); })} className="h-9 rounded-[8px] border border-[var(--line)] px-3 text-xs font-black text-[var(--muted)] hover:border-[var(--accent)] disabled:opacity-50">保存分销</button>
+                        {entry?.distributable && <Badge value={approved ? "已开放" : "待总部审批"} />}
+                        {entry?.distributable && entry.wholesalePrice != null && <span className="text-[11px] font-bold text-[var(--muted)]">当前分销价 R$ {entry.wholesalePrice.toFixed(2)}</span>}
+                      </div>
+                    </div>
+                  );
+                })()}
               </div>
             ))}
             {products.filter((product) => product.supplierName === supplierName).length === 0 && <div className="panel p-10 text-center text-sm font-bold text-[var(--muted)]">还没有你的商品，先在上方提报。</div>}
@@ -429,31 +504,41 @@ export default function SupplierWorkspacePage() {
       {/* ============ 补货单 ============ */}
       {tab === "pos" && (
         <div className="panel p-5">
-          <div className="mb-1 text-xs font-black uppercase text-[var(--muted)]">商城下达的补货单 · 确认 → 发货 → 商城入库</div>
-          <p className="mb-3 text-[11px] font-bold text-[var(--muted)]">代销模式:补货单仅为备货/调拨流转,<b>不产生货款</b>。结算以月度对账(履约订单 × 供货价)为准,下方金额仅为备货参考成本。</p>
+          <div className="mb-1 text-xs font-black uppercase text-[var(--muted)]">商城补货单与加盟商直采单 · 确认 → 发货</div>
+          <p className="mb-3 text-[11px] font-bold text-[var(--muted)]">HQ 补货单为代销备货流转,<b>不产生货款</b>,结算以月度对账为准;带「加盟商直采」徽章的为加盟商预付采购单,货物直发加盟商门店,货款由平台按月与你结算。</p>
           <div className="space-y-2">
-            {(ops?.purchaseOrders ?? []).map((po) => (
-              <div key={po.id} className="rounded-[10px] border border-[var(--line)] bg-[var(--surface-raised)] px-3.5 py-2.5">
-                <div className="flex flex-wrap items-center gap-2">
-                  <Boxes size={15} className="text-[var(--muted)]" />
-                  <span className="text-sm font-black">{po.id}</span>
-                  <Badge value={poStatusLabel[po.status]} />
-                  <span className="text-xs font-bold text-[var(--muted)]">{po.items.reduce((sum, item) => sum + item.qty, 0)} 件 · 备货参考成本 R$ {po.totalCost.toFixed(2)} · {po.createdAt}</span>
-                  <span className="ml-auto flex gap-1.5">
-                    {po.status === "ordered" && <button type="button" onClick={() => void post("/api/mall/ops", { action: "confirmPO", poId: po.id }, "已确认，请按周期发货")} className="h-8 rounded-[8px] bg-[var(--accent)] px-3 text-xs font-black text-[var(--accent-ink)]">确认接单</button>}
-                    {po.status === "confirmed" && <button type="button" onClick={() => setShipTarget(po)} className="h-8 rounded-[8px] bg-[var(--accent)] px-3 text-xs font-black text-[var(--accent-ink)]">标记发货</button>}
-                  </span>
+            {combinedPOs.map((po) => {
+              const isFr = po.buyerType === "franchise";
+              const paid = po.paymentStatus === "paid";
+              const actionable = !isFr || paid;
+              return (
+                <div key={po.id} className="rounded-[10px] border border-[var(--line)] bg-[var(--surface-raised)] px-3.5 py-2.5">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Boxes size={15} className="text-[var(--muted)]" />
+                    <span className="text-sm font-black">{po.id}</span>
+                    <Badge value={poStatusLabel[po.status] ?? po.status} />
+                    {isFr && <span className="rounded-full bg-[var(--accent)]/15 px-2 py-0.5 text-[11px] font-black text-[var(--accent)]">加盟商直采</span>}
+                    {isFr && po.franchise && <span className="text-xs font-black">{po.franchise}</span>}
+                    {isFr && <Badge value={paid ? "已预付" : "未付款"} />}
+                    <span className="text-xs font-bold text-[var(--muted)]">{po.items.reduce((sum, item) => sum + item.qty, 0)} 件 · {isFr ? `货款 R$ ${(po.goodsTotal ?? po.totalCost).toFixed(2)}` : `备货参考成本 R$ ${po.totalCost.toFixed(2)}`} · {po.createdAt}</span>
+                    <span className="ml-auto flex gap-1.5">
+                      {po.status === "ordered" && <button type="button" disabled={!actionable} onClick={() => void post("/api/mall/ops", { action: "confirmPO", poId: po.id }, "已确认，请按周期发货")} className="h-8 rounded-[8px] bg-[var(--accent)] px-3 text-xs font-black text-[var(--accent-ink)] disabled:opacity-50">确认接单</button>}
+                      {po.status === "confirmed" && <button type="button" disabled={!actionable} onClick={() => setShipTarget(po)} className="h-8 rounded-[8px] bg-[var(--accent)] px-3 text-xs font-black text-[var(--accent-ink)] disabled:opacity-50">标记发货</button>}
+                    </span>
+                  </div>
+                  <div className="mt-1 text-xs font-bold text-[var(--muted)]">{po.items.map((item) => `${item.name}×${item.qty}`).join("、")}{po.note ? t("dynNote", { x: po.note }) : ""}{po.shipNote ? t("dynLogistics", { x: po.shipNote }) : ""}</div>
+                  {isFr && !paid && po.status !== "cancelled" && po.status !== "received" && <div className="mt-1 text-xs font-bold" style={{ color: "var(--warn)" }}>加盟商尚未付款——总部确认收款（预付到账）前不能确认接单/发货。</div>}
                 </div>
-                <div className="mt-1 text-xs font-bold text-[var(--muted)]">{po.items.map((item) => `${item.name}×${item.qty}`).join("、")}{po.note ? t("dynNote", { x: po.note }) : ""}{po.shipNote ? t("dynLogistics", { x: po.shipNote }) : ""}</div>
-              </div>
-            ))}
-            {(ops?.purchaseOrders ?? []).length === 0 && <div className="py-6 text-center text-xs font-bold text-[var(--muted)]">暂无补货单。</div>}
+              );
+            })}
+            {combinedPOs.length === 0 && <div className="py-6 text-center text-xs font-bold text-[var(--muted)]">暂无补货单。</div>}
           </div>
         </div>
       )}
 
       {/* ============ 对账单 ============ */}
       {tab === "statements" && (
+        <div className="space-y-5">
         <div className="panel p-5">
           <div className="mb-3 text-xs font-black uppercase text-[var(--muted)]">月度对账单 · 确认后商城付款</div>
           <div className="space-y-2">
@@ -508,6 +593,50 @@ export default function SupplierWorkspacePage() {
             ))}
             {(ops?.statements ?? []).length === 0 && <div className="py-6 text-center text-xs font-bold text-[var(--muted)]">商城生成对账单后会出现在这里（自然月：履约订单 × 供货价）。</div>}
           </div>
+        </div>
+
+        {/* ---- 直采对账单（加盟商直采，feature-flagged：proc 为 null 时整体隐藏）---- */}
+        {proc && procStatements.length > 0 && (
+          <div className="panel p-5">
+            <div className="mb-1 text-xs font-black uppercase text-[var(--muted)]">直采对账单 · 加盟商直采货款</div>
+            <p className="mb-3 text-[11px] font-bold text-[var(--muted)]">自然月内加盟商<b>已收货</b>的直采单 × 分销价。确认无误后总部按对账单一次性付款（货款全额归你，平台佣金已由加盟商另付）。</p>
+            <div className="space-y-2">
+              {procStatements.map((statement) => (
+                <div key={statement.id} className="rounded-[10px] border border-[var(--line)] bg-[var(--surface-raised)] px-3.5 py-2.5">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <CircleDollarSign size={15} className="text-[var(--muted)]" />
+                    <span className="text-sm font-black">{statement.month}</span>
+                    <span className="rounded-full bg-[var(--accent)]/15 px-2 py-0.5 text-[11px] font-black text-[var(--accent)]">加盟商直采</span>
+                    <Badge value={(statementStatusLabel as Record<string, string>)[statement.status] ?? extraStatementLabel[statement.status] ?? statement.status} />
+                    <button type="button" onClick={() => setOpenStmt((prev) => { const n = new Set(prev); n.has(statement.id) ? n.delete(statement.id) : n.add(statement.id); return n; })} className="inline-flex items-center gap-1 text-xs font-bold text-[var(--muted)] hover:text-[var(--accent)]">
+                      <ChevronRight size={13} className={`transition-transform ${openStmt.has(statement.id) ? "rotate-90" : ""}`} />{statement.lines.length} 单 · <b className="text-[var(--text)]">R$ {statement.total.toFixed(2)}</b>
+                    </button>
+                    <span className="ml-auto flex items-center gap-1.5">
+                      <button type="button" onClick={() => exportProcStatement(statement)} className="inline-flex h-8 items-center gap-1 rounded-[8px] border border-[var(--line)] px-2.5 text-xs font-black text-[var(--muted)] hover:border-[var(--accent)]"><Download size={12} /> CSV</button>
+                      {statement.status === "draft" && (
+                        <button type="button" onClick={() => void confirmProcStatement(statement)} className="h-8 rounded-[8px] bg-[var(--accent)] px-3 text-xs font-black text-[var(--accent-ink)]">确认对账单</button>
+                      )}
+                    </span>
+                  </div>
+                  {openStmt.has(statement.id) && (
+                    <div className="mt-2 overflow-hidden rounded-[8px] border border-[var(--line)]">
+                      <table className="w-full text-xs">
+                        <thead><tr className="bg-[var(--surface)] text-left font-black uppercase text-[var(--muted)]"><th className="px-3 py-1.5">收货日期</th><th className="px-3 py-1.5">直采单</th><th className="px-3 py-1.5">加盟商</th><th className="px-3 py-1.5 text-right">件数</th><th className="px-3 py-1.5 text-right">货款</th></tr></thead>
+                        <tbody>
+                          {statement.lines.map((l, i) => (
+                            <tr key={`${l.poId}-${i}`} className="border-t border-[var(--line)] font-bold"><td className="px-3 py-1.5">{l.receivedAt}</td><td className="px-3 py-1.5 font-mono text-[var(--muted)]">{l.poId}</td><td className="px-3 py-1.5">{l.franchise}</td><td className="px-3 py-1.5 text-right">{l.units}</td><td className="px-3 py-1.5 text-right">R$ {l.goodsTotal.toFixed(2)}</td></tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                  {statement.status === "confirmed" && <div className="mt-1 text-xs font-bold text-[var(--muted)]">已确认{statement.confirmedAt ? ` · ${statement.confirmedAt}` : ""}{statement.pixKey ? ` · 收款 PIX ${statement.pixKey}` : ""} · 等待总部付款</div>}
+                  {statement.paidAt && <div className="mt-1 text-xs font-bold" style={{ color: "var(--success)" }}>已付款 · {statement.paidAt}{statement.receiptNote ? ` · ${statement.receiptNote}` : ""}</div>}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
         </div>
       )}
 

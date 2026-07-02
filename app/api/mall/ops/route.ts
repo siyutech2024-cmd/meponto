@@ -500,6 +500,11 @@ async function handlePost(request: Request) {
       if (index === -1) return jsonResponse({ error: "PO not found" }, { status: 404 });
       const po = memory.purchaseOrders[index];
       if (supplierName && po.supplierName !== supplierName) return jsonResponse({ error: "只能操作自己的补货单" }, { status: 403 });
+      // Franchise direct procurement is PREPAID (V1): the supplier may only
+      // confirm/ship after HQ manually confirmed the franchise PIX transfer.
+      if (po.buyerType === "franchise" && po.paymentStatus !== "paid") {
+        return jsonResponse({ error: "加盟商未完成预付,不能确认" }, { status: 409 });
+      }
       if (action === "confirmPO") {
         if (po.status !== "ordered") return jsonResponse({ error: "状态不允许确认" }, { status: 409 });
         memory.purchaseOrders[index] = { ...po, status: "confirmed", confirmedAt: nowStamp() };
@@ -513,6 +518,12 @@ async function handlePost(request: Request) {
       const index = memory.purchaseOrders.findIndex((item) => item.id === body.poId);
       if (index === -1) return jsonResponse({ error: "PO not found" }, { status: 404 });
       const po = memory.purchaseOrders[index];
+      // Franchise direct-procurement goods NEVER enter platform stock — receipt
+      // must go through /api/mall/procurement `receiveProcurementPO` (status
+      // only, no stock delta, no inventory ledger).
+      if (po.buyerType === "franchise") {
+        return jsonResponse({ error: "加盟商直采单不入平台库存,请通过 /api/mall/procurement 的 receiveProcurementPO 收货" }, { status: 409 });
+      }
       if (po.status !== "shipped") return jsonResponse({ error: "只有已发货的补货单可入库" }, { status: 409 });
       for (const item of po.items) {
         const productIndex = memory.marketplaceProducts.findIndex((product) => product.id === item.productId);

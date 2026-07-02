@@ -32,6 +32,17 @@ export const MARKETPLACE_EVENTS = {
   orderRejected: "marketplace.order.rejected.v1",
 } as const;
 
+/** Versioned franchise direct-procurement event names (加盟商直采分销) —
+ *  single source of truth for the /api/mall/procurement module. */
+export const PROCUREMENT_EVENTS = {
+  distributionUpdated: "supplier.distribution.updated.v1",
+  distributionApproved: "supplier.distribution.approved.v1",
+  poCreated: "franchise.po.created.v1",
+  poPaid: "franchise.po.paid.v1",
+  poReceived: "franchise.po.received.v1",
+  poSettled: "franchise.po.settled.v1",
+} as const;
+
 /** Append a versioned domain event to the outbox (append-only, newest first). */
 export function appendEvent(type: string, payload: Record<string, unknown>, actor?: string): DomainEvent {
   const event: DomainEvent = {

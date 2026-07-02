@@ -43,6 +43,15 @@ type OpsPayload = {
 const extraStatementLabel: Record<string, string> = { disputed: "有异议" };
 const extraPoLabel: Record<string, string> = { draft: "草稿·待确认" };
 
+/** 加盟商直采（/api/mall/procurement）——后端契约的本地声明，未启用时面板整体隐藏。 */
+/** pendingApprovals are raw marketplace products (id/name), not projections. */
+type ProcApproval = { id: string; name?: string; supplierName?: string; wholesalePrice?: number; createdAt?: string };
+type ProcPO = PurchaseOrder & { buyerType?: string; franchise?: string; goodsTotal?: number; feeBRL?: number; paymentStatus?: "pending" | "paid" };
+type ProcFeeEntry = { id?: string; month?: string; franchise?: string; supplierName?: string; goodsTotal?: number; goodsBRL?: number; feeBRL?: number; status?: string; createdAt?: string };
+type ProcStatement = { id: string; month?: string; franchise?: string; supplierName?: string; total?: number; status?: string; paidAt?: string; lines?: unknown[] };
+type ProcPayload = { enabled?: boolean; pendingApprovals?: ProcApproval[]; allPOs?: ProcPO[]; feeEntries?: ProcFeeEntry[]; statements?: ProcStatement[] };
+const procFeeStatusLabel: Record<string, string> = { accrued: "已计提", pending: "待结算", settled: "已结算", paid: "已结算" };
+
 const orderStatusLabel: Record<string, string> = { created: "在途", arrived: "已到站", fulfilled: "已交付", cancelled: "已取消" };
 const productStatusLabel: Record<string, string> = { active: "已上架", paused: "已下架", pending_pricing: "待定价" };
 const payChipTone: Record<string, string> = { pending: "#b3540a", submitted: "var(--warn)", paid: "var(--success)" };
@@ -116,14 +125,19 @@ export default function MallAdminPage() {
     return d.toISOString().slice(0, 7);
   });
   const [configDraft, setConfigDraft] = useState<Record<string, string>>({});
+  const [proc, setProc] = useState<ProcPayload | null>(null);
 
   const load = useCallback(async () => {
-    const [mallRes, opsRes] = await Promise.all([
+    const [mallRes, opsRes, procRes] = await Promise.all([
       fetch("/api/mall", { headers, cache: "no-store" }),
       fetch("/api/mall/ops", { headers, cache: "no-store" }),
+      fetch("/api/mall/procurement", { headers, cache: "no-store" }).catch(() => null),
     ]);
     if (mallRes.ok) setMall((await mallRes.json()).data);
     if (opsRes.ok) setOps((await opsRes.json()).data);
+    // 加盟商直采（feature-flagged 新模块）：路由未上线 / 403 / 未启用时面板整体隐藏。
+    if (procRes && procRes.ok) setProc(((await procRes.json().catch(() => ({})))?.data as ProcPayload | undefined) ?? null);
+    else setProc(null);
   }, [headers]);
 
   useEffect(() => {
@@ -136,7 +150,7 @@ export default function MallAdminPage() {
     return () => clearTimeout(timer);
   }, [message]);
 
-  async function post(path: "/api/mall" | "/api/mall/ops", body: Record<string, unknown>, okText?: string) {
+  async function post(path: "/api/mall" | "/api/mall/ops" | "/api/mall/procurement", body: Record<string, unknown>, okText?: string) {
     const response = await fetch(path, { method: "POST", headers, body: JSON.stringify(body) });
     const payload = await response.json().catch(() => ({}));
     if (!response.ok) {
@@ -811,6 +825,112 @@ export default function MallAdminPage() {
               {(((ops as { revShareStatements?: unknown[] } | null)?.revShareStatements) ?? []).length === 0 && <div className="py-4 text-center text-xs font-bold text-[var(--muted)]">按「已取货订单 × 产品加盟商分成」自动汇总。加盟商在自己后台确认后，这里可标记付款。</div>}
             </div>
           </div>
+
+          {/* ---- 加盟商直采（feature-flagged 新模块，未启用时整体隐藏） ---- */}
+          {proc && proc.enabled !== false && (
+            <div className="panel p-5">
+              <div className="mb-1 text-xs font-black uppercase text-[var(--muted)]">加盟商直采 · 供应商直发（服务费 8% · 预付制 · 不入平台库存）</div>
+              <p className="mb-4 text-[11px] font-bold text-[var(--muted)]">加盟商按「分销价 + 8% 服务费」预付平台，总部确认收款后供应商直发门店；平台按月与供应商结算货款，服务费计入下方佣金账本。</p>
+
+              {/* 待审批分销商品 */}
+              <div className="mb-4">
+                <div className="mb-2 text-xs font-black uppercase text-[var(--muted)]">待审批分销商品（{(proc.pendingApprovals ?? []).length}）</div>
+                <div className="space-y-2">
+                  {(proc.pendingApprovals ?? []).map((row) => (
+                    <div key={row.id} className="flex flex-wrap items-center gap-3 rounded-[10px] border border-[var(--line)] bg-[var(--surface-raised)] px-3.5 py-2.5">
+                      <div className="min-w-0 flex-1">
+                        <div className="text-sm font-black">{row.name ?? row.id}{row.supplierName ? <span className="text-[var(--muted)]"> · {row.supplierName}</span> : null}</div>
+                        <div className="text-xs font-bold text-[var(--muted)]">分销价 R$ {(row.wholesalePrice ?? 0).toFixed(2)} · 加盟商到手价 R$ {((row.wholesalePrice ?? 0) * 1.08).toFixed(2)}（含 8% 服务费）{row.createdAt ? ` · ${row.createdAt}` : ""}</div>
+                      </div>
+                      <span className="flex gap-1.5">
+                        <button type="button" onClick={() => void post("/api/mall/procurement", { action: "approveDistribution", productId: row.id, approve: true }, "已批准，商品对加盟商开放直采")} className="h-8 rounded-[8px] bg-[var(--accent)] px-3 text-xs font-black text-[var(--accent-ink)]">批准</button>
+                        <button type="button" onClick={() => void post("/api/mall/procurement", { action: "approveDistribution", productId: row.id, approve: false }, "已驳回")} className="h-8 rounded-[8px] border border-[var(--line)] px-3 text-xs font-black text-[var(--muted)]">驳回</button>
+                      </span>
+                    </div>
+                  ))}
+                  {(proc.pendingApprovals ?? []).length === 0 && <div className="py-3 text-center text-xs font-bold text-[var(--muted)]">暂无待审批的分销商品。</div>}
+                </div>
+              </div>
+
+              {/* 直采订单 */}
+              <div className="mb-4">
+                <div className="mb-2 text-xs font-black uppercase text-[var(--muted)]">直采订单</div>
+                <div className="space-y-2">
+                  {(proc.allPOs ?? []).map((po) => {
+                    const goods = po.goodsTotal ?? po.totalCost ?? 0;
+                    const fee = po.feeBRL ?? 0;
+                    const paid = po.paymentStatus === "paid";
+                    return (
+                      <div key={po.id} className="rounded-[10px] border border-[var(--line)] bg-[var(--surface-raised)] px-3.5 py-2.5">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <Boxes size={15} className="text-[var(--muted)]" />
+                          <span className="text-sm font-black">{po.franchise ?? "—"} ← {po.supplierName}</span>
+                          <Badge value={(poStatusLabel as Record<string, string>)[po.status] ?? extraPoLabel[po.status] ?? po.status} />
+                          <span className="rounded-full px-2 py-0.5 text-[11px] font-black" style={paid ? { background: "rgba(0,160,80,.12)", color: "var(--success)" } : { background: "#fff4cf", color: "var(--warn)" }}>{paid ? "已收款" : "待确认付款"}</span>
+                          <span className="text-xs font-bold text-[var(--muted)]">{po.items.reduce((sum, item) => sum + item.qty, 0)} 件 · 货款 R$ {goods.toFixed(2)} + 服务费 R$ {fee.toFixed(2)} = 应收 R$ {(goods + fee).toFixed(2)} · {po.createdAt}</span>
+                          <span className="ml-auto flex gap-1.5">
+                            {!paid && po.status !== "cancelled" && (
+                              <button type="button" onClick={async () => { if (!(await dialog.confirm("确认已收款", { message: `确认已收到「${po.franchise ?? po.id}」的预付款 R$ ${(goods + fee).toFixed(2)}（货款 ${goods.toFixed(2)} + 服务费 ${fee.toFixed(2)}）？确认后供应商可发货。` }))) return; void post("/api/mall/procurement", { action: "confirmProcurementPayment", poId: po.id }, "已确认收款，供应商可发货"); }} className="h-8 rounded-[8px] bg-[var(--accent)] px-3 text-xs font-black text-[var(--accent-ink)]">确认已收款</button>
+                            )}
+                          </span>
+                        </div>
+                        <div className="mt-1 text-xs font-bold text-[var(--muted)]">{po.items.map((item) => `${item.name}×${item.qty}`).join("、")}{po.shipNote ? t("dynLogistics", { x: po.shipNote }) : ""}</div>
+                      </div>
+                    );
+                  })}
+                  {(proc.allPOs ?? []).length === 0 && <div className="py-3 text-center text-xs font-bold text-[var(--muted)]">暂无直采订单。</div>}
+                </div>
+              </div>
+
+              {/* 月度直采对账单 */}
+              <div className="mb-4">
+                <div className="mb-2 flex flex-wrap items-center gap-2">
+                  <span className="text-xs font-black uppercase text-[var(--muted)]">月度直采对账单（供应商货款）</span>
+                  <input type="month" value={statementMonth} onChange={(e) => setStatementMonth(e.target.value)} className="ml-auto h-9 rounded-[8px] border border-[var(--line)] bg-[var(--surface-raised)] px-2 text-sm font-bold outline-none" />
+                  <button type="button" onClick={() => void post("/api/mall/procurement", { action: "generateProcurementStatement", month: statementMonth }, `已生成 ${statementMonth} 直采对账单`)} className="h-9 rounded-[8px] bg-[var(--accent)] px-3.5 text-xs font-black text-[var(--accent-ink)]">生成对账单</button>
+                </div>
+                <div className="space-y-2">
+                  {(proc.statements ?? []).map((s) => (
+                    <div key={s.id} className="flex flex-wrap items-center gap-2 rounded-[10px] border border-[var(--line)] bg-[var(--surface-raised)] px-3.5 py-2.5">
+                      <CircleDollarSign size={15} className="text-[var(--muted)]" />
+                      <span className="text-sm font-black">{s.supplierName ?? s.franchise ?? "—"} · {s.month ?? "—"}</span>
+                      <Badge value={(statementStatusLabel as Record<string, string>)[s.status ?? ""] ?? extraStatementLabel[s.status ?? ""] ?? s.status ?? "—"} />
+                      <span className="text-xs font-bold text-[var(--muted)]"><b>R$ {(s.total ?? 0).toFixed(2)}</b>{s.paidAt ? ` · 付款于 ${s.paidAt}` : ""}</span>
+                      <span className="ml-auto flex gap-1.5">
+                        {s.status === "confirmed" && (
+                          <button type="button" onClick={async () => { if (!(await dialog.confirm("标记付款", { message: `确认「${s.supplierName ?? s.franchise ?? s.id} · ${s.month ?? ""}」直采对账单已付款 R$ ${(s.total ?? 0).toFixed(2)}？` }))) return; void post("/api/mall/procurement", { action: "payProcurementStatement", statementId: s.id }, "已标记付款"); }} className="h-8 rounded-[8px] bg-[var(--accent)] px-3 text-xs font-black text-[var(--accent-ink)]">标记已付款</button>
+                        )}
+                      </span>
+                    </div>
+                  ))}
+                  {(proc.statements ?? []).length === 0 && <div className="py-3 text-center text-xs font-bold text-[var(--muted)]">选择月份生成直采对账单：按「直采单 × 分销价」汇总每个供应商的应付货款。</div>}
+                </div>
+              </div>
+
+              {/* 佣金账本 */}
+              <div>
+                <div className="mb-2 text-xs font-black uppercase text-[var(--muted)]">直采佣金账本（服务费 8% · 只增不改）</div>
+                <div className="overflow-x-auto rounded-[8px] border border-[var(--line)]">
+                  <table className="w-full min-w-[640px] text-sm">
+                    <thead><tr className="bg-[var(--surface-raised)] text-left text-[11px] font-black uppercase text-[var(--muted)]"><th className="px-3 py-2">月份</th><th className="px-3 py-2">加盟商</th><th className="px-3 py-2">供应商</th><th className="px-3 py-2 text-right">货款</th><th className="px-3 py-2 text-right">佣金</th><th className="px-3 py-2">状态</th></tr></thead>
+                    <tbody>
+                      {(proc.feeEntries ?? []).map((entry, index) => (
+                        <tr key={entry.id ?? index} className="border-t border-[var(--line)] font-bold">
+                          <td className="px-3 py-2">{entry.month ?? (entry.createdAt ?? "").slice(0, 7)}</td>
+                          <td className="px-3 py-2">{entry.franchise ?? "—"}</td>
+                          <td className="px-3 py-2">{entry.supplierName ?? "—"}</td>
+                          <td className="px-3 py-2 text-right">R$ {(entry.goodsTotal ?? entry.goodsBRL ?? 0).toFixed(2)}</td>
+                          <td className="px-3 py-2 text-right" style={{ color: "var(--success)" }}>R$ {(entry.feeBRL ?? 0).toFixed(2)}</td>
+                          <td className="px-3 py-2"><Badge value={procFeeStatusLabel[entry.status ?? ""] ?? entry.status ?? "—"} /></td>
+                        </tr>
+                      ))}
+                      {(proc.feeEntries ?? []).length === 0 && <tr><td colSpan={6} className="py-6 text-center text-xs font-bold text-[var(--muted)]">暂无佣金记录——总部确认直采收款后按单计提 8% 服务费。</td></tr>}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       )}
 

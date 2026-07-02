@@ -51,7 +51,7 @@ import { dispatchShifts, shiftQuotas, shiftSignups, type DispatchShift, type Shi
 import { appUsers, type AppUser } from "../users";
 import { riderDailyEarnings, riderDailyKpis, type RiderDailyEarning, type RiderDailyKpi } from "../performance";
 import { mallConfigs, type MallConfig } from "../mall";
-import type { CashLedgerEntry, CashTopUp, InventoryLedgerEntry, MallBanner, MallCategory, MallCoupon, MallPayment, MemberMessage, PriceChangeRequest, PurchaseOrder, RevenueShareEntry, RevenueShareStatement, SupplierStatement } from "../mall-ops";
+import type { CashLedgerEntry, CashTopUp, InventoryLedgerEntry, MallBanner, MallCategory, MallCoupon, MallPayment, MemberMessage, PriceChangeRequest, ProcurementFeeEntry, ProcurementSupplierStatement, PurchaseOrder, RevenueShareEntry, RevenueShareStatement, SupplierStatement } from "../mall-ops";
 import { riderWithdrawals, walletPayments, type RiderWithdrawal, type WalletPayment } from "../finance";
 import { assessmentRules, type AssessmentRule } from "../assessment";
 import { supportTickets, type SupportTicket } from "../support";
@@ -133,6 +133,8 @@ const globalState = globalThis as typeof globalThis & {
     inventoryLedgerEntries: InventoryLedgerEntry[];
     mallRevenueShareEntries: RevenueShareEntry[];
     revenueShareStatements: RevenueShareStatement[];
+    procurementFeeEntries: ProcurementFeeEntry[];
+    procurementSupplierStatements: ProcurementSupplierStatement[];
     memberMessages: MemberMessage[];
   };
 };
@@ -192,6 +194,8 @@ export const memory =
     inventoryLedgerEntries: trackCollection<InventoryLedgerEntry>("inventoryLedgerEntries", []),
     mallRevenueShareEntries: trackCollection("mallRevenueShareEntries", []),
     revenueShareStatements: trackCollection("revenueShareStatements", []),
+    procurementFeeEntries: trackCollection<ProcurementFeeEntry>("procurementFeeEntries", []),
+    procurementSupplierStatements: trackCollection<ProcurementSupplierStatement>("procurementSupplierStatements", []),
     memberMessages: trackCollection("memberMessages", []),
   });
 
@@ -297,6 +301,10 @@ memory.mallRevenueShareEntries ??= [];
 memory.mallRevenueShareEntries = trackCollection("mallRevenueShareEntries", memory.mallRevenueShareEntries);
 memory.revenueShareStatements ??= [];
 memory.revenueShareStatements = trackCollection("revenueShareStatements", memory.revenueShareStatements);
+memory.procurementFeeEntries ??= [];
+memory.procurementFeeEntries = trackCollection("procurementFeeEntries", memory.procurementFeeEntries);
+memory.procurementSupplierStatements ??= [];
+memory.procurementSupplierStatements = trackCollection("procurementSupplierStatements", memory.procurementSupplierStatements);
 memory.memberMessages ??= [];
 memory.memberMessages = trackCollection("memberMessages", memory.memberMessages);
 memory.walletPayments ??= [];

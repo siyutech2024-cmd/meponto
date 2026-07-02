@@ -458,7 +458,7 @@ function buildPointsLiability(supplierSettlement: Array<{ supplier: string; qty:
 }
 
 type Body =
-  | { action: "setConfig"; perOrderPoints?: number; referralPoints?: number; partnerServicePoints?: number; partnerServiceCount?: number; dailyRedeemCount?: number; dailyRedeemPoints?: number; monthlyRedeemPoints?: number; highValueReviewPoints?: number; newAccountWindowDays?: number; newAccountRedeemCap?: number }
+  | { action: "setConfig"; perOrderPoints?: number; referralPoints?: number; partnerServicePoints?: number; partnerServiceCount?: number; dailyRedeemCount?: number; dailyRedeemPoints?: number; monthlyRedeemPoints?: number; highValueReviewPoints?: number; newAccountWindowDays?: number; newAccountRedeemCap?: number; franchiseProcurementEnabled?: boolean }
   | { action: "supplierAddProduct"; name: string; supplierName: string; supplyPrice: number; deliveryCycleDays: number; stock: number; description?: string; imageUrl?: string; category?: string; isVirtual?: boolean; audience?: "rider" | "partner" | "both"; type?: string }
   | { action: "supplierUpdateProduct"; productId: string; name?: string; supplyPrice?: number; description?: string; imageUrl?: string; category?: string; stock?: number; deliveryCycleDays?: number; isVirtual?: boolean; audience?: "rider" | "partner" | "both"; type?: string }
   | { action: "supplierDeleteProduct"; productId: string }
@@ -511,6 +511,8 @@ async function handlePost(request: Request) {
         if (Number.isFinite(value) && value >= 0) config[field] = value;
       }
       if (typeof body.pixKey === "string") config.pixKey = String(body.pixKey).slice(0, 120);
+      // Feature flag (加盟商直采): boolean, default false — see /api/mall/procurement.
+      if (typeof body.franchiseProcurementEnabled === "boolean") config.franchiseProcurementEnabled = body.franchiseProcurementEnabled;
       config.updatedAt = nowStamp();
       config.updatedBy = actor;
       const index = memory.mallConfigs.findIndex((item) => item.id === "mall-config");
