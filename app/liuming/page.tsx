@@ -177,7 +177,7 @@ export default function LiumingPage() {
   ];
 
   return (
-    <main className="relative flex min-h-screen items-start justify-center overflow-hidden px-4 py-8 md:items-center md:py-14" style={{ background: "#0b0e14", color: "#fff7ef", fontFamily: "Outfit, Inter, system-ui, sans-serif" }}>
+    <main data-i18n-skip className="relative flex min-h-screen items-start justify-center overflow-hidden px-4 pb-8 pt-14 md:items-center md:py-14" style={{ background: "#0b0e14", color: "#fff7ef", fontFamily: "Outfit, Inter, system-ui, sans-serif" }}>
       <style>{`
         .lm ::selection { background:#FFD400; color:#0b0e14; }
         @keyframes lmRise { from { opacity:0; transform:translateY(26px) } to { opacity:1; transform:translateY(0) } }
@@ -195,24 +195,22 @@ export default function LiumingPage() {
         <div className="absolute -bottom-40 left-1/2 h-96 w-[640px] -translate-x-1/2 rounded-full" style={{ background: "radial-gradient(ellipse, rgba(255,212,0,.07), transparent 70%)" }} />
       </div>
 
-      <div className="lm relative w-full max-w-[420px]">
-        {/* language switcher — own row above the card */}
-        <div className="lm-rise mb-3.5 flex justify-end">
-          <div className="flex gap-1 rounded-full border p-1" style={{ borderColor: "rgba(255,255,255,.14)", background: "rgba(255,255,255,.04)", backdropFilter: "blur(4px)" }}>
-            {(["pt", "zh", "en"] as Lang[]).map((code) => (
-              <button
-                key={code}
-                type="button"
-                onClick={() => setLang(code)}
-                className="rounded-full px-3 py-1 text-[10px] font-black uppercase tracking-wider transition-colors"
-                style={lang === code ? { background: "#FFD400", color: "#0b0e14" } : { color: "rgba(255,255,255,.55)" }}
-              >
-                {code === "zh" ? "中" : code}
-              </button>
-            ))}
-          </div>
-        </div>
+      {/* language switcher — fixed, page top-right corner */}
+      <div className="fixed right-4 top-4 z-40 flex gap-0.5 rounded-full border p-0.5" style={{ borderColor: "rgba(255,255,255,.14)", background: "rgba(11,14,20,.6)", backdropFilter: "blur(6px)" }}>
+        {(["pt", "zh", "en"] as Lang[]).map((code) => (
+          <button
+            key={code}
+            type="button"
+            onClick={() => setLang(code)}
+            className="rounded-full px-2 py-[3px] text-[9px] font-black uppercase tracking-wider transition-colors"
+            style={lang === code ? { background: "#FFD400", color: "#0b0e14" } : { color: "rgba(255,255,255,.55)" }}
+          >
+            {code === "zh" ? "中" : code}
+          </button>
+        ))}
+      </div>
 
+      <div className="lm relative w-full max-w-[420px]">
         {/* card with gradient border */}
         <div className="lm-rise rounded-[30px] p-px" style={{ background: "linear-gradient(160deg, rgba(255,212,0,.65), rgba(255,212,0,.12) 38%, rgba(255,255,255,.08) 70%, rgba(255,212,0,.3))" }}>
           <div className="overflow-hidden rounded-[29px]" style={{ background: "#11141f" }}>
