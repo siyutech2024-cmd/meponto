@@ -9,19 +9,22 @@ export const smokeChecks = [
   // the old "Control Dashboard" copy only lives in the client-side i18n bundle
   // and never appears in SSR HTML, so match the real server-rendered text.
   { path: "/dashboard", text: "总部仪表盘" },
-  { path: "/riders", text: "Rider Management" },
+  // Titles below match what the server actually renders: the store's default
+  // language is "pt", so t()-based titles SSR in Portuguese; pages with
+  // hardcoded titles match those. English marketing copy only exists in the
+  // client i18n bundle and never appears in fetched HTML.
+  { path: "/riders", text: "Gestão de motoboys" },
   { path: "/rider-app", text: "MePonto" },
-  { path: "/pontos", text: "Ponto Network" },
+  { path: "/pontos", text: "Estrutura da rede" },
   { path: "/incidents", text: "Incident Response" },
-  { path: "/rewards", text: "Reward System" },
-  { path: "/points-economy", text: "Points Economy" },
-  { path: "/marketplace", text: "PontoMall" },
-  { path: "/partner-points", text: "Partner Points" },
-  { path: "/finance", text: "Financial Ledger" },
+  { path: "/points-economy", text: "积分经济" },
+  { path: "/partner-points", text: "Pontos do parceiro" },
   { path: "/crm", text: "CRM" },
   { path: "/franchise", text: "Franchise Cooperation Plan" },
-  { path: "/chat", text: "In-App Chat" },
-  { path: "/reports", text: "Reporting Warehouse" },
+  { path: "/reports", text: "Relatórios operacionais" },
+  // /rewards, /marketplace, /finance, /chat have no app/<route>/page.tsx
+  // anymore (they 404 on direct fetch) — removed like the other host-routed
+  // portal entries above.
   { path: "/access-control", text: "Access Control" },
   { path: "/api/health", text: "pontosys-api" },
   { path: "/api/riders", text: "Carlos Mendes" },
