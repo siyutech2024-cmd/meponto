@@ -1,7 +1,9 @@
 import { jsonResponse, memory, makeServerId, appendServerAudit } from "../../lib/server/memory";
 import { refreshCollectionsFromDatabase, flushPendingToDatabase } from "../../lib/server/persistence";
 import { createSessionToken, sessionCookie, sessionFromRequest } from "../../lib/auth-session";
+import { getOtpChallenge, setOtpChallenge, deleteOtpChallenge } from "../../lib/server/otp-store";
 import type { Rider } from "../../lib/data";
+import { createHmac } from "node:crypto";
 
 /**
  * Public MEMBER login by phone + OTP, anchored to the canonical rider record.
@@ -22,9 +24,14 @@ import type { Rider } from "../../lib/data";
  *  - Legacy (no `action`)          : phone-only login, kept for the native app
  *    until it ships the OTP UI. Disabled when `MEMBER_LOGIN_OTP=1`.
  *
- * SMS delivery: wired to Twilio when TWILIO_ACCOUNT_SID / TWILIO_AUTH_TOKEN /
- * TWILIO_FROM are set; otherwise the code is logged (and returned when
- * OTP_DEV_RETURN=1) for testing.
+ * SMS delivery (pluggable, selected by SMS_PROVIDER or auto-detected):
+ *  - `aliyun`: Alibaba Cloud international SMS (SendMessageToGlobe, free-form
+ *    message — no template review) when ALIYUN_SMS_ACCESS_KEY_ID /
+ *    ALIYUN_SMS_ACCESS_KEY_SECRET are set; ALIYUN_SMS_SENDER_ID optional.
+ *  - `twilio`: kept as fallback when TWILIO_ACCOUNT_SID / TWILIO_AUTH_TOKEN /
+ *    TWILIO_FROM are set.
+ *  - Neither configured: the code is logged (and returned when
+ *    OTP_DEV_RETURN=1) for testing.
  */
 
 const OTP_REQUIRED = process.env.MEMBER_LOGIN_OTP === "1";
@@ -41,9 +48,6 @@ const GOOGLE_LITE_LOGIN = process.env.GOOGLE_LITE_LOGIN !== "0";
 const OTP_TTL_MS = 5 * 60 * 1000;
 const OTP_RESEND_MS = 30 * 1000;
 const OTP_MAX_ATTEMPTS = 5;
-
-type Challenge = { code: string; expiresAt: number; attempts: number; lastSentAt: number; rebindRiderId?: string };
-const otpStore = new Map<string, Challenge>();
 
 const onlyDigits = (s: string) => s.replace(/\D/g, "");
 
@@ -142,31 +146,104 @@ async function issueGuestSession(google: { sub: string; email: string; name: str
   return response;
 }
 
-/** SMS delivery — Twilio when configured, otherwise dev log. Never throws. */
-async function sendOtp(phone: string, code: string) {
+// ---- SMS delivery (pluggable: aliyun | twilio | dev log). Never throws. ----
+
+/** RFC 3986 percent-encoding as required by Alibaba Cloud's RPC signature. */
+function aliyunEncode(s: string): string {
+  return encodeURIComponent(s).replace(/\*/g, "%2A").replace(/%7E/g, "~");
+}
+
+/**
+ * Alibaba Cloud international SMS (国际/港澳台短信, Singapore endpoint):
+ * SendMessageToGlobe — free-form message, no signature/template review needed.
+ * Docs: https://help.aliyun.com/zh/sms/developer-reference/api-dysmsapi-2018-05-01-sendmessagetoglobe
+ */
+async function sendViaAliyun(phone: string, code: string): Promise<boolean> {
+  const accessKeyId = process.env.ALIYUN_SMS_ACCESS_KEY_ID;
+  const accessKeySecret = process.env.ALIYUN_SMS_ACCESS_KEY_SECRET;
+  if (!accessKeyId || !accessKeySecret) return false;
+  try {
+    const params: Record<string, string> = {
+      AccessKeyId: accessKeyId,
+      Action: "SendMessageToGlobe",
+      Format: "JSON",
+      Message: `MePonto: seu código de acesso é ${code}. Válido por 5 minutos.`,
+      SignatureMethod: "HMAC-SHA1",
+      SignatureNonce: crypto.randomUUID(),
+      SignatureVersion: "1.0",
+      Timestamp: new Date().toISOString().replace(/\.\d{3}Z$/, "Z"),
+      // International number: country code + number, digits only (no +).
+      To: normalizeBR(phone),
+      Type: "OTP",
+      Version: "2018-05-01",
+    };
+    // Optional alphanumeric Sender ID (register in 国际/港澳台短信 → SenderID first).
+    const senderId = process.env.ALIYUN_SMS_SENDER_ID;
+    if (senderId) params.From = senderId;
+    const query = Object.keys(params)
+      .sort()
+      .map((k) => `${aliyunEncode(k)}=${aliyunEncode(params[k])}`)
+      .join("&");
+    const stringToSign = `POST&%2F&${aliyunEncode(query)}`;
+    const signature = createHmac("sha1", `${accessKeySecret}&`).update(stringToSign).digest("base64");
+    const resp = await fetch("https://dysmsapi.ap-southeast-1.aliyuncs.com/", {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: `Signature=${aliyunEncode(signature)}&${query}`,
+    });
+    const data = (await resp.json().catch(() => ({}))) as { ResponseCode?: string; ResponseDescription?: string };
+    if (data.ResponseCode !== "OK") {
+      console.warn(`[member-login] Aliyun SMS failed: ${data.ResponseCode ?? resp.status} ${data.ResponseDescription ?? ""}`);
+      return false;
+    }
+    return true;
+  } catch (err) {
+    console.warn("[member-login] Aliyun SMS error", err);
+    return false;
+  }
+}
+
+/** Twilio SMS: free-text message, kept as fallback provider. */
+async function sendViaTwilio(phone: string, code: string): Promise<boolean> {
   const sid = process.env.TWILIO_ACCOUNT_SID;
   const token = process.env.TWILIO_AUTH_TOKEN;
   const from = process.env.TWILIO_FROM;
+  if (!sid || !token || !from) return false;
   const text = `MePonto: seu código de acesso é ${code}. Válido por 5 minutos.`;
-  if (sid && token && from) {
-    try {
-      const to = `+${normalizeBR(phone)}`;
-      const params = new URLSearchParams({ To: to, From: from, Body: text });
-      const resp = await fetch(`https://api.twilio.com/2010-04-01/Accounts/${sid}/Messages.json`, {
-        method: "POST",
-        headers: {
-          Authorization: "Basic " + Buffer.from(`${sid}:${token}`).toString("base64"),
-          "Content-Type": "application/x-www-form-urlencoded",
-        },
-        body: params,
-      });
-      if (!resp.ok) console.warn(`[member-login] SMS send failed (${resp.status})`);
-    } catch (err) {
-      console.warn("[member-login] SMS send error", err);
+  try {
+    const to = `+${normalizeBR(phone)}`;
+    const params = new URLSearchParams({ To: to, From: from, Body: text });
+    const resp = await fetch(`https://api.twilio.com/2010-04-01/Accounts/${sid}/Messages.json`, {
+      method: "POST",
+      headers: {
+        Authorization: "Basic " + Buffer.from(`${sid}:${token}`).toString("base64"),
+        "Content-Type": "application/x-www-form-urlencoded",
+      },
+      body: params,
+    });
+    if (!resp.ok) {
+      console.warn(`[member-login] Twilio SMS failed (${resp.status})`);
+      return false;
     }
-    return;
+    return true;
+  } catch (err) {
+    console.warn("[member-login] Twilio SMS error", err);
+    return false;
   }
-  console.log(`[member-login] OTP for ${phone}: ${code} (set TWILIO_* env to send real SMS)`);
+}
+
+/**
+ * Send the OTP via the configured provider. SMS_PROVIDER=aliyun|twilio forces
+ * one; otherwise auto-detect (aliyun first, then twilio). If the primary
+ * provider fails, the other is tried as fallback. Never throws.
+ */
+async function sendOtp(phone: string, code: string) {
+  const forced = process.env.SMS_PROVIDER;
+  const order = forced === "twilio" ? [sendViaTwilio, sendViaAliyun] : [sendViaAliyun, sendViaTwilio];
+  for (const send of order) {
+    if (await send(phone, code)) return;
+  }
+  console.log(`[member-login] OTP for ${phone}: ${code} (set ALIYUN_SMS_* or TWILIO_* env to send real SMS)`);
 }
 
 // ---- Sign in with Google (rider identity, not a separate account) ----
@@ -293,12 +370,12 @@ export async function POST(request: Request) {
       return jsonResponse({ error: "CPF não encontrado no cadastro.", code: "cpf_not_found" }, { status: 404 });
     }
     const now = Date.now();
-    const prev = otpStore.get(normalized);
+    const prev = await getOtpChallenge(normalized);
     if (prev && now - prev.lastSentAt < OTP_RESEND_MS) {
       return jsonResponse({ error: "Aguarde alguns segundos para reenviar o código.", code: "rate_limited" }, { status: 429 });
     }
     const code = String(Math.floor(100000 + Math.random() * 900000));
-    otpStore.set(normalized, { code, expiresAt: now + OTP_TTL_MS, attempts: 0, lastSentAt: now, rebindRiderId });
+    await setOtpChallenge(normalized, { code, expiresAt: now + OTP_TTL_MS, attempts: 0, lastSentAt: now, rebindRiderId });
     await sendOtp(phoneRaw, code);
     return jsonResponse({ data: { sent: true, rebind: !!rebindRiderId, ...(OTP_DEV_RETURN ? { devCode: code } : {}) } });
   }
@@ -314,20 +391,20 @@ export async function POST(request: Request) {
       }
       return jsonResponse({ error: "Cadastro de demonstração não encontrado.", code: "not_found" }, { status: 404 });
     }
-    const challenge = otpStore.get(normalized);
+    const challenge = await getOtpChallenge(normalized);
     if (!challenge || Date.now() > challenge.expiresAt) {
-      otpStore.delete(normalized);
+      await deleteOtpChallenge(normalized);
       return jsonResponse({ error: "Código expirado. Solicite um novo.", code: "otp_expired" }, { status: 401 });
     }
     if (challenge.attempts >= OTP_MAX_ATTEMPTS) {
-      otpStore.delete(normalized);
+      await deleteOtpChallenge(normalized);
       return jsonResponse({ error: "Muitas tentativas. Solicite um novo código.", code: "rate_limited" }, { status: 429 });
     }
     if (String(body.code ?? "").trim() !== challenge.code) {
-      challenge.attempts += 1;
+      await setOtpChallenge(normalized, { ...challenge, attempts: challenge.attempts + 1 });
       return jsonResponse({ error: "Código inválido.", code: "otp_invalid" }, { status: 401 });
     }
-    otpStore.delete(normalized);
+    await deleteOtpChallenge(normalized);
 
     let member = findMemberByPhone(phoneRaw);
     if (!member && challenge.rebindRiderId) {

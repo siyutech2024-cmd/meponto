@@ -29,9 +29,22 @@
 骑手用新手机号登录 → 号不在库 → 前端引导输 CPF → 用 CPF 命中已有骑手 → 验证码发到新号 →
 验码通过即把手机号改到这条骑手记录上。**同一个 `rider.id`,积分/钱包零丢失,绝不产生重复账号。**
 
-## 短信下发(Twilio,可插拔)
+## 短信下发(可插拔:阿里云 / Twilio)
 
-`sendOtp` 已接 Twilio,配置以下**生产环境变量**即真实发短信;不配则仅日志(`OTP_DEV_RETURN=1` 时把验证码回传前端便于测试):
+`sendOtp` 支持两个服务商,`SMS_PROVIDER=aliyun|twilio` 强制指定,不设则自动探测
+(阿里云优先,失败自动切另一家兜底);都没配则仅日志(`OTP_DEV_RETURN=1` 时把验证码
+回传前端便于测试)。
+
+**阿里云国际短信**(主,¥0.3896/条到巴西;新版国际/港澳台短信走 `SendMessageToGlobe`,
+自由文本 + `Type=OTP`,**无需签名/模板审核**,新加坡节点 `dysmsapi.ap-southeast-1`):
+
+```
+ALIYUN_SMS_ACCESS_KEY_ID=LTAIxxxx        # RAM 子用户 AK(仅授 AliyunDysmsFullAccess)
+ALIYUN_SMS_ACCESS_KEY_SECRET=xxxxxxxx
+ALIYUN_SMS_SENDER_ID=MePonto             # 可选;需先在控制台「国际/港澳台短信 → SenderID」注册
+```
+
+**Twilio**(兜底):
 
 ```
 TWILIO_ACCOUNT_SID=ACxxxxxxxx
@@ -39,8 +52,15 @@ TWILIO_AUTH_TOKEN=xxxxxxxx
 TWILIO_FROM=+1xxxxxxxxxx        # 你的 Twilio 发送号(或 messaging service 号)
 ```
 
-> 巴西建议用 WhatsApp 优先 + SMS 兜底(Twilio 同账号可扩展)。想换 Zenvia/Infobip 时,
-> 只改 `sendOtp` 一个函数即可。
+> 巴西后续降本方向:WhatsApp 认证消息优先 + SMS 兜底。想换 Zenvia/Infobip 时,
+> 只在 `sendOtp` 加一个 provider 函数即可。
+
+## 验证码存储(Supabase 持久化)
+
+验证码挑战存 `otp_challenges` 表(migration `20260703090000_otp_challenges.sql`),
+解决 Vercel serverless 多实例下内存 Map 随机丢码的问题。`USE_SUPABASE=true` +
+Supabase 密钥齐全时自动启用;本地开发无配置时回退内存 Map。**生产发真实短信前必须
+先在 Supabase 跑这条 migration。**
 
 ## 网页登录页:统一到 /register
 
