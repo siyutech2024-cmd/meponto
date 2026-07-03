@@ -1,19 +1,24 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { RefreshCcw, Search, Bike } from "lucide-react";
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import { RefreshCcw, Search, Bike, X, MapPin, Phone } from "lucide-react";
 import { AppShell, DataTable, PageTitle } from "../components/ui";
 import { readSession } from "../lib/session";
 import { useVentoStore } from "../lib/store";
 import { translate, type TranslationKey } from "../lib/i18n";
 
 type Cat = "delivering" | "online" | "notOnline" | "below" | "outArea" | "other";
+type Perf = {
+  ar: number | null; caa: number | null; overtime: number | null; tsh: number | null;
+  acceptCnt: number | null; declinedCnt: number | null; cancelledCnt: number | null;
+  delayedCnt: number | null; joinTime: string | null;
+};
 type LiveRider = {
   riderExtId: string | null; name: string | null; phone: string | null;
   status: string | null; statusLabel: string; cat: Cat; shift: string;
   hotZone: string | null; vehicle: string | null; onlineMins: number | null;
   restMins: number | null; finishedCnt: number | null; lat: number | null; lng: number | null;
-  franchise: string; ponto: string; leader: string; assigned: boolean;
+  franchise: string; ponto: string; leader: string; assigned: boolean; perf?: Perf | null;
 };
 type Cats = { delivering: number; online: number; notOnline: number; below: number; outArea: number; other: number };
 type AggRow = { name: string; total: number; finished: number } & Cats;
@@ -49,6 +54,26 @@ function KpiPill({ label, value }: { label: string; value: string }) {
   );
 }
 
+function DetailStat({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-[8px] border border-[var(--line)] bg-[var(--surface-raised)] px-3 py-2">
+      <div className="text-[10px] font-bold uppercase tracking-wider text-[var(--muted)]">{label}</div>
+      <div className="mt-0.5 text-base font-extrabold text-[var(--text)] font-[family-name:var(--font-outfit)]">{value}</div>
+    </div>
+  );
+}
+
+function InfoRow({ label, value }: { label: string; value: ReactNode }) {
+  return (
+    <div className="flex items-center justify-between gap-3 border-b border-[var(--line-soft)] py-2 text-sm last:border-0">
+      <span className="text-[11px] font-bold uppercase tracking-wider text-[var(--muted)]">{label}</span>
+      <span className="text-right font-bold text-[var(--text)]">{value}</span>
+    </div>
+  );
+}
+
+const riderKey = (r: LiveRider) => r.riderExtId || r.phone || r.name || "";
+
 export default function RiderMonitorPage() {
   const session = useMemo(() => readSession(), []);
   const language = useVentoStore((s) => s.language);
@@ -68,6 +93,7 @@ export default function RiderMonitorPage() {
   const [catFilter, setCatFilter] = useState<Cat | "">("");
   const [onlyUnassigned, setOnlyUnassigned] = useState(false);
   const [updatedAt, setUpdatedAt] = useState("");
+  const [detailKey, setDetailKey] = useState<string | null>(null);
 
   const headers = useMemo(() => ({ "Content-Type": "application/json", "x-vento-role": session?.role ?? "Super Admin" }), [session]);
 
@@ -107,6 +133,9 @@ export default function RiderMonitorPage() {
   const scopeLabel = isHQ ? t("rmScopeCity") : scopeFranchise ? `${t("rmScopeFranchise")}: ${scopeFranchise}` : `${t("rmScopePonto")}: ${scopeStation}`;
   const kpi = data?.kpi;
   const pct = (v: number | null | undefined) => (v == null ? "—" : `${v}%`);
+  const na = (v: number | string | null | undefined, suffix = "") => (v == null ? "N/A" : `${v}${suffix}`);
+  const naPct = (v: number | null | undefined) => (v == null ? "N/A" : `${v}%`);
+  const detail = detailKey ? riders.find((r) => riderKey(r) === detailKey) ?? null : null;
 
   const catChips: Array<[Cat | "", string]> = [
     ["", t("rmAllStatus")], ["delivering", t("rmDelivering")], ["online", t("rmOnline")], ["notOnline", t("rmNotOnline")], ["below", t("rmBelow")], ["outArea", t("rmOutArea")],
@@ -212,10 +241,10 @@ export default function RiderMonitorPage() {
       <DataTable
         headers={[t("rmColRider"), t("rmColStatus"), t("rmColShift"), t("rmColZone"), t("rmColVehicle"), t("rmColOnlineMin"), t("rmColFinished"), t("rmScopeFranchise"), t("rmScopePonto")]}
         rows={filtered.map((r) => [
-          <div key="n" className="flex flex-col">
-            <span className="font-bold text-[var(--text)]">{r.name || "—"}</span>
+          <button key="n" onClick={() => setDetailKey(riderKey(r))} className="flex flex-col text-left" title={t("rmDetailTitle")}>
+            <span className="font-bold text-[var(--text)] underline decoration-[var(--line)] decoration-dotted underline-offset-4 transition-colors hover:text-[var(--accent)] hover:decoration-[var(--accent)]">{r.name || "—"}</span>
             <span className="text-[11px] text-[var(--muted)]">{r.phone || "—"}</span>
-          </div>,
+          </button>,
           <span key="s" className="inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-[11px] font-bold" style={{ borderColor: CAT_COLOR[r.cat], color: CAT_COLOR[r.cat] }}>
             <span className="inline-block h-1.5 w-1.5 rounded-full" style={{ background: CAT_COLOR[r.cat] }} />
             {catLabel(r)}
@@ -231,6 +260,73 @@ export default function RiderMonitorPage() {
           r.ponto || "—",
         ])}
       />
+
+      {detail ? (
+        <div className="fixed inset-0 z-50 flex justify-end bg-black/40" onClick={() => setDetailKey(null)}>
+          <aside
+            className="h-full w-full max-w-md overflow-y-auto border-l border-[var(--line)] bg-[var(--surface)] p-5 shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+            role="dialog"
+            aria-label={t("rmDetailTitle")}
+          >
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <div className="text-[10px] font-bold uppercase tracking-wider text-[var(--muted)]">{t("rmDetailTitle")}</div>
+                <h2 className="mt-1 text-xl font-extrabold text-[var(--text)] font-[family-name:var(--font-outfit)]">{detail.name || "—"}</h2>
+                <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-[var(--muted-strong)]">
+                  {detail.riderExtId ? <span className="font-mono">{detail.riderExtId}</span> : null}
+                  <span className="inline-flex items-center gap-1"><Bike size={13} />{detail.vehicle || "—"}</span>
+                  <span className="inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-[11px] font-bold" style={{ borderColor: CAT_COLOR[detail.cat], color: CAT_COLOR[detail.cat] }}>
+                    <span className="inline-block h-1.5 w-1.5 rounded-full" style={{ background: CAT_COLOR[detail.cat] }} />
+                    {catLabel(detail)}
+                  </span>
+                </div>
+              </div>
+              <button onClick={() => setDetailKey(null)} aria-label={t("rmClose")}
+                className="rounded-[6px] border border-[var(--line)] p-1.5 text-[var(--muted-strong)] transition-colors hover:border-[var(--accent)] hover:text-[var(--accent)]">
+                <X size={16} />
+              </button>
+            </div>
+
+            <div className="mt-4">
+              <InfoRow label={t("rmPhone")} value={detail.phone ? <span className="inline-flex items-center gap-1.5"><Phone size={13} />{detail.phone}</span> : "—"} />
+              <InfoRow label={t("rmColShift")} value={detail.shift || "—"} />
+              <InfoRow label={t("rmColZone")} value={detail.hotZone || "—"} />
+              <InfoRow label={t("rmScopeFranchise")} value={detail.franchise || t("rmUnassigned")} />
+              <InfoRow label={t("rmScopePonto")} value={detail.ponto || "—"} />
+              <InfoRow label={t("rmLeader")} value={detail.leader || "—"} />
+              {detail.lat != null && detail.lng != null ? (
+                <InfoRow
+                  label={t("rmViewMap")}
+                  value={
+                    <a href={`https://www.google.com/maps?q=${detail.lat},${detail.lng}`} target="_blank" rel="noreferrer"
+                      className="inline-flex items-center gap-1.5 font-bold text-[var(--accent)] hover:underline">
+                      <MapPin size={13} />{detail.lat.toFixed(5)}, {detail.lng.toFixed(5)}
+                    </a>
+                  }
+                />
+              ) : null}
+            </div>
+
+            <div className="mt-5 text-[11px] font-bold uppercase tracking-wider text-[var(--muted)]">{t("rmPerfShift")}</div>
+            <div className="mt-2 grid grid-cols-3 gap-2">
+              <DetailStat label="AR" value={naPct(detail.perf?.ar)} />
+              <DetailStat label="CAA" value={naPct(detail.perf?.caa)} />
+              <DetailStat label="Overtime" value={naPct(detail.perf?.overtime)} />
+              <DetailStat label="%TSH" value={naPct(detail.perf?.tsh)} />
+              <DetailStat label={t("rmOnlineHours")} value={na(detail.onlineMins, ` ${t("rmMins")}`)} />
+              <DetailStat label={t("rmFinishedCnt")} value={na(detail.finishedCnt)} />
+              <DetailStat label={t("rmAcceptCnt")} value={na(detail.perf?.acceptCnt)} />
+              <DetailStat label={t("rmDeclinedCnt")} value={na(detail.perf?.declinedCnt)} />
+              <DetailStat label={t("rmCancelledCnt")} value={na(detail.perf?.cancelledCnt)} />
+              <DetailStat label={t("rmDelayedCnt")} value={na(detail.perf?.delayedCnt)} />
+              <DetailStat label={t("rmRestTime")} value={na(detail.restMins, ` ${t("rmMins")}`)} />
+              <DetailStat label={t("rmJoinTime")} value={na(detail.perf?.joinTime)} />
+            </div>
+            <p className="mt-3 text-[11px] text-[var(--muted)]">{t("rmPerfNote")}</p>
+          </aside>
+        </div>
+      ) : null}
     </AppShell>
   );
 }

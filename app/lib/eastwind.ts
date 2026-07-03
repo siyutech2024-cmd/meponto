@@ -307,6 +307,61 @@ export function parseRiders(
   return { snapshots, kpi };
 }
 
+/**
+ * Per-rider "Performance in Current Shift" metrics (the Eastwind rider detail
+ * card: AR / CAA / Overtime / %TSH / accepted / declined / cancelled / delayed
+ * orders / shift join time). Extracted TOLERANTLY from a stored snapshot `raw`
+ * record with candidate keys, same convention as parseRiders. Any field the
+ * scraper did not capture resolves to null (rendered as N/A) — extend the
+ * candidate lists below after inspecting live `raw` rows.
+ */
+export type RiderShiftPerf = {
+  ar: number | null;          // acceptance rate %
+  caa: number | null;         // cancel-after-accept %
+  overtime: number | null;    // overtime rate %
+  tsh: number | null;         // %TSH
+  acceptCnt: number | null;   // orders accepted
+  declinedCnt: number | null; // declined orders
+  cancelledCnt: number | null;// cancelled orders
+  delayedCnt: number | null;  // delayed orders
+  joinTime: string | null;    // shift join time (as reported, e.g. "14:02")
+};
+
+const KP = {
+  ar: ["AR", "ar", "acceptRate", "riderAR", "arRate"],
+  caa: ["CAA", "caa", "cancelRate", "riderCAA", "caaRate"],
+  overtime: ["overtime", "overtimeRate", "riderOvertime"],
+  tsh: ["TSH", "tsh", "riderTSH", "tshRate"],
+  accept: ["acceptOrderCnt", "acceptCnt", "acceptNum", "acceptedOrders", "orderAccepted"],
+  declined: ["declineOrderCnt", "declinedOrderCnt", "refuseOrderCnt", "rejectOrderCnt", "declineCnt", "refuseCnt"],
+  cancelled: ["cancelOrderCnt", "cancelledOrderCnt", "cancelCnt", "cancelNum"],
+  delayed: ["delayOrderCnt", "delayedOrderCnt", "timeoutOrderCnt", "overtimeOrderCnt", "delayCnt"],
+  joinTime: ["shiftJoinTime", "joinShiftTime", "joinTime", "checkInTime", "clockInTime", "signInTime", "punchInTime"],
+};
+
+export function extractRiderPerf(raw: unknown): RiderShiftPerf {
+  const rec = isObj(raw) ? raw : {};
+  const joinRaw = pick(rec, KP.joinTime);
+  let joinTime = str(joinRaw);
+  // Epoch timestamps → HH:mm in São Paulo local time.
+  if (typeof joinRaw === "number" && joinRaw > 1e9) {
+    const d = new Date(joinRaw < 1e12 ? joinRaw * 1000 : joinRaw);
+    if (!isNaN(d.getTime()))
+      joinTime = d.toLocaleTimeString("pt-BR", { timeZone: "America/Sao_Paulo", hour: "2-digit", minute: "2-digit" });
+  }
+  return {
+    ar: num(pick(rec, KP.ar)),
+    caa: num(pick(rec, KP.caa)),
+    overtime: num(pick(rec, KP.overtime)),
+    tsh: num(pick(rec, KP.tsh)),
+    acceptCnt: num(pick(rec, KP.accept)),
+    declinedCnt: num(pick(rec, KP.declined)),
+    cancelledCnt: num(pick(rec, KP.cancelled)),
+    delayedCnt: num(pick(rec, KP.delayed)),
+    joinTime,
+  };
+}
+
 export function parseDeliveries(
   payload: unknown,
   cityId: string | null,

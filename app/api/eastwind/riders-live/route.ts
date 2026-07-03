@@ -2,6 +2,7 @@ import { jsonResponse, memory } from "../../../lib/server/memory";
 import { refreshCollectionsFromDatabase } from "../../../lib/server/persistence";
 import { getSupabaseServerClient } from "../../../lib/supabase/server";
 import type { Rider } from "../../../lib/data";
+import { extractRiderPerf } from "../../../lib/eastwind";
 
 /**
  * Live rider monitor feed for the HQ / franchise / station dashboards.
@@ -49,6 +50,7 @@ type SnapshotRow = {
   status: string | null; status_code: string | null; shift_start: string | null; shift_end: string | null;
   hot_zone: string | null; vehicle: string | null; online_mins: number | null; rest_mins: number | null;
   finished_cnt: number | null; lat: number | null; lng: number | null;
+  error_show: string | null; raw: unknown;
 };
 
 export async function GET(request: Request) {
@@ -95,6 +97,9 @@ export async function GET(request: Request) {
       finishedCnt: s.finished_cnt, lat: s.lat, lng: s.lng,
       franchise: match?.franchise || "", ponto: match?.ponto || "", leader: match?.leader || "",
       assigned: Boolean(match && match.franchise),
+      // Per-rider "Performance in Current Shift" detail (tolerant extraction
+      // from the stored raw record; missing fields are null → shown as N/A).
+      perf: extractRiderPerf(s.raw),
     };
   });
 
