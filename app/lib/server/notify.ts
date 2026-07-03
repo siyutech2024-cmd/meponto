@@ -21,7 +21,7 @@ export async function sendPushToRider(riderName: string, title: string, body: st
     // to "no push" (the outer try/catch returns 0) instead of failing the build.
     const webpush = (await import(/* webpackIgnore: true */ /* turbopackIgnore: true */ "web-push")).default;
     webpush.setVapidDetails(VAPID_SUBJECT, VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY);
-    const payload = JSON.stringify({ title: title.slice(0, 80), body: body.slice(0, 300), url });
+    const payload = JSON.stringify({ title: title.slice(0, 80), body: body.slice(0, 500), url });
     let sent = 0;
     await Promise.all(
       targets.map(async (sub) => {

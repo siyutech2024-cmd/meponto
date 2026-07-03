@@ -41,6 +41,8 @@ self.addEventListener("push", (event) => {
       body: data.body,
       icon: "/icon-192.png",
       badge: "/icon-192.png",
+      // Optional big picture sent by the HQ composer (data.image).
+      ...(data.image ? { image: data.image } : {}),
       data: { url: data.url },
       vibrate: [100, 50, 100],
     }),

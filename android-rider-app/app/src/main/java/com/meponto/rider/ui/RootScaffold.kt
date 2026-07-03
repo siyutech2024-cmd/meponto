@@ -17,6 +17,7 @@ import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -24,6 +25,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import com.meponto.rider.i18n.LocalLoc
+import com.meponto.rider.push.PushNavigator
 import com.meponto.rider.ui.screens.HomeScreen
 import com.meponto.rider.ui.screens.MallScreen
 import com.meponto.rider.ui.screens.MapScreen
@@ -43,6 +45,16 @@ fun RootScaffold() {
     val loc = LocalLoc.current
     var tab by remember { mutableStateOf(0) }
     var overlay by remember { mutableStateOf(Overlay.NONE) }
+
+    // Notification tap → jump to the tab matching the pushed URL.
+    val pushedUrl = PushNavigator.pendingUrl.value
+    LaunchedEffect(pushedUrl) {
+        if (pushedUrl != null) {
+            tab = PushNavigator.tabFor(pushedUrl)
+            overlay = Overlay.NONE
+            PushNavigator.clear()
+        }
+    }
 
     val tabs = listOf(
         TabSpec("tab.home", Icons.Filled.Home),

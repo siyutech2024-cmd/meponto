@@ -15,7 +15,16 @@ export async function GET(request: Request) {
   const forbidden = requirePermission(request, "view_audit");
   if (forbidden) return forbidden;
   await refreshCollectionsFromDatabase(COLLECTIONS);
-  return jsonResponse({ data: { count: memory.pushSubscriptions.length, riders: [...new Set(memory.pushSubscriptions.map((s) => s.riderName))] } });
+  // Devices = Web Push subscriptions (PWA) + native FCM tokens (Android/iOS).
+  const riders = [...new Set([...memory.pushSubscriptions.map((s) => s.riderName), ...memory.fcmTokens.map((t) => t.riderName)])].filter(Boolean).sort();
+  return jsonResponse({
+    data: {
+      count: memory.pushSubscriptions.length + memory.fcmTokens.length,
+      webCount: memory.pushSubscriptions.length,
+      fcmCount: memory.fcmTokens.length,
+      riders,
+    },
+  });
 }
 
 type Body =
@@ -23,7 +32,7 @@ type Body =
   | { action: "unsubscribe"; endpoint: string }
   | { action: "registerToken"; token: string; riderName?: string; platform?: string }
   | { action: "unregisterToken"; token: string }
-  | { action: "send"; title: string; body: string; url?: string; riderName?: string };
+  | { action: "send"; title: string; body: string; url?: string; riderName?: string; imageUrl?: string };
 
 async function handlePost(request: Request) {
   await refreshCollectionsFromDatabase(COLLECTIONS);
@@ -84,8 +93,11 @@ async function handlePost(request: Request) {
     case "send": {
       const forbidden = requirePermission(request, "view_audit");
       if (forbidden) return forbidden;
-      const { title, body: text, url = "/rider-app", riderName } = body as { title?: string; body?: string; url?: string; riderName?: string };
+      const { title, body: text, url = "/rider-app", riderName, imageUrl } = body as { title?: string; body?: string; url?: string; riderName?: string; imageUrl?: string };
       if (!title?.trim() || !text?.trim()) return jsonResponse({ error: "title and body are required" }, { status: 400 });
+      // Big-picture image is optional; only absolute https URLs are accepted
+      // (FCM rejects anything else and web push would show a broken image).
+      const image = imageUrl?.trim().startsWith("https://") ? imageUrl.trim().slice(0, 500) : undefined;
 
       // Optional runtime capability — see notify.ts. Build never resolves it;
       // runtime returns 503 cleanly when the dependency is not installed.
@@ -100,7 +112,7 @@ async function handlePost(request: Request) {
       let targets = memory.pushSubscriptions;
       if (riderName?.trim()) targets = targets.filter((s) => s.riderName === riderName.trim());
 
-      const payload = JSON.stringify({ title: title.slice(0, 80), body: text.slice(0, 300), url });
+      const payload = JSON.stringify({ title: title.slice(0, 80), body: text.slice(0, 500), url, ...(image ? { image } : {}) });
       let sent = 0;
       const dead: string[] = [];
       await Promise.all(
@@ -128,7 +140,7 @@ async function handlePost(request: Request) {
         fcmTargets.map((t) => t.token),
         title,
         text,
-        { url },
+        { url, ...(image ? { image } : {}) },
       );
 
       appendServerAudit({ actor, action: "PUSH_SENT", entity: "PushNotification", entityId: nowStamp(), detail: `"${title}" → ${sent} web + ${fcmSent} fcm devices${riderName ? ` (rider ${riderName})` : ""}.`, risk: "Low" });

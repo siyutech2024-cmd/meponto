@@ -42,7 +42,18 @@ export default function AppConfigPage() {
   const [pushTitle, setPushTitle] = useState("");
   const [pushBody, setPushBody] = useState("");
   const [pushUrl, setPushUrl] = useState("/rider-app");
-  const [subs, setSubs] = useState<{ count: number; riders: string[] }>({ count: 0, riders: [] });
+  const [pushImage, setPushImage] = useState("");
+  const [pushAudience, setPushAudience] = useState("__all__");
+  const [pushSending, setPushSending] = useState(false);
+  const [subs, setSubs] = useState<{ count: number; webCount?: number; fcmCount?: number; riders: string[] }>({ count: 0, riders: [] });
+  const [pushHistory, setPushHistory] = useState<{ id: string; detail: string; createdAt: string }[]>([]);
+
+  // Quick templates (PT — rider-facing copy). 快捷模板(葡语,骑手可见文案)。
+  const pushTemplates = [
+    { label: "新排班 Turnos", title: "Novos turnos abertos 🛵", body: "Novos turnos foram liberados para esta semana. Abra a agenda e garanta já o seu horário!", url: "/rider-app/agenda" },
+    { label: "商城上新 Mall", title: "Novidades no PontoMall 🎁", body: "Chegaram novos produtos para resgatar com seus pontos. Corra para conferir antes que acabe!", url: "/rider-app/mall" },
+    { label: "重要通知 Aviso", title: "Aviso importante MePonto ⚠️", body: "Temos uma atualização importante para você. Toque para ver os detalhes no app.", url: "/rider-app" },
+  ];
 
   // Tasks (任务) config.
   type TaskRow = { id: string; title: string; metric: string; target: number; rewardPoints: number; period: string; audience: string; enabled: boolean };
@@ -56,13 +67,19 @@ export default function AppConfigPage() {
   }, []);
   const loadSubs = useCallback(async () => {
     const r = await fetch("/api/push", { headers, cache: "no-store" }).catch(() => null);
-    if (r && r.ok) setSubs(((await r.json()).data as { count: number; riders: string[] }) ?? { count: 0, riders: [] });
+    if (r && r.ok) setSubs(((await r.json()).data as { count: number; webCount?: number; fcmCount?: number; riders: string[] }) ?? { count: 0, riders: [] });
+  }, [headers]);
+  const loadPushHistory = useCallback(async () => {
+    const r = await fetch("/api/audit", { headers, cache: "no-store" }).catch(() => null);
+    if (!r || !r.ok) return;
+    const entries = (((await r.json()).data ?? []) as { id: string; action: string; detail: string; createdAt: string }[]);
+    setPushHistory(entries.filter((e) => e.action === "PUSH_SENT").slice(0, 8).map(({ id, detail, createdAt }) => ({ id, detail, createdAt })));
   }, [headers]);
   const loadTasks = useCallback(async () => {
     const r = await fetch("/api/tasks", { headers, cache: "no-store" }).catch(() => null);
     if (r && r.ok) setTasks((((await r.json()).data?.tasks ?? []) as TaskRow[]));
   }, [headers]);
-  useEffect(() => { void loadSplash(); void loadSubs(); void loadTasks(); }, [loadSplash, loadSubs, loadTasks]);
+  useEffect(() => { void loadSplash(); void loadSubs(); void loadTasks(); void loadPushHistory(); }, [loadSplash, loadSubs, loadTasks, loadPushHistory]);
 
   async function taskPost(payload: Record<string, unknown>, ok: string) {
     const r = await fetch("/api/tasks", { method: "POST", headers, body: JSON.stringify(payload) }).catch(() => null);
@@ -83,12 +100,26 @@ export default function AppConfigPage() {
   }
 
   async function sendPush() {
-    if (!pushTitle.trim() || !pushBody.trim()) return;
-    const r = await fetch("/api/push", { method: "POST", headers, body: JSON.stringify({ action: "send", title: pushTitle, body: pushBody, url: pushUrl || "/rider-app" }) }).catch(() => null);
+    if (!pushTitle.trim() || !pushBody.trim() || pushSending) return;
+    setPushSending(true);
+    const r = await fetch("/api/push", {
+      method: "POST", headers,
+      body: JSON.stringify({
+        action: "send",
+        title: pushTitle,
+        body: pushBody,
+        url: pushUrl || "/rider-app",
+        ...(pushImage.trim() ? { imageUrl: pushImage.trim() } : {}),
+        ...(pushAudience !== "__all__" ? { riderName: pushAudience } : {}),
+      }),
+    }).catch(() => null);
+    setPushSending(false);
     const payload = r ? await r.json().catch(() => ({})) : {};
     if (!r || !r.ok) { setNote({ tone: "err", text: payload.error ?? "发送失败" }); return; }
-    setNote({ tone: "ok", text: t("dynPushSent", { sent: payload.data.sent, targets: payload.data.targets }) });
-    setPushTitle(""); setPushBody("");
+    const d = payload.data as { sent: number; fcmSent?: number; targets: number };
+    setNote({ tone: "ok", text: `${t("dynPushSent", { sent: d.sent + (d.fcmSent ?? 0), targets: d.targets })}（Web ${d.sent} · App ${d.fcmSent ?? 0}）` });
+    setPushTitle(""); setPushBody(""); setPushImage("");
+    void loadPushHistory();
   }
 
   const field = "h-11 w-full rounded-[8px] border border-[var(--line)] bg-[var(--surface-raised)] px-3 text-sm font-bold outline-none focus:border-[var(--accent)]";
@@ -155,20 +186,88 @@ export default function AppConfigPage() {
         </div>
       </div>
 
-      {/* Push composer */}
+      {/* Push composer — full-featured: audience, image, templates, live preview, history */}
       <div className="panel mt-4 p-4">
         <div className="mb-3 flex flex-wrap items-center gap-2 text-xs font-black uppercase text-[var(--accent)]">
-          <BellRing size={14} /> 推送通知（发送到骑手 App，后台运行也能收到）
-          <span className="ml-auto rounded-full bg-[var(--surface-raised)] px-3 py-1 text-[11px] font-bold text-[var(--muted-strong)]">已订阅设备：{subs.count}</span>
+          <BellRing size={14} /> 推送通知（Web Push + 原生 FCM 双通道，后台运行也能收到）
+          <span className="ml-auto rounded-full bg-[var(--surface-raised)] px-3 py-1 text-[11px] font-bold text-[var(--muted-strong)]">
+            设备：{subs.count}{typeof subs.webCount === "number" ? `（Web ${subs.webCount} · App ${subs.fcmCount ?? 0}）` : ""}
+          </span>
         </div>
-        <div className="grid gap-3 lg:grid-cols-2">
-          <label><span className={label}>标题</span><input value={pushTitle} onChange={(e) => setPushTitle(e.target.value)} placeholder="如：Novos turnos abertos" className={field} /></label>
-          <label><span className={label}>点击打开（可空，默认 /rider-app）</span><input value={pushUrl} onChange={(e) => setPushUrl(e.target.value)} className={field} /></label>
+
+        {/* Quick templates */}
+        <div className="mb-3 flex flex-wrap items-center gap-2">
+          <span className="text-[10px] font-black uppercase text-[var(--muted)]">快捷模板：</span>
+          {pushTemplates.map((tpl) => (
+            <button key={tpl.label} type="button" onClick={() => { setPushTitle(tpl.title); setPushBody(tpl.body); setPushUrl(tpl.url); }} className="rounded-full border border-[var(--line)] bg-[var(--surface-raised)] px-3 py-1 text-[11px] font-bold text-[var(--muted-strong)] hover:border-[var(--accent)]">
+              {tpl.label}
+            </button>
+          ))}
         </div>
-        <label className="mt-3 block"><span className={label}>内容（葡语，骑手看到的正文）</span><textarea value={pushBody} onChange={(e) => setPushBody(e.target.value)} className="min-h-20 w-full rounded-[8px] border border-[var(--line)] bg-[var(--surface-raised)] p-3 text-sm font-bold outline-none focus:border-[var(--accent)]" /></label>
-        <div className="mt-3 flex items-center gap-3">
-          <button type="button" disabled={!pushTitle.trim() || !pushBody.trim()} onClick={() => void sendPush()} className="inline-flex h-11 items-center gap-2 rounded-[8px] bg-[var(--accent)] px-5 text-sm font-black uppercase text-[var(--accent-ink)] disabled:opacity-50"><Send size={15} /> 发送推送</button>
-          <span className="text-[11px] font-bold text-[var(--muted)]">通过 Web Push 下发；骑手需先在 App 内「开启通知」授权。</span>
+
+        <div className="grid gap-4 lg:grid-cols-[1.4fr_1fr]">
+          {/* Editor */}
+          <div>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <label><span className={label}>接收对象</span>
+                <select value={pushAudience} onChange={(e) => setPushAudience(e.target.value)} className={field}>
+                  <option value="__all__">全体骑手（{subs.count} 台设备）</option>
+                  {subs.riders.map((r) => <option key={r} value={r}>{r}</option>)}
+                </select>
+              </label>
+              <label><span className={label}>点击打开（可空，默认 /rider-app）</span><input value={pushUrl} onChange={(e) => setPushUrl(e.target.value)} className={field} /></label>
+            </div>
+            <label className="mt-3 block"><span className={label}>标题（最长 80 字符）</span><input value={pushTitle} onChange={(e) => setPushTitle(e.target.value.slice(0, 80))} placeholder="如：Novos turnos abertos 🛵" className={field} /></label>
+            <label className="mt-3 block"><span className={label}>内容（葡语正文，最长 500 字符 — App 端自动展开长文本）</span>
+              <textarea value={pushBody} onChange={(e) => setPushBody(e.target.value.slice(0, 500))} placeholder="Ex.: Novos turnos foram liberados para esta semana…" className="min-h-24 w-full rounded-[8px] border border-[var(--line)] bg-[var(--surface-raised)] p-3 text-sm font-bold outline-none focus:border-[var(--accent)]" />
+              <span className="mt-1 block text-right text-[10px] font-bold text-[var(--muted)]">{pushBody.length}/500</span>
+            </label>
+            <label className="block"><span className={label}>大图 URL（可空，https 图片，通知内展示大图）</span><input value={pushImage} onChange={(e) => setPushImage(e.target.value)} placeholder="https://…/banner.jpg" className={field} /></label>
+            <div className="mt-4 flex items-center gap-3">
+              <button type="button" disabled={!pushTitle.trim() || !pushBody.trim() || pushSending} onClick={() => void sendPush()} className="inline-flex h-11 items-center gap-2 rounded-[8px] bg-[var(--accent)] px-5 text-sm font-black uppercase text-[var(--accent-ink)] disabled:opacity-50">
+                <Send size={15} /> {pushSending ? "发送中…" : pushAudience === "__all__" ? "发送给全员" : `发送给 ${pushAudience}`}
+              </button>
+              <span className="text-[11px] font-bold text-[var(--muted)]">同时下发 Web Push 与原生 FCM；骑手需先在 App 内授权通知。</span>
+            </div>
+          </div>
+
+          {/* Live notification preview */}
+          <div>
+            <div className="mb-2 text-[10px] font-black uppercase text-[var(--muted)]">通知预览（骑手手机上的样子）</div>
+            <div className="rounded-[18px] bg-[#0d1117] p-3">
+              <div className="rounded-[14px] bg-[#1c2128] p-3 shadow-lg">
+                <div className="flex items-center gap-2">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src="/icon-192.png" alt="" className="h-5 w-5 rounded" />
+                  <span className="text-[11px] font-bold text-white/60">MePonto · agora</span>
+                </div>
+                <div className="mt-1.5 text-[13px] font-black leading-snug text-white">{pushTitle || "Título da notificação"}</div>
+                <div className="mt-0.5 whitespace-pre-wrap text-[12px] font-medium leading-snug text-white/75">{pushBody || "Corpo da mensagem que o entregador verá no celular."}</div>
+                {pushImage.trim().startsWith("https://") && (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={pushImage.trim()} alt="" className="mt-2 max-h-36 w-full rounded-[10px] object-cover" />
+                )}
+              </div>
+              <div className="mt-2 text-center text-[10px] font-bold text-white/40">点按通知 → 打开 {pushUrl || "/rider-app"}</div>
+            </div>
+          </div>
+        </div>
+
+        {/* Send history */}
+        <div className="mt-4 border-t border-[var(--line)] pt-3">
+          <div className="mb-2 text-[10px] font-black uppercase text-[var(--muted)]">最近发送记录</div>
+          {pushHistory.length === 0 ? (
+            <div className="text-xs font-bold text-[var(--muted)]">暂无发送记录。</div>
+          ) : (
+            <div className="space-y-1.5">
+              {pushHistory.map((h) => (
+                <div key={h.id} className="flex flex-wrap items-center gap-2 rounded-[8px] bg-[var(--surface-raised)] px-3 py-1.5 text-xs font-bold">
+                  <span className="text-[var(--muted)]">{h.createdAt}</span>
+                  <span className="text-[var(--muted-strong)]">{h.detail}</span>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       </div>
 

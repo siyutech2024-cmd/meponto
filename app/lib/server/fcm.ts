@@ -30,9 +30,12 @@ type AdminApp = unknown;
 type Messaging = {
   sendEachForMulticast(message: {
     tokens: string[];
-    notification: { title: string; body: string };
+    notification: { title: string; body: string; imageUrl?: string };
     data?: Record<string, string>;
-    android?: { priority?: "high" | "normal"; notification?: { channelId?: string } };
+    android?: {
+      priority?: "high" | "normal";
+      notification?: { channelId?: string; imageUrl?: string; color?: string };
+    };
   }): Promise<{ responses: Array<{ success: boolean; error?: { code?: string } }> }>;
 };
 
@@ -114,6 +117,11 @@ export async function sendFcmToTokens(
     const messaging = await getMessaging();
     if (!messaging) return 0; // capability off / dependency missing
 
+    // Optional rich fields travel in `data` so the Android client can render
+    // them itself when the app is in the foreground: data.url (deep link),
+    // data.image (big picture URL).
+    const imageUrl = data.image?.trim() || undefined;
+
     let sent = 0;
     const dead: string[] = [];
     // Multicast is capped at 500 tokens per call.
@@ -121,9 +129,14 @@ export async function sendFcmToTokens(
       const batch = unique.slice(i, i + 500);
       const res = await messaging.sendEachForMulticast({
         tokens: batch,
-        notification: { title: title.slice(0, 80), body: body.slice(0, 300) },
+        // Body cap 500 chars: the Android client shows long text via
+        // BigTextStyle, so the full message stays readable.
+        notification: { title: title.slice(0, 80), body: body.slice(0, 500), ...(imageUrl ? { imageUrl } : {}) },
         data,
-        android: { priority: "high", notification: { channelId: "meponto_default" } },
+        android: {
+          priority: "high",
+          notification: { channelId: "meponto_default", color: "#ffd100", ...(imageUrl ? { imageUrl } : {}) },
+        },
       });
       res.responses.forEach((r, idx) => {
         if (r.success) {

@@ -2,6 +2,7 @@ package com.meponto.rider
 
 import android.Manifest
 import android.content.Context
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
@@ -39,6 +40,7 @@ import com.meponto.rider.data.SessionManager
 import com.meponto.rider.data.SplashController
 import com.meponto.rider.i18n.LocalLoc
 import com.meponto.rider.i18n.LocalizationManager
+import com.meponto.rider.push.PushNavigator
 import com.meponto.rider.ui.RootScaffold
 import com.meponto.rider.ui.screens.AuthSheet
 import com.meponto.rider.ui.screens.SplashScreen
@@ -48,7 +50,16 @@ import kotlinx.coroutines.delay
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // Cold start from a notification tap: the FCM data payload (incl. "url")
+        // arrives as intent extras. Hand it to the in-app navigator.
+        PushNavigator.offer(intent?.getStringExtra("url"))
         setContent { MePontoRiderApp() }
+    }
+
+    // Warm start (launchMode singleTop): notification tap while the app runs.
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        PushNavigator.offer(intent.getStringExtra("url"))
     }
 }
 
