@@ -969,6 +969,37 @@ export default function StorefrontPage() {
                     <button type="button" onClick={() => { setAccountOpen(false); setOrdersOpen(true); }} className="h-11 flex-1 rounded-full border border-black/10 text-sm font-black">Meus resgates</button>
                     <button type="button" onClick={() => { setAccountOpen(false); setExtratoOpen(true); }} className="h-11 flex-1 rounded-full border border-black/10 text-sm font-black">Extrato</button>
                   </div>
+
+                  {/* Referral: the invite link lives here permanently — not only on
+                      the post-signup screen. Share on WhatsApp or copy the link;
+                      points land when the invitee verifies their phone. */}
+                  <div className="rounded-2xl bg-[#fff4cf] p-4">
+                    <div className="text-[11px] font-black uppercase text-[#9a7400]">Convide e ganhe pontos</div>
+                    <p className="mt-1 text-xs font-bold text-black/55">Compartilhe seu link — você ganha pontos quando o convidado confirmar o telefone.</p>
+                    <div className="mt-2 flex gap-2">
+                      <a
+                        href={`https://wa.me/?text=${encodeURIComponent(`Vem pro PontoMall comigo! 🎁 Cria sua conta grátis e ganhe pontos: ${typeof window !== "undefined" ? window.location.origin : ""}/register?ref=${me.riderId}`)}`}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="inline-flex h-10 flex-1 items-center justify-center rounded-full bg-[#25D366] text-xs font-black text-white"
+                      >
+                        WhatsApp
+                      </a>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const link = `${window.location.origin}/register?ref=${me.riderId}`;
+                          navigator.clipboard.writeText(link).then(
+                            () => setToast({ tone: "ok", text: "Link de convite copiado!" }),
+                            () => setToast({ tone: "err", text: "Não foi possível copiar — copie manualmente." }),
+                          );
+                        }}
+                        className="h-10 flex-1 rounded-full border border-black/10 text-xs font-black"
+                      >
+                        Copiar link
+                      </button>
+                    </div>
+                  </div>
                 </>
               ) : null}
             </div>

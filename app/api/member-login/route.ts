@@ -1,7 +1,9 @@
 import { jsonResponse, memory, makeServerId, appendServerAudit } from "../../lib/server/memory";
 import { refreshCollectionsFromDatabase, flushPendingToDatabase } from "../../lib/server/persistence";
 import { createSessionToken, sessionCookie, sessionFromRequest } from "../../lib/auth-session";
-import { getOtpChallenge, setOtpChallenge, deleteOtpChallenge } from "../../lib/server/otp-store";
+import { getOtpChallenge, setOtpChallenge, deleteOtpChallenge, type OtpSignupData } from "../../lib/server/otp-store";
+import { getAvailablePoints, type PointsLedgerEntry } from "../../lib/points";
+import { defaultMallConfig } from "../../lib/mall";
 import type { Rider } from "../../lib/data";
 import { createHmac } from "node:crypto";
 
@@ -48,6 +50,9 @@ const GOOGLE_LITE_LOGIN = process.env.GOOGLE_LITE_LOGIN !== "0";
 const OTP_TTL_MS = 5 * 60 * 1000;
 const OTP_RESEND_MS = 30 * 1000;
 const OTP_MAX_ATTEMPTS = 5;
+/** Per-phone daily SMS budget (anti SMS-pumping — real users never hit this). */
+const OTP_DAILY_LIMIT = 8;
+const OTP_WINDOW_MS = 24 * 60 * 60 * 1000;
 
 const onlyDigits = (s: string) => s.replace(/\D/g, "");
 
@@ -116,7 +121,7 @@ async function issueSession(member: { id: string; name: string }, phone: string,
     organization: "",
     defaultPath: "/store",
   });
-  const response = jsonResponse({ data: { name: member.name, role: "Rider", portal: "rider", organization: "" } });
+  const response = jsonResponse({ data: { id: member.id, name: member.name, role: "Rider", portal: "rider", organization: "" } });
   response.headers.append("Set-Cookie", sessionCookie(token, request.headers.get("host")));
   return response;
 }
@@ -236,14 +241,23 @@ async function sendViaTwilio(phone: string, code: string): Promise<boolean> {
  * Send the OTP via the configured provider. SMS_PROVIDER=aliyun|twilio forces
  * one; otherwise auto-detect (aliyun first, then twilio). If the primary
  * provider fails, the other is tried as fallback. Never throws.
+ * Returns "sent" (real SMS out), "dev" (no provider configured — logged only),
+ * or "failed" (providers configured but delivery failed) so the API can tell
+ * the user instead of silently claiming the code was sent.
  */
-async function sendOtp(phone: string, code: string) {
+async function sendOtp(phone: string, code: string): Promise<"sent" | "dev" | "failed"> {
+  const aliyunConfigured = !!process.env.ALIYUN_SMS_ACCESS_KEY_ID && !!process.env.ALIYUN_SMS_ACCESS_KEY_SECRET;
+  const twilioConfigured = !!process.env.TWILIO_ACCOUNT_SID && !!process.env.TWILIO_AUTH_TOKEN && !!process.env.TWILIO_FROM;
+  if (!aliyunConfigured && !twilioConfigured) {
+    console.log(`[member-login] OTP for ${phone}: ${code} (set ALIYUN_SMS_* or TWILIO_* env to send real SMS)`);
+    return "dev";
+  }
   const forced = process.env.SMS_PROVIDER;
   const order = forced === "twilio" ? [sendViaTwilio, sendViaAliyun] : [sendViaAliyun, sendViaTwilio];
   for (const send of order) {
-    if (await send(phone, code)) return;
+    if (await send(phone, code)) return "sent";
   }
-  console.log(`[member-login] OTP for ${phone}: ${code} (set ALIYUN_SMS_* or TWILIO_* env to send real SMS)`);
+  return "failed";
 }
 
 // ---- Sign in with Google (rider identity, not a separate account) ----
@@ -293,6 +307,46 @@ async function linkGoogleSubIfPresent(riderId: string, sub?: string) {
   }
 }
 
+/**
+ * Create a member from a verified phone-first signup (see request-otp) and
+ * credit the inviter's referral points. Referral is paid HERE — after SMS
+ * verification — never on the unverified /api/register call, so fake numbers
+ * can't farm points.
+ */
+async function createVerifiedMember(signup: OtpSignupData, normalizedPhone: string): Promise<Rider> {
+  await refreshCollectionsFromDatabase(["pointsLedgerEntries", "mallConfigs"]);
+  const created = newMember({ name: signup.name, phone: normalizedPhone, cpf: signup.cpf, googleSub: signup.googleSub });
+  created.invitedBy = signup.inviterId ? `member:${signup.inviterId}` : "Self-registration";
+  if (signup.birthday) created.birthday = signup.birthday;
+  memory.riders.unshift(created);
+  appendServerAudit({ actor: "Self-registration", action: "MEMBER_REGISTERED", entity: "Rider", entityId: created.id, detail: `${created.name} (membro público, telefone verificado)`, risk: "Low" });
+
+  const inviter = signup.inviterId ? memory.riders.find((r) => r.id === signup.inviterId) : undefined;
+  if (inviter && inviter.id !== created.id) {
+    const config = memory.mallConfigs.find((c) => c.id === "mall-config") ?? defaultMallConfig;
+    const points = config.referralPoints || 20;
+    const available = getAvailablePoints(memory.pointsLedgerEntries, inviter.id);
+    const entry: PointsLedgerEntry = {
+      id: makeServerId("pts", memory.pointsLedgerEntries.length + 1),
+      riderId: inviter.id,
+      accountId: `pts-${inviter.id}`,
+      type: "earn",
+      points,
+      status: "approved",
+      sourceType: "admin_adjustment",
+      sourceId: `ref-${created.id}`,
+      balanceAfter: available + points,
+      reasonCode: "REFERRAL_REWARD",
+      note: `Convidou ${created.name} para o PontoMall`,
+      createdBy: "PontoMall",
+      createdAt: new Date().toISOString().slice(0, 16).replace("T", " "),
+    };
+    memory.pointsLedgerEntries.unshift(entry);
+  }
+  await flushPendingToDatabase();
+  return created;
+}
+
 export async function POST(request: Request) {
   await refreshCollectionsFromDatabase(["riders"]);
   const body = (await request.json().catch(() => ({}))) as {
@@ -329,55 +383,89 @@ export async function POST(request: Request) {
     // Demo/review phone: pretend a code was sent (verify uses the fixed code).
     if (isDemo) return jsonResponse({ data: { sent: true, rebind: false } });
 
-    // ---- Google guest activation (no SMS) ----------------------------------
-    // A signed-in Google guest (verified:false) entering a phone:
-    //  • NEW phone (not an imported rider) → create a member straight from their
-    //    Google identity + phone, no CPF/SMS (Google already authenticated them).
-    //  • EXISTING rider phone → claim it by confirming the rider's CPF (knowledge
-    //    factor in place of an SMS code), then link Google. No duplicate account.
+    // ---- Google guest activation ---------------------------------------------
+    // A signed-in Google guest (verified:false) entering a NEW phone (no rider
+    // record) becomes a member straight away — Google already authenticated
+    // them and there is no existing account (points/wallet) at stake.
+    // Claiming an EXISTING record now always goes through the SMS challenge
+    // below (CPF alone is a weak factor — widely leaked in Brazil); the guest's
+    // googleSub is linked on verify-otp via the session.
     const guest = await sessionFromRequest(request);
     if (guest?.verified === false && guest.googleSub) {
       const existing = findMemberByPhone(phoneRaw) ?? (body.cpf ? findMemberByCpf(body.cpf) : undefined);
-      if (existing) {
-        if (!body.cpf) return jsonResponse({ data: { sent: false, needsCpf: true } });
-        if (onlyDigits(existing.cpf ?? "") !== onlyDigits(body.cpf)) {
-          return jsonResponse({ error: "CPF não confere com este cadastro.", code: "cpf_mismatch" }, { status: 403 });
-        }
-        const idx = memory.riders.findIndex((r) => r.id === existing.id);
-        memory.riders[idx] = { ...memory.riders[idx], googleSub: guest.googleSub, phone: normalized };
+      if (!existing) {
+        const created = newMember({ name: guest.name || guest.email?.split("@")[0] || "Membro", phone: phoneRaw, cpf: onlyDigits(body.cpf ?? ""), googleSub: guest.googleSub });
+        memory.riders.unshift(created);
+        appendServerAudit({ actor: "Google", action: "MEMBER_REGISTERED", entity: "Rider", entityId: created.id, detail: `${created.name} (Google sign-in, sem 99 ID)`, risk: "Low" });
         await flushPendingToDatabase();
-        return issueSession(memory.riders[idx], normalized, request);
+        return issueSession(created, phoneRaw, request);
       }
-      const created = newMember({ name: guest.name || guest.email?.split("@")[0] || "Membro", phone: phoneRaw, cpf: onlyDigits(body.cpf ?? ""), googleSub: guest.googleSub });
-      memory.riders.unshift(created);
-      appendServerAudit({ actor: "Google", action: "MEMBER_REGISTERED", entity: "Rider", entityId: created.id, detail: `${created.name} (Google sign-in, sem 99 ID)`, risk: "Low" });
-      await flushPendingToDatabase();
-      return issueSession(created, phoneRaw, request);
+      // fall through: existing record → SMS OTP (rebind if matched by CPF)
     }
+
+    // Phone-first signup: registration data rides with the challenge and the
+    // member record is only created on verify (verified phone — no squatting,
+    // and referral points can't be farmed with fake numbers).
+    const signupRaw = (body as { signup?: { name?: string; cpf?: string; inviterId?: string; birthday?: string } }).signup;
+    const signupName = (signupRaw?.name ?? "").trim();
 
     let member = findMemberByPhone(phoneRaw);
     let rebindRiderId: string | undefined;
+    let signupData: OtpSignupData | undefined;
     if (!member && body.cpf) {
       // Phone changed: anchor on CPF and re-bind this new phone on verify.
       member = findMemberByCpf(body.cpf);
       if (member) rebindRiderId = member.id;
     }
     if (!member) {
-      if (!body.cpf) {
-        // Not an error — ask the client to confirm CPF to (re)bind this phone.
+      if (signupName) {
+        signupData = {
+          name: signupName,
+          cpf: onlyDigits(signupRaw?.cpf ?? "") || undefined,
+          inviterId: (signupRaw?.inviterId ?? "").trim() || undefined,
+          birthday: /^\d{4}-\d{2}-\d{2}$/.test((signupRaw?.birthday ?? "").trim()) ? (signupRaw?.birthday ?? "").trim() : undefined,
+          googleSub: guest?.verified === false ? guest.googleSub : undefined,
+        };
+      } else if (!body.cpf) {
+        // Not an error — the client offers: create an account (signup) or link
+        // this phone to an existing record by confirming the CPF.
         return jsonResponse({ data: { sent: false, needsCpf: true } });
+      } else {
+        return jsonResponse({ error: "CPF não encontrado no cadastro.", code: "cpf_not_found" }, { status: 404 });
       }
-      return jsonResponse({ error: "CPF não encontrado no cadastro.", code: "cpf_not_found" }, { status: 404 });
     }
+
     const now = Date.now();
     const prev = await getOtpChallenge(normalized);
     if (prev && now - prev.lastSentAt < OTP_RESEND_MS) {
       return jsonResponse({ error: "Aguarde alguns segundos para reenviar o código.", code: "rate_limited" }, { status: 429 });
     }
+    // Rolling daily SMS budget per phone.
+    let sendCount = 0;
+    let windowStart = now;
+    if (prev && now - prev.windowStart < OTP_WINDOW_MS) {
+      sendCount = prev.sendCount;
+      windowStart = prev.windowStart;
+    }
+    if (sendCount >= OTP_DAILY_LIMIT) {
+      return jsonResponse({ error: "Limite diário de códigos atingido. Tente novamente amanhã.", code: "rate_limited" }, { status: 429 });
+    }
     const code = String(Math.floor(100000 + Math.random() * 900000));
-    await setOtpChallenge(normalized, { code, expiresAt: now + OTP_TTL_MS, attempts: 0, lastSentAt: now, rebindRiderId });
-    await sendOtp(phoneRaw, code);
-    return jsonResponse({ data: { sent: true, rebind: !!rebindRiderId, ...(OTP_DEV_RETURN ? { devCode: code } : {}) } });
+    const delivery = await sendOtp(phoneRaw, code);
+    if (delivery === "failed") {
+      return jsonResponse({ error: "Não foi possível enviar o SMS agora. Tente novamente em instantes.", code: "sms_failed" }, { status: 502 });
+    }
+    await setOtpChallenge(normalized, {
+      code,
+      expiresAt: now + OTP_TTL_MS,
+      attempts: 0,
+      lastSentAt: now,
+      rebindRiderId,
+      signupData,
+      sendCount: sendCount + (delivery === "sent" ? 1 : 0),
+      windowStart,
+    });
+    return jsonResponse({ data: { sent: true, rebind: !!rebindRiderId, signup: !!signupData, ...(OTP_DEV_RETURN ? { devCode: code } : {}) } });
   }
 
   // ---- Verify OTP ---------------------------------------------------------
@@ -416,6 +504,11 @@ export async function POST(request: Request) {
         member = memory.riders[idx];
         await flushPendingToDatabase();
       }
+    }
+    if (!member && challenge.signupData) {
+      // Phone-first signup: the phone is verified — create the member now and
+      // pay the inviter's referral points (only ever on a verified signup).
+      member = await createVerifiedMember(challenge.signupData, normalized);
     }
     if (!member) return jsonResponse({ error: "Cadastro não encontrado.", code: "not_found" }, { status: 404 });
     await linkGoogleIfPresent(member.id, body.googleCredential);

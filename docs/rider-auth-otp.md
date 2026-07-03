@@ -19,10 +19,15 @@
 
 | action | 入参 | 行为 |
 | --- | --- | --- |
-| `request-otp` | `{ phone }` | 号在库 → 发送 6 位验证码(5 分钟有效,30s 重发限流)。号不在库 → 404 且 `needsCpf:true` |
+| `request-otp` | `{ phone }` | 号在库 → 发送 6 位验证码(5 分钟有效,30s 重发限流,**每号每日上限 8 条**)。号不在库 → `needsCpf:true`(前端给"新建账号 / CPF 重绑"双选) |
 | `request-otp` | `{ phone, cpf }` | 按 CPF 找到骑手 → 把验证码发到**新手机号**,标记为"重绑" |
-| `verify-otp` | `{ phone, code }` | 校验通过 → 若是重绑则把该骑手手机号更新为新号(`rider.id` 不变,积分保留并落库)→ 下发骑手会话 cookie |
+| `request-otp` | `{ phone, signup:{name,cpf?,inviterId?,birthday?} }` | **手机号优先注册**:注册资料随挑战暂存,`verify-otp` 通过后才建号(先验号防占坑/防刷邀请分)。号已在库则忽略 signup、按登录发码并返回 `signup:false` |
+| `verify-otp` | `{ phone, code }` | 校验通过 → 重绑则更新手机号;带 signup 则**建号 + 给邀请人发积分(仅此时)** → 下发骑手会话 cookie(响应含 `id`) |
 | (无 action) | `{ phone }` | Legacy 手机号直登,**给原生 App 过渡用**;设 `MEMBER_LOGIN_OTP=1` 可禁用 |
+
+短信发送失败时接口返回 `502 sms_failed`(不再假装已发送);`otp_challenges` 过期行按小时机会式清理。
+Google 访客**认领已有账号必须过 SMS**(CPF 在巴西泄露面广,不再单凭 CPF 免码认领);全新号码仍可凭 Google 身份免码建号。
+`/api/register` 降级为 legacy(旧客户端兼容),**不再即时发放邀请积分**——奖励统一在被邀请人验证手机时入账。
 
 ### CPF 锚定重绑(换号不丢分)
 

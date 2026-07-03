@@ -7,11 +7,24 @@
  * instance than the one that issued the code, so an in-memory Map loses
  * challenges randomly. Falls back to an in-memory Map for local dev.
  *
- * Table: otp_challenges (see supabase/migrations/20260703090000_otp_challenges.sql).
- * Keyed by normalized BR phone; one pending challenge per phone.
+ * A challenge can carry `signupData`: the pending registration payload for a
+ * phone-first signup. The member record is only created after the phone is
+ * verified (no phone squatting, no referral farming on fake registrations).
+ *
+ * `sendCount`/`windowStart` implement a rolling per-phone daily SMS budget.
+ *
+ * Table: otp_challenges (migrations 20260703090000 + 20260703150000).
  */
 
 import type { SupabaseClient } from "@supabase/supabase-js";
+
+export type OtpSignupData = {
+  name: string;
+  cpf?: string;
+  inviterId?: string;
+  birthday?: string;
+  googleSub?: string;
+};
 
 export type OtpChallenge = {
   code: string;
@@ -19,12 +32,16 @@ export type OtpChallenge = {
   attempts: number;
   lastSentAt: number; // epoch ms
   rebindRiderId?: string;
+  signupData?: OtpSignupData;
+  sendCount: number; // SMS sent inside the current daily window
+  windowStart: number; // epoch ms — start of the daily window
 };
 
 const TABLE = "otp_challenges";
 const memoryStore = new Map<string, OtpChallenge>();
 let client: SupabaseClient | null = null;
 let warned = false;
+let lastSweep = 0;
 
 function supabaseEnabled(): boolean {
   return (
@@ -65,6 +82,9 @@ export async function getOtpChallenge(phone: string): Promise<OtpChallenge | und
     attempts: Number(data.attempts),
     lastSentAt: Number(data.last_sent_at),
     rebindRiderId: (data.rebind_rider_id as string | null) ?? undefined,
+    signupData: (data.signup_data as OtpSignupData | null) ?? undefined,
+    sendCount: Number(data.send_count ?? 0),
+    windowStart: Number(data.window_start ?? 0),
   };
 }
 
@@ -81,12 +101,16 @@ export async function setOtpChallenge(phone: string, challenge: OtpChallenge): P
     attempts: challenge.attempts,
     last_sent_at: challenge.lastSentAt,
     rebind_rider_id: challenge.rebindRiderId ?? null,
+    signup_data: challenge.signupData ?? null,
+    send_count: challenge.sendCount,
+    window_start: challenge.windowStart,
     updated_at: new Date().toISOString(),
   });
   if (error) {
     console.warn(`[otp-store] write failed, falling back to memory: ${error.message}`);
     memoryStore.set(phone, challenge);
   }
+  void sweepExpired(db);
 }
 
 export async function deleteOtpChallenge(phone: string): Promise<void> {
@@ -95,4 +119,13 @@ export async function deleteOtpChallenge(phone: string): Promise<void> {
   if (!db) return;
   const { error } = await db.from(TABLE).delete().eq("phone", phone);
   if (error) console.warn(`[otp-store] delete failed: ${error.message}`);
+}
+
+/** Opportunistic cleanup: drop rows expired for >24h, at most once per hour. */
+async function sweepExpired(db: SupabaseClient): Promise<void> {
+  const now = Date.now();
+  if (now - lastSweep < 60 * 60 * 1000) return;
+  lastSweep = now;
+  const { error } = await db.from(TABLE).delete().lt("expires_at", now - 24 * 60 * 60 * 1000);
+  if (error) console.warn(`[otp-store] sweep failed: ${error.message}`);
 }

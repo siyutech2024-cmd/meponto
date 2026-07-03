@@ -1,18 +1,18 @@
 import { appendServerAudit, jsonResponse, makeServerId, memory } from "../../lib/server/memory";
 import { flushPendingToDatabase, refreshCollectionsFromDatabase } from "../../lib/server/persistence";
-import { getAvailablePoints, type PointsLedgerEntry } from "../../lib/points";
-import { defaultMallConfig } from "../../lib/mall";
 import type { Rider } from "../../lib/data";
 
 /**
- * PUBLIC member self-registration (公开用户). Creates a member record with NO
- * 99 ID → 会员一级 (member tier). Members accumulate points and redeem in the
- * mall (pickup at any Ponto). Binding a 99 ID later auto-promotes to 会员二级.
- * Optional referral: the inviter (an existing member) earns referral points.
+ * LEGACY public member self-registration (公开用户), kept for older clients.
+ * The web funnel now signs members up phone-first through /api/member-login
+ * (request-otp with `signup` + verify-otp), which verifies the phone by SMS
+ * before creating the record.
+ *
+ * Referral points are NOT paid here any more: an unverified registration could
+ * farm points with fake numbers (?ref=self). The reward is credited by
+ * /api/member-login when the invited member verifies their phone.
  */
-const COLLECTIONS = ["riders", "pointsLedgerEntries", "mallConfigs"];
-
-const nowStamp = () => new Date().toISOString().slice(0, 16).replace("T", " ");
+const COLLECTIONS = ["riders"];
 
 const onlyDigits = (s: string) => s.replace(/\D/g, "");
 /** Normalize a BR phone to digits with country code 55 — must match member-login. */
@@ -64,34 +64,8 @@ export async function POST(request: Request) {
     birthday: /^\d{4}-\d{2}-\d{2}$/.test((body.birthday ?? "").trim()) ? (body.birthday ?? "").trim() : "",
   };
   memory.riders.unshift(member);
-  appendServerAudit({ actor: "Self-registration", action: "MEMBER_REGISTERED", entity: "Rider", entityId: id, detail: `${name} (membro público, sem 99 ID)`, risk: "Low" });
-
-  // Referral: a public user who invited this registrant earns referral points.
-  let referral: { inviter: string; points: number } | null = null;
-  const inviter = body.inviterId ? memory.riders.find((r) => r.id === body.inviterId) : undefined;
-  if (inviter && inviter.id !== id) {
-    const config = memory.mallConfigs.find((c) => c.id === "mall-config") ?? defaultMallConfig;
-    const points = config.referralPoints || 20;
-    const available = getAvailablePoints(memory.pointsLedgerEntries, inviter.id);
-    const entry: PointsLedgerEntry = {
-      id: makeServerId("pts", memory.pointsLedgerEntries.length + 1),
-      riderId: inviter.id,
-      accountId: `pts-${inviter.id}`,
-      type: "earn",
-      points,
-      status: "approved",
-      sourceType: "admin_adjustment",
-      sourceId: `ref-${id}`,
-      balanceAfter: available + points,
-      reasonCode: "REFERRAL_REWARD",
-      note: `Convidou ${name} para o PontoMall`,
-      createdBy: "PontoMall",
-      createdAt: nowStamp(),
-    };
-    memory.pointsLedgerEntries.unshift(entry);
-    referral = { inviter: inviter.name, points };
-  }
+  appendServerAudit({ actor: "Self-registration", action: "MEMBER_REGISTERED", entity: "Rider", entityId: id, detail: `${name} (membro público, sem 99 ID, legacy)`, risk: "Low" });
 
   await flushPendingToDatabase();
-  return jsonResponse({ data: { id, name, referral } }, { status: 201 });
+  return jsonResponse({ data: { id, name, referral: null } }, { status: 201 });
 }
