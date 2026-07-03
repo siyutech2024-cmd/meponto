@@ -43,6 +43,7 @@ export async function POST(request: Request) {
     cityId?: string;
     riderList?: unknown; // vendor.rider.monitor.riderList payload
     kpi?: unknown;       // vendor.rider.monitor.vendorFeatureInShift payload
+    riderFeatures?: Record<string, unknown>; // per-rider detail responses keyed by riderID
     delivery?: unknown;  // optional (waybill board, currently disabled)
   };
   try {
@@ -59,7 +60,7 @@ export async function POST(request: Request) {
 
   // --- riders → snapshots + kpi -------------------------------------------
   if (body.riderList != null || body.kpi != null) {
-    const { snapshots, kpi } = parseRiders(body.riderList, body.kpi, capturedAt, cityId);
+    const { snapshots, kpi } = parseRiders(body.riderList, body.kpi, capturedAt, cityId, body.riderFeatures ?? null);
     const batch = alignTo5Min(capturedAt);
 
     // Idempotent batch: remove any prior rows for this exact batch first.

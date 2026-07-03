@@ -257,14 +257,28 @@ export function parseRiders(
   kpiPayload: unknown,
   capturedAtIso: string,
   cityId: string | null,
+  // Optional per-rider detail payloads captured by the scraper when it clicks
+  // each rider (vendor.rider.monitor.riderFeatureInShift-style responses),
+  // keyed by riderID. Merged into `raw.riderFeature` so extractRiderPerf can
+  // resolve AR/CAA/%TSH/declined/… per rider.
+  riderFeatures?: Record<string, unknown> | null,
 ): { snapshots: RiderSnapshotRow[]; kpi: KpiRow } {
   const captured_at = alignTo5Min(capturedAtIso);
+  // Unwrap the gateway envelope ({errno, data:{…}}) so the metrics sit one
+  // level deep in raw (pick() searches the record + one nested level).
+  const featureFor = (riderId: string | null): AnyObj | null => {
+    if (!riderId || !riderFeatures) return null;
+    const env = riderFeatures[riderId];
+    if (!isObj(env)) return null;
+    return isObj(env.data) ? (env.data as AnyObj) : (env as AnyObj);
+  };
 
   const list = ridersPayload != null ? findRecordList(ridersPayload) : [];
   const snapshots: RiderSnapshotRow[] = list.map((rec) => {
     let [ss, se] = splitShift(pick(rec, K.shift));
     if (!ss) ss = str(pick(rec, K.shiftStart));
     if (!se) se = str(pick(rec, K.shiftEnd));
+    const feat = featureFor(str(pick(rec, K.riderId)));
     return {
       captured_at,
       city_id: cityId,
@@ -286,7 +300,7 @@ export function parseRiders(
       finished_cnt: num(pick(rec, K.finished)),
       lat: num(pick(rec, K.lat)),
       lng: num(pick(rec, K.lng)),
-      raw: rec,
+      raw: feat ? { ...rec, riderFeature: feat } : rec,
     };
   });
 

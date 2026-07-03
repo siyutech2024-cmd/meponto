@@ -30,6 +30,12 @@ import { chromium } from "playwright";
 const RIDERS_URL = "https://eastwind.99app.com/monitor/riders/list";
 const RIDER_LIST_API = "vendor.rider.monitor.riderList";          // the rider list
 const KPI_API = "vendor.rider.monitor.vendorFeatureInShift";      // header KPIs
+// Per-rider detail card ("Performance in Current Shift"). Fired only when a
+// rider is clicked, so we click each rider and capture whatever rider+feature/
+// detail gateway API the page calls. Name is matched loosely because the exact
+// api id was not observable up front.
+const isDetailApi = (api) =>
+  api && api !== RIDER_LIST_API && api !== KPI_API && /rider.*(feature|detail|inshift)/i.test(api);
 
 // Parse "HH:MM" (or "HH") into minutes-of-day. Falls back to `def`.
 function hmToMin(s, def) {
@@ -49,6 +55,8 @@ const cfg = {
   shiftEndMin: hmToMin(process.env.SHIFT_END, 24 * 60),   // e.g. "22:30"
   tz: process.env.TZ || "America/Sao_Paulo",
   headless: process.env.HEADLESS !== "false",
+  detailEnabled: process.env.DETAIL_ENABLED !== "false", // click riders for per-rider metrics
+  detailMax: Number(process.env.DETAIL_MAX || 80),       // safety cap per round
   alertWebhook: process.env.ALERT_WEBHOOK_URL || "", // Slack/Discord/Zapier incoming webhook
 };
 
@@ -73,6 +81,55 @@ async function alert(key, text) {
   } catch (e) {
     log("alert webhook failed:", e.message);
   }
+}
+
+// Pull [{id, name}] out of the captured riderList JSON (shape-tolerant walk).
+function riderPairs(payload) {
+  const out = [];
+  const seen = new Set();
+  const walk = (node, depth) => {
+    if (depth > 6 || node === null || typeof node !== "object" || seen.has(node)) return;
+    seen.add(node);
+    if (Array.isArray(node)) return node.forEach((x) => walk(x, depth + 1));
+    const id = node.riderID ?? node.riderId ?? node.driverId;
+    const name = node.riderName ?? node.name;
+    if (id != null && name) out.push({ id: String(id), name: String(name) });
+    for (const k of Object.keys(node)) walk(node[k], depth + 1);
+  };
+  walk(payload, 0);
+  return out;
+}
+
+/**
+ * Click each rider in the list so the page fires its per-rider detail API
+ * (signed in-page — cannot be replayed server-side), and capture the response.
+ * Returns { riderID: detailJson }. Failures skip the rider; the board data is
+ * still ingested even if every click fails.
+ */
+async function captureRiderDetails(page, riderList) {
+  const features = {};
+  const riders = riderPairs(riderList).slice(0, cfg.detailMax);
+  if (!riders.length) return features;
+  const detailApiFromUrl = (u) => {
+    const m = u.match(/[?&]api=([^&]+)/);
+    return m ? decodeURIComponent(m[1]) : "";
+  };
+  let captured = 0;
+  for (const { id, name } of riders) {
+    try {
+      const respP = page.waitForResponse((r) => isDetailApi(detailApiFromUrl(r.url())), { timeout: 5000 });
+      await page.getByText(name, { exact: false }).first().click({ timeout: 3000 });
+      const resp = await respP;
+      features[id] = await resp.json();
+      captured++;
+      await page.keyboard.press("Escape").catch(() => {}); // close the card
+      await page.waitForTimeout(200); // gentle pacing — avoid hammering the gateway
+    } catch {
+      /* rider not clickable / detail api didn't fire — skip */
+    }
+  }
+  log(`rider details captured: ${captured}/${riders.length}`);
+  return features;
 }
 
 function inShiftWindow() {
@@ -138,10 +195,17 @@ async function pull(ctx) {
       return;
     }
 
+    // Per-rider detail cards (AR/CAA/%TSH/declined/… per rider). Best-effort:
+    // adds up to ~detailMax clicks per round, board ingest never depends on it.
+    let riderFeatures = {};
+    if (cfg.detailEnabled && riderList) {
+      riderFeatures = await captureRiderDetails(page, riderList).catch(() => ({}));
+    }
+
     const res = await fetch(cfg.ingestUrl, {
       method: "POST",
       headers: { "Content-Type": "application/json", "x-ingest-token": cfg.ingestToken },
-      body: JSON.stringify({ capturedAt, cityId: cfg.cityId, riderList, kpi }),
+      body: JSON.stringify({ capturedAt, cityId: cfg.cityId, riderList, kpi, riderFeatures }),
     });
     const txt = await res.text();
     log(`ingest ${res.status}: ${txt.slice(0, 300)}`);
