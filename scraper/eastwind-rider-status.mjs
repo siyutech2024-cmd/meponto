@@ -31,11 +31,11 @@ const RIDERS_URL = "https://eastwind.99app.com/monitor/riders/list";
 const RIDER_LIST_API = "vendor.rider.monitor.riderList";          // the rider list
 const KPI_API = "vendor.rider.monitor.vendorFeatureInShift";      // header KPIs
 // Per-rider detail card ("Performance in Current Shift"). Fired only when a
-// rider is clicked, so we click each rider and capture whatever rider+feature/
-// detail gateway API the page calls. Name is matched loosely because the exact
-// api id was not observable up front.
-const isDetailApi = (api) =>
-  api && api !== RIDER_LIST_API && api !== KPI_API && /rider.*(feature|detail|inshift)/i.test(api);
+// rider is clicked. Confirmed live 2026-07-03: vendor.rider.monitor.riderTarget.
+// If Eastwind renames it, rounds log 0/N plus a "gateway apis seen" diagnostic —
+// update the constant from that line.
+const RIDER_TARGET_API = "vendor.rider.monitor.riderTarget";
+const isDetailApi = (api) => api === RIDER_TARGET_API;
 
 // Parse "HH:MM" (or "HH") into minutes-of-day. Falls back to `def`.
 function hmToMin(s, def) {
@@ -83,7 +83,7 @@ async function alert(key, text) {
   }
 }
 
-// Pull [{id, name}] out of the captured riderList JSON (shape-tolerant walk).
+// Pull [{id, name, phone}] out of the captured riderList JSON (shape-tolerant walk).
 function riderPairs(payload) {
   const out = [];
   const seen = new Set();
@@ -93,7 +93,9 @@ function riderPairs(payload) {
     if (Array.isArray(node)) return node.forEach((x) => walk(x, depth + 1));
     const id = node.riderID ?? node.riderId ?? node.driverId;
     const name = node.riderName ?? node.name;
-    if (id != null && name) out.push({ id: String(id), name: String(name) });
+    if (id != null && name) {
+      out.push({ id: String(id), name: String(name), phone: node.phoneNumber ? String(node.phoneNumber) : null });
+    }
     for (const k of Object.keys(node)) walk(node[k], depth + 1);
   };
   walk(payload, 0);
@@ -110,25 +112,50 @@ async function captureRiderDetails(page, riderList) {
   const features = {};
   const riders = riderPairs(riderList).slice(0, cfg.detailMax);
   if (!riders.length) return features;
-  const detailApiFromUrl = (u) => {
+  const apiOf = (u) => {
     const m = u.match(/[?&]api=([^&]+)/);
     return m ? decodeURIComponent(m[1]) : "";
   };
+  const detailApisSeen = new Set();
   let captured = 0;
-  for (const { id, name } of riders) {
+  let clickFails = 0;
+  for (const { id, name, phone } of riders) {
+    // Arm the response wait BEFORE clicking; swallow its eventual rejection so
+    // a failed click can't leave an unhandled promise rejection behind.
+    const respP = page.waitForResponse((r) => isDetailApi(apiOf(r.url())), { timeout: 4000 });
+    respP.catch(() => {});
     try {
-      const respP = page.waitForResponse((r) => isDetailApi(detailApiFromUrl(r.url())), { timeout: 5000 });
-      await page.getByText(name, { exact: false }).first().click({ timeout: 3000 });
+      // Click target: phone number if visible (rendered untruncated in the
+      // list), else the first two words of the name (long names are shown
+      // ellipsized, so the full name never matches).
+      const shortName = name.split(/\s+/).slice(0, 2).join(" ");
+      const target = phone
+        ? page.getByText(phone, { exact: false }).first()
+        : page.getByText(shortName, { exact: false }).first();
+      try {
+        await target.click({ timeout: 2500 });
+      } catch {
+        if (!phone) { clickFails++; continue; }
+        // phone not rendered on this layout — fall back to the name prefix
+        try {
+          await page.getByText(shortName, { exact: false }).first().click({ timeout: 2500 });
+        } catch { clickFails++; continue; }
+      }
       const resp = await respP;
+      detailApisSeen.add(apiOf(resp.url()));
       features[id] = await resp.json();
       captured++;
       await page.keyboard.press("Escape").catch(() => {}); // close the card
       await page.waitForTimeout(200); // gentle pacing — avoid hammering the gateway
     } catch {
-      /* rider not clickable / detail api didn't fire — skip */
+      /* detail api didn't fire for this rider — skip */
     }
   }
-  log(`rider details captured: ${captured}/${riders.length}`);
+  log(
+    `rider details captured: ${captured}/${riders.length}` +
+      (clickFails ? ` (click failed: ${clickFails})` : "") +
+      (detailApisSeen.size ? ` via [${[...detailApisSeen].join(", ")}]` : ""),
+  );
   return features;
 }
 
@@ -200,6 +227,10 @@ async function pull(ctx) {
     let riderFeatures = {};
     if (cfg.detailEnabled && riderList) {
       riderFeatures = await captureRiderDetails(page, riderList).catch(() => ({}));
+      if (!Object.keys(riderFeatures).length) {
+        // Diagnostic: which gateway apis DID fire this round (incl. during clicks)?
+        log(`no rider details — gateway apis seen: [${[...seenApis].join(", ")}]`);
+      }
     }
 
     const res = await fetch(cfg.ingestUrl, {
