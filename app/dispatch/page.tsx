@@ -453,10 +453,21 @@ function ImportTab({ onImport, setMessage }: { onImport: (body: Record<string, u
 
 function ShiftSelect({ shifts, value, onChange }: { shifts: DispatchShift[]; value: string; onChange: (id: string) => void }) {
   const t = useT();
+  // Newest first; stale shifts (older than 7 days) are hidden so the list stays
+  // short and current. If nothing is recent, fall back to the latest 15 so the
+  // picker is never empty. The currently selected shift always stays visible.
+  const byNewest = (a: DispatchShift, b: DispatchShift) =>
+    b.date.localeCompare(a.date) || a.timeRange.localeCompare(b.timeRange);
+  const cutoffDate = new Date(Date.now() - 7 * 86400000);
+  const cutoff = `${cutoffDate.getFullYear()}-${String(cutoffDate.getMonth() + 1).padStart(2, "0")}-${String(cutoffDate.getDate()).padStart(2, "0")}`;
+  let visible = shifts.filter((shift) => shift.date >= cutoff).sort(byNewest);
+  if (visible.length === 0) visible = [...shifts].sort(byNewest).slice(0, 15);
+  const selected = shifts.find((shift) => shift.id === value);
+  if (selected && !visible.some((shift) => shift.id === selected.id)) visible = [selected, ...visible];
   return (
     <select value={value} onChange={(e) => onChange(e.target.value)} className="h-11 w-full rounded-[8px] border border-[var(--line)] bg-[var(--surface)] px-3 text-sm font-bold outline-none focus:border-[var(--accent)]">
       <option value="">{t("dpSelectShift")}</option>
-      {shifts.map((shift) => (
+      {visible.map((shift) => (
         <option key={shift.id} value={shift.id}>
           {shift.date} {shift.timeRange} · {shift.hotzone} · {t("dpQuotaLabel")}{shift.plannedCount}{shift.isCritical ? " ★" : ""}
         </option>
