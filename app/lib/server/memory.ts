@@ -61,6 +61,13 @@ import { appTasks, taskClaims, type AppTask, type TaskClaim } from "../tasks";
 import { partnerReviews, type PartnerReview } from "../partner-reviews";
 import { supplierProfiles, type SupplierProfile } from "../supplier";
 import { franchises, type Franchise } from "../network";
+import type {
+  FranchiseDepositLedgerEntry,
+  FranchiseDepositTopUp,
+  FranchisePurchaseOrder,
+  ProcurementDiscrepancy,
+  StationStockLedgerEntry,
+} from "../procurement";
 
 type Reward = (typeof rewards)[number];
 type Ponto = (typeof pontos)[number];
@@ -133,6 +140,11 @@ const globalState = globalThis as typeof globalThis & {
     mallRevenueShareEntries: RevenueShareEntry[];
     revenueShareStatements: RevenueShareStatement[];
     memberMessages: MemberMessage[];
+    franchisePurchaseOrders: FranchisePurchaseOrder[];
+    stationStockLedgerEntries: StationStockLedgerEntry[];
+    franchiseDepositLedgerEntries: FranchiseDepositLedgerEntry[];
+    franchiseDepositTopUps: FranchiseDepositTopUp[];
+    procurementDiscrepancies: ProcurementDiscrepancy[];
   };
 };
 
@@ -191,6 +203,11 @@ export const memory =
     mallRevenueShareEntries: trackCollection("mallRevenueShareEntries", []),
     revenueShareStatements: trackCollection("revenueShareStatements", []),
     memberMessages: trackCollection("memberMessages", []),
+    franchisePurchaseOrders: trackCollection<FranchisePurchaseOrder>("franchisePurchaseOrders", []),
+    stationStockLedgerEntries: trackCollection<StationStockLedgerEntry>("stationStockLedgerEntries", []),
+    franchiseDepositLedgerEntries: trackCollection<FranchiseDepositLedgerEntry>("franchiseDepositLedgerEntries", []),
+    franchiseDepositTopUps: trackCollection<FranchiseDepositTopUp>("franchiseDepositTopUps", []),
+    procurementDiscrepancies: trackCollection<ProcurementDiscrepancy>("procurementDiscrepancies", []),
   });
 
 // Restore persisted data from the database (no-op when USE_SUPABASE is off).
@@ -299,6 +316,16 @@ memory.walletPayments ??= [];
 memory.walletPayments = trackCollection("walletPayments", memory.walletPayments);
 memory.assessmentRules ??= [];
 memory.assessmentRules = trackCollection("assessmentRules", memory.assessmentRules);
+memory.franchisePurchaseOrders ??= [];
+memory.franchisePurchaseOrders = trackCollection("franchisePurchaseOrders", memory.franchisePurchaseOrders);
+memory.stationStockLedgerEntries ??= [];
+memory.stationStockLedgerEntries = trackCollection("stationStockLedgerEntries", memory.stationStockLedgerEntries);
+memory.franchiseDepositLedgerEntries ??= [];
+memory.franchiseDepositLedgerEntries = trackCollection("franchiseDepositLedgerEntries", memory.franchiseDepositLedgerEntries);
+memory.franchiseDepositTopUps ??= [];
+memory.franchiseDepositTopUps = trackCollection("franchiseDepositTopUps", memory.franchiseDepositTopUps);
+memory.procurementDiscrepancies ??= [];
+memory.procurementDiscrepancies = trackCollection("procurementDiscrepancies", memory.procurementDiscrepancies);
 
 export function jsonResponse<T>(data: T, init?: ResponseInit) {
   // Make sure pending mutations reach the database even on serverless,

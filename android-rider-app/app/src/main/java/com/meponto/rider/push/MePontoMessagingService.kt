@@ -67,6 +67,9 @@ class MePontoMessagingService : FirebaseMessagingService() {
         val tapIntent = Intent(this, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP
             putExtra("url", url)
+            putExtra("title", title)
+            putExtra("body", body)
+            putExtra("image", imageUrl)
         }
         val pending = PendingIntent.getActivity(
             this,

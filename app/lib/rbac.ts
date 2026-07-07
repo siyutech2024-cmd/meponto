@@ -24,6 +24,7 @@ export type Permission =
   | "manage_partner_points"
   | "manage_partner_services"
   | "manage_supplier_catalog"
+  | "manage_procurement"
   | "manage_slots"
   | "use_rider_app"
   | "view_finance"
@@ -58,6 +59,7 @@ export const permissionLabels: Record<Permission, string> = {
   manage_partner_points: "Manage partner points",
   manage_partner_services: "Manage partner services",
   manage_supplier_catalog: "Manage supplier catalog",
+  manage_procurement: "Manage franchise procurement",
   manage_slots: "Manage rider slots",
   use_rider_app: "Use rider app",
   view_finance: "View finance",
@@ -80,6 +82,7 @@ export const rolePermissions: Record<Role, Permission[]> = {
     "manage_partner_points",
     "manage_partner_services",
     "manage_supplier_catalog",
+    "manage_procurement",
     "manage_slots",
     "use_rider_app",
     "view_finance",
@@ -98,6 +101,7 @@ export const rolePermissions: Record<Role, Permission[]> = {
     "manage_points",
     "manage_marketplace",
     "manage_partner_points",
+    "manage_procurement",
     "manage_slots",
     "view_analytics",
     "view_audit",
@@ -113,6 +117,7 @@ export const rolePermissions: Record<Role, Permission[]> = {
     "manage_points",
     "manage_marketplace",
     "manage_partner_points",
+    "manage_procurement",
     "manage_slots",
     "view_analytics",
     "view_audit",

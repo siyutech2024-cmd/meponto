@@ -6,6 +6,8 @@ import { sendPushToRider } from "../../lib/server/notify";
 import { applyInactivityDecay, getAvailablePoints, getAvailablePartnerPoints, pointsRules, type MarketplaceOrder, type MarketplaceProduct, type PartnerPointsLedgerEntry, type PointsLedgerEntry } from "../../lib/points";
 import { badgeMilestones, defaultMallConfig, eligibleCoupons, resolveRiderTierStatus, resolveTier, tierDefinitions, type MallConfig } from "../../lib/mall";
 import type { CashLedgerEntry, MallCoupon } from "../../lib/mall-ops";
+import { consumeStationStockForOrder, postStationStock } from "../../lib/server/station-stock";
+import { stationAvailable, type FpoMode } from "../../lib/procurement";
 
 /** Coupons a rider is eligible for (tier + validity + per-rider limit), ignoring
  *  the per-product minPoints threshold (applied per product at display/redeem). */
@@ -34,7 +36,38 @@ function cashBalanceOf(riderId: string): number {
   return Math.round(balance * 100) / 100;
 }
 
-const COLLECTIONS = ["mallConfigs", "marketplaceProducts", "marketplaceOrders", "pointsLedgerEntries", "partnerPointsLedgerEntries", "riders", "riderDailyKpis", "mallCategories", "mallBanners", "mallCoupons", "mallPayments", "cashTopUps", "cashLedgerEntries", "memberMessages", "franchises", "pontos", "mallRevenueShareEntries"];
+const COLLECTIONS = ["mallConfigs", "marketplaceProducts", "marketplaceOrders", "pointsLedgerEntries", "partnerPointsLedgerEntries", "riders", "riderDailyKpis", "mallCategories", "mallBanners", "mallCoupons", "mallPayments", "cashTopUps", "cashLedgerEntries", "memberMessages", "franchises", "pontos", "mallRevenueShareEntries", "stationStockLedgerEntries"];
+
+/** M3 flag (docs/franchise-procurement-full-chain-plan.md): redemptions of
+ *  physical rider goods reserve/consume STATION stock pools instead of the
+ *  central stock counter. Default off — behavior is unchanged until enabled. */
+function stationStockEnforced(): boolean {
+  return getConfig().stationStockEnforcement === true;
+}
+
+/** Pool the order's reservation sits on (consignment first at reserve time). */
+function reservedPoolForOrder(orderId: string): FpoMode | null {
+  const entry = memory.stationStockLedgerEntries.find((e) => e.type === "reserve" && e.sourceType === "mall_order" && e.sourceId === orderId);
+  return entry ? entry.mode : null;
+}
+
+/** Release an order's station-stock reservation (cancel / review-reject). */
+function releaseOrderReservation(order: MarketplaceOrder, actor: string) {
+  const pool = reservedPoolForOrder(order.id);
+  if (!pool || !order.pickupStoreId) return;
+  postStationStock({
+    stationId: order.pickupStoreId,
+    stationName: order.pickupStoreName ?? order.station ?? "",
+    productId: order.productId,
+    productName: order.productName ?? order.productId,
+    mode: pool,
+    type: "release",
+    qty: 1,
+    sourceType: "mall_order",
+    sourceId: order.id,
+    createdBy: actor,
+  });
+}
 
 const PRODUCT_TYPES = ["equipment", "fuel_coupon", "maintenance_coupon", "phone_data", "safety_item", "partner_voucher"] as const;
 
@@ -801,8 +834,38 @@ async function handlePost(request: Request) {
         return jsonResponse({ error: "请选择取货门店。", pickupStores: riderCandidates.map(slimStore) }, { status: 400 });
       }
 
+      // M3 station-stock enforcement: physical goods must actually be on the
+      // shelf at the pickup station (consignment or buyout pool) to be
+      // redeemable. The reservation is posted BEFORE the order/ledger writes,
+      // so a failed reserve simply aborts with nothing to compensate.
+      const enforceStationStock = stationStockEnforced() && !isVirtual;
+      const orderId = makeServerId("mko", memory.marketplaceOrders.length + 1);
+      if (enforceStationStock) {
+        if (stationAvailable(memory.stationStockLedgerEntries, pickupStore.id, product.id) < 1) {
+          return jsonResponse({ error: `「${product.name}」está sem estoque em ${pickupStore.name}. Escolha outro ponto ou tente mais tarde.` }, { status: 409 });
+        }
+        // Reserve one unit — consignment pool first, buyout as fallback.
+        const reserved = (["consignment", "buyout"] as const).some((mode) =>
+          postStationStock({
+            stationId: pickupStore.id,
+            stationName: pickupStore.name,
+            productId: product.id,
+            productName: product.name,
+            mode,
+            type: "reserve",
+            qty: -1,
+            sourceType: "mall_order",
+            sourceId: orderId,
+            createdBy: actor,
+          }).ok,
+        );
+        if (!reserved) {
+          return jsonResponse({ error: `「${product.name}」acabou de esgotar em ${pickupStore.name}.` }, { status: 409 });
+        }
+      }
+
       const order: MarketplaceOrder = {
-        id: makeServerId("mko", memory.marketplaceOrders.length + 1),
+        id: orderId,
         accountType: "rider",
         riderId: rider.id,
         productId: product.id,
@@ -859,9 +922,11 @@ async function handlePost(request: Request) {
       };
       memory.pointsLedgerEntries.unshift(entry);
 
-      const productIndex = memory.marketplaceProducts.findIndex((item) => item.id === product.id);
-      if (productIndex !== -1) {
-        memory.marketplaceProducts[productIndex] = { ...product, stock: product.stock - 1 };
+      if (!enforceStationStock) {
+        const productIndex = memory.marketplaceProducts.findIndex((item) => item.id === product.id);
+        if (productIndex !== -1) {
+          memory.marketplaceProducts[productIndex] = { ...product, stock: product.stock - 1 };
+        }
       }
 
       appendServerAudit({ actor, action: heldForReview ? "MALL_REDEEM_HELD_REVIEW" : "MALL_REDEEMED", entity: "MarketplaceOrder", entityId: order.id, detail: `${rider.name} redeemed ${product.name} for ${price} pts${heldForReview ? " — HELD for review" : `, pickup at ${order.station}, ETA ${order.etaDate}`}.`, risk: heldForReview ? "High" : "Low" });
@@ -933,11 +998,16 @@ async function handlePost(request: Request) {
         memory.cashLedgerEntries.unshift(refundEntry);
       }
 
-      // Restock the item.
-      const productIndex = memory.marketplaceProducts.findIndex((item) => item.id === order.productId);
-      if (productIndex !== -1) {
-        const product = memory.marketplaceProducts[productIndex];
-        memory.marketplaceProducts[productIndex] = { ...product, stock: product.stock + 1 };
+      // Restock: release the station reservation when enforcement holds it,
+      // otherwise return the unit to the central counter (legacy path).
+      if (reservedPoolForOrder(order.id)) {
+        releaseOrderReservation(order, actor);
+      } else {
+        const productIndex = memory.marketplaceProducts.findIndex((item) => item.id === order.productId);
+        if (productIndex !== -1) {
+          const product = memory.marketplaceProducts[productIndex];
+          memory.marketplaceProducts[productIndex] = { ...product, stock: product.stock + 1 };
+        }
       }
 
       memory.marketplaceOrders[index] = { ...order, status: "cancelled" };
@@ -995,6 +1065,38 @@ async function handlePost(request: Request) {
       } else {
         if (order.paymentStatus && order.paymentStatus !== "paid") {
           return jsonResponse({ error: "现金部分尚未核销，不能交付（先在商城后台确认收款）。" }, { status: 409 });
+        }
+        // Station-stock enforcement: pickup consumes the reserved pool
+        // (consignment first). The outbound pool decides supplier settlement —
+        // buyout units are already settled through the FPO and must not be
+        // billed again in the monthly statement.
+        const reservedPool = reservedPoolForOrder(order.id);
+        if (reservedPool && order.pickupStoreId) {
+          const consumed = postStationStock({
+            stationId: order.pickupStoreId,
+            stationName: order.pickupStoreName ?? order.station ?? "",
+            productId: order.productId,
+            productName: order.productName ?? order.productId,
+            mode: reservedPool,
+            type: "outbound",
+            qty: -1,
+            sourceType: "mall_order",
+            sourceId: order.id,
+            createdBy: actor,
+          });
+          if (!consumed.ok) {
+            // Reservation exists but the pool was drained by an adjustment —
+            // fall back to whichever pool still has units.
+            consumeStationStockForOrder({
+              stationId: order.pickupStoreId,
+              stationName: order.pickupStoreName ?? order.station ?? "",
+              productId: order.productId,
+              productName: order.productName ?? order.productId,
+              qty: 1,
+              orderId: order.id,
+              createdBy: actor,
+            });
+          }
         }
         memory.marketplaceOrders[index] = { ...order, status: "fulfilled", pickedUpAt: stamp };
         accrueRevenueShare(memory.marketplaceOrders[index], actor);
@@ -1075,10 +1177,14 @@ async function handlePost(request: Request) {
           memory.cashLedgerEntries.unshift(refundEntry);
         }
       }
-      const productIndex = memory.marketplaceProducts.findIndex((item) => item.id === order.productId);
-      if (productIndex !== -1) {
-        const product = memory.marketplaceProducts[productIndex];
-        memory.marketplaceProducts[productIndex] = { ...product, stock: product.stock + 1 };
+      if (reservedPoolForOrder(order.id)) {
+        releaseOrderReservation(order, actor);
+      } else {
+        const productIndex = memory.marketplaceProducts.findIndex((item) => item.id === order.productId);
+        if (productIndex !== -1) {
+          const product = memory.marketplaceProducts[productIndex];
+          memory.marketplaceProducts[productIndex] = { ...product, stock: product.stock + 1 };
+        }
       }
       memory.marketplaceOrders[index] = { ...order, status: "cancelled", reviewStatus: "rejected" };
       appendServerAudit({ actor, action: "MALL_REVIEW_REJECTED", entity: "MarketplaceOrder", entityId: order.id, detail: `${order.riderName}: ${order.productName} recusado, ${order.pointsSpent} pts estornados.`, risk: "Medium" });

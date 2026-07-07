@@ -50,6 +50,21 @@ export type MallConfig = {
   highValueReviewPoints?: number;
   newAccountWindowDays?: number;
   newAccountRedeemCap?: number;
+  /**
+   * Franchise procurement (docs/franchise-procurement-full-chain-plan.md).
+   * `procurementEnabled` gates NEW orders only — in-flight FPOs always finish.
+   * `procurementFrozen` is the emergency stop (blocks every procurement write).
+   */
+  procurementEnabled?: boolean;
+  procurementFrozen?: boolean;
+  /** FPOs at or below this total auto-approve (0/undefined = manual approval for all). */
+  procurementAutoApproveBRL?: number;
+  /** Single-FPO total cap (0/undefined = no cap). */
+  procurementMaxOrderBRL?: number;
+  /** Days after shipping before an FPO is flagged as stalled in the back office. */
+  procurementShipTimeoutDays?: number;
+  /** M3: redemption orders reserve/consume station stock pools. Default off. */
+  stationStockEnforcement?: boolean;
   updatedAt: string;
   updatedBy: string;
 };
@@ -76,6 +91,13 @@ export const defaultMallConfig: MallConfig = {
   highValueReviewPoints: 8000,
   newAccountWindowDays: 7,
   newAccountRedeemCap: 0,
+  // Franchise procurement ships disabled (Hard Rule #3 — flag off by default).
+  procurementEnabled: false,
+  procurementFrozen: false,
+  procurementAutoApproveBRL: 0,
+  procurementMaxOrderBRL: 0,
+  procurementShipTimeoutDays: 7,
+  stationStockEnforcement: false,
   updatedAt: "",
   updatedBy: "seed",
 };

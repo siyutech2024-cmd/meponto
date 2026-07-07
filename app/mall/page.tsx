@@ -10,6 +10,7 @@ import type { CashLedgerEntry, CashTopUp, MallBanner, MallCategory, MallCoupon, 
 import { paymentStatusLabel, poStatusLabel, statementStatusLabel, topUpStatusLabel } from "../lib/mall-ops";
 import { useVentoStore } from "../lib/store";
 import { translate, type TranslationKey } from "../lib/i18n";
+import ProcurementTab from "./procurement-tab";
 
 /**
  * PontoMall back office (mall.meponto.com/admin → /mall) — the independent
@@ -49,6 +50,7 @@ const TABS = [
   { id: "orders", label: "订单履约", icon: Package },
   { id: "payments", label: "充值与收款", icon: Banknote },
   { id: "supply", label: "供应链", icon: Truck },
+  { id: "procurement", label: "加盟商订货", icon: Boxes },
   { id: "settings", label: "设置", icon: Settings2 },
 ] as const;
 
@@ -646,6 +648,9 @@ export default function MallAdminPage() {
           </div>
         </div>
       )}
+
+      {/* ================= 加盟商订货（采购全链路,唯一写操作入口） ================= */}
+      {tab === "procurement" && <ProcurementTab />}
 
       {/* ================= 设置 ================= */}
       {tab === "settings" && (

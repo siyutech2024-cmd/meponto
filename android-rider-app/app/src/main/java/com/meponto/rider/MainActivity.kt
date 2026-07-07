@@ -52,14 +52,14 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         // Cold start from a notification tap: the FCM data payload (incl. "url")
         // arrives as intent extras. Hand it to the in-app navigator.
-        PushNavigator.offer(intent?.getStringExtra("url"))
+        PushNavigator.offer(intent?.getStringExtra("url"), intent?.getStringExtra("title"), intent?.getStringExtra("body"), intent?.getStringExtra("image"))
         setContent { MePontoRiderApp() }
     }
 
     // Warm start (launchMode singleTop): notification tap while the app runs.
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
-        PushNavigator.offer(intent.getStringExtra("url"))
+        PushNavigator.offer(intent.getStringExtra("url"), intent.getStringExtra("title"), intent.getStringExtra("body"), intent.getStringExtra("image"))
     }
 }
 

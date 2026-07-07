@@ -1,9 +1,10 @@
 import { appendServerAudit, jsonResponse, makeServerId, memory } from "../../lib/server/memory";
 import { flushPendingToDatabase, persistDeleteRecord, refreshCollectionsFromDatabase } from "../../lib/server/persistence";
 import { requirePermission, roleFromRequest, scopeFromRequest } from "../../lib/server/authz";
+import { postFranchiseDeposit } from "../../lib/server/franchise-deposit";
 import type { Franchise } from "../../lib/network";
 
-const COLLECTIONS = ["franchises", "pontos"];
+const COLLECTIONS = ["franchises", "pontos", "franchiseDepositLedgerEntries"];
 const nowStamp = () => new Date().toISOString().slice(0, 16).replace("T", " ");
 
 export async function GET(request: Request) {
@@ -83,10 +84,18 @@ async function handlePost(request: Request) {
       const index = memory.franchises.findIndex((f) => f.id === franchiseId);
       if (index === -1) return jsonResponse({ error: "franchise not found" }, { status: 404 });
       if (!Number.isFinite(amount) || amount === 0) return jsonResponse({ error: "金额无效" }, { status: 400 });
-      const next = Math.round(((memory.franchises[index].depositBalance ?? 0) + amount) * 100) / 100;
-      if (next < 0) return jsonResponse({ error: "预存余额不足" }, { status: 409 });
-      memory.franchises[index] = { ...memory.franchises[index], depositBalance: next };
-      appendServerAudit({ actor, action: amount > 0 ? "FRANCHISE_DEPOSIT" : "FRANCHISE_DEPOSIT_DEDUCT", entity: "Franchise", entityId: franchiseId ?? "", detail: `R$${amount.toFixed(2)} → balance R$${next.toFixed(2)}${note ? ` (${note})` : ""}`, risk: "Medium" });
+      // Ledger-first: the deposit ledger is the single writer for this balance.
+      const posted = postFranchiseDeposit({
+        franchise: memory.franchises[index].name,
+        type: amount > 0 ? "topup" : "adjust",
+        amountBRL: amount,
+        sourceType: "network",
+        sourceId: makeServerId("net", memory.franchiseDepositLedgerEntries.length + 1),
+        note: note || undefined,
+        createdBy: actor,
+      });
+      if (!posted.ok) return jsonResponse({ error: "预存余额不足" }, { status: 409 });
+      appendServerAudit({ actor, action: amount > 0 ? "FRANCHISE_DEPOSIT" : "FRANCHISE_DEPOSIT_DEDUCT", entity: "Franchise", entityId: franchiseId ?? "", detail: `R$${amount.toFixed(2)} → balance R$${posted.entry.balanceAfter.toFixed(2)}${note ? ` (${note})` : ""}`, risk: "Medium" });
       return jsonResponse({ data: memory.franchises[index] });
     }
 

@@ -7,6 +7,7 @@ import { downloadCsv } from "../../lib/csv";
 import type { MarketplaceProduct } from "../../lib/points";
 import type { PriceChangeRequest, PurchaseOrder, SupplierStatement } from "../../lib/mall-ops";
 import { poStatusLabel, statementStatusLabel } from "../../lib/mall-ops";
+import type { FranchisePurchaseOrder } from "../../lib/procurement";
 import { useVentoStore } from "../../lib/store";
 import { translate, type TranslationKey } from "../../lib/i18n";
 
@@ -72,6 +73,7 @@ export default function SupplierWorkspacePage() {
   const [openStmt, setOpenStmt] = useState<Set<string>>(new Set());
   const [products, setProducts] = useState<MarketplaceProduct[]>([]);
   const [ops, setOps] = useState<OpsPayload | null>(null);
+  const [fpos, setFpos] = useState<FranchisePurchaseOrder[]>([]);
   const [message, setMessage] = useState<{ tone: "ok" | "err"; text: string } | null>(null);
   const emptyForm = { name: "", supplyPrice: "", deliveryCycleDays: "7", stock: "", description: "", imageUrl: "", category: "", isVirtual: false, audience: "rider", type: "equipment" };
   const [form, setForm] = useState(emptyForm);
@@ -178,6 +180,9 @@ export default function SupplierWorkspacePage() {
       setProducts(rows.filter((product) => Boolean(organization) && product.supplierName === organization));
     }
     if (opsRes.ok) setOps((await opsRes.json()).data);
+    // Franchise direct-ship purchase orders (procurement full chain).
+    const fpoRes = await fetch("/api/mall/procurement", { headers, cache: "no-store" }).catch(() => null);
+    if (fpoRes && fpoRes.ok) setFpos(((await fpoRes.json()).data?.fpos ?? []) as FranchisePurchaseOrder[]);
     const supRes = await fetch("/api/supplier", { headers, cache: "no-store" }).catch(() => null);
     if (supRes && supRes.ok) {
       const d = (await supRes.json()).data as SupplierData;
@@ -204,6 +209,15 @@ export default function SupplierWorkspacePage() {
       setMessage({ tone: "err", text: payload.error ?? t("dynReqFail", { s: response.status }) });
       return null;
     }
+    if (okText) setMessage({ tone: "ok", text: okText });
+    void load();
+    return payload.data;
+  }
+
+  async function fpoPost(body: Record<string, unknown>, okText?: string) {
+    const response = await fetch("/api/mall/procurement", { method: "POST", headers, body: JSON.stringify(body) });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) { setMessage({ tone: "err", text: payload.error ?? t("dynReqFail", { s: response.status }) }); return null; }
     if (okText) setMessage({ tone: "ok", text: okText });
     void load();
     return payload.data;
@@ -416,6 +430,31 @@ export default function SupplierWorkspacePage() {
               </div>
             ))}
             {(ops?.purchaseOrders ?? []).length === 0 && <div className="py-6 text-center text-xs font-bold text-[var(--muted)]">暂无补货单。</div>}
+          </div>
+
+          {/* 加盟商直发订货单（FPO）:确认 → 发货 → 站点收货入库 */}
+          <div className="mt-5 border-t border-[var(--line)] pt-4">
+            <div className="mb-2 text-xs font-black uppercase text-[var(--muted)]">{t("spFpoTitle")}</div>
+            <div className="space-y-2">
+              {fpos.map((fpo) => (
+                <div key={fpo.id} className="rounded-[10px] border border-[var(--line)] bg-[var(--surface-raised)] px-3.5 py-2.5">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Boxes size={15} className="text-[var(--muted)]" />
+                    <span className="text-sm font-black">{fpo.id}</span>
+                    <Badge value={fpo.mode === "buyout" ? t("fpModeBuyout") : t("fpModeConsignment")} />
+                    <Badge value={fpo.status} />
+                    <span className="text-xs font-bold text-[var(--muted)]">{fpo.franchise} → {fpo.stationName} · {fpo.items.reduce((sum, item) => sum + item.qty, 0)} 件 · {fpo.createdAt}</span>
+                    <span className="ml-auto flex gap-1.5">
+                      {fpo.status === "approved" && <button type="button" onClick={() => void fpoPost({ action: "confirmFPO", fpoId: fpo.id }, "已确认备货")} className="h-8 rounded-[8px] bg-[var(--accent)] px-3 text-xs font-black text-[var(--accent-ink)]">确认接单</button>}
+                      {fpo.status === "confirmed" && <button type="button" onClick={() => { const note = prompt(t("spShipNote")) ?? ""; void fpoPost({ action: "shipFPO", fpoId: fpo.id, shipNote: note }, "已标记发货"); }} className="h-8 rounded-[8px] bg-[var(--accent)] px-3 text-xs font-black text-[var(--accent-ink)]">标记发货</button>}
+                      {fpo.status === "shipped" && <button type="button" onClick={() => void fpoPost({ action: "arriveFPO", fpoId: fpo.id }, "已登记到站")} className="h-8 rounded-[8px] border border-[var(--line)] px-3 text-xs font-black">到站登记</button>}
+                    </span>
+                  </div>
+                  <div className="mt-1 text-xs font-bold text-[var(--muted)]">{fpo.items.map((item) => `${item.name}×${item.qty}`).join("、")}{fpo.shipNote ? t("dynLogistics", { x: fpo.shipNote }) : ""}</div>
+                </div>
+              ))}
+              {fpos.length === 0 && <div className="py-4 text-center text-xs font-bold text-[var(--muted)]">{t("spFpoNone")}</div>}
+            </div>
           </div>
         </div>
       )}

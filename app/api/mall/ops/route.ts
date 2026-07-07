@@ -30,6 +30,8 @@ const COLLECTIONS = [
   "revenueShareStatements",
   "franchises",
   "pontos",
+  "franchisePurchaseOrders",
+  "stationStockLedgerEntries",
 ];
 
 export function cashBalanceOf(riderId: string): number {
@@ -420,14 +422,52 @@ async function handlePost(request: Request) {
       const month = /^\d{4}-\d{2}$/.test(String(body.month)) ? String(body.month) : new Date().toISOString().slice(0, 7);
       const productMap = new Map(memory.marketplaceProducts.map((product) => [product.id, product]));
       const linesBySupplier = new Map<string, SupplierStatementLine[]>();
+      // Ownership-pool guard (franchise procurement): a redemption fulfilled
+      // from the BUYOUT pool was already settled through its FPO — billing it
+      // again here would pay the supplier twice. Orders whose station outbound
+      // is 100% buyout are excluded (mixed/consignment stays billable).
+      const buyoutOnlyOrders = new Set<string>();
+      {
+        const consumption = new Map<string, { consignment: number; buyout: number }>();
+        for (const entry of memory.stationStockLedgerEntries) {
+          if (entry.type !== "outbound" || entry.sourceType !== "mall_order") continue;
+          const row = consumption.get(entry.sourceId) ?? { consignment: 0, buyout: 0 };
+          row[entry.mode] += Math.abs(entry.qty);
+          consumption.set(entry.sourceId, row);
+        }
+        for (const [orderId, row] of consumption) {
+          if (row.buyout > 0 && row.consignment === 0) buyoutOnlyOrders.add(orderId);
+        }
+      }
       for (const order of memory.marketplaceOrders) {
         if (order.accountType !== "rider" || (order.status !== "fulfilled" && order.status !== "arrived")) continue;
         if (!order.createdAt.startsWith(month)) continue;
+        if (buyoutOnlyOrders.has(order.id)) continue;
         const product = productMap.get(order.productId);
         if (!product?.supplierName) continue;
         const lines = linesBySupplier.get(product.supplierName) ?? [];
         lines.push({ orderId: order.id, productId: product.id, productName: product.name, supplyPrice: product.supplyPrice ?? 0, date: order.createdAt.slice(0, 10) });
         linesBySupplier.set(product.supplierName, lines);
+      }
+      // Buyout FPOs received this month settle the supplier at the SNAPSHOTTED
+      // supply price × received qty (one line per FPO item; supplyPrice holds
+      // the line total so statement totals stay a plain sum).
+      for (const fpo of memory.franchisePurchaseOrders) {
+        if (fpo.mode !== "buyout" || fpo.source !== "supplier" || fpo.status !== "received") continue;
+        if (!(fpo.receivedAt ?? "").startsWith(month)) continue;
+        const lines = linesBySupplier.get(fpo.supplierName) ?? [];
+        for (const item of fpo.items) {
+          const receivedQty = Math.min(item.qty, item.receivedQty ?? item.qty);
+          if (receivedQty <= 0) continue;
+          lines.push({
+            orderId: fpo.id,
+            productId: item.productId,
+            productName: `${item.name} ×${receivedQty}（加盟采购）`,
+            supplyPrice: Math.round(receivedQty * (item.supplyPrice ?? 0) * 100) / 100,
+            date: (fpo.receivedAt ?? "").slice(0, 10),
+          });
+        }
+        linesBySupplier.set(fpo.supplierName, lines);
       }
       const created: SupplierStatement[] = [];
       for (const [supplier, lines] of linesBySupplier) {

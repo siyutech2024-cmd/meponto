@@ -14,11 +14,39 @@ function assert(condition, message) {
   }
 }
 
-async function request(path, { method = "GET", headers = {}, body, expectedStatus } = {}) {
+// `next start` runs in production mode: requirePermission demands a SIGNED
+// session and roleFromRequest ignores the legacy x-vento-role header (the
+// /sensitive endpoint stays header-native by design). So every request logs
+// in through a portal account: forbidden-path checks (expectedStatus 403) use
+// the low-privilege supplier account, everything else uses the HQ account.
+const portalAccounts = {
+  pontosys: { identifier: "hq@meponto.com", password: "pontosys-hq" },
+  supplier: { identifier: "supplier@meponto.com", password: "supplier-demo" },
+};
+const portalCookies = new Map();
+
+async function cookieForPortal(portal) {
+  if (portalCookies.has(portal)) return portalCookies.get(portal);
+  const response = await fetch(urlFor("/api/auth/login"), {
+    method: "POST",
+    headers: jsonHeaders,
+    body: JSON.stringify({ ...portalAccounts[portal], portal }),
+  });
+  if (!response.ok) throw new Error(`Could not authenticate ${portal}: ${response.status}`);
+  const cookie = response.headers.get("set-cookie")?.split(";")[0];
+  if (!cookie) throw new Error(`Authentication for ${portal} did not return a session cookie`);
+  portalCookies.set(portal, cookie);
+  return cookie;
+}
+
+async function request(path, { method = "GET", headers = {}, body, expectedStatus, portal: portalOverride } = {}) {
+  const portal = portalOverride ?? (expectedStatus === 403 && !path.includes("/sensitive") ? "supplier" : "pontosys");
+  const cookie = await cookieForPortal(portal);
   const response = await fetch(urlFor(path), {
     method,
     headers: {
       ...headers,
+      Cookie: cookie,
       ...(body ? jsonHeaders : {}),
     },
     body: body ? JSON.stringify(body) : undefined,
@@ -75,7 +103,9 @@ async function runRiderWorkflow() {
   assert(rider?.id, "Created rider response did not include data.id");
 
   try {
-    const maskedResponse = await request(`/api/riders/${rider.id}`);
+    // Sensitive fields reveal by default for cleared roles — the masked view
+    // is what an uncleared role (supplier portal) sees.
+    const maskedResponse = await request(`/api/riders/${rider.id}`, { portal: "supplier" });
     const masked = maskedResponse?.data;
     assert(masked?.id === rider.id, "Masked rider GET returned the wrong rider");
     assert(masked.cpf === "***.***.***-09", `Masked rider CPF was ${masked.cpf}`);

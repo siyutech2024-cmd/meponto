@@ -98,6 +98,17 @@ export type MarketplaceProduct = {
   /** Sales revenue share (level 1): fixed R$ paid to the pickup store's franchise
    *  per fulfilled order. HQ sets this per product in the mall back office. */
   franchiseShareBRL?: number;
+  /**
+   * Franchise procurement (docs/franchise-procurement-full-chain-plan.md):
+   * which ordering modes franchises may use for this product. Default off.
+   */
+  procurementMode?: "off" | "consignment" | "buyout" | "both";
+  /** Buyout unit price charged to the franchise (R$/unit, HQ-set). */
+  franchiseBuyoutPrice?: number;
+  /** Minimum order quantity per FPO line (default 1). */
+  minOrderQty?: number;
+  /** Maximum order quantity per FPO line (0/undefined = unlimited). */
+  maxOrderQty?: number;
 };
 
 export type MarketplaceOrderStatus = "created" | "arrived" | "fulfilled" | "cancelled";

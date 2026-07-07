@@ -4,7 +4,7 @@ import { requirePermission, roleFromRequest } from "../../lib/server/authz";
 import { VAPID_PRIVATE_KEY, VAPID_PUBLIC_KEY, VAPID_SUBJECT, type PushSubscriptionRecord, type FcmTokenRecord } from "../../lib/push";
 import { sendFcmToTokens } from "../../lib/server/fcm";
 
-const COLLECTIONS = ["pushSubscriptions", "fcmTokens"];
+const COLLECTIONS = ["pushSubscriptions", "fcmTokens", "memberMessages"];
 const nowStamp = () => new Date().toISOString().slice(0, 16).replace("T", " ");
 
 export async function GET(request: Request) {
@@ -142,6 +142,23 @@ async function handlePost(request: Request) {
         text,
         { url, ...(image ? { image } : {}) },
       );
+
+      // Persist the push as in-app messages (站内信) so the full content —
+      // title, body, deep link — survives the notification tray. Riders reopen
+      // it any time in the message center (Mall › Mensagens, unread badge).
+      const recipients = riderName?.trim()
+        ? [riderName.trim()]
+        : ([...new Set([...memory.pushSubscriptions.map((s) => s.riderName), ...memory.fcmTokens.map((t) => t.riderName)])].filter(Boolean) as string[]);
+      for (const name of recipients) {
+        memory.memberMessages.unshift({
+          id: makeServerId("msg", memory.memberMessages.length + 1),
+          riderName: name,
+          title: title.slice(0, 80),
+          body: text.slice(0, 500),
+          href: url,
+          createdAt: new Date().toISOString(),
+        });
+      }
 
       appendServerAudit({ actor, action: "PUSH_SENT", entity: "PushNotification", entityId: nowStamp(), detail: `"${title}" → ${sent} web + ${fcmSent} fcm devices${riderName ? ` (rider ${riderName})` : ""}.`, risk: "Low" });
       return jsonResponse({ data: { sent, fcmSent, removed: dead.length, targets: targets.length + fcmTargets.length } });
