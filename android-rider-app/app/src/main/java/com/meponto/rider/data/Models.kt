@@ -145,7 +145,11 @@ data class ServerTier(
     val nextTierLabel: String?,
     val redeemDiscount: Double,
     val windowDays: Int,
+    val ladder: List<TierStep> = emptyList(),
 )
+
+/** One rung of the unified points-tier ladder (for the Home preview). */
+data class TierStep(val tier: String, val label: String, val minEarned: Int)
 
 /** One PontoMall redemption order (status flows created→arrived→picked up). */
 data class MallOrder(

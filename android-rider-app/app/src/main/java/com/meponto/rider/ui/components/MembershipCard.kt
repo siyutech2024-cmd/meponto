@@ -1,6 +1,7 @@
 package com.meponto.rider.ui.components
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -36,6 +37,7 @@ import androidx.compose.ui.unit.sp
 import com.meponto.rider.data.LocalStore
 import com.meponto.rider.data.RiderTierInfo
 import com.meponto.rider.i18n.LocalLoc
+import com.meponto.rider.ui.theme.LocalMe
 import com.meponto.rider.ui.theme.MeRadius
 
 private fun brl(v: Double): String = "R$ " + String.format("%.2f", v).replace('.', ',')
@@ -46,7 +48,7 @@ private fun brl(v: Double): String = "R$ " + String.format("%.2f", v).replace('.
  * the rider's affiliation (网点 / 队长 / 片区 / 99 ID).
  */
 @Composable
-fun MembershipCard() {
+fun MembershipCard(onOpenStatement: (() -> Unit)? = null) {
     val loc = LocalLoc.current
     val store = LocalStore.current
     val p = store.profile
@@ -77,16 +79,17 @@ fun MembershipCard() {
     } else {
         p.tier
     }
-    val score = server?.earnedInWindow ?: p.tierScore
 
     // Tier-gradient membership card — the one intentional "hero" surface in
     // the app: the tier color IS the card, white typography on top, with the
     // Burle Marx wave motif (Copacabana calçadão) as the brand pattern.
+    val me = LocalMe.current
     Box(
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(MeRadius.hero))
-            .background(Brush.linearGradient(tier.gradient)),
+            .background(Brush.linearGradient(me.heroGradient))
+            .then(if (onOpenStatement != null) Modifier.clickable { onOpenStatement() } else Modifier),
     ) {
         WaveMotif(
             modifier = Modifier
@@ -105,7 +108,7 @@ fun MembershipCard() {
             Column(Modifier.weight(1f)) {
                 Text(
                     loc.t("member.title").uppercase(),
-                    color = tier.accent,
+                    color = Color.White.copy(alpha = 0.72f),
                     fontWeight = FontWeight.Bold,
                     fontSize = 11.sp,
                 )
@@ -114,20 +117,20 @@ fun MembershipCard() {
             Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(5.dp)) {
                 Text(
                     tier.label,
-                    color = Color.White,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 12.sp,
+                    color = me.accentInk,
+                    fontWeight = FontWeight.Black,
+                    fontSize = 11.sp,
                     modifier = Modifier
                         .clip(CircleShape)
-                        .background(Color.White.copy(alpha = 0.16f))
-                        .padding(horizontal = 10.dp, vertical = 3.dp),
+                        .background(me.accent)
+                        .padding(horizontal = 12.dp, vertical = 5.dp),
                 )
                 Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
                     for (i in 0 until 5) {
                         Icon(
                             if (i < tier.stars) Icons.Filled.Star else Icons.Filled.StarBorder,
                             contentDescription = null,
-                            tint = if (i < tier.stars) tier.accent else Color.White.copy(alpha = 0.35f),
+                            tint = if (i < tier.stars) me.accent else Color.White.copy(alpha = 0.35f),
                             modifier = Modifier.size(12.dp),
                         )
                     }
@@ -135,13 +138,22 @@ fun MembershipCard() {
             }
         }
 
-        // Score + next target + available balance
+        // AVAILABLE POINTS is the hero number (tap → full statement); the
+        // next-tier line tracks CUMULATIVE earned points, decay-proof.
         Row(verticalAlignment = Alignment.Bottom) {
-            Text("$score", color = Color.White, fontWeight = FontWeight.Black, fontSize = 34.sp)
-            Spacer(Modifier.width(10.dp))
+            Text("${store.pointsBalance}", color = me.accent, fontWeight = FontWeight.Black, fontSize = 52.sp)
+            Spacer(Modifier.width(6.dp))
+            Text(
+                "PTS",
+                color = Color.White.copy(alpha = 0.7f),
+                fontWeight = FontWeight.Black,
+                fontSize = 11.sp,
+                modifier = Modifier.padding(bottom = 10.dp),
+            )
+            Spacer(Modifier.width(8.dp))
             Text(
                 tier.nextTarget,
-                color = tier.accent,
+                color = Color.White.copy(alpha = 0.85f),
                 fontWeight = FontWeight.SemiBold,
                 fontSize = 12.sp,
                 modifier = Modifier.weight(1f).padding(bottom = 6.dp),
@@ -152,9 +164,29 @@ fun MembershipCard() {
             }
         }
 
+        // Progress toward the next tier (v4 hero track: yellow→orange fill).
+        val progress = server?.let { st ->
+            st.nextTierAt?.let { next -> (st.earnedInWindow.toFloat() / next).coerceIn(0f, 1f) }
+        } ?: 1f
+        Box(
+            Modifier
+                .fillMaxWidth()
+                .height(8.dp)
+                .clip(CircleShape)
+                .background(Color.White.copy(alpha = 0.16f)),
+        ) {
+            Box(
+                Modifier
+                    .fillMaxWidth(progress)
+                    .height(8.dp)
+                    .clip(CircleShape)
+                    .background(Brush.horizontalGradient(listOf(me.accent, Color(0xFFFF8A3D)))),
+            )
+        }
+
         // Benefit line
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            Icon(Icons.Filled.AutoAwesome, contentDescription = null, tint = tier.accent, modifier = Modifier.size(14.dp))
+            Icon(Icons.Filled.AutoAwesome, contentDescription = null, tint = me.accent, modifier = Modifier.size(14.dp))
             Text("${loc.t("member.benefit")}: ${tier.benefit}", color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
         }
 

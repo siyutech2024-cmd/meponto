@@ -397,7 +397,11 @@ class RiderRepository(context: Context) {
             nextTierAt = nextTierAt,
             nextTierLabel = nextTierLabel,
             redeemDiscount = redeemDiscount ?: 1.0,
-            windowDays = windowDays ?: 90,
+            windowDays = windowDays ?: 0,
+            ladder = ladder?.mapNotNull { step ->
+                val lb = step.label ?: return@mapNotNull null
+                TierStep(step.tier ?: lb, lb, step.minEarned ?: 0)
+            } ?: emptyList(),
         )
     }
 

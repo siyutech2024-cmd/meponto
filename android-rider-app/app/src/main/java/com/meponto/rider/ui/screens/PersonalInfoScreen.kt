@@ -38,6 +38,7 @@ import com.meponto.rider.ui.components.Panel
 import com.meponto.rider.ui.components.PrimaryButton
 import com.meponto.rider.ui.components.SectionHeader
 import com.meponto.rider.ui.theme.LocalMe
+import com.meponto.rider.ui.theme.appBackground
 
 /**
  * 个人信息 / personal info — the rider views the backend-assigned identity
@@ -57,7 +58,7 @@ fun PersonalInfoScreen(onClose: () -> Unit) {
 
     val canSave = name.isNotBlank() && cpf.isNotBlank() && phone.isNotBlank() && pix.isNotBlank()
 
-    Column(Modifier.fillMaxSize().background(me.background)) {
+    Column(Modifier.fillMaxSize().appBackground(me)) {
         OverlayTopBar(title = loc.t("profile.personalInfo"), onClose = onClose)
         Column(
             modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),

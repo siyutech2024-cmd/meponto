@@ -1,6 +1,7 @@
 package com.meponto.rider.ui.screens
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -32,7 +33,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.meponto.rider.data.LocalAuth
@@ -49,11 +53,12 @@ import com.meponto.rider.ui.components.QRSheet
 import com.meponto.rider.ui.components.SectionHeader
 import com.meponto.rider.ui.components.StatTile
 import com.meponto.rider.ui.theme.LocalMe
+import com.meponto.rider.ui.theme.appBackground
 import com.meponto.rider.ui.theme.MeRadius
 import com.meponto.rider.ui.theme.Tone
 
 @Composable
-fun HomeScreen(onScan: () -> Unit, onProfile: () -> Unit) {
+fun HomeScreen(onScan: () -> Unit, onProfile: () -> Unit, onOpenMall: () -> Unit) {
     val me = LocalMe.current
     val loc = LocalLoc.current
     val store = LocalStore.current
@@ -69,7 +74,7 @@ fun HomeScreen(onScan: () -> Unit, onProfile: () -> Unit) {
         )
     }
 
-    Column(Modifier.fillMaxSize().background(me.background)) {
+    Column(Modifier.fillMaxSize().appBackground(me)) {
         Column(
             modifier = Modifier
                 .weight(1f)
@@ -78,40 +83,70 @@ fun HomeScreen(onScan: () -> Unit, onProfile: () -> Unit) {
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
-            // Spec: no logo top bar — the big greeting IS the header, with the
-            // profile entry on the same line. Empty name/ponto never leave
-            // dangling separators.
-            Row(verticalAlignment = Alignment.Top) {
-                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                    val name = store.riderName.trim()
-                    Text(
-                        if (auth.isMember && name.isNotEmpty()) "${loc.t("home.greeting")}, $name" else loc.t("home.greeting"),
-                        color = me.text,
-                        fontWeight = FontWeight.Black,
-                        fontSize = 30.sp,
-                    )
-                    Text(
-                        if (auth.isMember) {
-                            listOf(loc.t("home.rider"), store.profile.ponto.trim())
-                                .filter { it.isNotEmpty() }
-                                .joinToString(" · ")
-                        } else {
-                            loc.t("profile.guest")
-                        },
-                        color = me.muted,
-                        fontSize = 13.sp,
-                    )
+            // v4 header: wordmark ("Me" ink + "Ponto" tropical green) with an
+            // ink avatar disc (yellow initial); big 32sp greeting below with the
+            // name popping in green (day) / yellow (night). No dangling "·".
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    buildAnnotatedString {
+                        withStyle(SpanStyle(color = me.text)) { append("Me") }
+                        withStyle(SpanStyle(color = if (me.isDark) me.accent else me.ok)) { append("Ponto") }
+                    },
+                    fontWeight = FontWeight.Black,
+                    fontSize = 16.sp,
+                )
+                Spacer(Modifier.weight(1f))
+                Box(
+                    modifier = Modifier
+                        .size(36.dp)
+                        .clip(CircleShape)
+                        .background(me.text)
+                        .clickable { onProfile() },
+                    contentAlignment = Alignment.Center,
+                ) {
+                    val initial = store.riderName.trim().take(1).uppercase()
+                    if (initial.isNotEmpty()) {
+                        Text(initial, color = me.accent, fontWeight = FontWeight.Black, fontSize = 13.sp)
+                    } else {
+                        Icon(
+                            Icons.Filled.AccountCircle,
+                            contentDescription = loc.t("profile.title"),
+                            tint = me.accent,
+                            modifier = Modifier.size(22.dp),
+                        )
+                    }
                 }
-                Icon(
-                    Icons.Filled.AccountCircle,
-                    contentDescription = loc.t("profile.title"),
-                    tint = me.text,
-                    modifier = Modifier.size(30.dp).clickable { onProfile() },
+            }
+
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                val name = store.riderName.trim()
+                Text(
+                    buildAnnotatedString {
+                        withStyle(SpanStyle(color = me.text)) { append(loc.t("home.greeting")) }
+                        if (auth.isMember && name.isNotEmpty()) {
+                            withStyle(SpanStyle(color = me.text)) { append(", ") }
+                            withStyle(SpanStyle(color = if (me.isDark) me.accent else me.ok)) { append(name) }
+                        }
+                    },
+                    fontWeight = FontWeight.Black,
+                    fontSize = 32.sp,
+                )
+                Text(
+                    if (auth.isMember) {
+                        listOf(loc.t("home.rider"), store.profile.ponto.trim())
+                            .filter { it.isNotEmpty() }
+                            .joinToString(" · ")
+                    } else {
+                        loc.t("profile.guest")
+                    },
+                    color = me.muted,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 12.sp,
                 )
             }
 
             // Membership / tier hero card (member) or login CTA (guest)
-            if (auth.isMember) MembershipCard() else LoginPromptCard()
+            if (auth.isMember) MembershipCard(onOpenStatement = onOpenMall) else LoginPromptCard()
 
             // Today stats
             if (store.todayStats.isNotEmpty()) {
@@ -154,9 +189,9 @@ fun HomeScreen(onScan: () -> Unit, onProfile: () -> Unit) {
                     SectionHeader(loc.t("home.performance"))
                     Spacer(Modifier.size(12.dp))
                     Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                        KpiTile(loc.t("home.orders"), "${perf.orders}", me.accent, Modifier.weight(1f))
-                        KpiTile(loc.t("home.tsh"), String.format("%.1f", perf.tshHours), me.tertiary, Modifier.weight(1f))
-                        KpiTile(loc.t("home.ar"), "${perf.acceptanceRate}%", me.secondary, Modifier.weight(1f))
+                        KpiTile(loc.t("home.orders"), "${perf.orders}", me.accent, me.accentInk, Modifier.weight(1f))
+                        KpiTile(loc.t("home.tsh"), String.format("%.1f", perf.tshHours), me.tertiary, androidx.compose.ui.graphics.Color.White, Modifier.weight(1f))
+                        KpiTile(loc.t("home.ar"), "${perf.acceptanceRate}%", me.secondary, me.secondaryInk, Modifier.weight(1f))
                     }
                     if (perf.cancelledOrders > 0) {
                         Spacer(Modifier.size(10.dp))
@@ -193,7 +228,16 @@ fun HomeScreen(onScan: () -> Unit, onProfile: () -> Unit) {
                                                 .clickable { if (auth.requireMember()) store.claimMission(m) }
                                                 .padding(horizontal = 12.dp, vertical = 5.dp),
                                         )
-                                        else -> Badge(m.reward, Tone.ACCENT)
+                                        else -> Text(
+                                            m.reward,
+                                            color = androidx.compose.ui.graphics.Color.White,
+                                            fontWeight = FontWeight.Black,
+                                            fontSize = 10.sp,
+                                            modifier = Modifier
+                                                .clip(CircleShape)
+                                                .background(androidx.compose.ui.graphics.Color(0xFFFF8A3D))
+                                                .padding(horizontal = 9.dp, vertical = 3.dp),
+                                        )
                                     }
                                 }
                                 ProgressBar(m.progress)
@@ -265,32 +309,43 @@ fun HomeScreen(onScan: () -> Unit, onProfile: () -> Unit) {
                 }
             }
 
-            // Tier preview — fixed 2-column grid (no clipped horizontal scroll:
-            // every threshold is visible without a hidden-content cue).
-            Panel {
-                SectionHeader(loc.t("home.tier"))
-                Spacer(Modifier.size(12.dp))
-                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    store.tiers.chunked(2).forEach { rowTiers ->
-                        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                            rowTiers.forEach { tier ->
-                                Row(
-                                    modifier = Modifier
-                                        .weight(1f)
-                                        .clip(RoundedCornerShape(MeRadius.card))
-                                        .background(me.surfaceRaised)
-                                        .padding(horizontal = 12.dp, vertical = 10.dp),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                ) {
-                                    Text("${tier.score}", color = me.accent, fontWeight = FontWeight.Bold, fontSize = 17.sp)
-                                    Spacer(Modifier.width(10.dp))
-                                    Column {
-                                        Text(tier.metric, color = me.text, fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
-                                        Text(tier.threshold, color = me.muted, fontSize = 11.sp)
+            // Tier ladder — REAL thresholds from the unified backend engine
+            // (cumulative earned points); the rider's current rung glows.
+            val ladder = store.serverTier?.ladder ?: emptyList()
+            if (ladder.isNotEmpty()) {
+                Panel {
+                    SectionHeader(loc.t("home.tier"))
+                    Spacer(Modifier.size(12.dp))
+                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        ladder.chunked(2).forEach { rowSteps ->
+                            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                                rowSteps.forEach { step ->
+                                    val current = store.serverTier?.tier == step.tier
+                                    Row(
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .clip(RoundedCornerShape(MeRadius.small))
+                                            .background(if (current) me.accent.copy(alpha = 0.18f) else me.surfaceRaised)
+                                            .then(
+                                                if (current) Modifier.border(1.dp, me.accent, RoundedCornerShape(MeRadius.small))
+                                                else Modifier
+                                            )
+                                            .padding(horizontal = 12.dp, vertical = 10.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                    ) {
+                                        Column {
+                                            Text(step.label, color = me.text, fontWeight = FontWeight.Black, fontSize = 13.sp)
+                                            Text(
+                                                if (step.minEarned > 0) "≥ ${step.minEarned} pts" else "—",
+                                                color = if (current) me.accent else me.muted,
+                                                fontWeight = FontWeight.Bold,
+                                                fontSize = 11.sp,
+                                            )
+                                        }
                                     }
                                 }
+                                if (rowSteps.size == 1) Spacer(Modifier.weight(1f))
                             }
-                            if (rowTiers.size == 1) Spacer(Modifier.weight(1f))
                         }
                     }
                 }
@@ -301,19 +356,39 @@ fun HomeScreen(onScan: () -> Unit, onProfile: () -> Unit) {
     }
 }
 
-/** Tinted KPI tile (spec §4): 14% tone wash, ink number, muted label. */
+/**
+ * v4 KPI block. Tropical day = SOLID color tiles (yellow/pink/blue) with
+ * on-color type; Noite = dark surface + hairline, the NUMBER carries the color.
+ */
 @Composable
-private fun KpiTile(label: String, value: String, tone: androidx.compose.ui.graphics.Color, modifier: Modifier = Modifier) {
+private fun KpiTile(
+    label: String,
+    value: String,
+    tone: androidx.compose.ui.graphics.Color,
+    onTone: androidx.compose.ui.graphics.Color,
+    modifier: Modifier = Modifier,
+) {
     val me = LocalMe.current
     Column(
         modifier = modifier
-            .clip(RoundedCornerShape(MeRadius.small))
-            .background(tone.copy(alpha = 0.16f))
-            .padding(horizontal = 12.dp, vertical = 12.dp),
+            .clip(RoundedCornerShape(MeRadius.card))
+            .background(if (me.isDark) me.surface else tone)
+            .then(if (me.isDark) Modifier.border(1.dp, me.line, RoundedCornerShape(MeRadius.card)) else Modifier)
+            .padding(horizontal = 12.dp, vertical = 14.dp),
         verticalArrangement = Arrangement.spacedBy(4.dp),
     ) {
-        Box(Modifier.size(8.dp).clip(CircleShape).background(tone))
-        Text(value, color = me.text, fontWeight = FontWeight.Black, fontSize = 20.sp)
-        Text(label, color = me.muted, fontSize = 11.sp)
+        Text(
+            value,
+            color = if (me.isDark) tone else onTone,
+            fontWeight = FontWeight.Black,
+            fontSize = 24.sp,
+        )
+        Text(
+            label.uppercase(),
+            color = if (me.isDark) me.muted else onTone.copy(alpha = 0.75f),
+            fontWeight = FontWeight.Bold,
+            fontSize = 9.sp,
+            letterSpacing = androidx.compose.ui.unit.TextUnit(1.2f, androidx.compose.ui.unit.TextUnitType.Sp),
+        )
     }
 }

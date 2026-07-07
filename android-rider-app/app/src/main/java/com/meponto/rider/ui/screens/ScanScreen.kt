@@ -54,6 +54,7 @@ import com.meponto.rider.data.LocalStore
 import com.meponto.rider.ui.components.OverlayTopBar
 import com.meponto.rider.ui.components.PrimaryButton
 import com.meponto.rider.ui.theme.LocalMe
+import com.meponto.rider.ui.theme.appBackground
 
 @Composable
 fun ScanScreen(onClose: () -> Unit) {
@@ -86,7 +87,7 @@ fun ScanScreen(onClose: () -> Unit) {
         if (!hasPermission) launcher.launch(Manifest.permission.CAMERA)
     }
 
-    Column(Modifier.fillMaxSize().background(me.background)) {
+    Column(Modifier.fillMaxSize().appBackground(me)) {
         OverlayTopBar(title = loc.t("scan.title"), onClose = onClose)
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
             when {

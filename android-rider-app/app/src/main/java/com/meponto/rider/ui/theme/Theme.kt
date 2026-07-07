@@ -2,6 +2,10 @@ package com.meponto.rider.ui.theme
 
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.material3.Shapes
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
@@ -111,6 +115,47 @@ fun Tone.fg(c: MeColors): Color = when (this) {
 fun Tone.bg(c: MeColors): Color = when (this) {
     Tone.NEUTRAL -> c.surfaceRaised
     else -> fg(c).copy(alpha = 0.14f)
+}
+
+/**
+ * v4 screen backdrop. Tropical day = flat warm ivory. Noite = deep violet with
+ * the two signature radial glows (sunset-orange top-left, electric-purple
+ * right) so the night theme finally *glows* instead of sitting flat.
+ */
+fun Modifier.appBackground(me: MeColors): Modifier = this.drawBehind {
+    drawRect(me.background)
+    if (me.isDark) {
+        val r1 = size.width * 0.95f
+        drawCircle(
+            brush = Brush.radialGradient(
+                colors = listOf(Color(0x66FF6A3D), Color.Transparent),
+                center = Offset(size.width * 0.05f, 0f),
+                radius = r1,
+            ),
+            radius = r1,
+            center = Offset(size.width * 0.05f, 0f),
+        )
+        val r2 = size.width * 1.05f
+        drawCircle(
+            brush = Brush.radialGradient(
+                colors = listOf(Color(0x55B14DFF), Color.Transparent),
+                center = Offset(size.width, size.height * 0.38f),
+                radius = r2,
+            ),
+            radius = r2,
+            center = Offset(size.width, size.height * 0.38f),
+        )
+        val r3 = size.width * 0.8f
+        drawCircle(
+            brush = Brush.radialGradient(
+                colors = listOf(Color(0x33FF4D8D), Color.Transparent),
+                center = Offset(size.width * 0.2f, size.height),
+                radius = r3,
+            ),
+            radius = r3,
+            center = Offset(size.width * 0.2f, size.height),
+        )
+    }
 }
 
 object MeRadius {

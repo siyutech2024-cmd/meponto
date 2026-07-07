@@ -14,6 +14,7 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -21,19 +22,26 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Build
+import androidx.compose.material.icons.filled.LocalGasStation
 import androidx.compose.material.icons.filled.LocationOn
+import androidx.compose.material.icons.filled.PhoneAndroid
 import androidx.compose.material.icons.filled.Place
+import androidx.compose.material.icons.filled.Storefront
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -48,6 +56,15 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
+import com.meponto.rider.data.LocalStore
+import com.meponto.rider.i18n.LocalLoc
+import com.meponto.rider.ui.components.Badge
+import com.meponto.rider.ui.components.PrimaryButton
+import com.meponto.rider.ui.theme.LocalMe
+import com.meponto.rider.ui.theme.appBackground
+import com.meponto.rider.ui.theme.MeRadius
+import com.meponto.rider.ui.theme.Tone
+import kotlinx.coroutines.delay
 import org.osmdroid.config.Configuration
 import org.osmdroid.tileprovider.tilesource.TileSourceFactory
 import org.osmdroid.util.BoundingBox
@@ -55,13 +72,6 @@ import org.osmdroid.util.GeoPoint
 import org.osmdroid.views.CustomZoomButtonsController
 import org.osmdroid.views.MapView
 import org.osmdroid.views.overlay.Marker
-import com.meponto.rider.data.LocalStore
-import com.meponto.rider.i18n.LocalLoc
-import com.meponto.rider.ui.components.Badge
-import com.meponto.rider.ui.components.PrimaryButton
-import com.meponto.rider.ui.theme.LocalMe
-import com.meponto.rider.ui.theme.MeRadius
-import com.meponto.rider.ui.theme.Tone
 
 /**
  * One marker on the rider map. Two kinds only:
@@ -72,13 +82,26 @@ import com.meponto.rider.ui.theme.Tone
 private data class MapPin(
     val id: String,
     val name: String,
-    val subtitle: String,   // bairro · leader | category · bairro
-    val address: String,    // street address (ponto) or services (partner)
-    val badge: String,      // "" or discount label
+    val subtitle: String,
+    val address: String,
+    val badge: String,
+    val category: String,   // "" for pontos; raw partner category otherwise
     val lat: Double,
     val lng: Double,
     val isPonto: Boolean,
 )
+
+/** Category → glyph (fuel pump, workshop wrench, phone chip, generic store). */
+private fun categoryIcon(pin: MapPin): ImageVector {
+    if (pin.isPonto) return Icons.Filled.Place
+    val c = pin.category.lowercase()
+    return when {
+        listOf("combust", "fuel", "gas", "posto").any { c.contains(it) } -> Icons.Filled.LocalGasStation
+        listOf("ofic", "mec", "manut", "repair", "moto").any { c.contains(it) } -> Icons.Filled.Build
+        listOf("cel", "phone", "chip", "telefon").any { c.contains(it) } -> Icons.Filled.PhoneAndroid
+        else -> Icons.Filled.Storefront
+    }
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -88,9 +111,12 @@ fun MapScreen() {
     val store = LocalStore.current
     val context = LocalContext.current
     var selected by remember { mutableStateOf<MapPin?>(null) }
+    var filter by remember { mutableStateOf<String?>(null) } // null=all, "" = pontos, else category
+    var mapRef by remember { mutableStateOf<MapView?>(null) }
+    var blink by remember { mutableStateOf(false) }
     val sheetState = rememberModalBottomSheetState()
 
-    val pins = buildList {
+    val allPins = buildList {
         store.servicePoints.forEach { p ->
             add(
                 MapPin(
@@ -99,6 +125,7 @@ fun MapScreen() {
                     subtitle = listOf(p.bairro, p.leader).filter { it.isNotBlank() }.joinToString(" · "),
                     address = p.address,
                     badge = "",
+                    category = "",
                     lat = p.latitude,
                     lng = p.longitude,
                     isPonto = true,
@@ -113,11 +140,35 @@ fun MapScreen() {
                     subtitle = listOf(p.category, p.neighborhood).filter { it.isNotBlank() }.joinToString(" · "),
                     address = p.services,
                     badge = if (p.discountBRL > 0) "${loc.t("map.discount")} R$ ${p.discountBRL}" else "",
+                    category = p.category.ifBlank { "—" },
                     lat = p.latitude,
                     lng = p.longitude,
                     isPonto = false,
                 )
             )
+        }
+    }
+    val categories = allPins.filter { !it.isPonto }.map { it.category }.distinct().sorted()
+    val pins = when (filter) {
+        null -> allPins
+        "" -> allPins.filter { it.isPonto }
+        else -> allPins.filter { !it.isPonto && it.category == filter }
+    }
+
+    // Selected marker pulses (icon halo blinks ~2×/s) until deselected.
+    LaunchedEffect(selected) {
+        while (selected != null) {
+            blink = !blink
+            delay(450)
+        }
+        blink = false
+    }
+    // Follow the selection: glide the map to the pin.
+    LaunchedEffect(selected) {
+        selected?.let { p ->
+            if (p.lat != 0.0 || p.lng != 0.0) {
+                mapRef?.controller?.animateTo(GeoPoint(p.lat, p.lng), 16.5, 600L)
+            }
         }
     }
 
@@ -131,16 +182,31 @@ fun MapScreen() {
         runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, uri)) }
     }
 
-    Column(Modifier.fillMaxSize().background(me.background)) {
+    Column(Modifier.fillMaxSize().appBackground(me)) {
+        Text(
+            loc.t("map.title"),
+            color = me.text,
+            fontWeight = FontWeight.Black,
+            fontSize = 32.sp,
+            modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 8.dp),
+        )
+
+        // Type filter chips: All · Stations · every service category (v4 chip
+        // language — selected chip flips to ink with yellow label).
         Row(
-            verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 8.dp),
+            modifier = Modifier
+                .horizontalScroll(rememberScrollState())
+                .padding(horizontal = 16.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            Text(loc.t("map.title"), color = me.text, fontWeight = FontWeight.Bold, fontSize = 22.sp, modifier = Modifier.weight(1f))
-            LegendChip(Icons.Filled.Place, loc.t("map.pontos"), Tone.ACCENT)
-            Spacer(Modifier.width(6.dp))
-            LegendChip(Icons.Filled.Build, loc.t("map.partners"), Tone.OK)
+            FilterChipV4(loc.t("map.all"), filter == null) { filter = null; selected = null }
+            FilterChipV4(loc.t("map.pontos"), filter == "") { filter = ""; selected = null }
+            categories.forEach { cat ->
+                FilterChipV4(cat, filter == cat) { filter = cat; selected = null }
+            }
         }
+
+        Spacer(Modifier.size(10.dp))
 
         if (pins.isEmpty()) {
             Box(
@@ -150,39 +216,61 @@ fun MapScreen() {
                 Text(loc.t("empty.generic"), color = me.muted, fontSize = 13.sp)
             }
         } else {
-            PinMap(
+            StreetMap(
                 pins = pins,
+                selectedId = selected?.id,
+                blink = blink,
                 onSelect = { selected = it },
+                onMapReady = { mapRef = it },
                 modifier = Modifier.weight(1f).fillMaxWidth().padding(horizontal = 16.dp),
             )
         }
 
-        // Cards: pontos first, then service partners.
-        Row(
-            modifier = Modifier
-                .horizontalScroll(rememberScrollState())
-                .padding(16.dp),
+        // Cards — scrolling snaps the map onto the first visible pin.
+        val listState = rememberLazyListState()
+        LaunchedEffect(pins) { if (pins.isNotEmpty()) listState.scrollToItem(0) }
+        LaunchedEffect(listState, pins) {
+            var last = -1
+            while (true) {
+                val idx = listState.firstVisibleItemIndex
+                if (idx != last && idx in pins.indices) {
+                    last = idx
+                    val p = pins[idx]
+                    if (p.lat != 0.0 || p.lng != 0.0) {
+                        mapRef?.controller?.animateTo(GeoPoint(p.lat, p.lng), 15.5, 500L)
+                    }
+                }
+                delay(220)
+            }
+        }
+        LazyRow(
+            state = listState,
+            contentPadding = PaddingValues(16.dp),
             horizontalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            pins.forEach { p ->
+            itemsIndexed(pins, key = { _, p -> p.id }) { _, p ->
                 Column(
                     modifier = Modifier
                         .width(220.dp)
                         .clip(RoundedCornerShape(MeRadius.card))
                         .background(me.surface)
-                        .border(1.dp, me.line, RoundedCornerShape(MeRadius.card))
+                        .border(
+                            if (selected?.id == p.id) 2.dp else 1.dp,
+                            if (selected?.id == p.id) me.accent else me.line,
+                            RoundedCornerShape(MeRadius.card),
+                        )
                         .clickable { selected = p }
                         .padding(12.dp),
                     verticalArrangement = Arrangement.spacedBy(4.dp),
                 ) {
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         Icon(
-                            if (p.isPonto) Icons.Filled.Place else Icons.Filled.Build,
+                            categoryIcon(p),
                             contentDescription = null,
                             tint = if (p.isPonto) me.accent else me.ok,
                             modifier = Modifier.size(16.dp),
                         )
-                        Text(p.name, color = me.text, fontWeight = FontWeight.SemiBold, fontSize = 14.sp, maxLines = 1)
+                        Text(p.name, color = me.text, fontWeight = FontWeight.Black, fontSize = 14.sp, maxLines = 1)
                     }
                     Text(p.subtitle.ifBlank { "—" }, color = me.muted, fontSize = 11.sp, maxLines = 1)
                     if (p.badge.isNotBlank()) {
@@ -207,13 +295,13 @@ fun MapScreen() {
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Icon(
-                        if (pin.isPonto) Icons.Filled.Place else Icons.Filled.Build,
+                        categoryIcon(pin),
                         contentDescription = null,
                         tint = if (pin.isPonto) me.accent else me.ok,
                         modifier = Modifier.size(22.dp),
                     )
                     Column {
-                        Text(pin.name, color = me.text, fontWeight = FontWeight.Bold, fontSize = 20.sp)
+                        Text(pin.name, color = me.text, fontWeight = FontWeight.Black, fontSize = 20.sp)
                         Text(pin.subtitle.ifBlank { "—" }, color = me.muted, fontSize = 14.sp)
                     }
                 }
@@ -232,48 +320,55 @@ fun MapScreen() {
 }
 
 @Composable
-private fun LegendChip(icon: ImageVector, label: String, tone: Tone) {
+private fun FilterChipV4(label: String, selected: Boolean, onClick: () -> Unit) {
     val me = LocalMe.current
-    val color = when (tone) {
-        Tone.OK -> me.ok
-        else -> me.accent
-    }
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(4.dp),
+    Text(
+        label,
+        color = if (selected) me.accent else me.textSoft,
+        fontWeight = FontWeight.Black,
+        fontSize = 12.sp,
         modifier = Modifier
             .clip(CircleShape)
-            .background(color.copy(alpha = 0.14f))
-            .padding(horizontal = 8.dp, vertical = 3.dp),
-    ) {
-        Icon(icon, contentDescription = null, tint = color, modifier = Modifier.size(12.dp))
-        Text(label, color = color, fontWeight = FontWeight.SemiBold, fontSize = 11.sp)
-    }
+            .background(if (selected) me.text else me.surface)
+            .then(if (selected) Modifier else Modifier.border(1.dp, me.line, CircleShape))
+            .clickable { onClick() }
+            .padding(horizontal = 14.dp, vertical = 7.dp),
+    )
 }
 
-/** Circular pin bitmap (brand yellow for pontos, green for partners). */
-private fun pinDrawable(context: android.content.Context, fill: Int, ink: Int): BitmapDrawable {
-    val size = 56
+/** Circular pin bitmap; [halo] adds the blinking selection ring. */
+private fun pinDrawable(
+    context: android.content.Context,
+    fill: Int,
+    ink: Int,
+    halo: Boolean,
+): BitmapDrawable {
+    val size = if (halo) 84 else 56
     val bmp = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
     val canvas = AndroidCanvas(bmp)
     val paint = Paint(Paint.ANTI_ALIAS_FLAG)
+    val c = size / 2f
+    if (halo) {
+        paint.color = (fill and 0x00FFFFFF) or (0x55 shl 24)
+        canvas.drawCircle(c, c, size / 2f - 2f, paint)
+    }
     paint.color = android.graphics.Color.argb(70, 0, 0, 0)
-    canvas.drawCircle(size / 2f, size / 2f + 2f, size / 2f - 4f, paint)
+    canvas.drawCircle(c, c + 2f, 24f, paint)
     paint.color = fill
-    canvas.drawCircle(size / 2f, size / 2f, size / 2f - 4f, paint)
+    canvas.drawCircle(c, c, 24f, paint)
     paint.color = ink
-    canvas.drawCircle(size / 2f, size / 2f, size / 6f, paint)
+    canvas.drawCircle(c, c, 9f, paint)
     return BitmapDrawable(context.resources, bmp)
 }
 
-/**
- * REAL street map (OpenStreetMap tiles via osmdroid): streets, blocks and
- * names at full detail — pinch-zoom/pan, no API key, no Play dependency.
- */
+/** Real street map (OpenStreetMap via osmdroid): pinch-zoom, pan, no API key. */
 @Composable
-private fun PinMap(
+private fun StreetMap(
     pins: List<MapPin>,
+    selectedId: String?,
+    blink: Boolean,
     onSelect: (MapPin) -> Unit,
+    onMapReady: (MapView) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val me = LocalMe.current
@@ -298,32 +393,36 @@ private fun PinMap(
                     setTileSource(TileSourceFactory.MAPNIK)
                     setMultiTouchControls(true)
                     zoomController.setVisibility(CustomZoomButtonsController.Visibility.NEVER)
+                    onMapReady(this)
                 }
             },
             update = { map ->
                 map.overlays.clear()
                 located.forEach { p ->
+                    val isSel = p.id == selectedId
                     val marker = Marker(map).apply {
                         position = GeoPoint(p.lat, p.lng)
                         setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
                         icon = if (p.isPonto) {
-                            pinDrawable(map.context, accent, accentInk)
+                            pinDrawable(map.context, accent, accentInk, halo = isSel && blink)
                         } else {
-                            pinDrawable(map.context, ok, white)
+                            pinDrawable(map.context, ok, white, halo = isSel && blink)
                         }
                         title = p.name
                         setOnMarkerClickListener { _, _ -> onSelect(p); true }
                     }
                     map.overlays.add(marker)
                 }
-                // Fit every pin with breathing room once the view is laid out.
-                map.post {
-                    if (located.size == 1) {
-                        map.controller.setZoom(16.0)
-                        map.controller.setCenter(GeoPoint(located[0].lat, located[0].lng))
-                    } else {
-                        val box = BoundingBox.fromGeoPointsSafe(located.map { GeoPoint(it.lat, it.lng) })
-                        runCatching { map.zoomToBoundingBox(box.increaseByScale(1.35f), false) }
+                if (map.tag != "fitted") {
+                    map.tag = "fitted"
+                    map.post {
+                        if (located.size == 1) {
+                            map.controller.setZoom(16.0)
+                            map.controller.setCenter(GeoPoint(located[0].lat, located[0].lng))
+                        } else {
+                            val box = BoundingBox.fromGeoPointsSafe(located.map { GeoPoint(it.lat, it.lng) })
+                            runCatching { map.zoomToBoundingBox(box.increaseByScale(1.35f), false) }
+                        }
                     }
                 }
                 map.invalidate()

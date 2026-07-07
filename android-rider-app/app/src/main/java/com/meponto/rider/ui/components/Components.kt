@@ -24,7 +24,10 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
@@ -212,10 +215,32 @@ fun ActionRow(
     onClick: () -> Unit,
 ) {
     val me = LocalMe.current
+    val shape = RoundedCornerShape(MeRadius.card)
+    // v4 Tropical day: white card, 2dp ink border, hard 4dp offset shadow
+    // (neo-brutalist). Noite keeps the flat surface + hairline.
+    val v4Day = !me.isDark
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .cardSurface(me)
+            .then(
+                if (v4Day) {
+                    Modifier
+                        .padding(end = 4.dp, bottom = 4.dp)
+                        .drawBehind {
+                            drawRoundRect(
+                                color = me.text,
+                                topLeft = Offset(4.dp.toPx(), 4.dp.toPx()),
+                                size = size,
+                                cornerRadius = CornerRadius(MeRadius.card.toPx()),
+                            )
+                        }
+                        .clip(shape)
+                        .background(Color.White)
+                        .border(2.dp, me.text, shape)
+                } else {
+                    Modifier.cardSurface(me)
+                }
+            )
             .clickable { onClick() }
             .padding(horizontal = 14.dp, vertical = 14.dp),
         verticalAlignment = Alignment.CenterVertically,

@@ -53,6 +53,7 @@ import com.meponto.rider.ui.components.OverlayTopBar
 import com.meponto.rider.ui.components.Panel
 import com.meponto.rider.ui.components.SectionHeader
 import com.meponto.rider.ui.theme.LocalMe
+import com.meponto.rider.ui.theme.appBackground
 import com.meponto.rider.ui.theme.MeRadius
 
 @Composable
@@ -68,7 +69,7 @@ fun ProfileScreen(onClose: () -> Unit) {
     var showPersonalInfo by remember { mutableStateOf(false) }
 
     if (showSupport) {
-        Column(Modifier.fillMaxSize().background(me.background)) {
+        Column(Modifier.fillMaxSize().appBackground(me)) {
             OverlayTopBar(title = loc.t("support.title"), onClose = { showSupport = false })
             SupportScreen()
         }
@@ -79,7 +80,7 @@ fun ProfileScreen(onClose: () -> Unit) {
         return
     }
 
-    Column(Modifier.fillMaxSize().background(me.background)) {
+    Column(Modifier.fillMaxSize().appBackground(me)) {
         OverlayTopBar(title = loc.t("profile.title"), onClose = onClose)
         Column(
             modifier = Modifier
@@ -92,14 +93,14 @@ fun ProfileScreen(onClose: () -> Unit) {
             if (auth.isMember) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Box(
-                        Modifier.size(56.dp).clip(CircleShape).background(me.accent),
+                        Modifier.size(56.dp).clip(CircleShape).background(me.text),
                         contentAlignment = Alignment.Center,
                     ) {
-                        Text(store.riderName.take(1), color = me.accentInk, fontWeight = FontWeight.Bold, fontSize = 22.sp)
+                        Text(store.riderName.take(1).uppercase(), color = me.accent, fontWeight = FontWeight.Black, fontSize = 22.sp)
                     }
                     Spacer(Modifier.width(14.dp))
                     Column {
-                        Text(store.riderName, color = me.text, fontWeight = FontWeight.Bold, fontSize = 18.sp)
+                        Text(store.riderName, color = me.text, fontWeight = FontWeight.Black, fontSize = 20.sp)
                         Text("${store.pointsBalance} pts · ${loc.t("home.rider")}", color = me.muted, fontSize = 14.sp)
                     }
                 }
@@ -311,15 +312,15 @@ private fun AppearanceChip(
     Box(
         modifier = modifier
             .clip(RoundedCornerShape(MeRadius.small))
-            .background(if (selected) me.accent else me.surfaceRaised)
+            .background(if (selected) me.text else me.surfaceRaised)
             .clickable { onClick() }
             .padding(vertical = 10.dp),
         contentAlignment = Alignment.Center,
     ) {
         Text(
             label,
-            color = if (selected) me.accentInk else me.textSoft,
-            fontWeight = FontWeight.SemiBold,
+            color = if (selected) me.accent else me.textSoft,
+            fontWeight = FontWeight.Black,
             fontSize = 13.sp,
         )
     }

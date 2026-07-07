@@ -53,6 +53,7 @@ import com.meponto.rider.ui.components.Panel
 import com.meponto.rider.ui.components.PrimaryButton
 import com.meponto.rider.ui.components.Screen
 import com.meponto.rider.ui.theme.LocalMe
+import com.meponto.rider.ui.theme.appBackground
 import com.meponto.rider.ui.theme.MeRadius
 import com.meponto.rider.ui.theme.Tone
 import kotlin.math.ceil
@@ -298,7 +299,7 @@ private fun ShiftDetail(shiftId: Int, onBack: () -> Unit) {
     val auth = LocalAuth.current
     val shift = store.shifts.firstOrNull { it.id == shiftId }
 
-    Column(Modifier.fillMaxSize().background(me.background)) {
+    Column(Modifier.fillMaxSize().appBackground(me)) {
         OverlayTopBar(title = loc.t("shifts.title"), onClose = onBack)
         if (shift == null) return@Column
         Column(

@@ -210,6 +210,13 @@ data class ServerTierDto(
     val nextTierLabel: String? = null,
     val redeemDiscount: Double? = null,
     val windowDays: Int? = null,
+    val ladder: List<TierStepDto>? = null,
+)
+
+data class TierStepDto(
+    val tier: String? = null,
+    val label: String? = null,
+    val minEarned: Int? = null,
 )
 
 // The rider's own PontoMall orders (redemption history + fulfillment status).

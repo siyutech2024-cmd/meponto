@@ -24,17 +24,18 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.meponto.rider.data.LedgerEntry
 import com.meponto.rider.ui.theme.LocalMe
+import com.meponto.rider.ui.theme.appBackground
 
 /** Shared screen scaffold: branded background + large title + scrollable content. */
 @Composable
 fun Screen(title: String, content: @Composable ColumnScope.() -> Unit) {
     val me = LocalMe.current
-    Column(Modifier.fillMaxSize().background(me.background)) {
+    Column(Modifier.fillMaxSize().appBackground(me)) {
         Text(
             title,
             color = me.text,
-            fontWeight = FontWeight.Bold,
-            fontSize = 28.sp,
+            fontWeight = FontWeight.Black,
+            fontSize = 32.sp,
             modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 20.dp, bottom = 4.dp),
         )
         Column(
@@ -57,7 +58,7 @@ fun OverlayTopBar(title: String, onClose: () -> Unit) {
         modifier = Modifier.fillMaxWidth().padding(start = 16.dp, end = 4.dp, top = 8.dp, bottom = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text(title, color = me.text, fontWeight = FontWeight.SemiBold, fontSize = 18.sp)
+        Text(title, color = me.text, fontWeight = FontWeight.Black, fontSize = 20.sp)
         Spacer(Modifier.weight(1f))
         IconButton(onClick = onClose) {
             Icon(Icons.Filled.Close, contentDescription = "Close", tint = me.text)
