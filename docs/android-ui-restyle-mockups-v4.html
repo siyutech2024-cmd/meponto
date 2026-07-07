@@ -1,0 +1,511 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MePonto Rider App — 巴西风 v4(Tropical / Noite)</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { font-family:-apple-system,"SF Pro","PingFang SC","Segoe UI",Roboto,sans-serif; background:#101114; color:#EDEFF4; padding:32px 24px 64px; }
+  h1 { font-size:22px; font-weight:800; margin-bottom:6px; }
+  .sub { color:#8A93A6; font-size:13px; margin-bottom:24px; max-width:740px; line-height:1.7; }
+  .toggle { display:inline-flex; background:#1C1E24; border-radius:999px; padding:4px; margin-bottom:28px; }
+  .toggle button { border:0; background:transparent; color:#8A93A6; font-size:13px; font-weight:700; padding:8px 20px; border-radius:999px; cursor:pointer; }
+  .toggle button.on { background:#00C46B; color:#00240F; }
+  .grid { display:flex; gap:40px; flex-wrap:wrap; align-items:flex-start; justify-content:center; }
+  .col { width:330px; }
+  .col h2 { font-size:15px; font-weight:800; margin-bottom:2px; }
+  .col .tag { font-size:11px; color:#8A93A6; margin-bottom:12px; }
+  .col .note { font-size:12px; color:#A7AFBF; line-height:1.7; margin-top:14px; }
+  .note b { color:#EDEFF4; }
+  .phone { width:330px; height:668px; border-radius:40px; border:6px solid #26282F; overflow:hidden; position:relative; background:#000; }
+  .scr { position:absolute; inset:0; overflow-y:auto; scrollbar-width:none; }
+  .scr::-webkit-scrollbar { display:none; }
+  .hide { display:none; }
+
+  /* 共用:Burle Marx 波浪纹 */
+  .waves { position:absolute; left:0; right:0; pointer-events:none; }
+
+  /* ============================================================
+     I · TROPICAL MODERNISTA(浅色撞色)
+     ============================================================ */
+  .tI .scr { background:#FAF6EE; color:#141B14; }
+  .tI .in { padding:50px 20px 96px; position:relative; }
+  .tI .top { display:flex; justify-content:space-between; align-items:center; }
+  .tI .wordmark { font-weight:900; font-size:16px; letter-spacing:-0.4px; color:#141B14; }
+  .tI .wordmark b { color:#00A868; }
+  .tI .ava { width:36px; height:36px; border-radius:50%; background:#141B14; color:#FFC400; display:flex; align-items:center; justify-content:center; font-weight:900; font-size:13px; }
+  .tI .greet { margin-top:20px; font-size:32px; font-weight:900; letter-spacing:-1.4px; line-height:1.02; color:#141B14; }
+  .tI .greet i { font-style:normal; color:#00A868; }
+  .tI .greet small { display:block; font-size:11.5px; font-weight:700; color:#8B8778; margin-top:6px; letter-spacing:.3px; }
+  /* hero: 深绿卡 + 波浪 + 黄大数字 */
+  .tI .hero { margin-top:18px; border-radius:24px; padding:20px; background:#0B5C3B; color:#fff; position:relative; overflow:hidden; }
+  .tI .hero svg.wv { position:absolute; right:-24px; bottom:-18px; width:190px; opacity:.35; }
+  .tI .hero .r1 { display:flex; justify-content:space-between; align-items:center; }
+  .tI .hero .tier { background:#FFC400; color:#3A2C00; font-size:10.5px; font-weight:900; padding:5px 12px; border-radius:99px; letter-spacing:.5px; }
+  .tI .hero .stars { color:#FFC400; font-size:11px; letter-spacing:2px; }
+  .tI .hero .score { margin-top:14px; display:flex; align-items:baseline; gap:12px; position:relative; }
+  .tI .hero .score b { font-size:56px; font-weight:900; letter-spacing:-2.6px; line-height:1; color:#FFC400; }
+  .tI .hero .score span { font-size:10.5px; font-weight:700; color:#9FD9BE; text-transform:uppercase; letter-spacing:1px; }
+  .tI .hero .trk { margin-top:14px; height:8px; border-radius:99px; background:rgba(255,255,255,.16); position:relative; }
+  .tI .hero .trk i { display:block; height:100%; width:72%; border-radius:99px; background:linear-gradient(90deg,#FFC400,#FF8A3D); }
+  .tI .hero .r2 { margin-top:12px; display:flex; justify-content:space-between; align-items:baseline; position:relative; }
+  .tI .hero .r2 .l { font-size:10px; font-weight:700; letter-spacing:1px; color:#9FD9BE; text-transform:uppercase; }
+  .tI .hero .r2 .m { font-size:17px; font-weight:900; }
+  /* KPI:三色块 */
+  .tI .kpis { display:flex; gap:10px; margin-top:12px; }
+  .tI .kpi { flex:1; border-radius:20px; padding:14px 12px; }
+  .tI .kpi.a { background:#FFC400; color:#3A2C00; }
+  .tI .kpi.b { background:#FF4D8D; color:#fff; }
+  .tI .kpi.c { background:#2D6BFF; color:#fff; }
+  .tI .kpi b { display:block; font-size:24px; font-weight:900; letter-spacing:-1px; }
+  .tI .kpi span { display:block; font-size:9px; font-weight:800; letter-spacing:1.2px; text-transform:uppercase; margin-top:4px; opacity:.75; }
+  /* actions */
+  .tI .acts { display:flex; gap:10px; margin-top:12px; }
+  .tI .act { flex:1; background:#fff; border:2px solid #141B14; border-radius:20px; padding:14px; box-shadow:4px 4px 0 #141B14; }
+  .tI .act .gly { width:36px; height:36px; border-radius:12px; display:flex; align-items:center; justify-content:center; }
+  .tI .act .gly svg { width:17px; height:17px; }
+  .tI .act.scan .gly { background:#E8F9EF; } .tI .act.scan svg { stroke:#00A868; }
+  .tI .act.inv .gly { background:#FFEDF4; } .tI .act.inv svg { stroke:#FF4D8D; }
+  .tI .act .t { font-size:13px; font-weight:900; color:#141B14; margin-top:10px; }
+  .tI .act .d { font-size:10px; font-weight:600; color:#8B8778; margin-top:2px; }
+  .tI .sect { margin-top:16px; background:#fff; border-radius:22px; padding:16px; }
+  .tI .sect .head { display:flex; justify-content:space-between; align-items:baseline; }
+  .tI .sect .head h3 { font-size:14px; font-weight:900; color:#141B14; }
+  .tI .sect .head a { font-size:10px; font-weight:800; color:#00A868; text-decoration:none; letter-spacing:.5px; text-transform:uppercase; }
+  .tI .mi { margin-top:13px; }
+  .tI .mi .t { display:flex; justify-content:space-between; font-size:12.5px; font-weight:700; color:#3B4038; }
+  .tI .mi .rw { color:#fff; background:#FF8A3D; font-size:9.5px; font-weight:900; padding:3px 9px; border-radius:99px; }
+  .tI .mi .bar { height:8px; background:#F1EDE1; border-radius:99px; margin-top:7px; }
+  .tI .mi .bar i { display:block; height:100%; border-radius:99px; }
+  .tI .nav { position:sticky; bottom:0; margin-top:18px; background:#141B14; border-radius:24px 24px 0 0; display:flex; padding:13px 8px 19px; }
+  .tI .nav div { flex:1; text-align:center; font-size:9px; font-weight:800; letter-spacing:.8px; color:#6C7568; text-transform:uppercase; }
+  .tI .nav svg { display:block; margin:0 auto 4px; width:17px; height:17px; stroke:#6C7568; }
+  .tI .nav .on { color:#FFC400; }
+  .tI .nav .on svg { stroke:#FFC400; }
+  /* turnos I */
+  .tI .pagehd { margin-top:20px; font-size:32px; font-weight:900; letter-spacing:-1.4px; color:#141B14; }
+  .tI .pagehd i { font-style:normal; color:#FF4D8D; }
+  .tI .psub { font-size:11px; font-weight:700; color:#8B8778; margin-top:5px; }
+  .tI .weekbar { display:flex; align-items:center; justify-content:space-between; margin-top:16px; background:#fff; border-radius:99px; padding:8px 14px; }
+  .tI .weekbar .wl { font-size:11.5px; font-weight:900; color:#141B14; letter-spacing:.4px; }
+  .tI .weekbar .chev { color:#8B8778; font-weight:900; }
+  .tI .days { display:flex; gap:7px; margin-top:12px; }
+  .tI .day { flex:1; text-align:center; border-radius:16px; padding:10px 0 9px; background:#fff; }
+  .tI .day .wd { font-size:8.5px; font-weight:800; letter-spacing:1px; color:#8B8778; }
+  .tI .day .dn { font-size:16px; font-weight:900; color:#141B14; margin-top:3px; }
+  .tI .day.on { background:#141B14; }
+  .tI .day.on .wd { color:#9FD9BE; }
+  .tI .day.on .dn { color:#FFC400; }
+  .tI .day .dot { width:4px; height:4px; border-radius:50%; background:#00A868; margin:4px auto 0; }
+  .tI .day.on .dot { background:#FFC400; }
+  .tI .slot { display:flex; align-items:center; gap:12px; background:#fff; border-radius:20px; padding:14px; margin-top:10px; border-left:6px solid #00A868; }
+  .tI .slot.warn { border-left-color:#FF4D8D; }
+  .tI .slot.full { border-left-color:#D9D4C5; }
+  .tI .slot .time { text-align:center; min-width:50px; }
+  .tI .slot .time b { display:block; font-size:17px; font-weight:900; letter-spacing:-0.5px; color:#141B14; }
+  .tI .slot .time span { font-size:9px; font-weight:700; color:#8B8778; text-transform:uppercase; letter-spacing:.8px; }
+  .tI .slot .bd { flex:1; }
+  .tI .slot .z { font-size:12.5px; font-weight:800; color:#141B14; }
+  .tI .slot .h { font-size:10.5px; font-weight:600; color:#8B8778; margin-top:2px; }
+  .tI .slot .cr { color:#FF4D8D; font-weight:900; }
+  .tI .slot .st { text-align:right; }
+  .tI .slot .st b { font-size:15px; font-weight:900; color:#141B14; }
+  .tI .slot .st small { color:#8B8778; font-weight:700; }
+  .tI .slot .st .lb { display:block; font-size:8.5px; font-weight:800; letter-spacing:1px; color:#8B8778; text-transform:uppercase; margin-top:1px; }
+  .tI .slot .ok { background:#E8F9EF; color:#0B5C3B; font-size:10px; font-weight:900; padding:5px 11px; border-radius:99px; }
+  .tI .agenda { margin-top:16px; background:#0B5C3B; border-radius:22px; padding:16px; color:#fff; position:relative; overflow:hidden; }
+  .tI .agenda svg.wv { position:absolute; right:-30px; top:-10px; width:150px; opacity:.25; }
+  .tI .agenda h3 { font-size:13px; font-weight:900; }
+  .tI .agenda .it { display:flex; justify-content:space-between; font-size:11.5px; font-weight:700; margin-top:10px; color:#D7EFE2; position:relative; }
+  .tI .agenda .it em { font-style:normal; color:#FFC400; font-weight:900; }
+  .tI .fine { font-size:9.5px; color:#A8A493; margin-top:12px; line-height:1.6; }
+  /* mall I */
+  .tI .balance { margin-top:16px; border-radius:24px; padding:20px; background:linear-gradient(120deg,#FF8A3D,#FF4D8D 60%,#B14DFF); color:#fff; position:relative; overflow:hidden; }
+  .tI .balance svg.wv { position:absolute; right:-20px; bottom:-24px; width:170px; opacity:.3; }
+  .tI .balance .l { font-size:10px; font-weight:800; letter-spacing:1.6px; text-transform:uppercase; opacity:.85; }
+  .tI .balance b { display:block; font-size:48px; font-weight:900; letter-spacing:-2px; line-height:1.1; position:relative; }
+  .tI .chips { display:flex; gap:8px; margin-top:14px; overflow-x:auto; }
+  .tI .chip { background:#fff; border-radius:99px; padding:8px 15px; font-size:11.5px; font-weight:800; color:#3B4038; white-space:nowrap; }
+  .tI .chip.on { background:#141B14; color:#FFC400; }
+  .tI .prods { display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-top:14px; }
+  .tI .pd { background:#fff; border-radius:22px; padding:10px; }
+  .tI .pd .im { height:84px; border-radius:16px; display:flex; align-items:center; justify-content:center; }
+  .tI .pd .im svg { width:26px; height:26px; }
+  .tI .pd .n { font-size:12.5px; font-weight:800; color:#141B14; margin-top:9px; }
+  .tI .pd .c { font-size:9px; font-weight:800; letter-spacing:1.2px; color:#8B8778; text-transform:uppercase; margin-top:2px; }
+  .tI .pd .r { display:flex; justify-content:space-between; align-items:center; margin-top:9px; }
+  .tI .pd .p { font-size:13.5px; font-weight:900; color:#141B14; }
+  .tI .pd .btn { background:#00A868; color:#fff; font-size:10.5px; font-weight:900; padding:6px 13px; border-radius:99px; }
+
+  /* ============================================================
+     J · NOITE(巴西夜色渐变 · 暗底霓虹)
+     ============================================================ */
+  .tJ .scr { background:#12081F; color:#F4EFFA; }
+  .tJ .in { padding:50px 20px 96px; position:relative; }
+  .tJ .glow { position:absolute; border-radius:50%; filter:blur(70px); pointer-events:none; }
+  .tJ .g1 { width:280px; height:280px; top:-80px; left:-80px; background:radial-gradient(circle,#FF6A3D66,transparent 70%); }
+  .tJ .g2 { width:300px; height:300px; top:240px; right:-120px; background:radial-gradient(circle,#B14DFF55,transparent 70%); }
+  .tJ .top { display:flex; justify-content:space-between; align-items:center; position:relative; }
+  .tJ .wordmark { font-weight:900; font-size:16px; letter-spacing:-0.4px; color:#fff; }
+  .tJ .wordmark b { background:linear-gradient(90deg,#FFC400,#FF6A3D); -webkit-background-clip:text; background-clip:text; color:transparent; }
+  .tJ .ava { width:36px; height:36px; border-radius:50%; background:linear-gradient(135deg,#FFC400,#FF4D8D); color:#2A1400; display:flex; align-items:center; justify-content:center; font-weight:900; font-size:13px; }
+  .tJ .greet { margin-top:20px; font-size:32px; font-weight:900; letter-spacing:-1.4px; line-height:1.02; color:#fff; position:relative; }
+  .tJ .greet i { font-style:normal; background:linear-gradient(90deg,#FFC400,#FF6A3D,#FF4D8D); -webkit-background-clip:text; background-clip:text; color:transparent; }
+  .tJ .greet small { display:block; font-size:11.5px; font-weight:600; color:#9D92B3; margin-top:6px; }
+  .tJ .hero { margin-top:18px; border-radius:24px; padding:20px; position:relative; overflow:hidden; background:linear-gradient(135deg,#FF6A3D 0%,#FF4D8D 45%,#B14DFF 100%); color:#fff; }
+  .tJ .hero svg.wv { position:absolute; right:-24px; bottom:-18px; width:190px; opacity:.28; }
+  .tJ .hero .r1 { display:flex; justify-content:space-between; align-items:center; }
+  .tJ .hero .tier { background:rgba(255,255,255,.22); font-size:10.5px; font-weight:900; padding:5px 12px; border-radius:99px; letter-spacing:1px; }
+  .tJ .hero .stars { font-size:11px; letter-spacing:2px; color:#FFE18A; }
+  .tJ .hero .score { margin-top:14px; display:flex; align-items:baseline; gap:12px; }
+  .tJ .hero .score b { font-size:56px; font-weight:900; letter-spacing:-2.6px; line-height:1; }
+  .tJ .hero .score span { font-size:10.5px; font-weight:700; opacity:.85; text-transform:uppercase; letter-spacing:1px; }
+  .tJ .hero .trk { margin-top:14px; height:8px; border-radius:99px; background:rgba(0,0,0,.22); }
+  .tJ .hero .trk i { display:block; height:100%; width:72%; border-radius:99px; background:#FFE18A; }
+  .tJ .hero .r2 { margin-top:12px; display:flex; justify-content:space-between; align-items:baseline; }
+  .tJ .hero .r2 .l { font-size:10px; font-weight:800; letter-spacing:1px; opacity:.8; text-transform:uppercase; }
+  .tJ .hero .r2 .m { font-size:17px; font-weight:900; }
+  .tJ .kpis { display:flex; gap:10px; margin-top:12px; position:relative; }
+  .tJ .kpi { flex:1; border-radius:20px; padding:14px 12px; background:#1D1230; border:1px solid #2E2044; }
+  .tJ .kpi b { display:block; font-size:24px; font-weight:900; letter-spacing:-1px; }
+  .tJ .kpi.a b { color:#FFC400; } .tJ .kpi.b b { color:#FF4D8D; } .tJ .kpi.c b { color:#4DE0A8; }
+  .tJ .kpi span { display:block; font-size:9px; font-weight:800; letter-spacing:1.2px; text-transform:uppercase; margin-top:4px; color:#9D92B3; }
+  .tJ .act { display:flex; align-items:center; gap:12px; background:#1D1230; border:1px solid #2E2044; border-radius:20px; padding:14px; margin-top:12px; position:relative; }
+  .tJ .act .gly { width:38px; height:38px; border-radius:13px; display:flex; align-items:center; justify-content:center; }
+  .tJ .act .gly svg { width:17px; height:17px; }
+  .tJ .act.scan .gly { background:rgba(255,196,0,.15); } .tJ .act.scan svg { stroke:#FFC400; }
+  .tJ .act.inv .gly { background:rgba(77,224,168,.13); } .tJ .act.inv svg { stroke:#4DE0A8; }
+  .tJ .act .tx { flex:1; }
+  .tJ .act .t { font-size:13.5px; font-weight:800; color:#fff; }
+  .tJ .act .d { font-size:10.5px; color:#9D92B3; margin-top:2px; }
+  .tJ .act .ar { color:#584A73; font-size:16px; }
+  .tJ .sect { margin-top:12px; background:#1D1230; border:1px solid #2E2044; border-radius:22px; padding:16px; position:relative; }
+  .tJ .sect .head { display:flex; justify-content:space-between; align-items:baseline; }
+  .tJ .sect .head h3 { font-size:14px; font-weight:900; color:#fff; }
+  .tJ .sect .head a { font-size:10px; font-weight:800; color:#FF4D8D; text-decoration:none; letter-spacing:.5px; text-transform:uppercase; }
+  .tJ .mi { margin-top:13px; }
+  .tJ .mi .t { display:flex; justify-content:space-between; font-size:12.5px; font-weight:700; color:#D9D2E8; }
+  .tJ .mi .rw { font-size:9.5px; font-weight:900; padding:3px 9px; border-radius:99px; background:linear-gradient(90deg,#FFC400,#FF6A3D); color:#2A1400; }
+  .tJ .mi .bar { height:8px; background:#2E2044; border-radius:99px; margin-top:7px; }
+  .tJ .mi .bar i { display:block; height:100%; border-radius:99px; background:linear-gradient(90deg,#FFC400,#FF4D8D); }
+  .tJ .nav { position:sticky; bottom:12px; margin:20px 14px 0; display:flex; padding:11px 6px; border-radius:999px; background:rgba(29,18,48,.85); border:1px solid #2E2044; backdrop-filter:blur(14px); }
+  .tJ .nav div { flex:1; text-align:center; font-size:9px; font-weight:800; letter-spacing:.8px; color:#584A73; text-transform:uppercase; }
+  .tJ .nav svg { display:block; margin:0 auto 3px; width:16px; height:16px; stroke:#584A73; }
+  .tJ .nav .on { color:#FFC400; }
+  .tJ .nav .on svg { stroke:#FFC400; }
+  /* turnos J */
+  .tJ .pagehd { margin-top:20px; font-size:32px; font-weight:900; letter-spacing:-1.4px; color:#fff; position:relative; }
+  .tJ .pagehd i { font-style:normal; background:linear-gradient(90deg,#FFC400,#FF4D8D); -webkit-background-clip:text; background-clip:text; color:transparent; }
+  .tJ .psub { font-size:11px; font-weight:600; color:#9D92B3; margin-top:5px; position:relative; }
+  .tJ .weekbar { display:flex; align-items:center; justify-content:space-between; margin-top:16px; background:#1D1230; border:1px solid #2E2044; border-radius:99px; padding:8px 14px; position:relative; }
+  .tJ .weekbar .wl { font-size:11.5px; font-weight:900; color:#fff; letter-spacing:.4px; }
+  .tJ .weekbar .chev { color:#9D92B3; font-weight:900; }
+  .tJ .days { display:flex; gap:7px; margin-top:12px; position:relative; }
+  .tJ .day { flex:1; text-align:center; border-radius:16px; padding:10px 0 9px; background:#1D1230; border:1px solid #2E2044; }
+  .tJ .day .wd { font-size:8.5px; font-weight:800; letter-spacing:1px; color:#9D92B3; }
+  .tJ .day .dn { font-size:16px; font-weight:900; color:#fff; margin-top:3px; }
+  .tJ .day.on { background:linear-gradient(135deg,#FF6A3D,#FF4D8D); border-color:transparent; }
+  .tJ .day.on .wd { color:rgba(255,255,255,.8); }
+  .tJ .day .dot { width:4px; height:4px; border-radius:50%; background:#4DE0A8; margin:4px auto 0; }
+  .tJ .day.on .dot { background:#FFE18A; }
+  .tJ .slot { display:flex; align-items:center; gap:12px; background:#1D1230; border:1px solid #2E2044; border-radius:20px; padding:14px; margin-top:10px; position:relative; }
+  .tJ .slot::before { content:""; position:absolute; left:0; top:14px; bottom:14px; width:4px; border-radius:99px; background:#FFC400; }
+  .tJ .slot.warn::before { background:#FF4D8D; }
+  .tJ .slot.full::before { background:#3A2F52; }
+  .tJ .slot .time { text-align:center; min-width:50px; }
+  .tJ .slot .time b { display:block; font-size:17px; font-weight:900; letter-spacing:-0.5px; color:#fff; }
+  .tJ .slot .time span { font-size:9px; font-weight:700; color:#9D92B3; text-transform:uppercase; letter-spacing:.8px; }
+  .tJ .slot .bd { flex:1; }
+  .tJ .slot .z { font-size:12.5px; font-weight:800; color:#fff; }
+  .tJ .slot .h { font-size:10.5px; font-weight:600; color:#9D92B3; margin-top:2px; }
+  .tJ .slot .cr { color:#FF4D8D; font-weight:900; }
+  .tJ .slot .st { text-align:right; }
+  .tJ .slot .st b { font-size:15px; font-weight:900; color:#fff; }
+  .tJ .slot .st small { color:#9D92B3; font-weight:700; }
+  .tJ .slot .st .lb { display:block; font-size:8.5px; font-weight:800; letter-spacing:1px; color:#9D92B3; text-transform:uppercase; margin-top:1px; }
+  .tJ .slot .ok { background:rgba(77,224,168,.15); color:#4DE0A8; font-size:10px; font-weight:900; padding:5px 11px; border-radius:99px; }
+  .tJ .fine { font-size:9.5px; color:#584A73; margin-top:12px; line-height:1.6; position:relative; }
+  /* mall J */
+  .tJ .balance { margin-top:16px; border-radius:24px; padding:20px; background:linear-gradient(120deg,#FFC400,#FF6A3D 55%,#FF4D8D); color:#2A1400; position:relative; overflow:hidden; }
+  .tJ .balance svg.wv { position:absolute; right:-20px; bottom:-24px; width:170px; opacity:.22; }
+  .tJ .balance .l { font-size:10px; font-weight:900; letter-spacing:1.6px; text-transform:uppercase; opacity:.75; }
+  .tJ .balance b { display:block; font-size:48px; font-weight:900; letter-spacing:-2px; line-height:1.1; position:relative; }
+  .tJ .prods { display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-top:14px; position:relative; }
+  .tJ .pd { background:#1D1230; border:1px solid #2E2044; border-radius:22px; padding:10px; }
+  .tJ .pd .im { height:84px; border-radius:16px; display:flex; align-items:center; justify-content:center; background:#251740; }
+  .tJ .pd .im svg { width:26px; height:26px; }
+  .tJ .pd .n { font-size:12.5px; font-weight:800; color:#fff; margin-top:9px; }
+  .tJ .pd .c { font-size:9px; font-weight:800; letter-spacing:1.2px; color:#9D92B3; text-transform:uppercase; margin-top:2px; }
+  .tJ .pd .r { display:flex; justify-content:space-between; align-items:center; margin-top:9px; }
+  .tJ .pd .p { font-size:13.5px; font-weight:900; color:#FFC400; }
+  .tJ .pd .btn { font-size:10.5px; font-weight:900; padding:6px 13px; border-radius:99px; background:linear-gradient(90deg,#FFC400,#FF6A3D); color:#2A1400; }
+</style>
+</head>
+<body>
+<h1>巴西风 v4 · Tropical Modernista / Noite</h1>
+<div class="sub">保留 v3 的版式骨架(大数字、明确层次),色彩换成巴西年轻一代 App 的语言:<b>热带绿+品牌黄+荧光粉+落日橙+电紫</b>的饱和撞色(参考 Nubank / iFood / 巴西新消费品牌),避开国旗绿黄的俗套;科帕卡巴纳海滨步道(Burle Marx)波浪纹作为品牌图形贯穿卡片。首页 / 班次 / 商城 三屏切换。</div>
+<div class="toggle">
+  <button class="on" onclick="show('home',this)">首页</button>
+  <button onclick="show('slots',this)">班次 Turnos</button>
+  <button onclick="show('mall',this)">商城</button>
+</div>
+
+<svg width="0" height="0" style="position:absolute">
+  <defs>
+    <g id="w-wave"><path d="M0 30 Q20 10 40 30 T80 30 T120 30 T160 30 M0 50 Q20 30 40 50 T80 50 T120 50 T160 50 M0 70 Q20 50 40 70 T80 70 T120 70 T160 70" fill="none" stroke="#fff" stroke-width="7"/></g>
+    <g id="i-qr"><path d="M3 3h6v6H3zM15 3h6v6h-6zM3 15h6v6H3zM15 15h3v3h3v3h-6z" fill="none" stroke-width="1.8"/></g>
+    <g id="i-users"><circle cx="9" cy="8" r="3.5" fill="none" stroke-width="1.8"/><path d="M3 20c0-3.3 2.7-6 6-6s6 2.7 6 6M16 5a3.5 3.5 0 010 6M18 14c2 .8 3 2.6 3 6" fill="none" stroke-width="1.8"/></g>
+    <g id="i-home"><path d="M4 11l8-7 8 7v9h-5v-6h-6v6H4z" fill="none" stroke-width="1.8"/></g>
+    <g id="i-cal"><rect x="4" y="5" width="16" height="16" rx="2" fill="none" stroke-width="1.8"/><path d="M4 10h16M9 3v4M15 3v4" stroke-width="1.8"/></g>
+    <g id="i-bag"><path d="M6 8h12l-1 13H7L6 8z" fill="none" stroke-width="1.8"/><path d="M9 8V6a3 3 0 016 0v2" fill="none" stroke-width="1.8"/></g>
+    <g id="i-user"><circle cx="12" cy="8" r="4" fill="none" stroke-width="1.8"/><path d="M4 21c0-4 3.6-7 8-7s8 3 8 7" fill="none" stroke-width="1.8"/></g>
+    <g id="i-helm"><path d="M4 14a8 8 0 0116 0v3H4v-3z" fill="none" stroke-width="1.8"/><path d="M12 6v8M4 17h16" stroke-width="1.8"/></g>
+    <g id="i-fuel"><rect x="5" y="4" width="9" height="17" rx="1.5" fill="none" stroke-width="1.8"/><path d="M14 9h3l2 2v7a2 2 0 01-4 0" fill="none" stroke-width="1.8"/></g>
+    <g id="i-glove"><path d="M7 21V8a2 2 0 014 0v4l5-4a2 2 0 013 3l-5 5v5H7z" fill="none" stroke-width="1.8"/></g>
+    <g id="i-tool"><path d="M14 7a4 4 0 015 5l-8 8-4-4 8-8-1-1z" fill="none" stroke-width="1.8"/><path d="M4 20l3-3" stroke-width="1.8"/></g>
+  </defs>
+</svg>
+
+<div class="grid">
+
+  <!-- ================= I ================= -->
+  <div class="col">
+    <h2>I · Tropical Modernista(日间)</h2>
+    <div class="tag">米白底+热带撞色+波浪纹+硬阴影按钮 · 白天跑单主题</div>
+    <div class="phone tI">
+
+      <div class="scr s-home">
+        <div class="in">
+          <div class="top"><span class="wordmark">Me<b>Ponto</b></span><span class="ava">C</span></div>
+          <div class="greet">E aí, <i>Carlos!</i><small>Entregador · Ponto Vila Mariana</small></div>
+          <div class="hero">
+            <svg class="wv" viewBox="0 0 160 90"><use href="#w-wave"/></svg>
+            <div class="r1"><span class="tier">NÍVEL OURO</span><span class="stars">★ ★ ★</span></div>
+            <div class="score"><b>87</b><span>faltam 13<br>p/ Diamante</span></div>
+            <div class="trk"><i></i></div>
+            <div class="r2"><span class="l">Saldo disponível</span><span class="m">R$ 1.240,50</span></div>
+          </div>
+          <div class="kpis">
+            <div class="kpi a"><b>12</b><span>Pedidos</span></div>
+            <div class="kpi b"><b>6,5h</b><span>TSH</span></div>
+            <div class="kpi c"><b>98%</b><span>Aceitação</span></div>
+          </div>
+          <div class="acts">
+            <div class="act scan"><span class="gly"><svg viewBox="0 0 24 24" fill="none"><use href="#i-qr"/></svg></span><div class="t">Escanear</div><div class="d">Ponto · Parceiro</div></div>
+            <div class="act inv"><span class="gly"><svg viewBox="0 0 24 24" fill="none"><use href="#i-users"/></svg></span><div class="t">Convidar</div><div class="d">Ganhe pontos</div></div>
+          </div>
+          <div class="sect">
+            <div class="head"><h3>Missões de hoje</h3><a href="#">Ver todas</a></div>
+            <div class="mi"><div class="t"><span>Complete 15 pedidos</span><span class="rw">+50 pts</span></div><div class="bar"><i style="width:80%;background:#00A868"></i></div></div>
+            <div class="mi"><div class="t"><span>4h no horário de pico</span><span class="rw">+30 pts</span></div><div class="bar"><i style="width:45%;background:#FF4D8D"></i></div></div>
+          </div>
+          <div class="nav">
+            <div class="on"><svg viewBox="0 0 24 24" fill="none"><use href="#i-home"/></svg>Início</div>
+            <div><svg viewBox="0 0 24 24" fill="none"><use href="#i-cal"/></svg>Turnos</div>
+            <div><svg viewBox="0 0 24 24" fill="none"><use href="#i-bag"/></svg>Loja</div>
+            <div><svg viewBox="0 0 24 24" fill="none"><use href="#i-user"/></svg>Perfil</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="scr s-slots hide">
+        <div class="in">
+          <div class="top"><span class="wordmark">Me<b>Ponto</b></span><span class="ava">C</span></div>
+          <div class="pagehd">Turnos<i>.</i></div>
+          <div class="psub">Ponto Vila Mariana · somente seu ponto</div>
+          <div class="weekbar"><span class="chev">‹</span><span class="wl">Esta semana · 07–13 Jul</span><span class="chev">›</span></div>
+          <div class="days">
+            <div class="day on"><div class="wd">TER</div><div class="dn">7</div><div class="dot"></div></div>
+            <div class="day"><div class="wd">QUA</div><div class="dn">8</div></div>
+            <div class="day"><div class="wd">QUI</div><div class="dn">9</div><div class="dot"></div></div>
+            <div class="day"><div class="wd">SEX</div><div class="dn">10</div></div>
+            <div class="day"><div class="wd">SÁB</div><div class="dn">11</div></div>
+            <div class="day"><div class="wd">DOM</div><div class="dn">12</div></div>
+            <div class="day"><div class="wd">SEG</div><div class="dn">13</div></div>
+          </div>
+          <div class="slot">
+            <div class="time"><b>11–14</b><span>almoço</span></div>
+            <div class="bd"><div class="z">Zona Centro · VM-02</div><div class="h">Hotzone: Rua Augusta</div></div>
+            <span class="ok">Confirmado ✓</span>
+          </div>
+          <div class="slot warn">
+            <div class="time"><b>18–21</b><span>jantar</span></div>
+            <div class="bd"><div class="z">Zona Paulista · VM-01</div><div class="h">Hotzone: Av. Paulista · <span class="cr">crítico</span></div></div>
+            <div class="st"><b>3<small>/10</small></b><span class="lb">vagas</span></div>
+          </div>
+          <div class="slot full">
+            <div class="time"><b>21–24</b><span>noite</span></div>
+            <div class="bd"><div class="z">Zona Centro · VM-02</div><div class="h">Hotzone: Liberdade</div></div>
+            <div class="st"><b>0<small>/8</small></b><span class="lb">esgotado</span></div>
+          </div>
+          <div class="agenda">
+            <svg class="wv" viewBox="0 0 160 90"><use href="#w-wave"/></svg>
+            <h3>Minha agenda · 4</h3>
+            <div class="it"><span>QUI 9 · 11–14 · Zona Centro</span><em>confirmado</em></div>
+            <div class="it"><span>SEX 10 · 18–21 · Zona Paulista</span><em style="color:#D7EFE2">pendente</em></div>
+          </div>
+          <div class="fine">Turnos não são remunerados por si; garantem prioridade de despacho na hotzone.</div>
+          <div class="nav">
+            <div><svg viewBox="0 0 24 24" fill="none"><use href="#i-home"/></svg>Início</div>
+            <div class="on"><svg viewBox="0 0 24 24" fill="none"><use href="#i-cal"/></svg>Turnos</div>
+            <div><svg viewBox="0 0 24 24" fill="none"><use href="#i-bag"/></svg>Loja</div>
+            <div><svg viewBox="0 0 24 24" fill="none"><use href="#i-user"/></svg>Perfil</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="scr s-mall hide">
+        <div class="in">
+          <div class="top"><span class="wordmark">Me<b>Ponto</b></span><span class="ava">C</span></div>
+          <div class="pagehd">Loja<i>.</i></div>
+          <div class="balance">
+            <svg class="wv" viewBox="0 0 160 90"><use href="#w-wave"/></svg>
+            <div class="l">Pontos disponíveis</div><b>2.450 pts</b>
+          </div>
+          <div class="chips"><span class="chip on">Tudo</span><span class="chip">Equipamento</span><span class="chip">Vale</span><span class="chip">Serviços</span></div>
+          <div class="prods">
+            <div class="pd"><div class="im" style="background:#E8F9EF"><svg viewBox="0 0 24 24" fill="none" style="stroke:#00A868"><use href="#i-helm"/></svg></div><div class="n">Capacete Pro</div><div class="c">Equipamento</div><div class="r"><span class="p">800 pts</span><span class="btn">Trocar</span></div></div>
+            <div class="pd"><div class="im" style="background:#FFF2D6"><svg viewBox="0 0 24 24" fill="none" style="stroke:#C79600"><use href="#i-fuel"/></svg></div><div class="n">Vale-combustível</div><div class="c">Vale</div><div class="r"><span class="p">1.200 pts</span><span class="btn">Trocar</span></div></div>
+            <div class="pd"><div class="im" style="background:#FFEDF4"><svg viewBox="0 0 24 24" fill="none" style="stroke:#FF4D8D"><use href="#i-glove"/></svg></div><div class="n">Luvas térmicas</div><div class="c">Equipamento</div><div class="r"><span class="p">350 pts</span><span class="btn">Trocar</span></div></div>
+            <div class="pd"><div class="im" style="background:#EAF0FF"><svg viewBox="0 0 24 24" fill="none" style="stroke:#2D6BFF"><use href="#i-tool"/></svg></div><div class="n">Revisão da moto</div><div class="c">Serviços</div><div class="r"><span class="p">1.500 pts</span><span class="btn">Trocar</span></div></div>
+          </div>
+          <div class="nav">
+            <div><svg viewBox="0 0 24 24" fill="none"><use href="#i-home"/></svg>Início</div>
+            <div><svg viewBox="0 0 24 24" fill="none"><use href="#i-cal"/></svg>Turnos</div>
+            <div class="on"><svg viewBox="0 0 24 24" fill="none"><use href="#i-bag"/></svg>Loja</div>
+            <div><svg viewBox="0 0 24 24" fill="none"><use href="#i-user"/></svg>Perfil</div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+    <div class="note"><b>为什么适合巴西年轻人:</b>饱和撞色是巴西新消费品牌的通用语言(Nubank 紫、iFood 红都敢用大色);波浪纹取自里约海滨步道,本土认同强;米白底保证烈日可读。KPI 三色块、任务条双色让"颜色单调"彻底消失,但黑字+统一圆角保住质感。</div>
+  </div>
+
+  <!-- ================= J ================= -->
+  <div class="col">
+    <h2>J · Noite(夜间 · 落日渐变)</h2>
+    <div class="tag">深紫夜底+落日橙粉渐变+霓虹点缀 · 晚高峰/夜跑主题</div>
+    <div class="phone tJ">
+
+      <div class="scr s-home">
+        <div class="in">
+          <div class="glow g1"></div><div class="glow g2"></div>
+          <div class="top"><span class="wordmark">Me<b>Ponto</b></span><span class="ava">C</span></div>
+          <div class="greet">Boa noite, <i>Carlos!</i><small>Entregador · Ponto Vila Mariana</small></div>
+          <div class="hero">
+            <svg class="wv" viewBox="0 0 160 90"><use href="#w-wave"/></svg>
+            <div class="r1"><span class="tier">NÍVEL OURO</span><span class="stars">★ ★ ★</span></div>
+            <div class="score"><b>87</b><span>faltam 13<br>p/ Diamante</span></div>
+            <div class="trk"><i></i></div>
+            <div class="r2"><span class="l">Saldo disponível</span><span class="m">R$ 1.240,50</span></div>
+          </div>
+          <div class="kpis">
+            <div class="kpi a"><b>12</b><span>Pedidos</span></div>
+            <div class="kpi b"><b>6,5h</b><span>TSH</span></div>
+            <div class="kpi c"><b>98%</b><span>Aceitação</span></div>
+          </div>
+          <div class="act scan"><span class="gly"><svg viewBox="0 0 24 24" fill="none"><use href="#i-qr"/></svg></span><div class="tx"><div class="t">Escanear ponto</div><div class="d">Ponto · Repasse · Parceiro</div></div><span class="ar">›</span></div>
+          <div class="act inv"><span class="gly"><svg viewBox="0 0 24 24" fill="none"><use href="#i-users"/></svg></span><div class="tx"><div class="t">Convidar amigos</div><div class="d">Ganhe pontos por indicação</div></div><span class="ar">›</span></div>
+          <div class="sect">
+            <div class="head"><h3>Missões de hoje</h3><a href="#">Ver todas</a></div>
+            <div class="mi"><div class="t"><span>Complete 15 pedidos</span><span class="rw">+50 pts</span></div><div class="bar"><i style="width:80%"></i></div></div>
+            <div class="mi"><div class="t"><span>4h no horário de pico</span><span class="rw">+30 pts</span></div><div class="bar"><i style="width:45%"></i></div></div>
+          </div>
+          <div class="nav">
+            <div class="on"><svg viewBox="0 0 24 24" fill="none"><use href="#i-home"/></svg>Início</div>
+            <div><svg viewBox="0 0 24 24" fill="none"><use href="#i-cal"/></svg>Turnos</div>
+            <div><svg viewBox="0 0 24 24" fill="none"><use href="#i-bag"/></svg>Loja</div>
+            <div><svg viewBox="0 0 24 24" fill="none"><use href="#i-user"/></svg>Perfil</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="scr s-slots hide">
+        <div class="in">
+          <div class="glow g1"></div><div class="glow g2"></div>
+          <div class="top"><span class="wordmark">Me<b>Ponto</b></span><span class="ava">C</span></div>
+          <div class="pagehd">Turnos<i>.</i></div>
+          <div class="psub">Ponto Vila Mariana · somente seu ponto</div>
+          <div class="weekbar"><span class="chev">‹</span><span class="wl">Esta semana · 07–13 Jul</span><span class="chev">›</span></div>
+          <div class="days">
+            <div class="day on"><div class="wd">TER</div><div class="dn">7</div><div class="dot"></div></div>
+            <div class="day"><div class="wd">QUA</div><div class="dn">8</div></div>
+            <div class="day"><div class="wd">QUI</div><div class="dn">9</div><div class="dot"></div></div>
+            <div class="day"><div class="wd">SEX</div><div class="dn">10</div></div>
+            <div class="day"><div class="wd">SÁB</div><div class="dn">11</div></div>
+            <div class="day"><div class="wd">DOM</div><div class="dn">12</div></div>
+            <div class="day"><div class="wd">SEG</div><div class="dn">13</div></div>
+          </div>
+          <div class="slot">
+            <div class="time"><b>11–14</b><span>almoço</span></div>
+            <div class="bd"><div class="z">Zona Centro · VM-02</div><div class="h">Hotzone: Rua Augusta</div></div>
+            <span class="ok">Confirmado ✓</span>
+          </div>
+          <div class="slot warn">
+            <div class="time"><b>18–21</b><span>jantar</span></div>
+            <div class="bd"><div class="z">Zona Paulista · VM-01</div><div class="h">Hotzone: Av. Paulista · <span class="cr">crítico</span></div></div>
+            <div class="st"><b>3<small>/10</small></b><span class="lb">vagas</span></div>
+          </div>
+          <div class="slot full">
+            <div class="time"><b>21–24</b><span>noite</span></div>
+            <div class="bd"><div class="z">Zona Centro · VM-02</div><div class="h">Hotzone: Liberdade</div></div>
+            <div class="st"><b>0<small>/8</small></b><span class="lb">esgotado</span></div>
+          </div>
+          <div class="sect">
+            <div class="head"><h3>Minha agenda · 4</h3><a href="#">Ver</a></div>
+            <div class="mi"><div class="t"><span>QUI 9 · 11–14 · Zona Centro</span><span style="color:#4DE0A8;font-weight:900;font-size:11px">confirmado</span></div></div>
+            <div class="mi" style="margin-top:6px"><div class="t"><span>SEX 10 · 18–21 · Zona Paulista</span><span style="color:#9D92B3;font-weight:900;font-size:11px">pendente</span></div></div>
+          </div>
+          <div class="fine">Turnos não são remunerados por si; garantem prioridade de despacho na hotzone.</div>
+          <div class="nav">
+            <div><svg viewBox="0 0 24 24" fill="none"><use href="#i-home"/></svg>Início</div>
+            <div class="on"><svg viewBox="0 0 24 24" fill="none"><use href="#i-cal"/></svg>Turnos</div>
+            <div><svg viewBox="0 0 24 24" fill="none"><use href="#i-bag"/></svg>Loja</div>
+            <div><svg viewBox="0 0 24 24" fill="none"><use href="#i-user"/></svg>Perfil</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="scr s-mall hide">
+        <div class="in">
+          <div class="glow g1"></div><div class="glow g2"></div>
+          <div class="top"><span class="wordmark">Me<b>Ponto</b></span><span class="ava">C</span></div>
+          <div class="pagehd">Loja<i>.</i></div>
+          <div class="balance">
+            <svg class="wv" viewBox="0 0 160 90"><use href="#w-wave"/></svg>
+            <div class="l">Pontos disponíveis</div><b>2.450 pts</b>
+          </div>
+          <div class="prods">
+            <div class="pd"><div class="im"><svg viewBox="0 0 24 24" fill="none" style="stroke:#FFC400"><use href="#i-helm"/></svg></div><div class="n">Capacete Pro</div><div class="c">Equipamento</div><div class="r"><span class="p">800 pts</span><span class="btn">Trocar</span></div></div>
+            <div class="pd"><div class="im"><svg viewBox="0 0 24 24" fill="none" style="stroke:#FF6A3D"><use href="#i-fuel"/></svg></div><div class="n">Vale-combustível</div><div class="c">Vale</div><div class="r"><span class="p">1.200 pts</span><span class="btn">Trocar</span></div></div>
+            <div class="pd"><div class="im"><svg viewBox="0 0 24 24" fill="none" style="stroke:#FF4D8D"><use href="#i-glove"/></svg></div><div class="n">Luvas térmicas</div><div class="c">Equipamento</div><div class="r"><span class="p">350 pts</span><span class="btn">Trocar</span></div></div>
+            <div class="pd"><div class="im"><svg viewBox="0 0 24 24" fill="none" style="stroke:#4DE0A8"><use href="#i-tool"/></svg></div><div class="n">Revisão da moto</div><div class="c">Serviços</div><div class="r"><span class="p">1.500 pts</span><span class="btn">Trocar</span></div></div>
+          </div>
+          <div class="nav">
+            <div><svg viewBox="0 0 24 24" fill="none"><use href="#i-home"/></svg>Início</div>
+            <div><svg viewBox="0 0 24 24" fill="none"><use href="#i-cal"/></svg>Turnos</div>
+            <div class="on"><svg viewBox="0 0 24 24" fill="none"><use href="#i-bag"/></svg>Loja</div>
+            <div><svg viewBox="0 0 24 24" fill="none"><use href="#i-user"/></svg>Perfil</div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+    <div class="note"><b>为什么适合巴西年轻人:</b>落日橙→粉→电紫的渐变是"里约黄昏"的直觉联想,夜色底+霓虹绿状态色带 baile funk 的能量;适合晚高峰/夜间场景。<b>建议:</b>I 与 J 共用同一套组件与布局,做成日/夜双主题——白天 Tropical、晚上 Noite,按时间或系统主题自动切换,这本身就是年轻人会截图分享的记忆点。</div>
+  </div>
+
+</div>
+
+<script>
+function show(which, btn) {
+  document.querySelectorAll('.toggle button').forEach(b => b.classList.remove('on'));
+  btn.classList.add('on');
+  ['home','slots','mall'].forEach(s => {
+    document.querySelectorAll('.s-' + s).forEach(e => e.classList.toggle('hide', which !== s));
+  });
+}
+</script>
+</body>
+</html>

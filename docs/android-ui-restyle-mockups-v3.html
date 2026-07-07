@@ -1,0 +1,525 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MePonto Rider App — 高级感方向 v3(含班次 Turnos)</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { font-family:-apple-system,"SF Pro","PingFang SC","Segoe UI",Roboto,sans-serif; background:#101114; color:#EDEFF4; padding:32px 24px 64px; }
+  h1 { font-size:22px; font-weight:800; margin-bottom:6px; }
+  .sub { color:#8A93A6; font-size:13px; margin-bottom:24px; max-width:720px; line-height:1.7; }
+  .toggle { display:inline-flex; background:#1C1E24; border-radius:999px; padding:4px; margin-bottom:28px; }
+  .toggle button { border:0; background:transparent; color:#8A93A6; font-size:13px; font-weight:700; padding:8px 20px; border-radius:999px; cursor:pointer; }
+  .toggle button.on { background:#E8C15A; color:#221A00; }
+  .grid { display:flex; gap:40px; flex-wrap:wrap; align-items:flex-start; justify-content:center; }
+  .col { width:330px; }
+  .col h2 { font-size:15px; font-weight:800; margin-bottom:2px; }
+  .col .tag { font-size:11px; color:#8A93A6; margin-bottom:12px; }
+  .col .note { font-size:12px; color:#A7AFBF; line-height:1.7; margin-top:14px; }
+  .note b { color:#EDEFF4; }
+  .phone { width:330px; height:668px; border-radius:40px; border:6px solid #26282F; overflow:hidden; position:relative; background:#000; }
+  .scr { position:absolute; inset:0; overflow-y:auto; scrollbar-width:none; }
+  .scr::-webkit-scrollbar { display:none; }
+  .hide { display:none; }
+  .serif { font-family:Georgia,"Didot","Times New Roman",serif; }
+
+  /* ============================================================
+     G · NOIR 黑金静奢
+     ============================================================ */
+  .tG .scr { background:#0D0D0F; color:#F2EFE8; }
+  .tG .in { padding:50px 22px 96px; }
+  .tG .cap { font-size:9px; font-weight:700; letter-spacing:2.6px; color:#8D8A80; text-transform:uppercase; }
+  .tG .hair { height:1px; background:rgba(242,239,232,.08); }
+  .tG .top { display:flex; justify-content:space-between; align-items:center; }
+  .tG .wordmark { font-family:Georgia,serif; font-size:15px; letter-spacing:3px; color:#F2EFE8; }
+  .tG .wordmark b { color:#E8C15A; font-weight:400; }
+  .tG .ava { width:32px; height:32px; border-radius:50%; border:1px solid rgba(232,193,90,.5); color:#E8C15A; display:flex; align-items:center; justify-content:center; font-size:12px; font-family:Georgia,serif; }
+  .tG .greet { margin-top:26px; }
+  .tG .greet h1 { font-family:Georgia,serif; font-weight:400; font-size:30px; letter-spacing:-0.3px; color:#F2EFE8; line-height:1.1; }
+  .tG .greet h1 i { color:#E8C15A; }
+  .tG .greet .cap { margin-top:8px; }
+  /* metal membership card */
+  .tG .card { margin-top:24px; border-radius:18px; padding:22px 20px; position:relative; overflow:hidden;
+              background:linear-gradient(150deg,#1B1B1E 0%,#232019 55%,#1B1B1E 100%);
+              border:1px solid rgba(232,193,90,.28); }
+  .tG .card::before { content:""; position:absolute; inset:0; background:linear-gradient(115deg,transparent 30%,rgba(232,193,90,.07) 45%,transparent 60%); }
+  .tG .card .r1 { display:flex; justify-content:space-between; align-items:flex-start; }
+  .tG .card .tier { font-family:Georgia,serif; font-size:12px; letter-spacing:4px; color:#E8C15A; }
+  .tG .stars { color:#E8C15A; font-size:10px; letter-spacing:3px; }
+  .tG .card .score { margin-top:18px; display:flex; align-items:baseline; gap:12px; }
+  .tG .card .score b { font-family:Georgia,serif; font-weight:400; font-size:56px; letter-spacing:-2px; color:#F2EFE8; line-height:1; }
+  .tG .card .score span { font-size:10px; letter-spacing:1.6px; color:#8D8A80; text-transform:uppercase; }
+  .tG .card .trk { margin-top:16px; height:2px; background:rgba(242,239,232,.1); }
+  .tG .card .trk i { display:block; height:100%; width:72%; background:linear-gradient(90deg,#E8C15A,#F4DFA0); }
+  .tG .card .r2 { margin-top:14px; display:flex; justify-content:space-between; align-items:baseline; }
+  .tG .card .r2 .money { font-family:Georgia,serif; font-size:17px; color:#F2EFE8; }
+  .tG .kpis { display:flex; margin-top:26px; }
+  .tG .kpi { flex:1; text-align:center; }
+  .tG .kpi + .kpi { border-left:1px solid rgba(242,239,232,.08); }
+  .tG .kpi b { display:block; font-family:Georgia,serif; font-weight:400; font-size:26px; color:#F2EFE8; letter-spacing:-0.5px; }
+  .tG .kpi span { display:block; margin-top:5px; font-size:8.5px; letter-spacing:2px; color:#8D8A80; text-transform:uppercase; }
+  .tG .rows { margin-top:26px; }
+  .tG .row { display:flex; align-items:center; gap:14px; padding:16px 2px; }
+  .tG .row .gly { width:34px; height:34px; border-radius:50%; border:1px solid rgba(242,239,232,.14); display:flex; align-items:center; justify-content:center; }
+  .tG .row .gly svg { width:15px; height:15px; stroke:#E8C15A; }
+  .tG .row .tx { flex:1; }
+  .tG .row .t { font-size:13.5px; font-weight:600; color:#F2EFE8; letter-spacing:.2px; }
+  .tG .row .d { font-size:10.5px; color:#8D8A80; margin-top:2px; letter-spacing:.4px; }
+  .tG .row .ar { color:#5C5A52; font-size:16px; }
+  .tG .sect { margin-top:26px; }
+  .tG .sect .head { display:flex; justify-content:space-between; align-items:baseline; margin-bottom:4px; }
+  .tG .sect .head a { font-size:9px; letter-spacing:2px; color:#E8C15A; text-decoration:none; text-transform:uppercase; }
+  .tG .mi { padding:14px 2px; }
+  .tG .mi .t { display:flex; justify-content:space-between; align-items:baseline; }
+  .tG .mi .t span { font-size:13px; color:#D9D6CD; }
+  .tG .mi .t em { font-style:normal; font-family:Georgia,serif; font-size:12px; color:#E8C15A; }
+  .tG .mi .bar { margin-top:10px; height:2px; background:rgba(242,239,232,.09); }
+  .tG .mi .bar i { display:block; height:100%; background:#E8C15A; }
+  .tG .nav { position:sticky; bottom:0; background:rgba(13,13,15,.92); backdrop-filter:blur(10px); border-top:1px solid rgba(242,239,232,.08); display:flex; padding:14px 8px 20px; margin-top:20px; }
+  .tG .nav div { flex:1; text-align:center; font-size:8.5px; font-weight:600; letter-spacing:1.8px; color:#5C5A52; text-transform:uppercase; }
+  .tG .nav svg { display:block; margin:0 auto 5px; width:17px; height:17px; stroke:#5C5A52; }
+  .tG .nav .on { color:#E8C15A; }
+  .tG .nav .on svg { stroke:#E8C15A; }
+  /* turnos G */
+  .tG .pageti { margin-top:24px; font-family:Georgia,serif; font-weight:400; font-size:30px; color:#F2EFE8; }
+  .tG .pageti i { color:#E8C15A; }
+  .tG .weekbar { display:flex; align-items:center; justify-content:space-between; margin-top:20px; }
+  .tG .weekbar .wl { font-size:11px; letter-spacing:1.6px; color:#D9D6CD; text-transform:uppercase; }
+  .tG .weekbar .chev { color:#8D8A80; font-size:14px; padding:4px 10px; }
+  .tG .days { display:flex; justify-content:space-between; margin-top:14px; }
+  .tG .day { text-align:center; width:38px; padding:8px 0 10px; }
+  .tG .day .wd { font-size:8.5px; letter-spacing:1.6px; color:#8D8A80; }
+  .tG .day .dn { font-family:Georgia,serif; font-size:17px; color:#D9D6CD; margin-top:5px; }
+  .tG .day u { display:block; width:14px; height:1.5px; background:transparent; margin:7px auto 0; text-decoration:none; }
+  .tG .day.on .dn { color:#E8C15A; }
+  .tG .day.on u { background:#E8C15A; }
+  .tG .day .dot { width:3.5px; height:3.5px; border-radius:50%; background:#5FA97A; margin:5px auto 0; }
+  .tG .slots { margin-top:10px; }
+  .tG .slot { display:flex; gap:16px; padding:18px 2px; }
+  .tG .slot .time { width:52px; }
+  .tG .slot .time b { display:block; font-family:Georgia,serif; font-weight:400; font-size:17px; color:#F2EFE8; }
+  .tG .slot .time span { font-size:9.5px; color:#8D8A80; }
+  .tG .slot .ln { width:1px; background:rgba(242,239,232,.1); position:relative; }
+  .tG .slot .ln::before { content:""; position:absolute; top:6px; left:-2.5px; width:6px; height:6px; border-radius:50%; background:#E8C15A; }
+  .tG .slot.g2 .ln::before { background:#5FA97A; }
+  .tG .slot.g3 .ln::before { background:rgba(242,239,232,.25); }
+  .tG .slot .bd { flex:1; }
+  .tG .slot .z { font-size:13px; font-weight:600; color:#F2EFE8; }
+  .tG .slot .h { font-size:10.5px; color:#8D8A80; margin-top:3px; letter-spacing:.3px; }
+  .tG .slot .st { text-align:right; }
+  .tG .slot .st b { display:block; font-family:Georgia,serif; font-weight:400; font-size:15px; color:#F2EFE8; }
+  .tG .slot .st span { font-size:8.5px; letter-spacing:1.6px; color:#8D8A80; text-transform:uppercase; }
+  .tG .slot .st .ok { color:#5FA97A; font-size:9px; letter-spacing:1.6px; text-transform:uppercase; }
+  .tG .slot .st .cr { color:#C96A5E; font-size:9px; letter-spacing:1.6px; text-transform:uppercase; }
+  .tG .fine { margin-top:14px; font-size:9.5px; color:#5C5A52; letter-spacing:.4px; line-height:1.6; }
+  /* mall G */
+  .tG .balance { margin-top:24px; text-align:center; padding:26px 0 24px; border:1px solid rgba(232,193,90,.25); border-radius:18px; background:linear-gradient(160deg,#151412,#1C1913); }
+  .tG .balance b { font-family:Georgia,serif; font-weight:400; font-size:48px; letter-spacing:-1px; color:#F2EFE8; }
+  .tG .balance b i { font-style:normal; color:#E8C15A; font-size:20px; margin-left:6px; }
+  .tG .balance .cap { margin-top:6px; }
+  .tG .prods { margin-top:10px; }
+  .tG .prod { display:flex; align-items:center; gap:16px; padding:18px 2px; }
+  .tG .prod .im { width:56px; height:56px; border-radius:12px; background:#1B1B1E; border:1px solid rgba(242,239,232,.09); display:flex; align-items:center; justify-content:center; }
+  .tG .prod .im svg { width:22px; height:22px; stroke:#E8C15A; }
+  .tG .prod .tx { flex:1; }
+  .tG .prod .n { font-size:13.5px; font-weight:600; color:#F2EFE8; }
+  .tG .prod .c { font-size:9px; letter-spacing:1.8px; color:#8D8A80; text-transform:uppercase; margin-top:3px; }
+  .tG .prod .p { text-align:right; }
+  .tG .prod .p b { display:block; font-family:Georgia,serif; font-weight:400; font-size:16px; color:#E8C15A; }
+  .tG .prod .p span { font-size:8.5px; letter-spacing:1.6px; color:#8D8A80; text-transform:uppercase; }
+
+  /* ============================================================
+     H · GALLERY 画廊极简浅色
+     ============================================================ */
+  .tH .scr { background:#F7F5F0; color:#1B1A17; }
+  .tH .in { padding:50px 22px 96px; }
+  .tH .cap { font-size:9px; font-weight:700; letter-spacing:2.6px; color:#A39F93; text-transform:uppercase; }
+  .tH .hair { height:1px; background:rgba(27,26,23,.09); }
+  .tH .top { display:flex; justify-content:space-between; align-items:center; }
+  .tH .wordmark { font-family:Georgia,serif; font-size:15px; letter-spacing:3px; color:#1B1A17; }
+  .tH .ava { width:32px; height:32px; border-radius:50%; border:1px solid rgba(27,26,23,.25); display:flex; align-items:center; justify-content:center; font-size:12px; font-family:Georgia,serif; color:#1B1A17; }
+  .tH .greet { margin-top:26px; }
+  .tH .greet h1 { font-family:Georgia,serif; font-weight:400; font-size:32px; color:#1B1A17; line-height:1.08; letter-spacing:-0.5px; }
+  .tH .greet h1 i { font-style:italic; }
+  .tH .greet .cap { margin-top:8px; }
+  .tH .card { margin-top:24px; border-radius:16px; padding:22px 20px; background:#1B1A17; color:#F7F5F0; position:relative; overflow:hidden; }
+  .tH .card::after { content:""; position:absolute; right:-30px; top:-40px; width:140px; height:140px; border-radius:50%; border:1px solid rgba(247,245,240,.12); }
+  .tH .card .r1 { display:flex; justify-content:space-between; }
+  .tH .card .tier { font-family:Georgia,serif; letter-spacing:4px; font-size:12px; color:#D8B65A; }
+  .tH .card .stars { color:#D8B65A; font-size:10px; letter-spacing:3px; }
+  .tH .card .score { margin-top:16px; display:flex; align-items:baseline; gap:12px; }
+  .tH .card .score b { font-family:Georgia,serif; font-weight:400; font-size:54px; letter-spacing:-2px; line-height:1; }
+  .tH .card .score span { font-size:10px; letter-spacing:1.6px; color:#9B9890; text-transform:uppercase; }
+  .tH .card .trk { margin-top:16px; height:2px; background:rgba(247,245,240,.14); }
+  .tH .card .trk i { display:block; height:100%; width:72%; background:#D8B65A; }
+  .tH .card .r2 { margin-top:13px; display:flex; justify-content:space-between; align-items:baseline; }
+  .tH .card .r2 .cap { color:#9B9890; }
+  .tH .card .money { font-family:Georgia,serif; font-size:17px; }
+  .tH .kpis { display:flex; margin-top:26px; }
+  .tH .kpi { flex:1; text-align:center; }
+  .tH .kpi + .kpi { border-left:1px solid rgba(27,26,23,.1); }
+  .tH .kpi b { display:block; font-family:Georgia,serif; font-weight:400; font-size:26px; color:#1B1A17; }
+  .tH .kpi span { display:block; margin-top:5px; font-size:8.5px; letter-spacing:2px; color:#A39F93; text-transform:uppercase; }
+  .tH .rows { margin-top:26px; }
+  .tH .row { display:flex; align-items:center; gap:14px; padding:16px 2px; }
+  .tH .row .gly { width:34px; height:34px; border-radius:50%; border:1px solid rgba(27,26,23,.16); display:flex; align-items:center; justify-content:center; }
+  .tH .row .gly svg { width:15px; height:15px; stroke:#1B1A17; }
+  .tH .row .tx { flex:1; }
+  .tH .row .t { font-size:13.5px; font-weight:600; color:#1B1A17; }
+  .tH .row .d { font-size:10.5px; color:#A39F93; margin-top:2px; }
+  .tH .row .ar { color:#C6C2B6; font-size:16px; }
+  .tH .sect { margin-top:26px; }
+  .tH .sect .head { display:flex; justify-content:space-between; align-items:baseline; margin-bottom:4px; }
+  .tH .sect .head a { font-size:9px; letter-spacing:2px; color:#8A6D1F; text-decoration:none; text-transform:uppercase; }
+  .tH .mi { padding:14px 2px; }
+  .tH .mi .t { display:flex; justify-content:space-between; align-items:baseline; }
+  .tH .mi .t span { font-size:13px; color:#3B3A35; }
+  .tH .mi .t em { font-style:normal; font-family:Georgia,serif; font-size:12px; color:#8A6D1F; }
+  .tH .mi .bar { margin-top:10px; height:2px; background:rgba(27,26,23,.1); }
+  .tH .mi .bar i { display:block; height:100%; background:#1B1A17; }
+  .tH .nav { position:sticky; bottom:0; background:rgba(247,245,240,.94); backdrop-filter:blur(10px); border-top:1px solid rgba(27,26,23,.09); display:flex; padding:14px 8px 20px; margin-top:20px; }
+  .tH .nav div { flex:1; text-align:center; font-size:8.5px; font-weight:700; letter-spacing:1.8px; color:#B5B1A4; text-transform:uppercase; }
+  .tH .nav svg { display:block; margin:0 auto 5px; width:17px; height:17px; stroke:#B5B1A4; }
+  .tH .nav .on { color:#1B1A17; }
+  .tH .nav .on svg { stroke:#1B1A17; }
+  /* turnos H */
+  .tH .pageti { margin-top:24px; font-family:Georgia,serif; font-weight:400; font-size:32px; color:#1B1A17; }
+  .tH .pageti i { font-style:italic; }
+  .tH .weekbar { display:flex; align-items:center; justify-content:space-between; margin-top:20px; }
+  .tH .weekbar .wl { font-size:11px; letter-spacing:1.6px; color:#3B3A35; text-transform:uppercase; }
+  .tH .weekbar .chev { color:#A39F93; font-size:14px; padding:4px 10px; }
+  .tH .days { display:flex; justify-content:space-between; margin-top:14px; }
+  .tH .day { text-align:center; width:38px; padding:8px 0 10px; }
+  .tH .day .wd { font-size:8.5px; letter-spacing:1.6px; color:#A39F93; }
+  .tH .day .dn { font-family:Georgia,serif; font-size:17px; color:#3B3A35; margin-top:5px; }
+  .tH .day u { display:block; width:14px; height:1.5px; background:transparent; margin:7px auto 0; }
+  .tH .day.on .dn { color:#1B1A17; font-style:italic; }
+  .tH .day.on u { background:#1B1A17; }
+  .tH .day .dot { width:3.5px; height:3.5px; border-radius:50%; background:#4E7A5A; margin:5px auto 0; }
+  .tH .slots { margin-top:10px; }
+  .tH .slot { display:flex; gap:16px; padding:18px 2px; }
+  .tH .slot .time { width:52px; }
+  .tH .slot .time b { display:block; font-family:Georgia,serif; font-weight:400; font-size:17px; color:#1B1A17; }
+  .tH .slot .time span { font-size:9.5px; color:#A39F93; }
+  .tH .slot .ln { width:1px; background:rgba(27,26,23,.12); position:relative; }
+  .tH .slot .ln::before { content:""; position:absolute; top:6px; left:-2.5px; width:6px; height:6px; border-radius:50%; background:#D8B65A; }
+  .tH .slot.g2 .ln::before { background:#4E7A5A; }
+  .tH .slot.g3 .ln::before { background:rgba(27,26,23,.2); }
+  .tH .slot .bd { flex:1; }
+  .tH .slot .z { font-size:13px; font-weight:600; color:#1B1A17; }
+  .tH .slot .h { font-size:10.5px; color:#A39F93; margin-top:3px; }
+  .tH .slot .st { text-align:right; }
+  .tH .slot .st b { display:block; font-family:Georgia,serif; font-weight:400; font-size:15px; color:#1B1A17; }
+  .tH .slot .st span { font-size:8.5px; letter-spacing:1.6px; color:#A39F93; text-transform:uppercase; }
+  .tH .slot .st .ok { color:#4E7A5A; font-size:9px; letter-spacing:1.6px; text-transform:uppercase; }
+  .tH .slot .st .cr { color:#B05A4E; font-size:9px; letter-spacing:1.6px; text-transform:uppercase; }
+  .tH .fine { margin-top:14px; font-size:9.5px; color:#B5B1A4; line-height:1.6; }
+  /* mall H */
+  .tH .balance { margin-top:24px; text-align:center; padding:28px 0 26px; background:#1B1A17; color:#F7F5F0; border-radius:16px; }
+  .tH .balance b { font-family:Georgia,serif; font-weight:400; font-size:48px; letter-spacing:-1px; }
+  .tH .balance b i { font-style:normal; color:#D8B65A; font-size:20px; margin-left:6px; }
+  .tH .balance .cap { margin-top:6px; color:#9B9890; }
+  .tH .prods { margin-top:10px; }
+  .tH .prod { display:flex; align-items:center; gap:16px; padding:18px 2px; }
+  .tH .prod .im { width:56px; height:56px; border-radius:12px; background:#fff; border:1px solid rgba(27,26,23,.1); display:flex; align-items:center; justify-content:center; }
+  .tH .prod .im svg { width:22px; height:22px; stroke:#1B1A17; }
+  .tH .prod .tx { flex:1; }
+  .tH .prod .n { font-size:13.5px; font-weight:600; color:#1B1A17; }
+  .tH .prod .c { font-size:9px; letter-spacing:1.8px; color:#A39F93; text-transform:uppercase; margin-top:3px; }
+  .tH .prod .p { text-align:right; }
+  .tH .prod .p b { display:block; font-family:Georgia,serif; font-weight:400; font-size:16px; color:#8A6D1F; }
+  .tH .prod .p span { font-size:8.5px; letter-spacing:1.6px; color:#A39F93; text-transform:uppercase; }
+</style>
+</head>
+<body>
+<h1>高级感方向 v3 · 含班次 Turnos 三屏</h1>
+<div class="sub">高级感的来源换了:不靠色块和圆角,靠<b>衬线大数字、发丝线、字距拉开的小号大写标签、大量留白</b>。品牌黄降饱和为香槟金,只出现在关键数字和状态点上。班次(slot)按 <code>ShiftsScreen.kt</code> 真实结构:周切换 → 日条(带报名圆点)→ 时段列表(时窗/热区/名额/危急标记/已报名状态)。</div>
+<div class="toggle">
+  <button class="on" onclick="show('home',this)">首页</button>
+  <button onclick="show('slots',this)">班次 Turnos</button>
+  <button onclick="show('mall',this)">商城</button>
+</div>
+
+<svg width="0" height="0" style="position:absolute">
+  <defs>
+    <g id="i-qr"><path d="M3 3h6v6H3zM15 3h6v6h-6zM3 15h6v6H3zM15 15h3v3h3v3h-6z" fill="none" stroke-width="1.5"/></g>
+    <g id="i-users"><circle cx="9" cy="8" r="3.5" fill="none" stroke-width="1.5"/><path d="M3 20c0-3.3 2.7-6 6-6s6 2.7 6 6M16 5a3.5 3.5 0 010 6M18 14c2 .8 3 2.6 3 6" fill="none" stroke-width="1.5"/></g>
+    <g id="i-home"><path d="M4 11l8-7 8 7v9h-5v-6h-6v6H4z" fill="none" stroke-width="1.5"/></g>
+    <g id="i-cal"><rect x="4" y="5" width="16" height="16" rx="2" fill="none" stroke-width="1.5"/><path d="M4 10h16M9 3v4M15 3v4" stroke-width="1.5"/></g>
+    <g id="i-bag"><path d="M6 8h12l-1 13H7L6 8z" fill="none" stroke-width="1.5"/><path d="M9 8V6a3 3 0 016 0v2" fill="none" stroke-width="1.5"/></g>
+    <g id="i-user"><circle cx="12" cy="8" r="4" fill="none" stroke-width="1.5"/><path d="M4 21c0-4 3.6-7 8-7s8 3 8 7" fill="none" stroke-width="1.5"/></g>
+    <g id="i-helm"><path d="M4 14a8 8 0 0116 0v3H4v-3z" fill="none" stroke-width="1.5"/><path d="M12 6v8M4 17h16" stroke-width="1.5"/></g>
+    <g id="i-fuel"><rect x="5" y="4" width="9" height="17" rx="1.5" fill="none" stroke-width="1.5"/><path d="M14 9h3l2 2v7a2 2 0 01-4 0" fill="none" stroke-width="1.5"/></g>
+    <g id="i-glove"><path d="M7 21V8a2 2 0 014 0v4l5-4a2 2 0 013 3l-5 5v5H7z" fill="none" stroke-width="1.5"/></g>
+    <g id="i-tool"><path d="M14 7a4 4 0 015 5l-8 8-4-4 8-8-1-1z" fill="none" stroke-width="1.5"/><path d="M4 20l3-3" stroke-width="1.5"/></g>
+  </defs>
+</svg>
+
+<div class="grid">
+
+  <!-- ================= G ================= -->
+  <div class="col">
+    <h2>G · Noir 黑金静奢</h2>
+    <div class="tag">黑卡会员气质 · 炭黑+香槟金+衬线数字+发丝线</div>
+    <div class="phone tG">
+
+      <div class="scr s-home">
+        <div class="in">
+          <div class="top"><span class="wordmark">ME<b>PONTO</b></span><span class="ava">C</span></div>
+          <div class="greet">
+            <h1>Bom dia,<br><i>Carlos.</i></h1>
+            <div class="cap">Entregador · Ponto Vila Mariana</div>
+          </div>
+          <div class="card">
+            <div class="r1"><span class="tier">OURO</span><span class="stars">★ ★ ★</span></div>
+            <div class="score"><b>87</b><span>Faltam 13<br>p/ Diamante</span></div>
+            <div class="trk"><i></i></div>
+            <div class="r2"><span class="cap">Saldo disponível</span><span class="money">R$ 1.240,50</span></div>
+          </div>
+          <div class="kpis">
+            <div class="kpi"><b>12</b><span>Pedidos</span></div>
+            <div class="kpi"><b>6,5</b><span>TSH · h</span></div>
+            <div class="kpi"><b>98%</b><span>Aceitação</span></div>
+          </div>
+          <div class="hair" style="margin-top:26px"></div>
+          <div class="rows">
+            <div class="row"><span class="gly"><svg viewBox="0 0 24 24" fill="none"><use href="#i-qr"/></svg></span><span class="tx"><span class="t">Escanear ponto</span><br><span class="d">Ponto · Repasse · Parceiro</span></span><span class="ar">›</span></div>
+            <div class="hair"></div>
+            <div class="row"><span class="gly"><svg viewBox="0 0 24 24" fill="none"><use href="#i-users"/></svg></span><span class="tx"><span class="t">Convidar amigos</span><br><span class="d">Ganhe pontos por indicação</span></span><span class="ar">›</span></div>
+          </div>
+          <div class="hair"></div>
+          <div class="sect">
+            <div class="head"><span class="cap">Missões de hoje</span><a href="#">Ver todas</a></div>
+            <div class="mi"><div class="t"><span>Complete 15 pedidos</span><em>+50 pts</em></div><div class="bar"><i style="width:80%"></i></div></div>
+            <div class="mi"><div class="t"><span>4h no horário de pico</span><em>+30 pts</em></div><div class="bar"><i style="width:45%"></i></div></div>
+          </div>
+          <div class="nav">
+            <div class="on"><svg viewBox="0 0 24 24" fill="none"><use href="#i-home"/></svg>Início</div>
+            <div><svg viewBox="0 0 24 24" fill="none"><use href="#i-cal"/></svg>Turnos</div>
+            <div><svg viewBox="0 0 24 24" fill="none"><use href="#i-bag"/></svg>Loja</div>
+            <div><svg viewBox="0 0 24 24" fill="none"><use href="#i-user"/></svg>Perfil</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="scr s-slots hide">
+        <div class="in">
+          <div class="top"><span class="wordmark">ME<b>PONTO</b></span><span class="ava">C</span></div>
+          <div class="pageti">Turnos<i>.</i></div>
+          <div class="cap" style="margin-top:6px">Ponto Vila Mariana · Somente seu ponto</div>
+          <div class="weekbar"><span class="chev">‹</span><span class="wl">Esta semana · 07 – 13 Jul</span><span class="chev">›</span></div>
+          <div class="days">
+            <div class="day on"><div class="wd">TER</div><div class="dn">7</div><u></u><div class="dot"></div></div>
+            <div class="day"><div class="wd">QUA</div><div class="dn">8</div><u></u></div>
+            <div class="day"><div class="wd">QUI</div><div class="dn">9</div><u></u><div class="dot"></div></div>
+            <div class="day"><div class="wd">SEX</div><div class="dn">10</div><u></u></div>
+            <div class="day"><div class="wd">SÁB</div><div class="dn">11</div><u></u></div>
+            <div class="day"><div class="wd">DOM</div><div class="dn">12</div><u></u></div>
+            <div class="day"><div class="wd">SEG</div><div class="dn">13</div><u></u></div>
+          </div>
+          <div class="hair" style="margin-top:14px"></div>
+          <div class="slots">
+            <div class="slot g2">
+              <div class="time"><b>11–14</b><span>almoço</span></div>
+              <div class="ln"></div>
+              <div class="bd"><div class="z">Zona Centro · Estação VM-02</div><div class="h">Hotzone: Rua Augusta</div></div>
+              <div class="st"><span class="ok">Confirmado</span></div>
+            </div>
+            <div class="hair"></div>
+            <div class="slot">
+              <div class="time"><b>18–21</b><span>jantar</span></div>
+              <div class="ln"></div>
+              <div class="bd"><div class="z">Zona Paulista · Estação VM-01</div><div class="h">Hotzone: Av. Paulista &nbsp;·&nbsp; <span style="color:#C96A5E">crítico</span></div></div>
+              <div class="st"><b>3<span style="color:#8D8A80;font-size:11px">/10</span></b><span>vagas</span></div>
+            </div>
+            <div class="hair"></div>
+            <div class="slot g3">
+              <div class="time"><b>21–24</b><span>noite</span></div>
+              <div class="ln"></div>
+              <div class="bd"><div class="z">Zona Centro · Estação VM-02</div><div class="h">Hotzone: Liberdade</div></div>
+              <div class="st"><b>0<span style="color:#8D8A80;font-size:11px">/8</span></b><span>esgotado</span></div>
+            </div>
+          </div>
+          <div class="hair"></div>
+          <div class="sect">
+            <div class="head"><span class="cap">Minha agenda · 4</span><a href="#">Ver</a></div>
+            <div class="mi"><div class="t"><span>QUI 9 · 11–14 · Zona Centro</span><em class="serif" style="color:#5FA97A">confirmado</em></div></div>
+            <div class="mi" style="padding-top:0"><div class="t"><span>SEX 10 · 18–21 · Zona Paulista</span><em class="serif" style="color:#8D8A80">pendente</em></div></div>
+          </div>
+          <div class="fine">Turnos não são remunerados por si; garantem prioridade de despacho na hotzone.</div>
+          <div class="nav">
+            <div><svg viewBox="0 0 24 24" fill="none"><use href="#i-home"/></svg>Início</div>
+            <div class="on"><svg viewBox="0 0 24 24" fill="none"><use href="#i-cal"/></svg>Turnos</div>
+            <div><svg viewBox="0 0 24 24" fill="none"><use href="#i-bag"/></svg>Loja</div>
+            <div><svg viewBox="0 0 24 24" fill="none"><use href="#i-user"/></svg>Perfil</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="scr s-mall hide">
+        <div class="in">
+          <div class="top"><span class="wordmark">ME<b>PONTO</b></span><span class="ava">C</span></div>
+          <div class="pageti">Loja<i>.</i></div>
+          <div class="balance"><b>2.450<i>pts</i></b><div class="cap">Pontos disponíveis</div></div>
+          <div class="prods">
+            <div class="prod"><span class="im"><svg viewBox="0 0 24 24" fill="none"><use href="#i-helm"/></svg></span><span class="tx"><span class="n">Capacete Pro</span><br><span class="c">Equipamento</span></span><span class="p"><b>800</b><span>pts</span></span></div>
+            <div class="hair"></div>
+            <div class="prod"><span class="im"><svg viewBox="0 0 24 24" fill="none"><use href="#i-fuel"/></svg></span><span class="tx"><span class="n">Vale-combustível R$ 50</span><br><span class="c">Vale</span></span><span class="p"><b>1.200</b><span>pts</span></span></div>
+            <div class="hair"></div>
+            <div class="prod"><span class="im"><svg viewBox="0 0 24 24" fill="none"><use href="#i-glove"/></svg></span><span class="tx"><span class="n">Luvas térmicas</span><br><span class="c">Equipamento</span></span><span class="p"><b>350</b><span>pts</span></span></div>
+            <div class="hair"></div>
+            <div class="prod"><span class="im"><svg viewBox="0 0 24 24" fill="none"><use href="#i-tool"/></svg></span><span class="tx"><span class="n">Revisão da moto</span><br><span class="c">Serviços</span></span><span class="p"><b>1.500</b><span>pts</span></span></div>
+          </div>
+          <div class="nav">
+            <div><svg viewBox="0 0 24 24" fill="none"><use href="#i-home"/></svg>Início</div>
+            <div><svg viewBox="0 0 24 24" fill="none"><use href="#i-cal"/></svg>Turnos</div>
+            <div class="on"><svg viewBox="0 0 24 24" fill="none"><use href="#i-bag"/></svg>Loja</div>
+            <div><svg viewBox="0 0 24 24" fill="none"><use href="#i-user"/></svg>Perfil</div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+    <div class="note"><b>气质:</b>黑金会员卡、私人银行。等级体系(Ouro/Diamante)天然适合这套语言,金色只给数字和状态,越少越贵。暗色与现有 dark token 同族,迁移平滑。<b>注意:</b>需引入一款衬线/半衬线 display 字体(葡语字符集);纯黑底在烈日下反光,可保留浅色变体。</div>
+  </div>
+
+  <!-- ================= H ================= -->
+  <div class="col">
+    <h2>H · Gallery 画廊极简浅色</h2>
+    <div class="tag">Aesop / Kinfolk 气质 · 象牙纸白+墨黑+一丝金</div>
+    <div class="phone tH">
+
+      <div class="scr s-home">
+        <div class="in">
+          <div class="top"><span class="wordmark">MEPONTO</span><span class="ava">C</span></div>
+          <div class="greet">
+            <h1>Bom dia,<br><i>Carlos.</i></h1>
+            <div class="cap">Entregador · Ponto Vila Mariana</div>
+          </div>
+          <div class="card">
+            <div class="r1"><span class="tier">OURO</span><span class="stars">★ ★ ★</span></div>
+            <div class="score"><b>87</b><span>Faltam 13<br>p/ Diamante</span></div>
+            <div class="trk"><i></i></div>
+            <div class="r2"><span class="cap">Saldo disponível</span><span class="money">R$ 1.240,50</span></div>
+          </div>
+          <div class="kpis">
+            <div class="kpi"><b>12</b><span>Pedidos</span></div>
+            <div class="kpi"><b>6,5</b><span>TSH · h</span></div>
+            <div class="kpi"><b>98%</b><span>Aceitação</span></div>
+          </div>
+          <div class="hair" style="margin-top:26px"></div>
+          <div class="rows">
+            <div class="row"><span class="gly"><svg viewBox="0 0 24 24" fill="none"><use href="#i-qr"/></svg></span><span class="tx"><span class="t">Escanear ponto</span><br><span class="d">Ponto · Repasse · Parceiro</span></span><span class="ar">›</span></div>
+            <div class="hair"></div>
+            <div class="row"><span class="gly"><svg viewBox="0 0 24 24" fill="none"><use href="#i-users"/></svg></span><span class="tx"><span class="t">Convidar amigos</span><br><span class="d">Ganhe pontos por indicação</span></span><span class="ar">›</span></div>
+          </div>
+          <div class="hair"></div>
+          <div class="sect">
+            <div class="head"><span class="cap">Missões de hoje</span><a href="#">Ver todas</a></div>
+            <div class="mi"><div class="t"><span>Complete 15 pedidos</span><em>+50 pts</em></div><div class="bar"><i style="width:80%"></i></div></div>
+            <div class="mi"><div class="t"><span>4h no horário de pico</span><em>+30 pts</em></div><div class="bar"><i style="width:45%"></i></div></div>
+          </div>
+          <div class="nav">
+            <div class="on"><svg viewBox="0 0 24 24" fill="none"><use href="#i-home"/></svg>Início</div>
+            <div><svg viewBox="0 0 24 24" fill="none"><use href="#i-cal"/></svg>Turnos</div>
+            <div><svg viewBox="0 0 24 24" fill="none"><use href="#i-bag"/></svg>Loja</div>
+            <div><svg viewBox="0 0 24 24" fill="none"><use href="#i-user"/></svg>Perfil</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="scr s-slots hide">
+        <div class="in">
+          <div class="top"><span class="wordmark">MEPONTO</span><span class="ava">C</span></div>
+          <div class="pageti">Turnos<i>.</i></div>
+          <div class="cap" style="margin-top:6px">Ponto Vila Mariana · Somente seu ponto</div>
+          <div class="weekbar"><span class="chev">‹</span><span class="wl">Esta semana · 07 – 13 Jul</span><span class="chev">›</span></div>
+          <div class="days">
+            <div class="day on"><div class="wd">TER</div><div class="dn">7</div><u></u><div class="dot"></div></div>
+            <div class="day"><div class="wd">QUA</div><div class="dn">8</div><u></u></div>
+            <div class="day"><div class="wd">QUI</div><div class="dn">9</div><u></u><div class="dot"></div></div>
+            <div class="day"><div class="wd">SEX</div><div class="dn">10</div><u></u></div>
+            <div class="day"><div class="wd">SÁB</div><div class="dn">11</div><u></u></div>
+            <div class="day"><div class="wd">DOM</div><div class="dn">12</div><u></u></div>
+            <div class="day"><div class="wd">SEG</div><div class="dn">13</div><u></u></div>
+          </div>
+          <div class="hair" style="margin-top:14px"></div>
+          <div class="slots">
+            <div class="slot g2">
+              <div class="time"><b>11–14</b><span>almoço</span></div>
+              <div class="ln"></div>
+              <div class="bd"><div class="z">Zona Centro · Estação VM-02</div><div class="h">Hotzone: Rua Augusta</div></div>
+              <div class="st"><span class="ok">Confirmado</span></div>
+            </div>
+            <div class="hair"></div>
+            <div class="slot">
+              <div class="time"><b>18–21</b><span>jantar</span></div>
+              <div class="ln"></div>
+              <div class="bd"><div class="z">Zona Paulista · Estação VM-01</div><div class="h">Hotzone: Av. Paulista &nbsp;·&nbsp; <span style="color:#B05A4E">crítico</span></div></div>
+              <div class="st"><b>3<span style="color:#A39F93;font-size:11px">/10</span></b><span>vagas</span></div>
+            </div>
+            <div class="hair"></div>
+            <div class="slot g3">
+              <div class="time"><b>21–24</b><span>noite</span></div>
+              <div class="ln"></div>
+              <div class="bd"><div class="z">Zona Centro · Estação VM-02</div><div class="h">Hotzone: Liberdade</div></div>
+              <div class="st"><b>0<span style="color:#A39F93;font-size:11px">/8</span></b><span>esgotado</span></div>
+            </div>
+          </div>
+          <div class="hair"></div>
+          <div class="sect">
+            <div class="head"><span class="cap">Minha agenda · 4</span><a href="#">Ver</a></div>
+            <div class="mi"><div class="t"><span>QUI 9 · 11–14 · Zona Centro</span><em class="serif" style="color:#4E7A5A">confirmado</em></div></div>
+            <div class="mi" style="padding-top:0"><div class="t"><span>SEX 10 · 18–21 · Zona Paulista</span><em class="serif" style="color:#A39F93">pendente</em></div></div>
+          </div>
+          <div class="fine">Turnos não são remunerados por si; garantem prioridade de despacho na hotzone.</div>
+          <div class="nav">
+            <div><svg viewBox="0 0 24 24" fill="none"><use href="#i-home"/></svg>Início</div>
+            <div class="on"><svg viewBox="0 0 24 24" fill="none"><use href="#i-cal"/></svg>Turnos</div>
+            <div><svg viewBox="0 0 24 24" fill="none"><use href="#i-bag"/></svg>Loja</div>
+            <div><svg viewBox="0 0 24 24" fill="none"><use href="#i-user"/></svg>Perfil</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="scr s-mall hide">
+        <div class="in">
+          <div class="top"><span class="wordmark">MEPONTO</span><span class="ava">C</span></div>
+          <div class="pageti">Loja<i>.</i></div>
+          <div class="balance"><b>2.450<i>pts</i></b><div class="cap">Pontos disponíveis</div></div>
+          <div class="prods">
+            <div class="prod"><span class="im"><svg viewBox="0 0 24 24" fill="none"><use href="#i-helm"/></svg></span><span class="tx"><span class="n">Capacete Pro</span><br><span class="c">Equipamento</span></span><span class="p"><b>800</b><span>pts</span></span></div>
+            <div class="hair"></div>
+            <div class="prod"><span class="im"><svg viewBox="0 0 24 24" fill="none"><use href="#i-fuel"/></svg></span><span class="tx"><span class="n">Vale-combustível R$ 50</span><br><span class="c">Vale</span></span><span class="p"><b>1.200</b><span>pts</span></span></div>
+            <div class="hair"></div>
+            <div class="prod"><span class="im"><svg viewBox="0 0 24 24" fill="none"><use href="#i-glove"/></svg></span><span class="tx"><span class="n">Luvas térmicas</span><br><span class="c">Equipamento</span></span><span class="p"><b>350</b><span>pts</span></span></div>
+            <div class="hair"></div>
+            <div class="prod"><span class="im"><svg viewBox="0 0 24 24" fill="none"><use href="#i-tool"/></svg></span><span class="tx"><span class="n">Revisão da moto</span><br><span class="c">Serviços</span></span><span class="p"><b>1.500</b><span>pts</span></span></div>
+          </div>
+          <div class="nav">
+            <div><svg viewBox="0 0 24 24" fill="none"><use href="#i-home"/></svg>Início</div>
+            <div><svg viewBox="0 0 24 24" fill="none"><use href="#i-cal"/></svg>Turnos</div>
+            <div class="on"><svg viewBox="0 0 24 24" fill="none"><use href="#i-bag"/></svg>Loja</div>
+            <div><svg viewBox="0 0 24 24" fill="none"><use href="#i-user"/></svg>Perfil</div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+    <div class="note"><b>气质:</b>画廊、精品酒店 App。象牙纸白在烈日户外可读性最好,墨黑卡片只有一张(会员卡),金色仅点缀积分数字。是两稿里更"日用"的一个。<b>注意:</b>对齐与间距必须严格执行,极简风格容错率低;插画/照片素材质量要求高。</div>
+  </div>
+
+</div>
+
+<script>
+function show(which, btn) {
+  document.querySelectorAll('.toggle button').forEach(b => b.classList.remove('on'));
+  btn.classList.add('on');
+  ['home','slots','mall'].forEach(s => {
+    document.querySelectorAll('.s-' + s).forEach(e => e.classList.toggle('hide', which !== s));
+  });
+}
+</script>
+</body>
+</html>

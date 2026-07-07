@@ -1,0 +1,407 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MePonto Rider App — 年轻化风格对比稿</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { font-family: -apple-system, "SF Pro", "PingFang SC", "Segoe UI", Roboto, sans-serif; background:#111318; color:#EDEFF4; padding:32px 24px 64px; }
+  h1 { font-size:22px; font-weight:800; margin-bottom:6px; }
+  .sub { color:#8A93A6; font-size:13px; margin-bottom:24px; }
+  .toggle { display:inline-flex; background:#1D2028; border-radius:999px; padding:4px; margin-bottom:28px; }
+  .toggle button { border:0; background:transparent; color:#8A93A6; font-size:13px; font-weight:700; padding:8px 22px; border-radius:999px; cursor:pointer; }
+  .toggle button.on { background:#FFC400; color:#201A00; }
+  .grid { display:flex; gap:36px; flex-wrap:wrap; align-items:flex-start; justify-content:center; }
+  .col { width:320px; }
+  .col h2 { font-size:15px; font-weight:800; margin-bottom:2px; }
+  .col .tag { font-size:11px; color:#8A93A6; margin-bottom:12px; }
+  .col .note { font-size:12px; color:#A7AFBF; line-height:1.6; margin-top:14px; }
+  .note b { color:#EDEFF4; }
+  .phone { width:320px; height:650px; border-radius:38px; border:6px solid #2A2E3A; overflow:hidden; position:relative; background:#000; }
+  .scr { position:absolute; inset:0; overflow-y:auto; scrollbar-width:none; }
+  .scr::-webkit-scrollbar { display:none; }
+  .hide { display:none; }
+
+  /* ============ A. 活力外卖风 ============ */
+  .tA .scr { background:#F6F5F2; }
+  .tA .hdr { background:#FFC400; padding:46px 18px 56px; border-radius:0 0 30px 30px; }
+  .tA .hdr .row { display:flex; align-items:center; justify-content:space-between; }
+  .tA .brand { font-weight:900; font-size:17px; color:#201A00; letter-spacing:-0.3px; }
+  .tA .ava { width:34px; height:34px; border-radius:50%; background:#201A00; color:#FFC400; display:flex; align-items:center; justify-content:center; font-weight:900; font-size:14px; }
+  .tA .greet { margin-top:14px; color:#201A00; font-size:22px; font-weight:900; letter-spacing:-0.5px; }
+  .tA .greet small { display:block; font-size:12px; font-weight:600; opacity:.65; margin-top:2px; }
+  .tA .body { padding:0 14px 90px; margin-top:-38px; }
+  .tA .hero { background:linear-gradient(120deg,#23262F 0%,#3A3423 60%,#4A3D14 100%); border-radius:22px; padding:16px; color:#fff; box-shadow:0 12px 28px rgba(0,0,0,.18); }
+  .tA .hero .top { display:flex; justify-content:space-between; align-items:center; }
+  .tA .hero .lvl { background:#FFC400; color:#201A00; font-size:10px; font-weight:900; padding:4px 10px; border-radius:999px; }
+  .tA .hero .nm { font-weight:800; font-size:15px; }
+  .tA .hero .score { font-size:38px; font-weight:900; margin:8px 0 0; letter-spacing:-1px; }
+  .tA .hero .score span { font-size:12px; font-weight:600; color:#FFD65C; margin-left:8px; }
+  .tA .hero .bar { height:7px; background:rgba(255,255,255,.15); border-radius:99px; margin:10px 0 6px; }
+  .tA .hero .bar i { display:block; height:100%; width:72%; border-radius:99px; background:linear-gradient(90deg,#FFC400,#FFE082); }
+  .tA .hero .nx { font-size:11px; color:rgba(255,255,255,.65); display:flex; justify-content:space-between; }
+  .tA .stats { display:flex; gap:10px; margin-top:14px; }
+  .tA .st { flex:1; background:#fff; border-radius:18px; padding:12px 10px; text-align:center; box-shadow:0 4px 14px rgba(0,0,0,.05); }
+  .tA .st .ic { font-size:18px; }
+  .tA .st .v { font-size:19px; font-weight:900; color:#17181C; margin-top:4px; letter-spacing:-0.5px; }
+  .tA .st .l { font-size:10px; color:#8A93A6; font-weight:600; margin-top:2px; }
+  .tA .acts { display:grid; grid-template-columns:repeat(4,1fr); gap:8px; background:#fff; border-radius:20px; padding:14px 8px; margin-top:14px; box-shadow:0 4px 14px rgba(0,0,0,.05); }
+  .tA .act { text-align:center; }
+  .tA .act .ic { width:46px; height:46px; margin:0 auto; border-radius:16px; display:flex; align-items:center; justify-content:center; font-size:20px; }
+  .tA .act .l { font-size:10.5px; font-weight:700; color:#3C4148; margin-top:6px; }
+  .tA .sec { background:#fff; border-radius:20px; padding:16px; margin-top:14px; box-shadow:0 4px 14px rgba(0,0,0,.05); }
+  .tA .sec h3 { font-size:14px; font-weight:800; color:#17181C; display:flex; justify-content:space-between; align-items:center; }
+  .tA .sec h3 a { font-size:11px; color:#C79600; font-weight:700; text-decoration:none; }
+  .tA .mi { margin-top:12px; }
+  .tA .mi .t { display:flex; justify-content:space-between; font-size:12.5px; font-weight:600; color:#3C4148; }
+  .tA .mi .rw { background:#FFF3C4; color:#8A6D00; font-size:10px; font-weight:800; padding:2px 8px; border-radius:99px; }
+  .tA .mi .bar { height:6px; background:#F0F1F5; border-radius:99px; margin-top:6px; }
+  .tA .mi .bar i { display:block; height:100%; border-radius:99px; background:#FFC400; }
+  .tA .nav { position:sticky; bottom:0; background:#fff; display:flex; padding:10px 8px 18px; border-radius:24px 24px 0 0; box-shadow:0 -6px 20px rgba(0,0,0,.07); margin-top:20px; }
+  .tA .nav div { flex:1; text-align:center; font-size:10px; font-weight:700; color:#9AA1B0; }
+  .tA .nav .ic { font-size:19px; display:block; margin-bottom:2px; }
+  .tA .nav .on { color:#201A00; }
+  .tA .nav .on .ic { background:#FFC400; border-radius:14px; padding:3px 16px; display:inline-block; }
+  /* mall A */
+  .tA .mhdr { background:#FFC400; padding:46px 18px 60px; border-radius:0 0 30px 30px; }
+  .tA .mhdr .ti { color:#201A00; font-weight:900; font-size:20px; }
+  .tA .mhdr .pt { margin-top:10px; color:#201A00; }
+  .tA .mhdr .pt .v { font-size:36px; font-weight:900; letter-spacing:-1px; }
+  .tA .mhdr .pt .l { font-size:11px; font-weight:700; opacity:.65; }
+  .tA .chips { display:flex; gap:8px; margin:14px 0 4px; overflow-x:auto; }
+  .tA .chip { background:#fff; border-radius:99px; padding:7px 14px; font-size:11.5px; font-weight:700; color:#3C4148; white-space:nowrap; box-shadow:0 3px 10px rgba(0,0,0,.05); }
+  .tA .chip.on { background:#201A00; color:#FFC400; }
+  .tA .prods { display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-top:12px; }
+  .tA .pd { background:#fff; border-radius:20px; padding:10px; box-shadow:0 4px 14px rgba(0,0,0,.05); }
+  .tA .pd .im { height:86px; border-radius:14px; display:flex; align-items:center; justify-content:center; font-size:30px; }
+  .tA .pd .n { font-size:12.5px; font-weight:700; color:#17181C; margin-top:8px; }
+  .tA .pd .c { font-size:10px; color:#9AA1B0; margin-top:1px; }
+  .tA .pd .r { display:flex; align-items:center; justify-content:space-between; margin-top:8px; }
+  .tA .pd .p { font-size:13px; font-weight:900; color:#C79600; }
+  .tA .pd .btn { background:#FFC400; color:#201A00; font-size:11px; font-weight:800; padding:6px 12px; border-radius:99px; }
+
+  /* ============ B. 渐变玻璃风 ============ */
+  .tB .scr { background:#0B0C10; position:relative; }
+  .tB .blob1,.tB .blob2 { position:absolute; border-radius:50%; filter:blur(60px); opacity:.5; pointer-events:none; }
+  .tB .blob1 { width:260px; height:260px; top:-60px; left:-70px; background:radial-gradient(circle,#FFC40066,#FFC40000 70%); }
+  .tB .blob2 { width:300px; height:300px; top:180px; right:-110px; background:radial-gradient(circle,#7C5CFF55,#7C5CFF00 70%); }
+  .tB .in { position:relative; padding:46px 16px 90px; }
+  .tB .row { display:flex; align-items:center; justify-content:space-between; }
+  .tB .brand { font-weight:900; font-size:16px; color:#fff; }
+  .tB .brand b { color:#FFC400; }
+  .tB .ava { width:32px; height:32px; border-radius:50%; background:linear-gradient(135deg,#FFC400,#7C5CFF); display:flex; align-items:center; justify-content:center; color:#0B0C10; font-weight:900; font-size:13px; }
+  .tB .greet { margin-top:16px; color:#fff; font-size:22px; font-weight:800; letter-spacing:-0.5px; }
+  .tB .greet small { display:block; color:#98A0AF; font-size:12px; font-weight:500; margin-top:3px; }
+  .tB .glass { background:rgba(255,255,255,.055); border:1px solid rgba(255,255,255,.1); border-radius:22px; backdrop-filter:blur(14px); }
+  .tB .hero { margin-top:16px; padding:18px; background:linear-gradient(130deg,rgba(255,196,0,.16),rgba(124,92,255,.14) 60%,rgba(255,255,255,.03)); border:1px solid rgba(255,255,255,.14); border-radius:24px; }
+  .tB .hero .lvl { display:inline-block; font-size:10px; font-weight:900; letter-spacing:1.5px; background:linear-gradient(90deg,#FFC400,#FF8AE2); -webkit-background-clip:text; background-clip:text; color:transparent; }
+  .tB .hero .nm { color:#fff; font-weight:800; font-size:16px; margin-top:2px; }
+  .tB .hero .score { color:#fff; font-size:40px; font-weight:900; margin-top:10px; letter-spacing:-1.5px; text-shadow:0 0 30px rgba(255,196,0,.45); }
+  .tB .hero .score span { font-size:12px; font-weight:600; color:#FFD65C; margin-left:6px; text-shadow:none; }
+  .tB .hero .bar { height:6px; border-radius:99px; background:rgba(255,255,255,.1); margin:12px 0 6px; }
+  .tB .hero .bar i { display:block; height:100%; width:72%; border-radius:99px; background:linear-gradient(90deg,#FFC400,#FF8AE2,#7C5CFF); }
+  .tB .hero .nx { display:flex; justify-content:space-between; font-size:11px; color:#98A0AF; }
+  .tB .stats { display:flex; gap:10px; margin-top:14px; }
+  .tB .st { flex:1; padding:12px 10px; text-align:center; }
+  .tB .st .v { color:#fff; font-size:19px; font-weight:900; letter-spacing:-0.5px; }
+  .tB .st .l { color:#98A0AF; font-size:10px; font-weight:600; margin-top:3px; }
+  .tB .st .ic { font-size:16px; margin-bottom:4px; }
+  .tB .act { display:flex; align-items:center; gap:12px; padding:14px; margin-top:12px; }
+  .tB .act .ic { width:42px; height:42px; border-radius:14px; display:flex; align-items:center; justify-content:center; font-size:19px; background:rgba(255,196,0,.14); }
+  .tB .act .tx { flex:1; }
+  .tB .act .t { color:#fff; font-size:13.5px; font-weight:700; }
+  .tB .act .d { color:#98A0AF; font-size:11px; margin-top:1px; }
+  .tB .act .ar { color:#5A6172; }
+  .tB .sec { padding:16px; margin-top:12px; }
+  .tB .sec h3 { color:#fff; font-size:13.5px; font-weight:800; }
+  .tB .mi { margin-top:12px; }
+  .tB .mi .t { display:flex; justify-content:space-between; color:#D8DCE6; font-size:12px; font-weight:600; }
+  .tB .mi .rw { color:#FFC400; font-size:10.5px; font-weight:800; }
+  .tB .mi .bar { height:5px; background:rgba(255,255,255,.08); border-radius:99px; margin-top:6px; }
+  .tB .mi .bar i { display:block; height:100%; border-radius:99px; background:linear-gradient(90deg,#FFC400,#FF8AE2); }
+  .tB .nav { position:sticky; bottom:14px; margin:22px 18px 0; display:flex; padding:10px 6px; border-radius:999px; background:rgba(20,22,30,.72); border:1px solid rgba(255,255,255,.12); backdrop-filter:blur(16px); }
+  .tB .nav div { flex:1; text-align:center; font-size:9.5px; font-weight:700; color:#7A8291; }
+  .tB .nav .ic { display:block; font-size:17px; margin-bottom:1px; }
+  .tB .nav .on { color:#FFC400; }
+  /* mall B */
+  .tB .pt-card { margin-top:16px; padding:18px; border-radius:24px; background:linear-gradient(130deg,#FFC400,#FF9D42 55%,#FF6FD8); color:#201A00; }
+  .tB .pt-card .l { font-size:11px; font-weight:800; opacity:.7; }
+  .tB .pt-card .v { font-size:38px; font-weight:900; letter-spacing:-1px; }
+  .tB .prods { display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-top:14px; }
+  .tB .pd { padding:10px; }
+  .tB .pd .im { height:84px; border-radius:14px; display:flex; align-items:center; justify-content:center; font-size:28px; background:rgba(255,255,255,.05); }
+  .tB .pd .n { color:#fff; font-size:12.5px; font-weight:700; margin-top:8px; }
+  .tB .pd .c { color:#7A8291; font-size:10px; margin-top:1px; }
+  .tB .pd .r { display:flex; justify-content:space-between; align-items:center; margin-top:8px; }
+  .tB .pd .p { color:#FFC400; font-weight:900; font-size:13px; }
+  .tB .pd .btn { font-size:10.5px; font-weight:800; padding:5px 11px; border-radius:99px; background:linear-gradient(90deg,#FFC400,#FF9D42); color:#201A00; }
+
+  /* ============ C. 清新极简圆润风 ============ */
+  .tC .scr { background:#FBFAF7; }
+  .tC .in { padding:46px 18px 90px; }
+  .tC .row { display:flex; align-items:center; justify-content:space-between; }
+  .tC .brand { font-weight:900; font-size:16px; color:#1C1B18; }
+  .tC .ava { width:36px; height:36px; border-radius:14px; background:#FFE9A8; display:flex; align-items:center; justify-content:center; font-size:16px; }
+  .tC .greet { margin-top:18px; font-size:24px; font-weight:900; color:#1C1B18; letter-spacing:-0.7px; line-height:1.2; }
+  .tC .greet em { font-style:normal; background:linear-gradient(transparent 62%, #FFE182 62%); }
+  .tC .greet small { display:block; font-size:12px; font-weight:600; color:#8F8B80; margin-top:4px; }
+  .tC .hero { margin-top:18px; background:#FFD84D; border-radius:28px; padding:20px; position:relative; overflow:hidden; }
+  .tC .hero::after { content:""; position:absolute; width:130px; height:130px; border-radius:50%; background:rgba(255,255,255,.35); right:-40px; top:-50px; }
+  .tC .hero .lvl { display:inline-block; background:#1C1B18; color:#FFD84D; font-size:10px; font-weight:900; padding:4px 12px; border-radius:99px; }
+  .tC .hero .score { font-size:42px; font-weight:900; color:#1C1B18; margin-top:10px; letter-spacing:-1.5px; }
+  .tC .hero .score span { font-size:12px; font-weight:700; color:#6B5B00; margin-left:6px; }
+  .tC .hero .bar { height:8px; background:rgba(28,27,24,.12); border-radius:99px; margin:12px 0 8px; }
+  .tC .hero .bar i { display:block; height:100%; width:72%; background:#1C1B18; border-radius:99px; }
+  .tC .hero .nx { font-size:11.5px; font-weight:700; color:#6B5B00; display:flex; justify-content:space-between; position:relative; }
+  .tC .stats { display:flex; gap:10px; margin-top:14px; }
+  .tC .st { flex:1; border-radius:24px; padding:14px 10px; text-align:center; }
+  .tC .st.mint { background:#DDF3E4; } .tC .st.lilac { background:#E9E4FA; } .tC .st.peach { background:#FFE8D9; }
+  .tC .st .ic { font-size:18px; }
+  .tC .st .v { font-size:20px; font-weight:900; color:#1C1B18; margin-top:5px; letter-spacing:-0.5px; }
+  .tC .st .l { font-size:10px; font-weight:700; color:#77746A; margin-top:2px; }
+  .tC .act { display:flex; align-items:center; gap:12px; background:#fff; border-radius:24px; padding:14px; margin-top:12px; border:1.5px solid #F0EEE6; }
+  .tC .act .ic { width:44px; height:44px; border-radius:16px; display:flex; align-items:center; justify-content:center; font-size:20px; }
+  .tC .act .tx { flex:1; }
+  .tC .act .t { font-size:13.5px; font-weight:800; color:#1C1B18; }
+  .tC .act .d { font-size:11px; color:#8F8B80; margin-top:1px; }
+  .tC .act .ar { color:#C9C5B8; font-weight:900; }
+  .tC .sec { background:#fff; border-radius:26px; padding:18px; margin-top:12px; border:1.5px solid #F0EEE6; }
+  .tC .sec h3 { font-size:14px; font-weight:900; color:#1C1B18; }
+  .tC .mi { margin-top:12px; }
+  .tC .mi .t { display:flex; justify-content:space-between; font-size:12.5px; font-weight:700; color:#4A4740; }
+  .tC .mi .rw { background:#DDF3E4; color:#1E7A46; font-size:10px; font-weight:900; padding:3px 9px; border-radius:99px; }
+  .tC .mi .bar { height:7px; background:#F3F1E9; border-radius:99px; margin-top:7px; }
+  .tC .mi .bar i { display:block; height:100%; border-radius:99px; background:#FFC400; }
+  .tC .nav { position:sticky; bottom:0; margin-top:20px; background:#fff; border-radius:28px 28px 0 0; display:flex; padding:12px 8px 18px; border-top:1.5px solid #F0EEE6; }
+  .tC .nav div { flex:1; text-align:center; font-size:10px; font-weight:800; color:#B4B0A3; }
+  .tC .nav .ic { display:block; font-size:19px; margin-bottom:2px; }
+  .tC .nav .on { color:#1C1B18; }
+  /* mall C */
+  .tC .pt-card { margin-top:18px; border-radius:28px; padding:20px; background:#E9E4FA; position:relative; overflow:hidden; }
+  .tC .pt-card::after { content:"🎁"; position:absolute; right:14px; bottom:8px; font-size:44px; opacity:.85; }
+  .tC .pt-card .l { font-size:11px; font-weight:800; color:#6D5FA8; }
+  .tC .pt-card .v { font-size:38px; font-weight:900; color:#1C1B18; letter-spacing:-1px; }
+  .tC .chips { display:flex; gap:8px; margin-top:14px; overflow-x:auto; }
+  .tC .chip { background:#fff; border:1.5px solid #F0EEE6; border-radius:99px; padding:7px 14px; font-size:11.5px; font-weight:800; color:#4A4740; white-space:nowrap; }
+  .tC .chip.on { background:#1C1B18; color:#FFD84D; border-color:#1C1B18; }
+  .tC .prods { display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-top:14px; }
+  .tC .pd { background:#fff; border-radius:24px; padding:10px; border:1.5px solid #F0EEE6; }
+  .tC .pd .im { height:86px; border-radius:18px; display:flex; align-items:center; justify-content:center; font-size:30px; }
+  .tC .pd .n { font-size:12.5px; font-weight:800; color:#1C1B18; margin-top:8px; }
+  .tC .pd .c { font-size:10px; color:#8F8B80; margin-top:1px; }
+  .tC .pd .r { display:flex; justify-content:space-between; align-items:center; margin-top:8px; }
+  .tC .pd .p { font-size:13px; font-weight:900; color:#B8860B; }
+  .tC .pd .btn { background:#1C1B18; color:#FFD84D; font-size:10.5px; font-weight:800; padding:6px 12px; border-radius:99px; }
+</style>
+</head>
+<body>
+<h1>MePonto Rider App · 年轻化风格对比稿</h1>
+<div class="sub">同样的真实内容(会员卡 · 今日数据 · 任务 · 积分商城),三种视觉方向 — 可上下滚动手机内容</div>
+<div class="toggle">
+  <button class="on" onclick="show('home',this)">首页 Home</button>
+  <button onclick="show('mall',this)">商城 Mall</button>
+</div>
+
+<div class="grid">
+
+  <!-- ================= A ================= -->
+  <div class="col">
+    <h2>A · 活力外卖风 Energia</h2>
+    <div class="tag">参考 iFood / 美团骑手端 · 品牌黄大胆铺开</div>
+    <div class="phone tA">
+      <div class="scr s-home">
+        <div class="hdr">
+          <div class="row"><span class="brand">⬡ MePonto</span><span class="ava">C</span></div>
+          <div class="greet">Bom dia, Carlos! ☀️<small>Entregador · Ponto Vila Mariana</small></div>
+        </div>
+        <div class="body">
+          <div class="hero">
+            <div class="top"><span class="nm">Carlos Silva</span><span class="lvl">★★★ OURO</span></div>
+            <div class="score">87<span>faltam 13 pts p/ Diamante</span></div>
+            <div class="bar"><i></i></div>
+            <div class="nx"><span>Saldo disponível</span><b>R$ 1.240,50</b></div>
+          </div>
+          <div class="stats">
+            <div class="st"><div class="ic">📦</div><div class="v">12</div><div class="l">Pedidos hoje</div></div>
+            <div class="st"><div class="ic">⏱️</div><div class="v">6,5h</div><div class="l">TSH</div></div>
+            <div class="st"><div class="ic">✅</div><div class="v">98%</div><div class="l">Aceitação</div></div>
+          </div>
+          <div class="acts">
+            <div class="act"><div class="ic" style="background:#FFF3C4">📷</div><div class="l">Escanear</div></div>
+            <div class="act"><div class="ic" style="background:#DFF5E6">👥</div><div class="l">Convidar</div></div>
+            <div class="act"><div class="ic" style="background:#E3ECFF">🗺️</div><div class="l">Mapa</div></div>
+            <div class="act"><div class="ic" style="background:#FFE8DE">🕑</div><div class="l">Turnos</div></div>
+          </div>
+          <div class="sec">
+            <h3>Missões de hoje 🔥 <a href="#">ver todas ›</a></h3>
+            <div class="mi"><div class="t"><span>Complete 15 pedidos</span><span class="rw">+50 pts</span></div><div class="bar"><i style="width:80%"></i></div></div>
+            <div class="mi"><div class="t"><span>4h no horário de pico</span><span class="rw">+30 pts</span></div><div class="bar"><i style="width:45%"></i></div></div>
+          </div>
+          <div class="sec">
+            <h3>Desempenho <a href="#">detalhes ›</a></h3>
+            <div class="mi"><div class="t"><span>Aceitação 98% · Cancelamento 1</span><span class="rw">Ótimo</span></div><div class="bar"><i style="width:96%"></i></div></div>
+          </div>
+        </div>
+        <div class="nav">
+          <div class="on"><span class="ic">🏠</span>Início</div>
+          <div><span class="ic">🗺️</span>Mapa</div>
+          <div><span class="ic">🛍️</span>Loja</div>
+          <div><span class="ic">👤</span>Perfil</div>
+        </div>
+      </div>
+      <div class="scr s-mall hide">
+        <div class="mhdr">
+          <div class="ti">Loja de Pontos 🛍️</div>
+          <div class="pt"><span class="v">2.450</span> <span class="l">pontos disponíveis</span></div>
+        </div>
+        <div class="body">
+          <div class="chips"><span class="chip on">Tudo</span><span class="chip">Equipamento</span><span class="chip">Vale</span><span class="chip">Serviços</span></div>
+          <div class="prods">
+            <div class="pd"><div class="im" style="background:#FFF3C4">🪖</div><div class="n">Capacete Pro</div><div class="c">Equipamento</div><div class="r"><span class="p">800 pts</span><span class="btn">Trocar</span></div></div>
+            <div class="pd"><div class="im" style="background:#DFF5E6">⛽</div><div class="n">Vale-combustível R$50</div><div class="c">Vale</div><div class="r"><span class="p">1.200 pts</span><span class="btn">Trocar</span></div></div>
+            <div class="pd"><div class="im" style="background:#E3ECFF">🧤</div><div class="n">Luvas térmicas</div><div class="c">Equipamento</div><div class="r"><span class="p">350 pts</span><span class="btn">Trocar</span></div></div>
+            <div class="pd"><div class="im" style="background:#FFE8DE">🔧</div><div class="n">Revisão da moto</div><div class="c">Serviços</div><div class="r"><span class="p">1.500 pts</span><span class="btn">Trocar</span></div></div>
+          </div>
+        </div>
+        <div class="nav">
+          <div><span class="ic">🏠</span>Início</div>
+          <div><span class="ic">🗺️</span>Mapa</div>
+          <div class="on"><span class="ic">🛍️</span>Loja</div>
+          <div><span class="ic">👤</span>Perfil</div>
+        </div>
+      </div>
+    </div>
+    <div class="note"><b>适合:</b>骑手日常高频使用,阳光下可读性最好,巴西外卖用户最熟悉的语言。品牌黄从点缀变成主角,识别度最强。<b>成本:</b>中 — 主要改布局与头部结构,token 基本复用。</div>
+  </div>
+
+  <!-- ================= B ================= -->
+  <div class="col">
+    <h2>B · 渐变玻璃风 Neon</h2>
+    <div class="tag">参考 Nubank / Revolut / 游戏化 · 暗色+霓虹渐变+毛玻璃</div>
+    <div class="phone tB">
+      <div class="scr s-home">
+        <div class="blob1"></div><div class="blob2"></div>
+        <div class="in">
+          <div class="row"><span class="brand">Me<b>Ponto</b></span><span class="ava">C</span></div>
+          <div class="greet">Bom dia, Carlos ⚡<small>Entregador · Ponto Vila Mariana</small></div>
+          <div class="hero">
+            <span class="lvl">★★★ OURO</span>
+            <div class="nm">Carlos Silva</div>
+            <div class="score">87<span>faltam 13 p/ Diamante</span></div>
+            <div class="bar"><i></i></div>
+            <div class="nx"><span>Saldo disponível</span><b style="color:#fff">R$ 1.240,50</b></div>
+          </div>
+          <div class="stats">
+            <div class="st glass"><div class="ic">📦</div><div class="v">12</div><div class="l">Pedidos</div></div>
+            <div class="st glass"><div class="ic">⏱️</div><div class="v">6,5h</div><div class="l">TSH</div></div>
+            <div class="st glass"><div class="ic">✅</div><div class="v">98%</div><div class="l">Aceitação</div></div>
+          </div>
+          <div class="act glass"><div class="ic">📷</div><div class="tx"><div class="t">Escanear</div><div class="d">Ponto · Repasse · Parceiro</div></div><span class="ar">›</span></div>
+          <div class="act glass"><div class="ic" style="background:rgba(45,224,165,.14)">👥</div><div class="tx"><div class="t">Convidar amigos</div><div class="d">Ganhe pontos por convite</div></div><span class="ar">›</span></div>
+          <div class="sec glass">
+            <h3>Missões de hoje</h3>
+            <div class="mi"><div class="t"><span>Complete 15 pedidos</span><span class="rw">+50 pts</span></div><div class="bar"><i style="width:80%"></i></div></div>
+            <div class="mi"><div class="t"><span>4h no horário de pico</span><span class="rw">+30 pts</span></div><div class="bar"><i style="width:45%"></i></div></div>
+          </div>
+          <div class="nav">
+            <div class="on"><span class="ic">🏠</span>Início</div>
+            <div><span class="ic">🗺️</span>Mapa</div>
+            <div><span class="ic">🛍️</span>Loja</div>
+            <div><span class="ic">👤</span>Perfil</div>
+          </div>
+        </div>
+      </div>
+      <div class="scr s-mall hide">
+        <div class="blob1"></div><div class="blob2"></div>
+        <div class="in">
+          <div class="row"><span class="brand">Loja de <b>Pontos</b></span><span class="ava">C</span></div>
+          <div class="pt-card"><div class="l">PONTOS DISPONÍVEIS</div><div class="v">2.450 ✦</div></div>
+          <div class="prods">
+            <div class="pd glass"><div class="im">🪖</div><div class="n">Capacete Pro</div><div class="c">Equipamento</div><div class="r"><span class="p">800 pts</span><span class="btn">Trocar</span></div></div>
+            <div class="pd glass"><div class="im">⛽</div><div class="n">Vale-combustível</div><div class="c">Vale</div><div class="r"><span class="p">1.200 pts</span><span class="btn">Trocar</span></div></div>
+            <div class="pd glass"><div class="im">🧤</div><div class="n">Luvas térmicas</div><div class="c">Equipamento</div><div class="r"><span class="p">350 pts</span><span class="btn">Trocar</span></div></div>
+            <div class="pd glass"><div class="im">🔧</div><div class="n">Revisão da moto</div><div class="c">Serviços</div><div class="r"><span class="p">1.500 pts</span><span class="btn">Trocar</span></div></div>
+          </div>
+          <div class="nav">
+            <div><span class="ic">🏠</span>Início</div>
+            <div><span class="ic">🗺️</span>Mapa</div>
+            <div class="on"><span class="ic">🛍️</span>Loja</div>
+            <div><span class="ic">👤</span>Perfil</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="note"><b>适合:</b>最"潮"、游戏感强,等级/积分体系表现力最好,和现有暗色 token 最接近(改动集中在渐变与玻璃卡)。<b>风险:</b>烈日户外可读性弱于浅色方案;毛玻璃在低端 Android 机型有性能成本。</div>
+  </div>
+
+  <!-- ================= C ================= -->
+  <div class="col">
+    <h2>C · 清新极简圆润风 Soft</h2>
+    <div class="tag">参考 Duolingo / 新消费 App · 大留白+马卡龙色块+超大圆角</div>
+    <div class="phone tC">
+      <div class="scr s-home">
+        <div class="in">
+          <div class="row"><span class="brand">⬡ MePonto</span><span class="ava">🛵</span></div>
+          <div class="greet">Bom dia,<br><em>Carlos!</em><small>Entregador · Ponto Vila Mariana</small></div>
+          <div class="hero">
+            <span class="lvl">★★★ OURO</span>
+            <div class="score">87<span>faltam 13 p/ Diamante</span></div>
+            <div class="bar"><i></i></div>
+            <div class="nx"><span>Saldo disponível</span><span>R$ 1.240,50</span></div>
+          </div>
+          <div class="stats">
+            <div class="st mint"><div class="ic">📦</div><div class="v">12</div><div class="l">Pedidos</div></div>
+            <div class="st lilac"><div class="ic">⏱️</div><div class="v">6,5h</div><div class="l">TSH</div></div>
+            <div class="st peach"><div class="ic">✅</div><div class="v">98%</div><div class="l">Aceitação</div></div>
+          </div>
+          <div class="act"><div class="ic" style="background:#FFF2C2">📷</div><div class="tx"><div class="t">Escanear</div><div class="d">Ponto · Repasse · Parceiro</div></div><span class="ar">›</span></div>
+          <div class="act"><div class="ic" style="background:#DDF3E4">👥</div><div class="tx"><div class="t">Convidar amigos</div><div class="d">Ganhe pontos por convite</div></div><span class="ar">›</span></div>
+          <div class="sec">
+            <h3>Missões de hoje 🌱</h3>
+            <div class="mi"><div class="t"><span>Complete 15 pedidos</span><span class="rw">+50 pts</span></div><div class="bar"><i style="width:80%"></i></div></div>
+            <div class="mi"><div class="t"><span>4h no horário de pico</span><span class="rw">+30 pts</span></div><div class="bar"><i style="width:45%"></i></div></div>
+          </div>
+          <div class="nav">
+            <div class="on"><span class="ic">🏠</span>Início</div>
+            <div><span class="ic">🗺️</span>Mapa</div>
+            <div><span class="ic">🛍️</span>Loja</div>
+            <div><span class="ic">👤</span>Perfil</div>
+          </div>
+        </div>
+      </div>
+      <div class="scr s-mall hide">
+        <div class="in">
+          <div class="row"><span class="brand">Loja de Pontos</span><span class="ava">🛵</span></div>
+          <div class="pt-card"><div class="l">PONTOS DISPONÍVEIS</div><div class="v">2.450</div></div>
+          <div class="chips"><span class="chip on">Tudo</span><span class="chip">Equipamento</span><span class="chip">Vale</span><span class="chip">Serviços</span></div>
+          <div class="prods">
+            <div class="pd"><div class="im" style="background:#FFF2C2">🪖</div><div class="n">Capacete Pro</div><div class="c">Equipamento</div><div class="r"><span class="p">800 pts</span><span class="btn">Trocar</span></div></div>
+            <div class="pd"><div class="im" style="background:#DDF3E4">⛽</div><div class="n">Vale-combustível</div><div class="c">Vale</div><div class="r"><span class="p">1.200 pts</span><span class="btn">Trocar</span></div></div>
+            <div class="pd"><div class="im" style="background:#E9E4FA">🧤</div><div class="n">Luvas térmicas</div><div class="c">Equipamento</div><div class="r"><span class="p">350 pts</span><span class="btn">Trocar</span></div></div>
+            <div class="pd"><div class="im" style="background:#FFE8D9">🔧</div><div class="n">Revisão da moto</div><div class="c">Serviços</div><div class="r"><span class="p">1.500 pts</span><span class="btn">Trocar</span></div></div>
+          </div>
+          <div class="nav">
+            <div><span class="ic">🏠</span>Início</div>
+            <div><span class="ic">🗺️</span>Mapa</div>
+            <div class="on"><span class="ic">🛍️</span>Loja</div>
+            <div><span class="ic">👤</span>Perfil</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="note"><b>适合:</b>最轻松友好、信息压力最小,商城"逛"的感觉最强。<b>风险:</b>与现有深色调品牌感偏离最大,黄色从功能色变为装饰色;数据密集页(绩效/流水)需要额外设计。</div>
+  </div>
+
+</div>
+
+<script>
+function show(which, btn) {
+  document.querySelectorAll('.toggle button').forEach(b => b.classList.remove('on'));
+  btn.classList.add('on');
+  document.querySelectorAll('.s-home').forEach(e => e.classList.toggle('hide', which !== 'home'));
+  document.querySelectorAll('.s-mall').forEach(e => e.classList.toggle('hide', which !== 'mall'));
+}
+</script>
+</body>
+</html>

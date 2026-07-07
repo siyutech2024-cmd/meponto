@@ -32,43 +32,67 @@ data class MeColors(
     val warning: Color,
     val ok: Color,
     val isDark: Boolean,
+    // Tropical/Noite v2 additions — semantic secondaries and brand gradients.
+    val secondary: Color,       // hot pink: highlights, critical-but-branded accents
+    val secondaryInk: Color,    // ink on secondary fills
+    val tertiary: Color,        // electric blue (day) / electric purple (night)
+    val jungle: Color,          // deep jungle green: hero surfaces (day theme)
+    val heroGradient: List<Color>,   // membership/tier hero card backdrop
+    val pointsGradient: List<Color>, // points balance / rewards backdrop
 )
 
-// Consumer-grade dual palette (delivery-app vibe): light is the default and
-// carries saturated brand yellow + lively functional colors; dark is a richer
-// nightly variant of the same identity.
+// "Tropical Modernista / Noite" dual palette — Brazilian-youth color language
+// (saturated tropical green, brand yellow, hot pink, sunset orange, electric
+// purple) over the same semantic token architecture. Light = daytime Tropical
+// (ivory base, high sun-readability); dark = Noite (deep violet night, sunset
+// gradients). Components must always reference these semantic tokens, never
+// raw hex.
 val DarkMeColors = MeColors(
-    background = Color(0xFF0B0C10),
-    surface = Color(0xFF15171E),
-    surfaceRaised = Color(0xFF1C1F28),
-    surfaceHover = Color(0xFF242836),
-    line = Color(0xFF2C3040),
-    text = Color(0xFFF6F7FB),
-    textSoft = Color(0xFFD8DCE6),
-    muted = Color(0xFF98A0AF),
-    accent = Color(0xFFFFD100),
-    accentInk = Color(0xFF1A1500),
-    danger = Color(0xFFFF5C70),
-    warning = Color(0xFFFFB454),
-    ok = Color(0xFF2DE0A5),
+    background = Color(0xFF12081F),
+    surface = Color(0xFF1D1230),
+    surfaceRaised = Color(0xFF251740),
+    surfaceHover = Color(0xFF2E2044),
+    line = Color(0xFF2E2044),
+    text = Color(0xFFF4EFFA),
+    textSoft = Color(0xFFD9D2E8),
+    muted = Color(0xFF9D92B3),
+    accent = Color(0xFFFFC400),
+    accentInk = Color(0xFF2A1400),
+    danger = Color(0xFFFF4D6D),
+    warning = Color(0xFFFF6A3D),
+    ok = Color(0xFF4DE0A8),
     isDark = true,
+    secondary = Color(0xFFFF4D8D),
+    secondaryInk = Color(0xFFFFFFFF),
+    tertiary = Color(0xFFB14DFF),
+    jungle = Color(0xFF0B5C3B),
+    // Rio sunset: laranja → rosa → roxo.
+    heroGradient = listOf(Color(0xFFFF6A3D), Color(0xFFFF4D8D), Color(0xFFB14DFF)),
+    pointsGradient = listOf(Color(0xFFFFC400), Color(0xFFFF6A3D), Color(0xFFFF4D8D)),
 )
 
 val LightMeColors = MeColors(
-    background = Color(0xFFF6F6F8),
+    background = Color(0xFFFAF6EE),
     surface = Color(0xFFFFFFFF),
-    surfaceRaised = Color(0xFFF2F3F7),
-    surfaceHover = Color(0xFFECEEF4),
-    line = Color(0xFFE4E7EE),
-    text = Color(0xFF17181C),
-    textSoft = Color(0xFF3C4148),
-    muted = Color(0xFF7A8291),
+    surfaceRaised = Color(0xFFF4EFE3),
+    surfaceHover = Color(0xFFEFE9DA),
+    line = Color(0xFFEAE4D4),
+    text = Color(0xFF141B14),
+    textSoft = Color(0xFF3B4038),
+    muted = Color(0xFF8B8778),
     accent = Color(0xFFFFC400),
-    accentInk = Color(0xFF201A00),
-    danger = Color(0xFFFF4D5E),
-    warning = Color(0xFFFF9F1C),
-    ok = Color(0xFF00B884),
+    accentInk = Color(0xFF3A2C00),
+    danger = Color(0xFFE23A4E),
+    warning = Color(0xFFFF6A3D),
+    ok = Color(0xFF00A868),
     isDark = false,
+    secondary = Color(0xFFFF4D8D),
+    secondaryInk = Color(0xFFFFFFFF),
+    tertiary = Color(0xFF2D6BFF),
+    jungle = Color(0xFF0B5C3B),
+    // Daytime hero: deep jungle green (yellow figures sit on top of it).
+    heroGradient = listOf(Color(0xFF0B5C3B), Color(0xFF0E7A4C)),
+    pointsGradient = listOf(Color(0xFFFF8A3D), Color(0xFFFF4D8D), Color(0xFFB14DFF)),
 )
 
 val LocalMe = staticCompositionLocalOf { DarkMeColors }
@@ -90,8 +114,9 @@ fun Tone.bg(c: MeColors): Color = when (this) {
 }
 
 object MeRadius {
-    val card = 16.dp
-    val small = 10.dp
+    val card = 20.dp
+    val small = 12.dp
+    val hero = 24.dp
 }
 
 @Composable
@@ -122,11 +147,11 @@ fun MePontoTheme(darkTheme: Boolean, content: @Composable () -> Unit) {
     }
     // Rounded shape scale: text fields, sheets and menus pick these up.
     val shapes = Shapes(
-        extraSmall = RoundedCornerShape(10.dp),
-        small = RoundedCornerShape(12.dp),
-        medium = RoundedCornerShape(16.dp),
-        large = RoundedCornerShape(20.dp),
-        extraLarge = RoundedCornerShape(28.dp),
+        extraSmall = RoundedCornerShape(12.dp),
+        small = RoundedCornerShape(14.dp),
+        medium = RoundedCornerShape(20.dp),
+        large = RoundedCornerShape(24.dp),
+        extraLarge = RoundedCornerShape(32.dp),
     )
     CompositionLocalProvider(LocalMe provides me) {
         MaterialTheme(colorScheme = colorScheme, shapes = shapes, content = content)

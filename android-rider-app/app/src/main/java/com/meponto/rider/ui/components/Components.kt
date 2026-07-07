@@ -163,7 +163,8 @@ fun PrimaryButton(
     onClick: () -> Unit,
 ) {
     val me = LocalMe.current
-    val shape = RoundedCornerShape(MeRadius.card)
+    // Pill-shaped primary action (Tropical/Noite v2).
+    val shape = CircleShape
     Row(
         modifier = modifier
             .fillMaxWidth()

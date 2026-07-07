@@ -1,0 +1,396 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MePonto Rider App — 年轻化风格对比稿 v2(2026 趋势版)</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { font-family:-apple-system,"SF Pro","PingFang SC","Segoe UI",Roboto,sans-serif; background:#111318; color:#EDEFF4; padding:32px 24px 64px; }
+  h1 { font-size:22px; font-weight:800; margin-bottom:6px; }
+  .sub { color:#8A93A6; font-size:13px; margin-bottom:24px; max-width:760px; line-height:1.6; }
+  .toggle { display:inline-flex; background:#1D2028; border-radius:999px; padding:4px; margin-bottom:28px; }
+  .toggle button { border:0; background:transparent; color:#8A93A6; font-size:13px; font-weight:700; padding:8px 22px; border-radius:999px; cursor:pointer; }
+  .toggle button.on { background:#FFC400; color:#201A00; }
+  .grid { display:flex; gap:36px; flex-wrap:wrap; align-items:flex-start; justify-content:center; }
+  .col { width:320px; }
+  .col h2 { font-size:15px; font-weight:800; margin-bottom:2px; }
+  .col .tag { font-size:11px; color:#8A93A6; margin-bottom:12px; }
+  .col .note { font-size:12px; color:#A7AFBF; line-height:1.6; margin-top:14px; }
+  .note b { color:#EDEFF4; }
+  .phone { width:320px; height:650px; border-radius:38px; border:6px solid #2A2E3A; overflow:hidden; position:relative; background:#000; }
+  .scr { position:absolute; inset:0; overflow-y:auto; scrollbar-width:none; }
+  .scr::-webkit-scrollbar { display:none; }
+  .hide { display:none; }
+
+  /* ============ D. Material 3 Expressive ============ */
+  .tD .scr { background:#FFF8EE; }
+  .tD .in { padding:46px 16px 92px; }
+  .tD .row { display:flex; align-items:center; justify-content:space-between; }
+  .tD .brand { font-weight:800; font-size:15px; color:#211B00; }
+  .tD .ava { width:38px; height:38px; border-radius:14px; background:#211B00; color:#FFC400; display:flex; align-items:center; justify-content:center; font-weight:900; }
+  .tD .greet { margin-top:18px; font-size:30px; font-weight:900; letter-spacing:-1.2px; line-height:1.05; color:#211B00; }
+  .tD .greet small { display:block; font-size:12px; font-weight:600; color:#8A7B4D; letter-spacing:0; margin-top:6px; }
+  /* M3E signature: mixed asymmetric corner radii */
+  .tD .hero { margin-top:18px; background:#FFC400; border-radius:36px 36px 36px 12px; padding:20px; color:#211B00; }
+  .tD .hero .top { display:flex; justify-content:space-between; align-items:center; }
+  .tD .hero .lvl { background:#211B00; color:#FFC400; font-size:10px; font-weight:900; padding:5px 12px; border-radius:99px; }
+  .tD .hero .nm { font-weight:800; font-size:14px; }
+  .tD .hero .score { font-size:52px; font-weight:900; letter-spacing:-2.5px; margin-top:6px; line-height:1; }
+  .tD .hero .score span { font-size:12px; font-weight:700; letter-spacing:0; color:#6B5B00; margin-left:8px; }
+  .tD .hero .trk { position:relative; height:14px; background:rgba(33,27,0,.12); border-radius:99px; margin:14px 0 8px; }
+  .tD .hero .trk i { position:absolute; left:0; top:0; bottom:0; width:72%; background:#211B00; border-radius:99px; }
+  .tD .hero .trk u { position:absolute; left:calc(72% + 6px); top:3px; width:8px; height:8px; border-radius:50%; background:#211B00; }
+  .tD .hero .nx { display:flex; justify-content:space-between; font-size:11.5px; font-weight:700; color:#6B5B00; }
+  .tD .tiles { display:flex; gap:10px; margin-top:12px; }
+  .tD .tl { flex:1; padding:14px 12px; }
+  .tD .tl.a { background:#E8F5E4; border-radius:12px 28px 12px 28px; }
+  .tD .tl.b { background:#EFE7FF; border-radius:28px 12px 28px 12px; }
+  .tD .tl.c { background:#FFE7D6; border-radius:12px 28px 12px 28px; }
+  .tD .tl .v { font-size:22px; font-weight:900; color:#211B00; letter-spacing:-0.8px; }
+  .tD .tl .l { font-size:10px; font-weight:700; color:#77746A; margin-top:3px; }
+  .tD .scan { margin-top:12px; display:flex; }
+  .tD .scan .main { flex:1; background:#211B00; color:#FFC400; font-weight:800; font-size:14.5px; padding:17px 20px; border-radius:99px 12px 12px 99px; display:flex; align-items:center; gap:10px; }
+  .tD .scan .split { width:56px; margin-left:4px; background:#211B00; color:#FFC400; border-radius:12px 99px 99px 12px; display:flex; align-items:center; justify-content:center; font-size:18px; }
+  .tD .chipsrow { display:flex; gap:8px; margin-top:12px; }
+  .tD .fchip { flex:1; background:#fff; border:1.5px solid #EBE3D2; border-radius:18px; padding:12px 10px; text-align:center; font-size:11px; font-weight:800; color:#211B00; }
+  .tD .fchip span { display:block; font-size:18px; margin-bottom:4px; }
+  .tD .sec { background:#fff; border-radius:28px; padding:18px; margin-top:12px; border:1.5px solid #EBE3D2; }
+  .tD .sec h3 { font-size:14px; font-weight:900; color:#211B00; }
+  .tD .mi { margin-top:12px; }
+  .tD .mi .t { display:flex; justify-content:space-between; font-size:12.5px; font-weight:700; color:#4A4740; }
+  .tD .mi .rw { background:#FFC400; color:#211B00; font-size:10px; font-weight:900; padding:3px 9px; border-radius:99px; }
+  .tD .mi .bar { height:10px; background:#F3EDE0; border-radius:99px; margin-top:7px; }
+  .tD .mi .bar i { display:block; height:100%; border-radius:99px; background:#211B00; }
+  .tD .nav { position:sticky; bottom:0; margin-top:18px; background:#F6EEDD; display:flex; padding:12px 8px 18px; border-radius:32px 32px 0 0; }
+  .tD .nav div { flex:1; text-align:center; font-size:10px; font-weight:800; color:#9A8F73; }
+  .tD .nav .ic { display:block; font-size:18px; margin-bottom:3px; }
+  .tD .nav .on { color:#211B00; }
+  .tD .nav .on .ic { background:#FFC400; border-radius:99px; padding:4px 18px; display:inline-block; }
+  /* mall D */
+  .tD .pts { margin-top:16px; background:#211B00; color:#FFC400; border-radius:36px 36px 12px 36px; padding:20px; }
+  .tD .pts .l { font-size:10px; font-weight:900; letter-spacing:2px; opacity:.75; }
+  .tD .pts .v { font-size:46px; font-weight:900; letter-spacing:-2px; line-height:1.1; }
+  .tD .chips { display:flex; gap:8px; margin-top:14px; overflow-x:auto; }
+  .tD .chip { background:#fff; border:1.5px solid #EBE3D2; border-radius:99px; padding:8px 15px; font-size:11.5px; font-weight:800; color:#4A4740; white-space:nowrap; }
+  .tD .chip.on { background:#211B00; color:#FFC400; border-color:#211B00; }
+  .tD .prods { display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-top:14px; }
+  .tD .pd { background:#fff; border:1.5px solid #EBE3D2; padding:10px; }
+  .tD .pd:nth-child(odd) { border-radius:28px 12px 28px 12px; }
+  .tD .pd:nth-child(even) { border-radius:12px 28px 12px 28px; }
+  .tD .pd .im { height:84px; border-radius:16px; display:flex; align-items:center; justify-content:center; font-size:30px; }
+  .tD .pd .n { font-size:12.5px; font-weight:800; color:#211B00; margin-top:8px; }
+  .tD .pd .c { font-size:10px; color:#9A8F73; margin-top:1px; }
+  .tD .pd .r { display:flex; justify-content:space-between; align-items:center; margin-top:8px; }
+  .tD .pd .p { font-size:13px; font-weight:900; color:#211B00; }
+  .tD .pd .btn { background:#FFC400; color:#211B00; font-size:10.5px; font-weight:900; padding:6px 13px; border-radius:99px; }
+
+  /* ============ E. Bento 编辑风 ============ */
+  .tE .scr { background:#F4F2ED; }
+  .tE .in { padding:46px 14px 92px; }
+  .tE .row { display:flex; align-items:baseline; justify-content:space-between; }
+  .tE .brand { font-weight:900; font-size:14px; letter-spacing:-0.3px; color:#141414; }
+  .tE .date { font-size:10px; font-weight:700; letter-spacing:1.5px; color:#9C988C; }
+  .tE .greet { margin-top:14px; font-size:34px; font-weight:900; letter-spacing:-1.8px; line-height:.98; color:#141414; text-transform:uppercase; }
+  .tE .greet i { font-style:normal; color:#C79600; }
+  .tE .bento { display:grid; grid-template-columns:repeat(2,1fr); gap:8px; margin-top:16px; }
+  .tE .bx { border-radius:18px; padding:14px; background:#fff; }
+  .tE .bx .lb { font-size:9px; font-weight:900; letter-spacing:1.8px; color:#9C988C; text-transform:uppercase; }
+  .tE .bx .big { font-size:40px; font-weight:900; letter-spacing:-2px; color:#141414; line-height:1; margin-top:8px; }
+  .tE .bx .mid { font-size:24px; font-weight:900; letter-spacing:-1px; color:#141414; margin-top:6px; }
+  .tE .bx .sm { font-size:10.5px; font-weight:600; color:#77736A; margin-top:4px; }
+  .tE .bx.hero { grid-column:1/-1; background:#141414; color:#fff; }
+  .tE .bx.hero .lb { color:#FFC400; }
+  .tE .bx.hero .big { color:#fff; font-size:56px; letter-spacing:-3px; display:flex; align-items:baseline; gap:10px; }
+  .tE .bx.hero .big small { font-size:11px; font-weight:700; letter-spacing:0; color:#FFC400; }
+  .tE .bx.hero .bar { height:5px; background:rgba(255,255,255,.14); border-radius:99px; margin-top:12px; }
+  .tE .bx.hero .bar i { display:block; height:100%; width:72%; background:#FFC400; border-radius:99px; }
+  .tE .bx.hero .ft { display:flex; justify-content:space-between; font-size:10.5px; font-weight:700; color:#B9B5A9; margin-top:8px; }
+  .tE .bx.hero .ft b { color:#fff; }
+  .tE .bx.yel { background:#FFC400; }
+  .tE .bx.yel .lb { color:#6B5B00; }
+  .tE .bx.yel .mid,.tE .bx.yel .big { color:#141414; }
+  .tE .bx.yel .sm { color:#6B5B00; }
+  .tE .bx.tall { display:flex; flex-direction:column; justify-content:space-between; }
+  .tE .bx .arrow { align-self:flex-end; width:30px; height:30px; border-radius:50%; background:#141414; color:#fff; display:flex; align-items:center; justify-content:center; font-size:14px; }
+  .tE .bx.yel .arrow { background:#141414; color:#FFC400; }
+  .tE .list { margin-top:8px; }
+  .tE .li { display:flex; justify-content:space-between; align-items:center; background:#fff; border-radius:18px; padding:14px; margin-top:8px; }
+  .tE .li .t { font-size:12.5px; font-weight:800; color:#141414; }
+  .tE .li .d { font-size:10.5px; color:#9C988C; margin-top:1px; }
+  .tE .li .rw { font-size:11px; font-weight:900; color:#C79600; }
+  .tE .nav { position:sticky; bottom:0; margin-top:18px; background:#141414; display:flex; padding:13px 8px 19px; border-radius:22px 22px 0 0; }
+  .tE .nav div { flex:1; text-align:center; font-size:9.5px; font-weight:800; letter-spacing:.5px; color:#6E6A5E; text-transform:uppercase; }
+  .tE .nav .ic { display:block; font-size:17px; margin-bottom:2px; }
+  .tE .nav .on { color:#FFC400; }
+  /* mall E */
+  .tE .ti { margin-top:14px; font-size:34px; font-weight:900; letter-spacing:-1.8px; text-transform:uppercase; color:#141414; line-height:.98; }
+  .tE .ti i { font-style:normal; color:#C79600; }
+  .tE .mbento { display:grid; grid-template-columns:repeat(2,1fr); gap:8px; margin-top:16px; }
+  .tE .pd { background:#fff; border-radius:18px; padding:10px; }
+  .tE .pd .im { height:80px; border-radius:12px; display:flex; align-items:center; justify-content:center; font-size:28px; background:#F4F2ED; }
+  .tE .pd .n { font-size:12px; font-weight:800; color:#141414; margin-top:8px; }
+  .tE .pd .r { display:flex; justify-content:space-between; align-items:center; margin-top:6px; }
+  .tE .pd .p { font-size:12.5px; font-weight:900; color:#C79600; }
+  .tE .pd .btn { width:26px; height:26px; border-radius:50%; background:#141414; color:#FFC400; display:flex; align-items:center; justify-content:center; font-size:13px; }
+  .tE .pd.feat { grid-column:1/-1; background:#141414; display:flex; gap:12px; align-items:center; }
+  .tE .pd.feat .im { width:90px; height:90px; flex:none; background:rgba(255,255,255,.08); }
+  .tE .pd.feat .n { color:#fff; font-size:15px; margin-top:0; }
+  .tE .pd.feat .lb { font-size:9px; font-weight:900; letter-spacing:1.8px; color:#FFC400; }
+  .tE .pd.feat .p { color:#FFC400; font-size:16px; }
+
+  /* ============ F. 街头运动风 ============ */
+  .tF .scr { background:#101010; }
+  .tF .in { padding:46px 16px 92px; position:relative; }
+  .tF .stripes { position:absolute; top:0; right:-30px; width:180px; height:120px; background:repeating-linear-gradient(115deg,#FFC400 0 10px,transparent 10px 26px); opacity:.14; pointer-events:none; }
+  .tF .row { display:flex; align-items:center; justify-content:space-between; }
+  .tF .brand { font-weight:900; font-size:15px; font-style:italic; letter-spacing:-0.5px; color:#fff; }
+  .tF .brand b { color:#FFC400; }
+  .tF .ava { width:34px; height:34px; border-radius:10px; background:#FFC400; color:#101010; display:flex; align-items:center; justify-content:center; font-weight:900; transform:skewX(-6deg); }
+  .tF .greet { margin-top:16px; font-size:32px; font-weight:900; font-style:italic; letter-spacing:-1.5px; line-height:.98; color:#fff; text-transform:uppercase; }
+  .tF .greet i { font-style:italic; color:#FFC400; }
+  .tF .greet small { display:block; font-style:normal; font-size:11px; font-weight:700; letter-spacing:1.5px; color:#7C7C7C; margin-top:6px; }
+  .tF .hero { margin-top:16px; background:linear-gradient(115deg,#1C1C1C,#242006); border:1px solid #33300F; border-radius:20px; padding:18px; position:relative; overflow:hidden; }
+  .tF .hero::after { content:""; position:absolute; right:-20px; top:-20px; width:110px; height:160px; background:repeating-linear-gradient(115deg,#FFC400 0 8px,transparent 8px 22px); opacity:.18; }
+  .tF .hero .lvl { display:inline-block; background:#FFC400; color:#101010; font-size:10px; font-weight:900; font-style:italic; padding:4px 12px; transform:skewX(-8deg); letter-spacing:1px; }
+  .tF .hero .score { color:#fff; font-size:58px; font-weight:900; font-style:italic; letter-spacing:-3px; line-height:1; margin-top:10px; }
+  .tF .hero .score span { font-size:11px; font-weight:700; font-style:normal; letter-spacing:1px; color:#FFC400; margin-left:8px; }
+  .tF .hero .bar { height:8px; background:rgba(255,255,255,.1); margin:14px 0 8px; transform:skewX(-8deg); }
+  .tF .hero .bar i { display:block; height:100%; width:72%; background:linear-gradient(90deg,#FFC400,#FFE066); }
+  .tF .hero .nx { display:flex; justify-content:space-between; font-size:10.5px; font-weight:700; letter-spacing:.5px; color:#8C8C8C; text-transform:uppercase; }
+  .tF .hero .nx b { color:#fff; }
+  .tF .stats { display:flex; gap:8px; margin-top:12px; }
+  .tF .st { flex:1; background:#1C1C1C; border:1px solid #2A2A2A; border-radius:14px; padding:12px 10px; text-align:center; }
+  .tF .st .v { color:#fff; font-size:21px; font-weight:900; font-style:italic; letter-spacing:-0.8px; }
+  .tF .st .l { color:#7C7C7C; font-size:9px; font-weight:800; letter-spacing:1px; text-transform:uppercase; margin-top:4px; }
+  .tF .cta { margin-top:12px; background:#FFC400; color:#101010; font-weight:900; font-style:italic; font-size:15px; letter-spacing:.5px; text-transform:uppercase; padding:16px; text-align:center; transform:skewX(-4deg); border-radius:8px; box-shadow:4px 4px 0 #4A3D00; }
+  .tF .sub2 { display:flex; gap:8px; margin-top:12px; }
+  .tF .sb { flex:1; background:#1C1C1C; border:1px solid #2A2A2A; border-radius:14px; padding:13px; color:#fff; font-size:11.5px; font-weight:800; display:flex; align-items:center; gap:8px; }
+  .tF .sec { background:#1C1C1C; border:1px solid #2A2A2A; border-radius:18px; padding:16px; margin-top:12px; }
+  .tF .sec h3 { color:#fff; font-size:13px; font-weight:900; font-style:italic; text-transform:uppercase; letter-spacing:.5px; }
+  .tF .mi { margin-top:12px; }
+  .tF .mi .t { display:flex; justify-content:space-between; color:#D8D8D8; font-size:12px; font-weight:700; }
+  .tF .mi .rw { color:#FFC400; font-size:10.5px; font-weight:900; font-style:italic; }
+  .tF .mi .bar { height:6px; background:#2A2A2A; margin-top:6px; transform:skewX(-8deg); }
+  .tF .mi .bar i { display:block; height:100%; background:#FFC400; }
+  .tF .nav { position:sticky; bottom:0; margin-top:18px; background:#181818; border-top:1px solid #2A2A2A; display:flex; padding:12px 8px 18px; }
+  .tF .nav div { flex:1; text-align:center; font-size:9px; font-weight:900; letter-spacing:1px; color:#5E5E5E; text-transform:uppercase; }
+  .tF .nav .ic { display:block; font-size:17px; margin-bottom:2px; }
+  .tF .nav .on { color:#FFC400; }
+  /* mall F */
+  .tF .pts { margin-top:16px; background:#FFC400; border-radius:20px; padding:18px; color:#101010; position:relative; overflow:hidden; transform:skewX(-2deg); }
+  .tF .pts::after { content:""; position:absolute; right:-10px; bottom:-30px; width:120px; height:120px; background:repeating-linear-gradient(115deg,#101010 0 8px,transparent 8px 22px); opacity:.12; }
+  .tF .pts .l { font-size:10px; font-weight:900; letter-spacing:2px; }
+  .tF .pts .v { font-size:48px; font-weight:900; font-style:italic; letter-spacing:-2.5px; line-height:1.05; }
+  .tF .prods { display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-top:14px; }
+  .tF .pd { background:#1C1C1C; border:1px solid #2A2A2A; border-radius:16px; padding:10px; }
+  .tF .pd .im { height:82px; border-radius:10px; display:flex; align-items:center; justify-content:center; font-size:28px; background:#242424; }
+  .tF .pd .n { color:#fff; font-size:12px; font-weight:800; margin-top:8px; }
+  .tF .pd .c { color:#7C7C7C; font-size:9.5px; font-weight:700; letter-spacing:1px; text-transform:uppercase; margin-top:1px; }
+  .tF .pd .r { display:flex; justify-content:space-between; align-items:center; margin-top:8px; }
+  .tF .pd .p { color:#FFC400; font-size:13px; font-weight:900; font-style:italic; }
+  .tF .pd .btn { background:#FFC400; color:#101010; font-size:10px; font-weight:900; font-style:italic; text-transform:uppercase; padding:5px 11px; transform:skewX(-8deg); }
+</style>
+</head>
+<body>
+<h1>年轻化风格对比稿 v2 · 2026 趋势版</h1>
+<div class="sub">对 v1 三稿自检后的升级方向:不再靠"换颜色"年轻化,改用<b>版式、字体和形状</b>做层次。D 是 Android 官方潮流(Material 3 Expressive),E 用 Bento 网格解决骑手端信息密集问题,F 面向"跑单=运动"的情绪定位。</div>
+<div class="toggle">
+  <button class="on" onclick="show('home',this)">首页 Home</button>
+  <button onclick="show('mall',this)">商城 Mall</button>
+</div>
+
+<div class="grid">
+
+  <!-- ================= D ================= -->
+  <div class="col">
+    <h2>D · Material 3 Expressive「Vibrante」</h2>
+    <div class="tag">Google 官方新方向 · 不对称圆角+超大字+色调容器+分裂按钮</div>
+    <div class="phone tD">
+      <div class="scr s-home">
+        <div class="in">
+          <div class="row"><span class="brand">⬡ MePonto</span><span class="ava">C</span></div>
+          <div class="greet">Bom dia,<br>Carlos<small>Entregador · Ponto Vila Mariana</small></div>
+          <div class="hero">
+            <div class="top"><span class="nm">Nível atual</span><span class="lvl">★★★ OURO</span></div>
+            <div class="score">87<span>faltam 13 p/ Diamante</span></div>
+            <div class="trk"><i></i><u></u></div>
+            <div class="nx"><span>Saldo disponível</span><span>R$ 1.240,50</span></div>
+          </div>
+          <div class="tiles">
+            <div class="tl a"><div class="v">12</div><div class="l">PEDIDOS</div></div>
+            <div class="tl b"><div class="v">6,5h</div><div class="l">TSH</div></div>
+            <div class="tl c"><div class="v">98%</div><div class="l">ACEITAÇÃO</div></div>
+          </div>
+          <div class="scan"><div class="main">📷 Escanear ponto</div><div class="split">⌄</div></div>
+          <div class="chipsrow">
+            <div class="fchip"><span>👥</span>Convidar</div>
+            <div class="fchip"><span>🗺️</span>Mapa</div>
+            <div class="fchip"><span>🕑</span>Turnos</div>
+          </div>
+          <div class="sec">
+            <h3>Missões de hoje</h3>
+            <div class="mi"><div class="t"><span>Complete 15 pedidos</span><span class="rw">+50 pts</span></div><div class="bar"><i style="width:80%"></i></div></div>
+            <div class="mi"><div class="t"><span>4h no horário de pico</span><span class="rw">+30 pts</span></div><div class="bar"><i style="width:45%"></i></div></div>
+          </div>
+          <div class="nav">
+            <div class="on"><span class="ic">🏠</span>Início</div>
+            <div><span class="ic">🗺️</span>Mapa</div>
+            <div><span class="ic">🛍️</span>Loja</div>
+            <div><span class="ic">👤</span>Perfil</div>
+          </div>
+        </div>
+      </div>
+      <div class="scr s-mall hide">
+        <div class="in">
+          <div class="row"><span class="brand">⬡ Loja de Pontos</span><span class="ava">C</span></div>
+          <div class="pts"><div class="l">PONTOS DISPONÍVEIS</div><div class="v">2.450</div></div>
+          <div class="chips"><span class="chip on">Tudo</span><span class="chip">Equipamento</span><span class="chip">Vale</span><span class="chip">Serviços</span></div>
+          <div class="prods">
+            <div class="pd"><div class="im" style="background:#E8F5E4">🪖</div><div class="n">Capacete Pro</div><div class="c">Equipamento</div><div class="r"><span class="p">800 pts</span><span class="btn">Trocar</span></div></div>
+            <div class="pd"><div class="im" style="background:#EFE7FF">⛽</div><div class="n">Vale-combustível</div><div class="c">Vale</div><div class="r"><span class="p">1.200 pts</span><span class="btn">Trocar</span></div></div>
+            <div class="pd"><div class="im" style="background:#FFE7D6">🧤</div><div class="n">Luvas térmicas</div><div class="c">Equipamento</div><div class="r"><span class="p">350 pts</span><span class="btn">Trocar</span></div></div>
+            <div class="pd"><div class="im" style="background:#FFF2C2">🔧</div><div class="n">Revisão da moto</div><div class="c">Serviços</div><div class="r"><span class="p">1.500 pts</span><span class="btn">Trocar</span></div></div>
+          </div>
+          <div class="nav">
+            <div><span class="ic">🏠</span>Início</div>
+            <div><span class="ic">🗺️</span>Mapa</div>
+            <div class="on"><span class="ic">🛍️</span>Loja</div>
+            <div><span class="ic">👤</span>Perfil</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="note"><b>为什么更好:</b>这是 Google 2025–26 主推的 Android 官方语言,"跟系统一起新",不会两年后过时;不对称圆角+形状变化制造个性,又完全在 Material 3 组件体系内,<b>Compose 落地成本最低</b>(MaterialTheme shapes + 动态色即可)。品牌黄天然适合做 M3E 的高饱和主色。</div>
+  </div>
+
+  <!-- ================= E ================= -->
+  <div class="col">
+    <h2>E · Bento 编辑风「Editorial」</h2>
+    <div class="tag">Bento 网格+超大编辑字体 · Spotify Wrapped / 新财经 App 气质</div>
+    <div class="phone tE">
+      <div class="scr s-home">
+        <div class="in">
+          <div class="row"><span class="brand">MEPONTO®</span><span class="date">TER · 07 JUL</span></div>
+          <div class="greet">Bom dia,<br><i>Carlos.</i></div>
+          <div class="bento">
+            <div class="bx hero">
+              <div class="lb">Nível ★★★ Ouro</div>
+              <div class="big">87<small>FALTAM 13 P/ DIAMANTE</small></div>
+              <div class="bar"><i></i></div>
+              <div class="ft"><span>Saldo disponível</span><b>R$ 1.240,50</b></div>
+            </div>
+            <div class="bx"><div class="lb">Pedidos hoje</div><div class="big">12</div><div class="sm">+3 vs ontem</div></div>
+            <div class="bx yel tall"><div><div class="lb">Escanear</div><div class="mid">📷</div></div><div class="arrow">→</div></div>
+            <div class="bx"><div class="lb">TSH</div><div class="mid">6,5h</div><div class="sm">Aceitação 98%</div></div>
+            <div class="bx tall"><div><div class="lb">Convidar</div><div class="mid">👥</div></div><div class="arrow">→</div></div>
+          </div>
+          <div class="list">
+            <div class="li"><div><div class="t">Complete 15 pedidos</div><div class="d">12 de 15 · quase lá</div></div><span class="rw">+50 PTS</span></div>
+            <div class="li"><div><div class="t">4h no horário de pico</div><div class="d">1,8 de 4h</div></div><span class="rw">+30 PTS</span></div>
+          </div>
+          <div class="nav">
+            <div class="on"><span class="ic">🏠</span>Início</div>
+            <div><span class="ic">🗺️</span>Mapa</div>
+            <div><span class="ic">🛍️</span>Loja</div>
+            <div><span class="ic">👤</span>Perfil</div>
+          </div>
+        </div>
+      </div>
+      <div class="scr s-mall hide">
+        <div class="in">
+          <div class="row"><span class="brand">MEPONTO®</span><span class="date">LOJA</span></div>
+          <div class="ti">Troque seus<br><i>2.450 pts.</i></div>
+          <div class="mbento">
+            <div class="pd feat"><div class="im">⛽</div><div><div class="lb">DESTAQUE DA SEMANA</div><div class="n">Vale-combustível R$50</div><div class="p">1.200 pts</div></div></div>
+            <div class="pd"><div class="im">🪖</div><div class="n">Capacete Pro</div><div class="r"><span class="p">800 pts</span><span class="btn">+</span></div></div>
+            <div class="pd"><div class="im">🧤</div><div class="n">Luvas térmicas</div><div class="r"><span class="p">350 pts</span><span class="btn">+</span></div></div>
+            <div class="pd"><div class="im">🔧</div><div class="n">Revisão da moto</div><div class="r"><span class="p">1.500 pts</span><span class="btn">+</span></div></div>
+            <div class="pd"><div class="im">🧥</div><div class="n">Capa de chuva</div><div class="r"><span class="p">500 pts</span><span class="btn">+</span></div></div>
+          </div>
+          <div class="nav">
+            <div><span class="ic">🏠</span>Início</div>
+            <div><span class="ic">🗺️</span>Mapa</div>
+            <div class="on"><span class="ic">🛍️</span>Loja</div>
+            <div><span class="ic">👤</span>Perfil</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="note"><b>为什么更好:</b>Bento 不对称网格是 2024–26 最主流的布局趋势,恰好解决骑手端"数据多但不能乱"的核心矛盾——大小格子天然分主次;超大编辑字体让品牌显得自信、有态度,差异化最强。<b>成本:</b>中,需要新的 BentoGrid 组件与字阶体系,但色板极简(纸白+墨黑+品牌黄)。</div>
+  </div>
+
+  <!-- ================= F ================= -->
+  <div class="col">
+    <h2>F · 街头运动风「Turbo」</h2>
+    <div class="tag">Nike Run Club / 竞速游戏 HUD · 斜体重字+速度条纹+硬阴影</div>
+    <div class="phone tF">
+      <div class="scr s-home">
+        <div class="in">
+          <div class="stripes"></div>
+          <div class="row"><span class="brand">ME<b>PONTO</b></span><span class="ava">C</span></div>
+          <div class="greet">Bora,<br><i>Carlos!</i><small>ENTREGADOR · VILA MARIANA</small></div>
+          <div class="hero">
+            <span class="lvl">★★★ OURO</span>
+            <div class="score">87<span>FALTAM 13 P/ DIAMANTE</span></div>
+            <div class="bar"><i></i></div>
+            <div class="nx"><span>Saldo disponível</span><b>R$ 1.240,50</b></div>
+          </div>
+          <div class="stats">
+            <div class="st"><div class="v">12</div><div class="l">Pedidos</div></div>
+            <div class="st"><div class="v">6,5h</div><div class="l">TSH</div></div>
+            <div class="st"><div class="v">98%</div><div class="l">Aceitação</div></div>
+          </div>
+          <div class="cta">📷 Escanear ponto</div>
+          <div class="sub2">
+            <div class="sb">👥 Convidar</div>
+            <div class="sb">🕑 Turnos</div>
+          </div>
+          <div class="sec">
+            <h3>⚡ Missões de hoje</h3>
+            <div class="mi"><div class="t"><span>Complete 15 pedidos</span><span class="rw">+50 PTS</span></div><div class="bar"><i style="width:80%"></i></div></div>
+            <div class="mi"><div class="t"><span>4h no horário de pico</span><span class="rw">+30 PTS</span></div><div class="bar"><i style="width:45%"></i></div></div>
+          </div>
+          <div class="nav">
+            <div class="on"><span class="ic">🏠</span>Início</div>
+            <div><span class="ic">🗺️</span>Mapa</div>
+            <div><span class="ic">🛍️</span>Loja</div>
+            <div><span class="ic">👤</span>Perfil</div>
+          </div>
+        </div>
+      </div>
+      <div class="scr s-mall hide">
+        <div class="in">
+          <div class="stripes"></div>
+          <div class="row"><span class="brand">LOJA DE <b>PONTOS</b></span><span class="ava">C</span></div>
+          <div class="pts"><div class="l">PONTOS DISPONÍVEIS</div><div class="v">2.450</div></div>
+          <div class="prods">
+            <div class="pd"><div class="im">🪖</div><div class="n">Capacete Pro</div><div class="c">Equipamento</div><div class="r"><span class="p">800</span><span class="btn">Trocar</span></div></div>
+            <div class="pd"><div class="im">⛽</div><div class="n">Vale-combustível</div><div class="c">Vale</div><div class="r"><span class="p">1.200</span><span class="btn">Trocar</span></div></div>
+            <div class="pd"><div class="im">🧤</div><div class="n">Luvas térmicas</div><div class="c">Equipamento</div><div class="r"><span class="p">350</span><span class="btn">Trocar</span></div></div>
+            <div class="pd"><div class="im">🔧</div><div class="n">Revisão da moto</div><div class="c">Serviços</div><div class="r"><span class="p">1.500</span><span class="btn">Trocar</span></div></div>
+          </div>
+          <div class="nav">
+            <div><span class="ic">🏠</span>Início</div>
+            <div><span class="ic">🗺️</span>Mapa</div>
+            <div class="on"><span class="ic">🛍️</span>Loja</div>
+            <div><span class="ic">👤</span>Perfil</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="note"><b>为什么更好:</b>唯一从"骑手情绪"出发的方向——把跑单包装成运动竞技,等级/任务/积分天然是游戏化 HUD,目标人群(年轻男性骑手)共鸣最强,现有暗色 token 可直接沿用。<b>风险:</b>斜体大写对葡语长词的排版要求高;财务/合规页面需要一套"冷静版"变体。</div>
+  </div>
+
+</div>
+
+<script>
+function show(which, btn) {
+  document.querySelectorAll('.toggle button').forEach(b => b.classList.remove('on'));
+  btn.classList.add('on');
+  document.querySelectorAll('.s-home').forEach(e => e.classList.toggle('hide', which !== 'home'));
+  document.querySelectorAll('.s-mall').forEach(e => e.classList.toggle('hide', which !== 'mall'));
+}
+</script>
+</body>
+</html>

@@ -16,22 +16,25 @@ data class RiderTierInfo(
     val benefit: String,
     val nextTarget: String,
 ) {
+    // Tropical/Noite v2 tier language: diamond = electric blue night sky,
+    // gold = Rio sunset (laranja→dourado), orange = hot sunset pink,
+    // green = tropical jungle, base = deep noite violet.
     val gradient: List<Color>
         get() = when (key) {
-            "diamond" -> listOf(Color(0xFF07111F), Color(0xFF123B53), Color(0xFFBEF0F7))
-            "gold" -> listOf(Color(0xFF1D1202), Color(0xFF9A5B08), Color(0xFFFFB238))
-            "orange" -> listOf(Color(0xFF120B05), Color(0xFF783900), Color(0xFFFF7A00))
-            "green" -> listOf(Color(0xFF06150E), Color(0xFF0F5130), Color(0xFF20A65A))
-            else -> listOf(Color(0xFF050505), Color(0xFF161616))
+            "diamond" -> listOf(Color(0xFF0E1B4D), Color(0xFF2D6BFF), Color(0xFF8AE9FF))
+            "gold" -> listOf(Color(0xFF9A3D00), Color(0xFFFF6A3D), Color(0xFFFFC400))
+            "orange" -> listOf(Color(0xFF5C1030), Color(0xFFFF4D8D), Color(0xFFFF8A3D))
+            "green" -> listOf(Color(0xFF06150E), Color(0xFF0B5C3B), Color(0xFF00A868))
+            else -> listOf(Color(0xFF12081F), Color(0xFF2E2044))
         }
 
     val accent: Color
         get() = when (key) {
             "diamond" -> Color(0xFFA8F3FF)
-            "gold" -> Color(0xFFFFE2A3)
-            "orange" -> Color(0xFFFFB16A)
-            "green" -> Color(0xFF91E8B4)
-            else -> Color(0xFFFF7A00)
+            "gold" -> Color(0xFFFFE18A)
+            "orange" -> Color(0xFFFFD1E1)
+            "green" -> Color(0xFF9FD9BE)
+            else -> Color(0xFFFFC400)
         }
 }
 
