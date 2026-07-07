@@ -33,6 +33,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.meponto.rider.data.LocalStore
 import com.meponto.rider.i18n.LocalLoc
+import com.meponto.rider.ui.components.BirthdayField
 import com.meponto.rider.ui.components.OverlayTopBar
 import com.meponto.rider.ui.components.Panel
 import com.meponto.rider.ui.components.PrimaryButton
@@ -99,14 +100,11 @@ fun PersonalInfoScreen(onClose: () -> Unit) {
                     OutlinedTextField(value = cpf, onValueChange = { cpf = it }, label = { Text(loc.t("profile.cpf")) }, singleLine = true, modifier = Modifier.fillMaxWidth())
                     OutlinedTextField(value = phone, onValueChange = { phone = it }, label = { Text(loc.t("auth.phone")) }, singleLine = true, modifier = Modifier.fillMaxWidth())
                     OutlinedTextField(value = pix, onValueChange = { pix = it }, label = { Text(loc.t("profile.pix")) }, singleLine = true, modifier = Modifier.fillMaxWidth())
-                    OutlinedTextField(
+                    BirthdayField(
                         value = birthday,
-                        onValueChange = { birthday = it.filter { c -> c.isDigit() || c == '-' }.take(10) },
-                        label = { Text(loc.t("profile.birthday")) },
-                        placeholder = { Text("1995-07-20") },
-                        supportingText = { Text(loc.t("profile.birthdayHint")) },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth(),
+                        label = loc.t("profile.birthday"),
+                        hint = loc.t("profile.birthdayHint"),
+                        onChange = { birthday = it },
                     )
                 }
             }

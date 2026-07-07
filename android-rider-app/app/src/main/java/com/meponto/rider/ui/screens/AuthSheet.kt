@@ -179,7 +179,11 @@ fun AuthSheet(onDismiss: () -> Unit) {
                     AuthField(cpf, { cpf = it.filter { c -> c.isDigit() }.take(11) }, loc.t("auth.cpf"), KeyboardType.Number)
                     Text(loc.t("auth.signupPrompt"), color = me.muted, fontSize = 12.sp, modifier = Modifier.fillMaxWidth())
                     AuthField(signupName, { signupName = it.take(60) }, loc.t("auth.name"))
-                    AuthField(signupBirthday, { signupBirthday = it.filter { c -> c.isDigit() || c == '-' }.take(10) }, loc.t("auth.birthday"), KeyboardType.Number)
+                    com.meponto.rider.ui.components.BirthdayField(
+                        value = signupBirthday,
+                        label = loc.t("auth.birthday"),
+                        onChange = { signupBirthday = it },
+                    )
                 }
                 // ---- Step: enter the phone ----
                 else -> {
