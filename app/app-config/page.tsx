@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { BellRing, ListChecks, RefreshCcw, Send, Smartphone, Trash2 } from "lucide-react";
+import { BellRing, ImagePlus, ListChecks, Loader2, RefreshCcw, Send, Smartphone, Trash2, X } from "lucide-react";
 import { AppShell, PageTitle } from "../components/ui";
 import { readSession } from "../lib/session";
 import { useVentoStore } from "../lib/store";
@@ -45,6 +45,7 @@ export default function AppConfigPage() {
   const [pushImage, setPushImage] = useState("");
   const [pushAudience, setPushAudience] = useState("__all__");
   const [pushSending, setPushSending] = useState(false);
+  const [uploading, setUploading] = useState<null | "push" | "splash">(null);
   const [subs, setSubs] = useState<{ count: number; webCount?: number; fcmCount?: number; riders: string[] }>({ count: 0, riders: [] });
   const [pushHistory, setPushHistory] = useState<{ id: string; detail: string; createdAt: string }[]>([]);
 
@@ -73,7 +74,13 @@ export default function AppConfigPage() {
     const r = await fetch("/api/audit", { headers, cache: "no-store" }).catch(() => null);
     if (!r || !r.ok) return;
     const entries = (((await r.json()).data ?? []) as { id: string; action: string; detail: string; createdAt: string }[]);
-    setPushHistory(entries.filter((e) => e.action === "PUSH_SENT").slice(0, 8).map(({ id, detail, createdAt }) => ({ id, detail, createdAt })));
+    setPushHistory(
+      entries
+        .filter((e) => e.action === "PUSH_SENT")
+        .sort((a, b) => b.createdAt.localeCompare(a.createdAt)) // newest first
+        .slice(0, 10)
+        .map(({ id, detail, createdAt }) => ({ id, detail, createdAt })),
+    );
   }, [headers]);
   const loadTasks = useCallback(async () => {
     const r = await fetch("/api/tasks", { headers, cache: "no-store" }).catch(() => null);
@@ -122,15 +129,64 @@ export default function AppConfigPage() {
     void loadPushHistory();
   }
 
+  /** Downscale + re-encode a local image so the upload stays small (FCM banners
+   *  render at ~1024px; 4MB server cap). Returns a JPEG data URL. */
+  function compressImage(file: File, maxW = 1280, quality = 0.85): Promise<string> {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => {
+        const img = new Image();
+        img.onload = () => {
+          const scale = Math.min(1, maxW / img.width);
+          const canvas = document.createElement("canvas");
+          canvas.width = Math.max(1, Math.round(img.width * scale));
+          canvas.height = Math.max(1, Math.round(img.height * scale));
+          const ctx = canvas.getContext("2d");
+          if (!ctx) { reject(new Error("canvas")); return; }
+          ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+          resolve(canvas.toDataURL("image/jpeg", quality));
+        };
+        img.onerror = () => reject(new Error("decode"));
+        img.src = String(reader.result);
+      };
+      reader.onerror = () => reject(new Error("read"));
+      reader.readAsDataURL(file);
+    });
+  }
+
+  /** Upload a local image → public https URL (push banner or splash art). */
+  async function uploadLocalImage(file: File | undefined | null, kind: "push" | "splash") {
+    if (!file) return;
+    if (!file.type.startsWith("image/")) { setNote({ tone: "err", text: "请选择图片文件（JPG/PNG/WebP）" }); return; }
+    setUploading(kind);
+    try {
+      const dataUrl = await compressImage(file);
+      const r = await fetch("/api/mall/upload", { method: "POST", headers, body: JSON.stringify({ dataUrl, kind }) }).catch(() => null);
+      const p = r ? await r.json().catch(() => ({})) : {};
+      if (p.url) {
+        if (kind === "push") setPushImage(p.url as string);
+        else set("imageURL", p.url as string);
+        setNote({ tone: "ok", text: "图片已上传，链接已自动填入。" });
+      } else {
+        setNote({ tone: "err", text: p.error ? `上传失败：${p.error}` : "上传失败" });
+      }
+    } catch {
+      setNote({ tone: "err", text: "图片处理失败，请换一张试试" });
+    } finally {
+      setUploading(null);
+    }
+  }
+
   const field = "h-11 w-full rounded-[8px] border border-[var(--line)] bg-[var(--surface-raised)] px-3 text-sm font-bold outline-none focus:border-[var(--accent)]";
   const label = "mb-1 block text-[10px] font-black uppercase text-[var(--muted)]";
+  const uploadBtn = "inline-flex h-11 shrink-0 cursor-pointer items-center gap-1.5 rounded-[8px] border border-dashed border-[var(--line)] bg-[var(--surface-raised)] px-3 text-xs font-black text-[var(--muted-strong)] hover:border-[var(--accent)] hover:text-[var(--accent)]";
 
   return (
     <AppShell>
       <PageTitle
         title="App 配置 / 推送"
         eyebrow="启动页 · 推送通知 — 主后台统一管理，骑手 App 实时生效"
-        action={<button type="button" onClick={() => { void loadSplash(); void loadSubs(); }} className="tag inline-flex items-center gap-1"><RefreshCcw size={13} /> 刷新</button>}
+        action={<button type="button" onClick={() => { void loadSplash(); void loadSubs(); void loadPushHistory(); void loadTasks(); }} className="tag inline-flex items-center gap-1"><RefreshCcw size={13} /> 刷新</button>}
       />
 
       {note && (
@@ -154,7 +210,16 @@ export default function AppConfigPage() {
             <label><span className={label}>停留时长 (ms)</span><input inputMode="numeric" value={String(cfg.durationMs)} onChange={(e) => set("durationMs", Number(e.target.value.replace(/[^\d]/g, "")) || 0)} className={field} /></label>
           </div>
           <label className="mt-3 block"><span className={label}>副标题 Tagline（骑手可见，建议葡语）</span><input value={cfg.tagline} onChange={(e) => set("tagline", e.target.value)} className={field} /></label>
-          <label className="mt-3 block"><span className={label}>图片 URL（开屏广告图，可空）</span><input value={cfg.imageURL} onChange={(e) => set("imageURL", e.target.value)} placeholder="https://…" className={field} /></label>
+          <div className="mt-3">
+            <span className={label}>开屏广告图（本地上传或粘贴 URL，可空）</span>
+            <div className="flex gap-2">
+              <input value={cfg.imageURL} onChange={(e) => set("imageURL", e.target.value)} placeholder="https://…" className={field} />
+              <label className={uploadBtn}>
+                {uploading === "splash" ? <Loader2 size={14} className="animate-spin" /> : <ImagePlus size={14} />} 本地图片
+                <input type="file" accept="image/*" className="hidden" disabled={uploading !== null} onChange={(e) => { void uploadLocalImage(e.target.files?.[0], "splash"); e.target.value = ""; }} />
+              </label>
+            </div>
+          </div>
           <label className="mt-3 block"><span className={label}>点击跳转 URL（可空）</span><input value={cfg.linkURL} onChange={(e) => set("linkURL", e.target.value)} placeholder="https://… 或 /store" className={field} /></label>
           <div className="mt-3 grid gap-3 sm:grid-cols-2">
             <label><span className={label}>背景色 Hex</span><div className="flex gap-2"><input type="color" value={cfg.backgroundHex} onChange={(e) => set("backgroundHex", e.target.value)} className="h-11 w-12 rounded-[8px] border border-[var(--line)] bg-transparent" /><input value={cfg.backgroundHex} onChange={(e) => set("backgroundHex", e.target.value)} className={field} /></div></label>
@@ -222,17 +287,33 @@ export default function AppConfigPage() {
               <textarea value={pushBody} onChange={(e) => setPushBody(e.target.value.slice(0, 500))} placeholder="Ex.: Novos turnos foram liberados para esta semana…" className="min-h-24 w-full rounded-[8px] border border-[var(--line)] bg-[var(--surface-raised)] p-3 text-sm font-bold outline-none focus:border-[var(--accent)]" />
               <span className="mt-1 block text-right text-[10px] font-bold text-[var(--muted)]">{pushBody.length}/500</span>
             </label>
-            <label className="block"><span className={label}>大图 URL（可空，https 图片，通知内展示大图）</span><input value={pushImage} onChange={(e) => setPushImage(e.target.value)} placeholder="https://…/banner.jpg" className={field} /></label>
+            <div className="block">
+              <span className={label}>通知大图（本地上传或粘贴 https URL，可空）</span>
+              <div className="flex gap-2">
+                <input value={pushImage} onChange={(e) => setPushImage(e.target.value)} placeholder="https://…/banner.jpg" className={field} />
+                <label className={uploadBtn}>
+                  {uploading === "push" ? <Loader2 size={14} className="animate-spin" /> : <ImagePlus size={14} />} 本地图片
+                  <input type="file" accept="image/*" className="hidden" disabled={uploading !== null} onChange={(e) => { void uploadLocalImage(e.target.files?.[0], "push"); e.target.value = ""; }} />
+                </label>
+              </div>
+              {pushImage.trim().startsWith("https://") && (
+                <div className="mt-2 flex items-center gap-2">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={pushImage.trim()} alt="" className="h-14 w-24 rounded-[8px] border border-[var(--line)] object-cover" />
+                  <button type="button" onClick={() => setPushImage("")} className="inline-flex h-8 items-center gap-1 rounded-[8px] border border-[var(--line)] px-2.5 text-xs font-black text-[var(--danger-ink)]"><X size={12} /> 移除图片</button>
+                </div>
+              )}
+            </div>
             <div className="mt-4 flex items-center gap-3">
-              <button type="button" disabled={!pushTitle.trim() || !pushBody.trim() || pushSending} onClick={() => void sendPush()} className="inline-flex h-11 items-center gap-2 rounded-[8px] bg-[var(--accent)] px-5 text-sm font-black uppercase text-[var(--accent-ink)] disabled:opacity-50">
+              <button type="button" disabled={!pushTitle.trim() || !pushBody.trim() || pushSending || uploading !== null} onClick={() => void sendPush()} className="inline-flex h-11 items-center gap-2 rounded-[8px] bg-[var(--accent)] px-5 text-sm font-black uppercase text-[var(--accent-ink)] disabled:opacity-50">
                 <Send size={15} /> {pushSending ? "发送中…" : pushAudience === "__all__" ? "发送给全员" : `发送给 ${pushAudience}`}
               </button>
               <span className="text-[11px] font-bold text-[var(--muted)]">同时下发 Web Push 与原生 FCM；骑手需先在 App 内授权通知。</span>
             </div>
           </div>
 
-          {/* Live notification preview */}
-          <div>
+          {/* Live notification preview — sticky so it stays visible while editing */}
+          <div className="self-start lg:sticky lg:top-4">
             <div className="mb-2 text-[10px] font-black uppercase text-[var(--muted)]">通知预览（骑手手机上的样子）</div>
             <div className="rounded-[18px] bg-[#0d1117] p-3">
               <div className="rounded-[14px] bg-[#1c2128] p-3 shadow-lg">
