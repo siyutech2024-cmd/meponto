@@ -72,6 +72,7 @@ data class RiderSnapshot(
     val messages: List<MemberMessage>? = null,
     val unreadMessages: Int? = null,
     val coupons: List<MallCoupon>? = null,
+    val badges: List<RiderBadge>? = null,
 )
 
 /**
@@ -231,6 +232,10 @@ class RiderRepository(context: Context) {
             messages = home?.messages?.mapNotNull { it.toDomain() },
             unreadMessages = home?.unreadMessages,
             coupons = home?.coupons?.mapNotNull { it.toDomain() },
+            badges = home?.badges?.mapNotNull { b ->
+                val lb = b.label ?: return@mapNotNull null
+                RiderBadge(b.at ?: 0, b.icon ?: "", lb, b.achieved == true)
+            },
         )
     }
 
@@ -286,9 +291,10 @@ class RiderRepository(context: Context) {
         errorOf(e)
     }
 
-    /** POST /mall {action:"redeem"} — session identity; riderId = demo fallback. */
-    suspend fun redeem(productApiId: String, riderId: String? = null): String? = try {
-        service.redeem(MallRedeemRequest(productId = productApiId, riderId = riderId))
+    /** POST /mall {action:"redeem"} — session identity; pickupStoreId for
+     *  physical goods when the rider has no locked home station. */
+    suspend fun redeem(productApiId: String, riderId: String? = null, pickupStoreId: String? = null): String? = try {
+        service.redeem(MallRedeemRequest(productId = productApiId, riderId = riderId, pickupStoreId = pickupStoreId))
         null
     } catch (e: Exception) {
         errorOf(e)
@@ -487,6 +493,8 @@ class RiderRepository(context: Context) {
             apiId = id,
             imageUrl = imageUrl?.takeIf { it.isNotBlank() },
             description = description ?: "",
+            isVirtual = isVirtual == true,
+            cashPriceBRL = cashPriceBRL ?: 0.0,
         )
     }
 

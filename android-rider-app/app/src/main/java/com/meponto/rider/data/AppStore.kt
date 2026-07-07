@@ -115,6 +115,8 @@ class AppStore {
         private set
     var coupons by mutableStateOf<List<MallCoupon>>(emptyList())
         private set
+    var badges by mutableStateOf<List<RiderBadge>>(emptyList())
+        private set
 
     // One-shot user-facing notice (why a write was refused). Screens toast it.
     var notice by mutableStateOf<String?>(null)
@@ -214,12 +216,12 @@ class AppStore {
     }
 
     /** Returns true if the redemption succeeded (enough points and stock). */
-    fun redeem(product: MallProduct): Boolean {
+    fun redeem(product: MallProduct, pickupStoreId: String? = null): Boolean {
         val i = products.indexOfFirst { it.id == product.id }
         if (i < 0 || pointsBalance < product.points || products[i].stock <= 0) return false
         pointsBalance -= product.points
         products[i] = products[i].copy(stock = products[i].stock - 1)
-        product.apiId?.let { id -> scope.launch { report(repo?.redeem(id, riderId)); syncAfterWrite() } }
+        product.apiId?.let { id -> scope.launch { report(repo?.redeem(id, riderId, pickupStoreId)); syncAfterWrite() } }
         return true
     }
 
@@ -305,6 +307,7 @@ class AppStore {
         snapshot.messages?.let { mallMessages = it }
         snapshot.unreadMessages?.let { unreadMessages = it }
         snapshot.coupons?.let { coupons = it }
+        snapshot.badges?.let { badges = it }
     }
 
     /** Claim a completed mission's reward (server awards ledger points). */

@@ -4,7 +4,7 @@ import { flushPendingToDatabase, persistDeleteRecord, refreshCollectionsFromData
 import { requirePermission, roleFromRequest } from "../../lib/server/authz";
 import { sendPushToRider } from "../../lib/server/notify";
 import { getAvailablePoints, getAvailablePartnerPoints, pointsRules, type MarketplaceOrder, type MarketplaceProduct, type PartnerPointsLedgerEntry, type PointsLedgerEntry } from "../../lib/points";
-import { defaultMallConfig, eligibleCoupons, resolveRiderTierStatus, resolveTier, tierDefinitions, type MallConfig } from "../../lib/mall";
+import { badgeMilestones, defaultMallConfig, eligibleCoupons, resolveRiderTierStatus, resolveTier, tierDefinitions, type MallConfig } from "../../lib/mall";
 import type { CashLedgerEntry, MallCoupon } from "../../lib/mall-ops";
 
 /** Coupons a rider is eligible for (tier + validity + per-rider limit), ignoring
@@ -126,15 +126,6 @@ function applyPointsExpiry(riderId: string): number {
   });
   return toExpire;
 }
-
-/** Achievement badges driven by lifetime completed orders. */
-const badgeMilestones = [
-  { at: 1, icon: "🚀", label: "Primeira entrega" },
-  { at: 50, icon: "🔥", label: "50 pedidos" },
-  { at: 100, icon: "💪", label: "100 pedidos" },
-  { at: 300, icon: "🏅", label: "300 pedidos" },
-  { at: 600, icon: "👑", label: "600 pedidos" },
-];
 
 function creditPoints(riderId: string, points: number, reasonCode: string, note: string, sourceId: string, actor: string): PointsLedgerEntry {
   const available = getAvailablePoints(memory.pointsLedgerEntries, riderId);

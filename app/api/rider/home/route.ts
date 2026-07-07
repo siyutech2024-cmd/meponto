@@ -1,7 +1,7 @@
 import { jsonResponse, memory } from "../../../lib/server/memory";
 import { refreshCollectionsFromDatabase } from "../../../lib/server/persistence";
 import { sessionFromRequest } from "../../../lib/auth-session";
-import { defaultMallConfig, eligibleCoupons, resolveRiderTierStatus, tierThresholds } from "../../../lib/mall";
+import { badgeMilestones, defaultMallConfig, eligibleCoupons, resolveRiderTierStatus, tierThresholds } from "../../../lib/mall";
 import { applyInactivityDecay } from "../../../lib/points";
 import { isSupplierCategory } from "../../../lib/server/crm-categories";
 
@@ -200,6 +200,10 @@ export async function GET(request: Request) {
       voucherCode: order.voucherCode ?? "",
     }));
 
+  // --- Achievement badges (lifetime completed orders) ---
+  const lifetimeOrders = kpis.reduce((s2, k) => s2 + (k.completedOrders ?? 0), 0);
+  const badges = badgeMilestones.map((m) => ({ ...m, achieved: lifetimeOrders >= m.at }));
+
   // --- Mall messages (chegou/retire notices) + eligible coupons ---
   const messages = memory.memberMessages
     .filter((m) => m.riderName === rider.name || m.riderId === rider.id)
@@ -230,6 +234,7 @@ export async function GET(request: Request) {
       messages,
       unreadMessages,
       coupons,
+      badges,
     },
   });
 }

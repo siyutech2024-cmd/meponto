@@ -38,6 +38,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -169,6 +170,41 @@ fun ProfileScreen(onClose: () -> Unit) {
                         Text("${loc.t("auth.login")} / ${loc.t("auth.register")}", color = me.accent, fontSize = 14.sp)
                     }
                     Icon(Icons.Filled.ChevronRight, contentDescription = null, tint = me.muted)
+                }
+            }
+
+            // Conquistas — lifetime-order achievement badges.
+            if (auth.isMember && store.badges.isNotEmpty()) {
+                Panel {
+                    SectionHeader(loc.t("profile.badges"))
+                    Spacer(Modifier.size(12.dp))
+                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        store.badges.chunked(3).forEach { rowBadges ->
+                            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                                rowBadges.forEach { b ->
+                                    Column(
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .clip(RoundedCornerShape(MeRadius.small))
+                                            .background(if (b.achieved) me.accent.copy(alpha = 0.18f) else me.surfaceRaised)
+                                            .padding(vertical = 12.dp),
+                                        horizontalAlignment = Alignment.CenterHorizontally,
+                                        verticalArrangement = Arrangement.spacedBy(4.dp),
+                                    ) {
+                                        Text(b.icon, fontSize = 22.sp, modifier = Modifier.alpha(if (b.achieved) 1f else 0.35f))
+                                        Text(
+                                            b.label,
+                                            color = if (b.achieved) me.text else me.muted,
+                                            fontWeight = FontWeight.Bold,
+                                            fontSize = 10.sp,
+                                            maxLines = 1,
+                                        )
+                                    }
+                                }
+                                repeat(3 - rowBadges.size) { Spacer(Modifier.weight(1f)) }
+                            }
+                        }
+                    }
                 }
             }
 

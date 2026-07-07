@@ -165,6 +165,8 @@ data class CatalogProductDto(
     val imageUrl: String? = null,
     val description: String? = null,
     val status: String? = null,
+    val isVirtual: Boolean? = null,
+    val cashPriceBRL: Double? = null,
 )
 
 // GET /rider/profile — authoritative identity (overrides wallet fields)
@@ -198,6 +200,15 @@ data class RiderHomeDto(
     val messages: List<MemberMessageDto>? = null,
     val unreadMessages: Int? = null,
     val coupons: List<CouponDto>? = null,
+    val badges: List<BadgeDto>? = null,
+)
+
+// Achievement badge (lifetime completed orders milestones).
+data class BadgeDto(
+    val at: Int? = null,
+    val icon: String? = null,
+    val label: String? = null,
+    val achieved: Boolean? = null,
 )
 
 // Unified membership tier computed by the backend (rolling-window earned

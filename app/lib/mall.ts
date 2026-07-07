@@ -82,6 +82,15 @@ export const defaultMallConfig: MallConfig = {
 
 export const mallConfigs: MallConfig[] = [defaultMallConfig];
 
+/** Achievement badges driven by lifetime completed orders (Eastwind data). */
+export const badgeMilestones = [
+  { at: 1, icon: "🚀", label: "Primeira entrega" },
+  { at: 50, icon: "🔥", label: "50 pedidos" },
+  { at: 100, icon: "💪", label: "100 pedidos" },
+  { at: 300, icon: "🏅", label: "300 pedidos" },
+  { at: 600, icon: "👑", label: "600 pedidos" },
+];
+
 export type MembershipTier = "member" | "bronze" | "prata" | "ouro" | "diamante";
 
 export type TierDefinition = {

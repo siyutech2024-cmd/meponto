@@ -68,9 +68,9 @@ fun MallScreen() {
     var showInvite by remember { mutableStateOf(false) }
     var detail by remember { mutableStateOf<MallProduct?>(null) }
 
-    fun redeem(product: MallProduct) {
+    fun redeem(product: MallProduct, pickupStoreId: String? = null) {
         if (auth.requireMember()) {
-            toast = if (store.redeem(product)) {
+            toast = if (store.redeem(product, pickupStoreId)) {
                 "${loc.t("mall.redeemed")}: ${product.name}"
             } else {
                 loc.t("mall.insufficient")
@@ -301,6 +301,12 @@ fun MallScreen() {
         // Product detail sheet: image, description, stock, redeem.
         detail?.let { product ->
             val affordable = store.pointsBalance >= product.points && product.stock > 0
+            // Physical goods for riders WITHOUT a locked home station need an
+            // explicit pickup Ponto; virtual goods and home-station riders skip it.
+            val needsPickup = !product.isVirtual &&
+                store.profile.ponto.isBlank() &&
+                store.servicePoints.isNotEmpty()
+            var pickupId by remember { mutableStateOf<String?>(null) }
             ModalBottomSheet(
                 onDismissRequest = { detail = null },
                 containerColor = me.background,
@@ -319,13 +325,60 @@ fun MallScreen() {
                     }
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text("${product.points} pts", color = me.accent, fontWeight = FontWeight.Bold, fontSize = 22.sp)
+                        if (product.cashPriceBRL > 0) {
+                            Spacer(Modifier.width(8.dp))
+                            Text(
+                                "+ R$ ${String.format("%.2f", product.cashPriceBRL).replace('.', ',')}",
+                                color = me.warning,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 15.sp,
+                            )
+                        }
                         Spacer(Modifier.weight(1f))
                         Text("${loc.t("mall.stock")}: ${product.stock}", color = me.muted, fontSize = 13.sp)
                     }
+                    if (product.cashPriceBRL > 0) {
+                        Text(loc.t("mall.cashPart"), color = me.muted, fontSize = 12.sp)
+                    }
+                    if (needsPickup) {
+                        Text(loc.t("mall.pickupChoose"), color = me.text, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            store.servicePoints.take(6).forEach { sp ->
+                                val sel = pickupId == sp.id
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clip(RoundedCornerShape(MeRadius.small))
+                                        .background(if (sel) me.accent.copy(alpha = 0.18f) else me.surfaceRaised)
+                                        .border(
+                                            1.dp,
+                                            if (sel) me.accent else me.line,
+                                            RoundedCornerShape(MeRadius.small),
+                                        )
+                                        .clickable { pickupId = sp.id }
+                                        .padding(horizontal = 12.dp, vertical = 10.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    Column(Modifier.weight(1f)) {
+                                        Text(sp.name, color = me.text, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+                                        Text(
+                                            listOf(sp.bairro, sp.address).filter { it.isNotBlank() }.joinToString(" · ").ifBlank { "—" },
+                                            color = me.muted,
+                                            fontSize = 11.sp,
+                                            maxLines = 1,
+                                        )
+                                    }
+                                    if (sel) {
+                                        Text("✓", color = me.accent, fontWeight = FontWeight.Black, fontSize = 14.sp)
+                                    }
+                                }
+                            }
+                        }
+                    }
                     PrimaryButton(
                         title = if (product.stock == 0) "—" else loc.t("mall.redeem"),
-                        enabled = affordable,
-                    ) { redeem(product) }
+                        enabled = affordable && (!needsPickup || pickupId != null),
+                    ) { redeem(product, pickupId) }
                 }
             }
         }

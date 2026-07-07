@@ -134,7 +134,12 @@ data class MallProduct(
     val apiId: String? = null, // PontoSys catalog id (null for local mock)
     val imageUrl: String? = null,
     val description: String = "",
+    val isVirtual: Boolean = false,
+    val cashPriceBRL: Double = 0.0,
 )
+
+/** Lifetime-order achievement badge. */
+data class RiderBadge(val at: Int, val icon: String, val label: String, val achieved: Boolean)
 
 /** Backend-computed membership tier — single standard across app and mall. */
 data class ServerTier(
