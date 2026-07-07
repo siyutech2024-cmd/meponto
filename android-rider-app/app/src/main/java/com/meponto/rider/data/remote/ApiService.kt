@@ -11,9 +11,6 @@ import retrofit2.http.Query
  */
 interface ApiService {
 
-    @POST("member-login")
-    suspend fun memberLogin(@Body body: MemberLoginRequest): ApiEnvelope<MemberLoginData>
-
     // Sign in with Google → linked rider session, or needsLink to bind.
     @POST("member-login")
     suspend fun googleLogin(@Body body: GoogleLoginRequest): ApiEnvelope<GoogleLoginData>
@@ -55,16 +52,17 @@ interface ApiService {
     suspend fun riderHome(): ApiEnvelope<RiderHomeDto>
 
     // ----- Write paths (Idempotency-Key added by interceptor) -----
-    @POST("rider/payout")
-    suspend fun payout(@Body body: PayoutRequest): ApiEnvelope<AckDto>
+    // Withdrawals go through POST /api/wallet {action:"requestWithdrawal"} —
+    // see requestWithdrawal above (there is no /rider/payout endpoint).
 
-    @POST("marketplace/redeem")
-    suspend fun redeem(@Body body: RedeemRequest): ApiEnvelope<AckDto>
+    @POST("mall")
+    suspend fun redeem(@Body body: MallRedeemRequest): ApiEnvelope<MallRedeemData>
 
-    @POST("slots/cancel")
+    // Cancel = POST /api/slots {action:"cancelEnrollment", enrollmentId}.
+    @POST("slots")
     suspend fun cancelSlot(@Body body: SlotCancelRequest): ApiEnvelope<AckDto>
 
-    @POST("rider/checkin")
+    @POST("checkin")
     suspend fun checkin(@Body body: CheckinRequest): ApiEnvelope<CheckinDto>
 
     // ----- Push (FCM token registration) -----

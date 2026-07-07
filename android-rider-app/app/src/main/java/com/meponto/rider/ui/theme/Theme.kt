@@ -1,6 +1,8 @@
 package com.meponto.rider.ui.theme
 
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Shapes
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
@@ -32,37 +34,40 @@ data class MeColors(
     val isDark: Boolean,
 )
 
+// Consumer-grade dual palette (delivery-app vibe): light is the default and
+// carries saturated brand yellow + lively functional colors; dark is a richer
+// nightly variant of the same identity.
 val DarkMeColors = MeColors(
-    background = Color(0xFF07090D),
-    surface = Color(0xFF0D1117),
-    surfaceRaised = Color(0xFF111722),
-    surfaceHover = Color(0xFF172031),
-    line = Color(0xFF263244),
-    text = Color(0xFFF8FAFC),
-    textSoft = Color(0xFFD7DEE8),
-    muted = Color(0xFF9AA6B8),
+    background = Color(0xFF0B0C10),
+    surface = Color(0xFF15171E),
+    surfaceRaised = Color(0xFF1C1F28),
+    surfaceHover = Color(0xFF242836),
+    line = Color(0xFF2C3040),
+    text = Color(0xFFF6F7FB),
+    textSoft = Color(0xFFD8DCE6),
+    muted = Color(0xFF98A0AF),
     accent = Color(0xFFFFD100),
-    accentInk = Color(0xFF171400),
+    accentInk = Color(0xFF1A1500),
     danger = Color(0xFFFF5C70),
     warning = Color(0xFFFFB454),
-    ok = Color(0xFF2DD4BF),
+    ok = Color(0xFF2DE0A5),
     isDark = true,
 )
 
 val LightMeColors = MeColors(
-    background = Color(0xFFF5F7FA),
+    background = Color(0xFFF6F6F8),
     surface = Color(0xFFFFFFFF),
-    surfaceRaised = Color(0xFFF8FAFC),
-    surfaceHover = Color(0xFFEEF3F8),
-    line = Color(0xFFD8E0EA),
-    text = Color(0xFF111827),
-    textSoft = Color(0xFF334155),
-    muted = Color(0xFF64748B),
-    accent = Color(0xFFD9A900),
-    accentInk = Color(0xFF171400),
-    danger = Color(0xFFDC2626),
-    warning = Color(0xFFB45309),
-    ok = Color(0xFF0F766E),
+    surfaceRaised = Color(0xFFF2F3F7),
+    surfaceHover = Color(0xFFECEEF4),
+    line = Color(0xFFE4E7EE),
+    text = Color(0xFF17181C),
+    textSoft = Color(0xFF3C4148),
+    muted = Color(0xFF7A8291),
+    accent = Color(0xFFFFC400),
+    accentInk = Color(0xFF201A00),
+    danger = Color(0xFFFF4D5E),
+    warning = Color(0xFFFF9F1C),
+    ok = Color(0xFF00B884),
     isDark = false,
 )
 
@@ -85,8 +90,8 @@ fun Tone.bg(c: MeColors): Color = when (this) {
 }
 
 object MeRadius {
-    val card = 8.dp
-    val small = 6.dp
+    val card = 16.dp
+    val small = 10.dp
 }
 
 @Composable
@@ -98,6 +103,8 @@ fun MePontoTheme(darkTheme: Boolean, content: @Composable () -> Unit) {
             onPrimary = me.accentInk,
             background = me.background,
             surface = me.surface,
+            surfaceVariant = me.surfaceRaised,
+            outline = me.line,
             onBackground = me.text,
             onSurface = me.text,
         )
@@ -107,11 +114,21 @@ fun MePontoTheme(darkTheme: Boolean, content: @Composable () -> Unit) {
             onPrimary = me.accentInk,
             background = me.background,
             surface = me.surface,
+            surfaceVariant = me.surfaceRaised,
+            outline = me.line,
             onBackground = me.text,
             onSurface = me.text,
         )
     }
+    // Rounded shape scale: text fields, sheets and menus pick these up.
+    val shapes = Shapes(
+        extraSmall = RoundedCornerShape(10.dp),
+        small = RoundedCornerShape(12.dp),
+        medium = RoundedCornerShape(16.dp),
+        large = RoundedCornerShape(20.dp),
+        extraLarge = RoundedCornerShape(28.dp),
+    )
     CompositionLocalProvider(LocalMe provides me) {
-        MaterialTheme(colorScheme = colorScheme, content = content)
+        MaterialTheme(colorScheme = colorScheme, shapes = shapes, content = content)
     }
 }

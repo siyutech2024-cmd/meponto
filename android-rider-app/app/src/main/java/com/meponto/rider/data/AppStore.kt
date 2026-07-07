@@ -59,6 +59,28 @@ class AppStore {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     fun attach(repo: RiderRepository) { this.repo = repo }
 
+    // PontoSys rider id + the name used at login (both needed to re-pull).
+    var riderId by mutableStateOf<String?>(null)
+        private set
+    private var loginName: String? = null
+
+    /** Pull a fresh snapshot for [name] and apply it (login-time hydration). */
+    suspend fun hydrate(name: String) {
+        loginName = name
+        repo?.let { apply(it.loadSnapshot(name)) }
+    }
+
+    /**
+     * Re-sync with the backend after any write. Local mutations are optimistic;
+     * the backend is the ledger of record (it may reject: insufficient balance,
+     * already-checked-in, non-cancellable enrollment…), so we always reconcile.
+     */
+    private fun syncAfterWrite() {
+        val r = repo ?: return
+        val n = loginName ?: return
+        scope.launch { runCatching { apply(r.loadSnapshot(n)) } }
+    }
+
     val checkInReward = 50
 
     // Live, per-rider data from GET /rider/home (real collections only). Empty
@@ -92,9 +114,16 @@ class AppStore {
     val myQRPayload: String get() = "meponto://rider/${profile.ninetyNineId}"
     val inviteQRPayload: String get() = "meponto://invite/${profile.ninetyNineId}"
 
-    // Each rider is bound to a Ponto: they only see / can sign up for shifts at
-    // their own station. All schedule queries below are scoped to profile.ponto.
-    val riderShifts: List<Shift> get() = shifts.filter { it.zone == profile.ponto }
+    // Each rider is bound to a Ponto. GET /slots is already scoped server-side
+    // by the session, so the local filter is only a safety net: match loosely
+    // (trim + case-insensitive) and show everything when the profile has no
+    // ponto yet — a name-format mismatch must not blank the whole screen.
+    val riderShifts: List<Shift>
+        get() {
+            val myPonto = profile.ponto.trim()
+            if (myPonto.isEmpty()) return shifts
+            return shifts.filter { it.zone.trim().equals(myPonto, ignoreCase = true) }
+        }
 
     fun shiftsOn(dateKey: String): List<Shift> = riderShifts.filter { it.dateKey == dateKey }
 
@@ -133,13 +162,15 @@ class AppStore {
         when {
             s.subscribed -> {
                 shifts[i] = s.copy(status = ShiftSignupStatus.NONE, takenSpots = (s.takenSpots - 1).coerceAtLeast(0))
-                s.apiId?.let { id -> scope.launch { repo?.cancelSlot(id) } }
+                // Cancel needs the ENROLLMENT id (the backend also refuses to
+                // cancel confirmed enrollments — the re-sync restores those).
+                s.enrollmentApiId?.let { id -> scope.launch { repo?.cancelSlot(id); syncAfterWrite() } }
             }
             s.openSpots > 0 -> {
                 // New signups enter the approval queue (Em análise), matching the
                 // web dispatch flow where the station/franchise reviews them.
                 shifts[i] = s.copy(status = ShiftSignupStatus.SUBMITTED, takenSpots = s.takenSpots + 1)
-                s.apiId?.let { id -> scope.launch { repo?.enrollSlot(id) } }
+                s.apiId?.let { id -> scope.launch { repo?.enrollSlot(id); syncAfterWrite() } }
             }
         }
     }
@@ -150,33 +181,40 @@ class AppStore {
         if (i < 0 || pointsBalance < product.points || products[i].stock <= 0) return false
         pointsBalance -= product.points
         products[i] = products[i].copy(stock = products[i].stock - 1)
-        product.apiId?.let { id -> scope.launch { repo?.redeem(id) } }
+        product.apiId?.let { id -> scope.launch { repo?.redeem(id, riderId); syncAfterWrite() } }
         return true
     }
 
     fun requestWithdraw() {
         val amount = wallet.available
         if (amount <= 0.0) return
+        val name = profile.name.ifBlank { loginName ?: return }
         wallet = wallet.copy(pending = wallet.pending + amount, available = 0.0)
-        scope.launch { repo?.requestPayout(null) }
+        // POST /wallet {action:"requestWithdrawal"} — amount is required (the
+        // backend has no "null = full"); it may refuse (profile incomplete,
+        // pending withdrawal, insufficient T+1 balance) → re-sync reconciles.
+        scope.launch { repo?.requestWithdrawal(name, amount); syncAfterWrite() }
     }
 
     /** Update identity / payout details (Profile › Personal info). */
     fun updateProfile(name: String, cpf: String, phone: String, pix: String) {
         profile = profile.copy(name = name, cpf = cpf, phone = phone, pix = pix)
         riderName = name.split(" ").firstOrNull() ?: name
-        scope.launch { repo?.updateProfile(name, cpf, phone, pix) }
+        scope.launch { repo?.updateProfile(name, cpf, phone, pix); syncAfterWrite() }
     }
 
     /** Station check-in (扫码签到): awards points; best-effort backend write. */
     fun checkIn(pontoCode: String): Int {
         pointsBalance += checkInReward
-        scope.launch { repo?.checkin(pontoCode) }
+        // The backend is authoritative (award size, once-per-day dedupe) —
+        // re-sync replaces the optimistic +50 with the ledger truth.
+        scope.launch { repo?.checkin(pontoCode); syncAfterWrite() }
         return checkInReward
     }
 
     // MARK: - Live hydration (apply PontoSys API snapshot; nulls keep mock)
     fun apply(snapshot: RiderSnapshot) {
+        snapshot.riderId?.takeIf { it.isNotBlank() }?.let { riderId = it }
         // Merge identity fields into the profile in one copy.
         var p = profile
         snapshot.riderName?.takeIf { it.isNotBlank() }?.let { riderName = it; p = p.copy(name = it) }
@@ -192,7 +230,9 @@ class AppStore {
         snapshot.incidentCount?.let { p = p.copy(incidentCount = it) }
         profile = p
 
-        snapshot.shifts?.takeIf { it.isNotEmpty() }?.let {
+        // Non-null = the API call succeeded → replace even with an empty list
+        // (the backend removing everything must also reflect in the app).
+        snapshot.shifts?.let {
             shifts.clear()
             shifts.addAll(it)
         }
@@ -204,8 +244,8 @@ class AppStore {
             )
         }
         snapshot.pointsBalance?.let { pointsBalance = it }
-        snapshot.pointsLedger?.takeIf { it.isNotEmpty() }?.let { pointsLedger = it }
-        snapshot.products?.takeIf { it.isNotEmpty() }?.let {
+        snapshot.pointsLedger?.let { pointsLedger = it }
+        snapshot.products?.let {
             products.clear()
             products.addAll(it)
         }

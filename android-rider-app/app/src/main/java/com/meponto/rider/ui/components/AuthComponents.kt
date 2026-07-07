@@ -3,6 +3,7 @@ package com.meponto.rider.ui.components
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -20,6 +21,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -36,20 +39,38 @@ fun LoginPromptCard(message: String? = null) {
     val me = LocalMe.current
     val loc = LocalLoc.current
     val auth = LocalAuth.current
+    // The ONE yellow block on a guest screen — the primary action.
+    val shape = RoundedCornerShape(MeRadius.card)
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(MeRadius.card))
+            .then(
+                if (me.isDark) Modifier else Modifier.shadow(
+                    elevation = 8.dp,
+                    shape = shape,
+                    ambientColor = Color(0x33FFC400),
+                    spotColor = Color(0x4DFFC400),
+                )
+            )
+            .clip(shape)
             .background(me.accent)
             .clickable { auth.requireMember() }
-            .padding(16.dp),
+            .padding(horizontal = 16.dp, vertical = 18.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Icon(Icons.Filled.PersonAddAlt1, contentDescription = null, tint = me.accentInk, modifier = Modifier.size(26.dp))
+        Box(
+            modifier = Modifier
+                .size(44.dp)
+                .clip(RoundedCornerShape(MeRadius.small))
+                .background(me.accentInk.copy(alpha = 0.10f)),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(Icons.Filled.PersonAddAlt1, contentDescription = null, tint = me.accentInk, modifier = Modifier.size(24.dp))
+        }
         Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {
-            Text(loc.t("auth.welcome"), color = me.accentInk, fontWeight = FontWeight.Bold, fontSize = 14.sp)
-            Text(message ?: loc.t("auth.guestPrompt"), color = me.accentInk.copy(alpha = 0.75f), fontSize = 12.sp)
+            Text(loc.t("auth.welcome"), color = me.accentInk, fontWeight = FontWeight.Bold, fontSize = 15.sp)
+            Text(message ?: loc.t("auth.guestPrompt"), color = me.accentInk.copy(alpha = 0.72f), fontSize = 12.sp)
         }
         Icon(Icons.Filled.ChevronRight, contentDescription = null, tint = me.accentInk)
     }

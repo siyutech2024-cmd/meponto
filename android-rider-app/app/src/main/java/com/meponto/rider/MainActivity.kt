@@ -68,7 +68,8 @@ class AppearanceController(context: Context) {
     private val prefs = context.applicationContext
         .getSharedPreferences("meponto_rider", Context.MODE_PRIVATE)
 
-    var mode by mutableStateOf(prefs.getString("appearance", "system") ?: "system")
+    // Default is LIGHT (consumer look); dark stays one tap away in Profile.
+    var mode by mutableStateOf(prefs.getString("appearance", "light") ?: "light")
         private set
 
     fun set(value: String) {
@@ -125,7 +126,7 @@ fun MePontoRiderApp() {
     LaunchedEffect(auth.state) {
         if (auth.isMember) {
             session.memberName?.let { name ->
-                runCatching { store.apply(repo.loadSnapshot(name)) }
+                runCatching { store.hydrate(name) } // also remembers name for write re-syncs
                 FirebaseMessaging.getInstance().token.addOnSuccessListener { token ->
                     Log.d("MePontoFCM", "token=$token")
                     scope.launch { repo.registerPushToken(name, token) }

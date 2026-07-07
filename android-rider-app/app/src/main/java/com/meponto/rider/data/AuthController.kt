@@ -4,6 +4,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.staticCompositionLocalOf
+import com.meponto.rider.data.remote.SignupPayload
 
 /**
  * Deferred login (mirrors iOS AuthManager): the app opens for everyone as a
@@ -49,6 +50,9 @@ class AuthController(
     fun presentAuth() { resetOtp(); presentingAuth = true }
     fun dismissAuth() { presentingAuth = false; resetOtp() }
 
+    /** Surface a visible error when Google sign-in can't even produce a token. */
+    fun reportGoogleUnavailable() { errorKey = "auth.googleUnavailable" }
+
     /** Back to the phone-entry step (also used by "change number"). */
     fun resetOtp() { otpSent = false; needsCpf = false; rebind = false; needsGoogleLink = false; googleCred = null; errorKey = null }
 
@@ -70,12 +74,25 @@ class AuthController(
         working = false
     }
 
-    /** OTP step 1 — request a code; pass [cpf] when rebinding a new number. */
-    suspend fun requestOtp(phone: String, cpf: String?) {
+    /**
+     * OTP step 1 — request a code; pass [cpf] when rebinding a new number, or
+     * [signupName] to create a brand-new account (member is built on verify,
+     * mirroring the web /register phone-first signup).
+     */
+    suspend fun requestOtp(phone: String, cpf: String?, signupName: String? = null) {
         working = true
         errorKey = null
-        val r = repo.requestOtp(phone, cpf?.ifBlank { null })
+        val signup = signupName?.trim()?.takeIf { it.isNotEmpty() }?.let { SignupPayload(name = it) }
+        val r = repo.requestOtp(phone, cpf?.ifBlank { null }, signup)
         when {
+            // Google guest entering a NEW phone: backend activates the member
+            // directly (no SMS round-trip) — finish the login here.
+            r.activatedName != null -> {
+                session.setLoggedIn(r.activatedName)
+                state = AuthState.MEMBER
+                presentingAuth = false
+                resetOtp()
+            }
             r.ok -> { otpSent = true; needsCpf = false; rebind = r.rebind }
             r.needsCpf -> { needsCpf = true }
             else -> { errorKey = "auth.invalid" }
@@ -98,26 +115,18 @@ class AuthController(
         working = false
     }
 
-    suspend fun login(phone: String) {
-        working = true
-        errorKey = null
-        repo.login(phone)
-            .onSuccess { name ->
-                session.setLoggedIn(name)
-                state = AuthState.MEMBER
-                presentingAuth = false
-            }
-            .onFailure { errorKey = "auth.invalid" }
-        working = false
-    }
-
-    /** member-login is phone-only; register reuses the same flow after a basic check. */
+    /**
+     * Create a new account: phone-first signup via OTP (the member record is
+     * only created after the code is verified — same as the web /register).
+     * The legacy no-code phone login is gone: it 403s when MEMBER_LOGIN_OTP=1
+     * and could never create an account.
+     */
     suspend fun register(name: String, phone: String) {
         if (name.isBlank() || phone.isBlank()) {
             errorKey = "auth.fillAll"
             return
         }
-        login(phone)
+        requestOtp(phone, cpf = null, signupName = name)
     }
 
     fun logout() {

@@ -2,9 +2,7 @@ package com.meponto.rider.ui.screens
 
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -43,6 +41,7 @@ import com.meponto.rider.R
 import com.meponto.rider.data.LocalAuth
 import com.meponto.rider.data.LocalStore
 import com.meponto.rider.i18n.LocalLoc
+import com.meponto.rider.ui.components.ActionRow
 import com.meponto.rider.ui.components.Badge
 import com.meponto.rider.ui.components.LedgerRow
 import com.meponto.rider.ui.components.LoginPromptCard
@@ -101,18 +100,19 @@ fun HomeScreen(onScan: () -> Unit, onProfile: () -> Unit) {
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
-            // Greeting (guest vs member)
-            Column {
+            // Greeting (guest vs member) — compact, no decoration; the identity
+            // block below carries the visual weight.
+            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
                 Text(
-                    if (auth.isMember) "${loc.t("home.greeting")}, ${store.riderName} 👋" else "${loc.t("home.greeting")} 👋",
+                    if (auth.isMember) "${loc.t("home.greeting")}, ${store.riderName}" else loc.t("home.greeting"),
                     color = me.text,
                     fontWeight = FontWeight.Bold,
-                    fontSize = 22.sp,
+                    fontSize = 20.sp,
                 )
                 Text(
                     if (auth.isMember) loc.t("home.rider") + " · " + store.profile.ponto else loc.t("profile.guest"),
                     color = me.muted,
-                    fontSize = 14.sp,
+                    fontSize = 13.sp,
                 )
             }
 
@@ -134,44 +134,24 @@ fun HomeScreen(onScan: () -> Unit, onProfile: () -> Unit) {
                 }
             }
 
-            // Scan card
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clip(RoundedCornerShape(MeRadius.card))
-                    .background(me.accent)
-                    .clickable { if (auth.requireMember()) onScan() }
-                    .padding(16.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Icon(Icons.Filled.QrCodeScanner, contentDescription = null, tint = me.accentInk, modifier = Modifier.size(26.dp))
-                Spacer(Modifier.width(12.dp))
-                Column(Modifier.weight(1f)) {
-                    Text(loc.t("home.scan"), color = me.accentInk, fontWeight = FontWeight.SemiBold)
-                    Text("Ponto · Repasse · Parceiro", color = me.accentInk.copy(alpha = 0.7f), fontSize = 12.sp)
-                }
-                Icon(Icons.Filled.ChevronRight, contentDescription = null, tint = me.accentInk)
-            }
+            // Scan + Invite: surface rows with toned icon chips. Yellow stays
+            // reserved for the single primary action on screen (the login CTA
+            // for guests / key figures for members) per the design system.
+            ActionRow(
+                icon = Icons.Filled.QrCodeScanner,
+                tone = Tone.ACCENT,
+                title = loc.t("home.scan"),
+                detail = "Ponto · Repasse · Parceiro",
+                trailing = Icons.Filled.ChevronRight,
+            ) { if (auth.requireMember()) onScan() }
 
-            // Invite card → invite QR
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clip(RoundedCornerShape(MeRadius.card))
-                    .background(me.surface)
-                    .border(1.dp, me.line, RoundedCornerShape(MeRadius.card))
-                    .clickable { if (auth.requireMember()) showInvite = true }
-                    .padding(16.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Icon(Icons.Filled.GroupAdd, contentDescription = null, tint = me.text, modifier = Modifier.size(26.dp))
-                Spacer(Modifier.width(12.dp))
-                Column(Modifier.weight(1f)) {
-                    Text(loc.t("points.invite"), color = me.text, fontWeight = FontWeight.SemiBold)
-                    Text(loc.t("points.inviteHint"), color = me.muted, fontSize = 12.sp)
-                }
-                Icon(Icons.Filled.QrCode2, contentDescription = null, tint = me.muted)
-            }
+            ActionRow(
+                icon = Icons.Filled.GroupAdd,
+                tone = Tone.OK,
+                title = loc.t("points.invite"),
+                detail = loc.t("points.inviteHint"),
+                trailing = Icons.Filled.QrCode2,
+            ) { if (auth.requireMember()) showInvite = true }
 
             // Performance
             store.performance?.let { perf ->
@@ -271,27 +251,32 @@ fun HomeScreen(onScan: () -> Unit, onProfile: () -> Unit) {
                 }
             }
 
-            // Tier preview
+            // Tier preview — fixed 2-column grid (no clipped horizontal scroll:
+            // every threshold is visible without a hidden-content cue).
             Panel {
                 SectionHeader(loc.t("home.tier"))
                 Spacer(Modifier.size(12.dp))
-                Row(
-                    modifier = Modifier.horizontalScroll(rememberScrollState()),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp),
-                ) {
-                    store.tiers.forEach { tier ->
-                        Column(
-                            modifier = Modifier
-                                .width(92.dp)
-                                .clip(RoundedCornerShape(MeRadius.card))
-                                .background(me.surfaceRaised)
-                                .padding(vertical = 12.dp),
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            verticalArrangement = Arrangement.spacedBy(6.dp),
-                        ) {
-                            Text("${tier.score}", color = me.accent, fontWeight = FontWeight.Bold, fontSize = 18.sp)
-                            Text(tier.metric, color = me.text, fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
-                            Text(tier.threshold, color = me.muted, fontSize = 11.sp)
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    store.tiers.chunked(2).forEach { rowTiers ->
+                        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                            rowTiers.forEach { tier ->
+                                Row(
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .clip(RoundedCornerShape(MeRadius.card))
+                                        .background(me.surfaceRaised)
+                                        .padding(horizontal = 12.dp, vertical = 10.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    Text("${tier.score}", color = me.accent, fontWeight = FontWeight.Bold, fontSize = 17.sp)
+                                    Spacer(Modifier.width(10.dp))
+                                    Column {
+                                        Text(tier.metric, color = me.text, fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
+                                        Text(tier.threshold, color = me.muted, fontSize = 11.sp)
+                                    }
+                                }
+                            }
+                            if (rowTiers.size == 1) Spacer(Modifier.weight(1f))
                         }
                     }
                 }

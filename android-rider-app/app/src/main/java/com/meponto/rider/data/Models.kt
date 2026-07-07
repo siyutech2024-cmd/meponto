@@ -87,6 +87,7 @@ data class Shift(
     val critical: Boolean = false,
     val status: ShiftSignupStatus = ShiftSignupStatus.NONE,
     val apiId: String? = null, // PontoSys slot id (null for local mock shifts)
+    val enrollmentApiId: String? = null, // active enrollment id (needed to self-cancel)
 ) {
     val subscribed: Boolean
         get() = status == ShiftSignupStatus.SUBMITTED || status == ShiftSignupStatus.APPROVED

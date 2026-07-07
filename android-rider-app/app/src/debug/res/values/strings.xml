@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Debug-variant override: distinguishes the dev install (com.meponto.rider.debug)
+     from the release app on the same device. -->
+<resources>
+    <string name="app_name">MePonto Dev</string>
+</resources>

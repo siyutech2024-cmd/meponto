@@ -25,6 +25,18 @@ class LocalizationManager(context: Context) {
     private val prefs = context.applicationContext
         .getSharedPreferences("meponto_rider", Context.MODE_PRIVATE)
 
+    init {
+        // One-time migration: Portuguese is the product default (Brazil-facing).
+        // Applies once per install/upgrade so stale dev-time choices don't stick;
+        // after that the user's Profile selection is respected.
+        if (!prefs.getBoolean("lang_default_pt_applied", false)) {
+            prefs.edit()
+                .putString("app_language", "pt")
+                .putBoolean("lang_default_pt_applied", true)
+                .apply()
+        }
+    }
+
     var language by mutableStateOf(AppLanguage.from(prefs.getString("app_language", "pt")))
         private set
 
@@ -109,6 +121,8 @@ object L10n {
             "auth.invalid" to "ID ou senha inválidos", "auth.fillAll" to "Preencha todos os campos",
             "auth.sendCode" to "Enviar código", "auth.cpf" to "CPF", "auth.cpfPrompt" to "Telefone não encontrado. Confirme seu CPF para vincular este número.", "auth.code" to "Código", "auth.codeSent" to "Código enviado por SMS", "auth.resend" to "Reenviar código", "auth.changeNumber" to "Trocar número", "auth.enterCode" to "Digite o código de 6 dígitos",
             "auth.google" to "Continuar com Google", "auth.or" to "ou", "auth.googleLink" to "Confirme seu telefone para vincular sua conta Google.",
+            "auth.signupPrompt" to "Novo no MePonto? Informe seu nome para criar a conta.",
+            "auth.googleUnavailable" to "Google indisponível neste aparelho. Verifique o Google Play e tente pelo telefone.",
             "profile.guest" to "Visitante", "profile.personalInfo" to "Dados pessoais", "profile.payout" to "Dados de repasse",
             "profile.cpf" to "CPF", "profile.pix" to "Chave PIX", "profile.notSet" to "Não preenchido",
             "profile.completePrompt" to "Complete CPF e PIX para receber seus repasses.",
@@ -189,6 +203,8 @@ object L10n {
             "auth.invalid" to "Invalid ID or password", "auth.fillAll" to "Fill in all fields",
             "auth.sendCode" to "Send code", "auth.cpf" to "CPF", "auth.cpfPrompt" to "Phone not found. Confirm your CPF to link this number.", "auth.code" to "Code", "auth.codeSent" to "Code sent by SMS", "auth.resend" to "Resend code", "auth.changeNumber" to "Change number", "auth.enterCode" to "Enter the 6-digit code",
             "auth.google" to "Continue with Google", "auth.or" to "or", "auth.googleLink" to "Confirm your phone to link your Google account.",
+            "auth.signupPrompt" to "New to MePonto? Enter your name to create an account.",
+            "auth.googleUnavailable" to "Google sign-in unavailable on this device. Check Google Play or use your phone number.",
             "profile.guest" to "Guest", "profile.personalInfo" to "Personal info", "profile.payout" to "Payout details",
             "profile.cpf" to "CPF", "profile.pix" to "PIX key", "profile.notSet" to "Not set",
             "profile.completePrompt" to "Complete your CPF and PIX to receive payouts.",
@@ -269,6 +285,8 @@ object L10n {
             "auth.invalid" to "ID 或密码无效", "auth.fillAll" to "请填写所有字段",
             "auth.sendCode" to "发送验证码", "auth.cpf" to "CPF", "auth.cpfPrompt" to "手机号未找到,请确认 CPF 以绑定该号码。", "auth.code" to "验证码", "auth.codeSent" to "验证码已通过短信发送", "auth.resend" to "重新发送", "auth.changeNumber" to "更换号码", "auth.enterCode" to "输入 6 位验证码",
             "auth.google" to "用 Google 继续", "auth.or" to "或", "auth.googleLink" to "确认手机号以绑定你的 Google 账号。",
+            "auth.signupPrompt" to "第一次使用 MePonto?填写姓名即可创建账号。",
+            "auth.googleUnavailable" to "此设备暂不可用 Google 登录:请检查 Google Play,或改用手机号登录。",
             "profile.guest" to "游客", "profile.personalInfo" to "个人信息", "profile.payout" to "提现信息",
             "profile.cpf" to "CPF", "profile.pix" to "PIX 收款码", "profile.notSet" to "未填写",
             "profile.completePrompt" to "请补全 CPF 与 PIX 才能接收提现。",

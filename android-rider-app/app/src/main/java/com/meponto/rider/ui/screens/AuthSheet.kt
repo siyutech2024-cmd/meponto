@@ -1,19 +1,24 @@
 package com.meponto.rider.ui.screens
 
 import android.content.Context
+import android.util.Log
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
@@ -43,6 +48,7 @@ import com.meponto.rider.data.LocalAuth
 import com.meponto.rider.i18n.LocalLoc
 import com.meponto.rider.ui.components.PrimaryButton
 import com.meponto.rider.ui.theme.LocalMe
+import com.meponto.rider.ui.theme.MeRadius
 import kotlinx.coroutines.launch
 
 /** Launch Google sign-in via Credential Manager → returns the Google ID token. */
@@ -63,8 +69,42 @@ private suspend fun googleIdToken(context: Context): String? {
             null
         }
     } catch (e: Exception) {
+        // Typical causes: no Google Play services on the device/emulator, or the
+        // OAuth project is missing an ANDROID client (package name + SHA-1).
+        Log.w("MePontoAuth", "Google sign-in failed", e)
         null
     }
+}
+
+/** Filled rounded text field — the sheet's standard input style. */
+@Composable
+private fun AuthField(
+    value: String,
+    onValueChange: (String) -> Unit,
+    label: String,
+    keyboardType: KeyboardType = KeyboardType.Text,
+) {
+    val me = LocalMe.current
+    OutlinedTextField(
+        value = value,
+        onValueChange = onValueChange,
+        label = { Text(label) },
+        singleLine = true,
+        shape = RoundedCornerShape(14.dp),
+        keyboardOptions = KeyboardOptions(keyboardType = keyboardType),
+        colors = OutlinedTextFieldDefaults.colors(
+            focusedContainerColor = me.surfaceRaised,
+            unfocusedContainerColor = me.surfaceRaised,
+            focusedBorderColor = me.accent,
+            unfocusedBorderColor = androidx.compose.ui.graphics.Color.Transparent,
+            focusedLabelColor = me.muted,
+            unfocusedLabelColor = me.muted,
+            cursorColor = me.accent,
+            focusedTextColor = me.text,
+            unfocusedTextColor = me.text,
+        ),
+        modifier = Modifier.fillMaxWidth(),
+    )
 }
 
 /**
@@ -85,6 +125,7 @@ fun AuthSheet(onDismiss: () -> Unit) {
     var phone by remember { mutableStateOf("") }
     var cpf by remember { mutableStateOf("") }
     var code by remember { mutableStateOf("") }
+    var signupName by remember { mutableStateOf("") }
 
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState, containerColor = me.background) {
         Column(
@@ -92,15 +133,26 @@ fun AuthSheet(onDismiss: () -> Unit) {
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
-            Image(painterResource(R.drawable.meponto_logo), contentDescription = "MePonto", modifier = Modifier.size(64.dp))
-            Text(loc.t("auth.welcome"), color = me.text, fontWeight = FontWeight.Bold, fontSize = 18.sp)
+            Image(painterResource(R.drawable.meponto_logo), contentDescription = "MePonto", modifier = Modifier.size(56.dp))
+            Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text(loc.t("auth.welcome"), color = me.text, fontWeight = FontWeight.Bold, fontSize = 20.sp)
+                Text(loc.t("auth.guestPrompt"), color = me.muted, fontSize = 13.sp, textAlign = TextAlign.Center)
+            }
 
             // Sign in with Google (hidden unless GOOGLE_WEB_CLIENT_ID is configured).
             if (BuildConfig.GOOGLE_WEB_CLIENT_ID.isNotBlank() && !auth.otpSent && !auth.needsCpf && !auth.working) {
                 OutlinedButton(
-                    onClick = { scope.launch { googleIdToken(context)?.let { auth.googleLogin(it) } } },
+                    onClick = {
+                        scope.launch {
+                            val token = googleIdToken(context)
+                            if (token != null) auth.googleLogin(token) else auth.reportGoogleUnavailable()
+                        }
+                    },
+                    shape = RoundedCornerShape(MeRadius.card),
+                    border = BorderStroke(1.dp, me.line),
+                    contentPadding = PaddingValues(vertical = 13.dp),
                     modifier = Modifier.fillMaxWidth(),
-                ) { Text(loc.t("auth.google")) }
+                ) { Text(loc.t("auth.google"), color = me.text, fontWeight = FontWeight.SemiBold) }
                 if (auth.needsGoogleLink) {
                     Text(loc.t("auth.googleLink"), color = me.muted, fontSize = 12.sp, textAlign = TextAlign.Center)
                 } else {
@@ -116,31 +168,20 @@ fun AuthSheet(onDismiss: () -> Unit) {
                         color = me.muted, fontSize = 13.sp, textAlign = TextAlign.Center,
                         modifier = Modifier.fillMaxWidth(),
                     )
-                    OutlinedTextField(
-                        value = code, onValueChange = { code = it.filter { c -> c.isDigit() }.take(6) },
-                        label = { Text(loc.t("auth.code")) }, singleLine = true,
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
-                        modifier = Modifier.fillMaxWidth(),
-                    )
+                    AuthField(code, { code = it.filter { c -> c.isDigit() }.take(6) }, loc.t("auth.code"), KeyboardType.NumberPassword)
                 }
-                // ---- Step: confirm CPF to (re)bind the number ----
+                // ---- Step: unknown phone → link an existing record via CPF,
+                // or create a brand-new account (phone-first signup, mirrors
+                // the web /register: the member is only created on verify). ----
                 auth.needsCpf -> {
                     Text(loc.t("auth.cpfPrompt"), color = me.muted, fontSize = 13.sp, modifier = Modifier.fillMaxWidth())
-                    OutlinedTextField(
-                        value = cpf, onValueChange = { cpf = it.filter { c -> c.isDigit() }.take(11) },
-                        label = { Text(loc.t("auth.cpf")) }, singleLine = true,
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                        modifier = Modifier.fillMaxWidth(),
-                    )
+                    AuthField(cpf, { cpf = it.filter { c -> c.isDigit() }.take(11) }, loc.t("auth.cpf"), KeyboardType.Number)
+                    Text(loc.t("auth.signupPrompt"), color = me.muted, fontSize = 12.sp, modifier = Modifier.fillMaxWidth())
+                    AuthField(signupName, { signupName = it.take(60) }, loc.t("auth.name"))
                 }
                 // ---- Step: enter the phone ----
                 else -> {
-                    OutlinedTextField(
-                        value = phone, onValueChange = { phone = it },
-                        label = { Text(loc.t("auth.phone")) }, singleLine = true,
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
-                        modifier = Modifier.fillMaxWidth(),
-                    )
+                    AuthField(phone, { phone = it }, loc.t("auth.phone"), KeyboardType.Phone)
                 }
             }
 
@@ -165,8 +206,13 @@ fun AuthSheet(onDismiss: () -> Unit) {
                     }
                 }
                 auth.needsCpf -> {
-                    PrimaryButton(title = loc.t("auth.sendCode"), enabled = cpf.length == 11) {
-                        scope.launch { auth.requestOtp(phone, cpf) }
+                    // Either path ends in the same SMS challenge: CPF re-binds
+                    // an existing record; a name creates the account on verify.
+                    PrimaryButton(title = loc.t("auth.sendCode"), enabled = cpf.length == 11 || signupName.isNotBlank()) {
+                        scope.launch {
+                            if (cpf.length == 11) auth.requestOtp(phone, cpf)
+                            else auth.requestOtp(phone, null, signupName)
+                        }
                     }
                 }
                 else -> {
@@ -176,7 +222,6 @@ fun AuthSheet(onDismiss: () -> Unit) {
                 }
             }
 
-            Text(loc.t("auth.enterCode"), color = me.muted, fontSize = 11.sp, textAlign = TextAlign.Center)
         }
     }
 }

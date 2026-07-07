@@ -7,7 +7,7 @@ package com.meponto.rider.data.remote
  */
 data class ApiEnvelope<T>(val data: T? = null, val error: String? = null, val needsCpf: Boolean? = null)
 
-// POST /api/member-login  { phone, action?, code?, cpf? }
+// POST /api/member-login  { phone, action?, code?, cpf?, signup? }
 // action null = legacy phone-only login; "request-otp" / "verify-otp" = OTP flow.
 data class MemberLoginRequest(
     val phone: String,
@@ -15,6 +15,16 @@ data class MemberLoginRequest(
     val code: String? = null,
     val cpf: String? = null,
     val googleCredential: String? = null,
+    val signup: SignupPayload? = null,
+)
+
+// Phone-first signup: rides with request-otp; the member record is only
+// created after the code is verified (mirrors the web /register flow).
+data class SignupPayload(
+    val name: String,
+    val cpf: String? = null,
+    val inviterId: String? = null,
+    val birthday: String? = null,
 )
 
 // POST /api/member-login { action: "google", credential }
@@ -23,14 +33,20 @@ data class GoogleLoginData(
     val name: String? = null,
     val needsLink: Boolean? = null,
     val email: String? = null,
+    // GOOGLE_LITE_LOGIN: unlinked Google users get an UNVERIFIED guest session;
+    // they must verify phone (+CPF) before points/wallet actions work.
+    val verified: Boolean? = null,
+    val needsVerification: Boolean? = null,
 )
 
-// data for action=request-otp
+// data for action=request-otp. `name` is set when the backend activates the
+// member instantly (Google guest entering a brand-new phone → session issued).
 data class OtpRequestData(
     val sent: Boolean? = null,
     val rebind: Boolean? = null,
     val needsCpf: Boolean? = null,
     val devCode: String? = null,
+    val name: String? = null,
 )
 data class MemberLoginData(
     val name: String? = null,
@@ -224,8 +240,8 @@ data class InboxDto(
 // Generic write acknowledgement
 data class AckDto(val id: String? = null, val status: String? = null)
 
-// POST /rider/checkin → { points, checkinId }
-data class CheckinDto(val points: Int? = null, val checkinId: String? = null)
+// POST /api/checkin → data: { awarded, available, ponto }
+data class CheckinDto(val awarded: Int? = null, val available: Int? = null, val ponto: String? = null)
 
 // POST /push — register/unregister this device's FCM token
 data class PushTokenRequest(
@@ -237,7 +253,24 @@ data class PushTokenRequest(
 
 // ----- Write request bodies (all writes carry an Idempotency-Key header) -----
 data class ProfileUpdateRequest(val name: String, val cpf: String, val phone: String, val pix: String)
-data class PayoutRequest(val amount: Double? = null) // null = full available
-data class RedeemRequest(val productId: String, val qty: Int = 1)
-data class SlotCancelRequest(val slotId: String)
+
+// POST /api/mall { action: "redeem", productId, riderId?, pickupStoreId? }
+// Identity is session-derived on the backend; riderId is a demo-mode fallback.
+data class MallRedeemRequest(
+    val productId: String,
+    val riderId: String? = null,
+    val pickupStoreId: String? = null,
+    val action: String = "redeem",
+)
+
+// POST /api/mall redeem → data: { order, balance }
+data class MallRedeemData(val balance: Int? = null)
+
+// POST /api/slots { action: "cancelEnrollment", enrollmentId } — rider
+// self-cancel of an own still-pending enrollment (confirmed ones are locked).
+data class SlotCancelRequest(
+    val enrollmentId: String,
+    val action: String = "cancelEnrollment",
+)
+
 data class CheckinRequest(val pontoCode: String, val lat: Double? = null, val lng: Double? = null)

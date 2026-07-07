@@ -24,6 +24,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -36,7 +38,25 @@ import com.meponto.rider.ui.theme.Tone
 import com.meponto.rider.ui.theme.bg
 import com.meponto.rider.ui.theme.fg
 
-/** Surface panel: no nested cards, radius <= 8, semantic tokens (design-system.md). */
+/** Soft elevation for cards: gentle shadow in light mode, hairline in dark. */
+fun Modifier.cardSurface(me: com.meponto.rider.ui.theme.MeColors): Modifier {
+    val shape = RoundedCornerShape(MeRadius.card)
+    return this
+        .then(
+            if (me.isDark) Modifier
+            else Modifier.shadow(
+                elevation = 6.dp,
+                shape = shape,
+                ambientColor = Color(0x14000000),
+                spotColor = Color(0x1F000000),
+            )
+        )
+        .clip(shape)
+        .background(me.surface)
+        .then(if (me.isDark) Modifier.border(1.dp, me.line, shape) else Modifier)
+}
+
+/** Surface panel card: rounded, softly elevated, semantic tokens. */
 @Composable
 fun Panel(
     modifier: Modifier = Modifier,
@@ -47,9 +67,7 @@ fun Panel(
     Column(
         modifier = modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(MeRadius.card))
-            .background(me.surface)
-            .border(1.dp, me.line, RoundedCornerShape(MeRadius.card))
+            .cardSurface(me)
             .padding(padding),
         content = content,
     )
@@ -77,6 +95,24 @@ fun SectionHeader(
                 modifier = Modifier.clickable { onAction() },
             )
         }
+    }
+}
+
+/**
+ * Square icon chip: the app's standard icon treatment — toned 12% background,
+ * toned icon, 8dp radius. Keeps rows scannable without large color blocks.
+ */
+@Composable
+fun IconChip(icon: ImageVector, tone: Tone = Tone.ACCENT, size: Dp = 40.dp) {
+    val me = LocalMe.current
+    Box(
+        modifier = Modifier
+            .size(size)
+            .clip(RoundedCornerShape(MeRadius.small))
+            .background(tone.bg(me)),
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(icon, contentDescription = null, tint = tone.fg(me), modifier = Modifier.size(22.dp))
     }
 }
 
@@ -127,13 +163,22 @@ fun PrimaryButton(
     onClick: () -> Unit,
 ) {
     val me = LocalMe.current
+    val shape = RoundedCornerShape(MeRadius.card)
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(MeRadius.card))
+            .then(
+                if (enabled && !me.isDark) Modifier.shadow(
+                    elevation = 6.dp,
+                    shape = shape,
+                    ambientColor = Color(0x33FFC400),
+                    spotColor = Color(0x4DFFC400),
+                ) else Modifier
+            )
+            .clip(shape)
             .background(if (enabled) me.accent else me.surfaceRaised)
             .clickable(enabled = enabled) { onClick() }
-            .padding(vertical = 12.dp),
+            .padding(vertical = 14.dp),
         horizontalArrangement = Arrangement.Center,
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -149,8 +194,40 @@ fun PrimaryButton(
         Text(
             title,
             color = if (enabled) me.accentInk else me.muted,
-            fontWeight = FontWeight.SemiBold,
+            fontWeight = FontWeight.Bold,
+            fontSize = 15.sp,
         )
+    }
+}
+
+/** Tappable list-style action row: icon chip + title/detail + trailing icon. */
+@Composable
+fun ActionRow(
+    icon: ImageVector,
+    title: String,
+    detail: String,
+    tone: Tone = Tone.ACCENT,
+    trailing: ImageVector? = null,
+    onClick: () -> Unit,
+) {
+    val me = LocalMe.current
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .cardSurface(me)
+            .clickable { onClick() }
+            .padding(horizontal = 14.dp, vertical = 14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        IconChip(icon, tone)
+        Spacer(Modifier.width(12.dp))
+        Column(Modifier.weight(1f)) {
+            Text(title, color = me.text, fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
+            Text(detail, color = me.muted, fontSize = 12.sp)
+        }
+        if (trailing != null) {
+            Icon(trailing, contentDescription = null, tint = me.muted, modifier = Modifier.size(20.dp))
+        }
     }
 }
 

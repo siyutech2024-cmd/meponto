@@ -10,21 +10,22 @@ import com.meponto.rider.data.remote.CheckinRequest
 import com.meponto.rider.data.remote.GoogleLoginRequest
 import com.meponto.rider.data.remote.InboxDto
 import com.meponto.rider.data.remote.LedgerDto
+import com.meponto.rider.data.remote.MallRedeemRequest
 import com.meponto.rider.data.remote.MemberLoginRequest
 import com.meponto.rider.data.remote.MissionDto
 import com.meponto.rider.data.remote.PartnerBenefitDto
 import com.meponto.rider.data.remote.PartnerDto
-import com.meponto.rider.data.remote.PayoutRequest
 import com.meponto.rider.data.remote.PerformanceDto
 import com.meponto.rider.data.remote.PointsLedgerDto
 import com.meponto.rider.data.remote.ProfileUpdateRequest
 import com.meponto.rider.data.remote.PushTokenRequest
-import com.meponto.rider.data.remote.RedeemRequest
 import com.meponto.rider.data.remote.RiderProfileDto
 import com.meponto.rider.data.remote.RiderSlotDto
+import com.meponto.rider.data.remote.SignupPayload
 import com.meponto.rider.data.remote.SlotCancelRequest
 import com.meponto.rider.data.remote.SlotEnrollRequest
 import com.meponto.rider.data.remote.SlotEnrollmentDto
+import com.meponto.rider.data.remote.WithdrawRequest
 import com.meponto.rider.ui.theme.Tone
 import java.text.SimpleDateFormat
 import java.util.Locale
@@ -32,6 +33,7 @@ import kotlin.math.abs
 
 /** A partial snapshot from the PontoSys API; null fields keep mock values. */
 data class RiderSnapshot(
+    val riderId: String? = null,
     val riderName: String? = null,
     val ponto: String? = null,
     val leader: String? = null,
@@ -58,11 +60,16 @@ data class RiderSnapshot(
     val inbox: List<InboxItem>? = null,
 )
 
-/** Result of an OTP request: ok=code sent; needsCpf=phone unknown, ask CPF to rebind. */
+/**
+ * Result of an OTP request: ok=code sent; needsCpf=phone unknown, ask CPF to
+ * rebind (or sign up); activatedName set = the backend activated the member
+ * instantly without a code (Google guest + brand-new phone).
+ */
 data class OtpResult(
     val ok: Boolean,
     val rebind: Boolean = false,
     val needsCpf: Boolean = false,
+    val activatedName: String? = null,
     val error: String? = null,
 )
 
@@ -84,21 +91,17 @@ class RiderRepository(context: Context) {
     private val api = ApiClient(context)
     private val service = api.service
 
-    /** member-login by phone → returns the member's display name on success. */
-    suspend fun login(phone: String): Result<String> = try {
-        val resp = service.memberLogin(MemberLoginRequest(phone))
-        val name = resp.data?.name
-        if (name != null) Result.success(name)
-        else Result.failure(IllegalStateException(resp.error ?: "Login falhou"))
-    } catch (e: Exception) {
-        Result.failure(e)
-    }
-
-    /** OTP step 1 — request a code for [phone]; pass [cpf] to (re)bind a new number. */
-    suspend fun requestOtp(phone: String, cpf: String?): OtpResult = try {
-        val resp = service.requestOtp(MemberLoginRequest(phone, action = "request-otp", cpf = cpf))
+    /**
+     * OTP step 1 — request a code for [phone]; pass [cpf] to (re)bind a new
+     * number, or [signup] (name…) so a brand-new user is created on verify —
+     * the same phone-first signup the web /register page uses.
+     */
+    suspend fun requestOtp(phone: String, cpf: String?, signup: SignupPayload? = null): OtpResult = try {
+        val resp = service.requestOtp(MemberLoginRequest(phone, action = "request-otp", cpf = cpf, signup = signup))
         val d = resp.data
         when {
+            // Google guest + new phone: the backend issues the session directly.
+            d?.name != null && d.sent != true -> OtpResult(ok = true, activatedName = d.name)
             d?.sent == true -> OtpResult(ok = true, rebind = d.rebind == true)
             d?.needsCpf == true -> OtpResult(ok = false, needsCpf = true)
             else -> OtpResult(ok = false, error = resp.error ?: "Falha ao enviar código")
@@ -122,6 +125,11 @@ class RiderRepository(context: Context) {
         val resp = service.googleLogin(GoogleLoginRequest(credential = credential))
         val d = resp.data
         when {
+            // GOOGLE_LITE_LOGIN guest session: has a name but is NOT a member
+            // yet — treat like needsLink so the app collects phone (+CPF) and
+            // finishes the binding instead of showing a hollow "member".
+            d?.needsVerification == true || d?.verified == false ->
+                GoogleResult(ok = false, needsLink = true, email = d.email, name = d.name)
             d?.name != null -> GoogleResult(ok = true, name = d.name)
             d?.needsLink == true -> GoogleResult(ok = false, needsLink = true, email = d.email)
             else -> GoogleResult(ok = false, error = resp.error ?: "Falha no Google")
@@ -148,8 +156,8 @@ class RiderRepository(context: Context) {
         val riderId = me?.riderId
 
         val pointsEnv = riderId?.let { id -> runCatching { service.points(id) }.getOrNull() }
+        // Strictly the rider's own account — never fall back to someone else's.
         val account = pointsEnv?.data?.accounts?.firstOrNull { it.riderId == riderId }
-            ?: pointsEnv?.data?.accounts?.firstOrNull()
         val ledger = pointsEnv?.data?.ledger?.mapNotNull { it.toDomain() }
 
         val catalogEnv = runCatching { service.catalog() }.getOrNull()
@@ -170,6 +178,7 @@ class RiderRepository(context: Context) {
         val home = runCatching { service.riderHome() }.getOrNull()?.data
 
         return RiderSnapshot(
+            riderId = profile?.riderId ?: riderId,
             riderName = profile?.name ?: me?.name,
             ponto = profile?.ponto ?: slotPonto,
             leader = profile?.leader,
@@ -202,24 +211,24 @@ class RiderRepository(context: Context) {
 
     // ----- Write paths (best-effort; Idempotency-Key added by ApiClient) -----
 
-    /** POST /rider/payout — amount null = full available. */
-    suspend fun requestPayout(amount: Double? = null) {
-        runCatching { service.payout(PayoutRequest(amount)) }
+    /** POST /wallet {action:"requestWithdrawal"} — identity is session-derived. */
+    suspend fun requestWithdrawal(riderName: String, amount: Double) {
+        runCatching { service.requestWithdrawal(WithdrawRequest(riderName = riderName, amount = amount)) }
     }
 
-    /** POST /marketplace/redeem. */
-    suspend fun redeem(productApiId: String, qty: Int = 1) {
-        runCatching { service.redeem(RedeemRequest(productApiId, qty)) }
+    /** POST /mall {action:"redeem"} — session identity; riderId = demo fallback. */
+    suspend fun redeem(productApiId: String, riderId: String? = null) {
+        runCatching { service.redeem(MallRedeemRequest(productId = productApiId, riderId = riderId)) }
     }
 
-    /** POST /slots/cancel. */
-    suspend fun cancelSlot(slotApiId: String) {
-        runCatching { service.cancelSlot(SlotCancelRequest(slotApiId)) }
+    /** POST /slots {action:"cancelEnrollment"} — needs the enrollment id, not the slot id. */
+    suspend fun cancelSlot(enrollmentApiId: String) {
+        runCatching { service.cancelSlot(SlotCancelRequest(enrollmentId = enrollmentApiId)) }
     }
 
-    /** POST /rider/checkin → awarded points (null on failure). */
+    /** POST /checkin → awarded points (null on failure / already checked in). */
     suspend fun checkin(pontoCode: String): Int? =
-        runCatching { service.checkin(CheckinRequest(pontoCode)) }.getOrNull()?.data?.points
+        runCatching { service.checkin(CheckinRequest(pontoCode)) }.getOrNull()?.data?.awarded
 
     /** POST /rider/profile. */
     suspend fun updateProfile(name: String, cpf: String, phone: String, pix: String) {
@@ -243,7 +252,9 @@ class RiderRepository(context: Context) {
 
     private fun PointsLedgerDto.toDomain(): PointsLedgerEntry? {
         val mag = points ?: return null
-        val signed = if ((type ?: "") in EARN_TYPES) abs(mag) else -abs(mag)
+        // Mirror the backend's getAvailablePoints: earn-side types add the raw
+        // value (an "adjust" may legitimately be negative), spend-side subtract.
+        val signed = if ((type ?: "") in EARN_TYPES) mag else -abs(mag)
         return PointsLedgerEntry(
             note = note ?: reasonCode ?: (type ?: "—"),
             source = sourceType ?: "",
@@ -332,6 +343,7 @@ class RiderRepository(context: Context) {
         }
         return Shift(
             id = id?.hashCode() ?: d.hashCode(),
+            enrollmentApiId = active?.id,
             zone = pontoName ?: "",
             station = franchiseName ?: "",
             dateKey = d,

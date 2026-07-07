@@ -31,8 +31,8 @@ data class SplashConfig(
     val imageUrl: String,      // optional remote ad/banner image
     val linkUrl: String,       // optional tap-through for the ad
 ) {
-    val backgroundColor: Color get() = parseHexColor(backgroundHex) ?: Color(0xFF07090D)
-    val accentColor: Color get() = parseHexColor(accentHex) ?: Color(0xFFFFD100)
+    val backgroundColor: Color get() = parseHexColor(backgroundHex) ?: Color(0xFFFFD400)
+    val accentColor: Color get() = parseHexColor(accentHex) ?: Color(0xFF171B33)
     val durationSeconds: Double get() = maxOf(600, durationMs) / 1000.0
 
     companion object {
@@ -41,8 +41,10 @@ data class SplashConfig(
             headline = "MePonto",
             tagline = "",
             durationMs = 2200,
-            backgroundHex = "#07090d",
-            accentHex = "#ffd100",
+            // Brand-yellow launch (exact logo background → the mark blends in);
+            // accent is the logo's navy ink for text/underline contrast.
+            backgroundHex = "#ffd400",
+            accentHex = "#171b33",
             imageUrl = "",
             linkUrl = "",
         )
