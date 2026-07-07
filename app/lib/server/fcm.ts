@@ -89,13 +89,16 @@ async function getMessaging(): Promise<Messaging | null> {
 
     if (!a.apps || a.apps.length === 0) {
       const sa = readServiceAccount();
+      if (hasInlineKey && !sa) console.error("[fcm] FIREBASE_SERVICE_ACCOUNT is set but could not be parsed (expect raw JSON or base64 JSON)");
+      if (sa) console.log("[fcm] init with service account project:", (sa as { project_id?: string }).project_id);
       fcmState.app = a.initializeApp(
         sa ? { credential: a.credential.cert(sa) } : { credential: a.credential.applicationDefault() },
       );
     }
     fcmState.messaging = a.messaging();
     return fcmState.messaging;
-  } catch {
+  } catch (error) {
+    console.error("[fcm] init failed:", (error as Error)?.message);
     return null;
   }
 }
@@ -138,6 +141,7 @@ export async function sendFcmToTokens(
           notification: { channelId: "meponto_default", color: "#ffd100", ...(imageUrl ? { imageUrl } : {}) },
         },
       });
+      const failCodes: string[] = [];
       res.responses.forEach((r, idx) => {
         if (r.success) {
           sent += 1;
@@ -147,8 +151,11 @@ export async function sendFcmToTokens(
           r.error?.code === "messaging/invalid-argument"
         ) {
           dead.push(batch[idx]);
+        } else if (r.error) {
+          failCodes.push(r.error.code ?? "unknown");
         }
       });
+      if (failCodes.length > 0) console.error("[fcm] delivery failures:", [...new Set(failCodes)].join(", "), `(${failCodes.length}/${batch.length})`);
     }
 
     // Prune expired/invalid tokens so the store stays clean.
