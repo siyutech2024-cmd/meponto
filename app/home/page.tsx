@@ -14,6 +14,12 @@ import { useEffect, useMemo, useRef, useState } from "react";
 
 type Lang = "pt" | "zh" | "en";
 
+/** Official rider app on Google Play. */
+const PLAY_STORE = "https://play.google.com/store/apps/details?id=com.meponto.rider";
+/** Partnership / supply-chain applications go to this inbox. */
+const PARTNER_EMAIL = "ishak.ma@meponto.com";
+const partnerMail = (subject: string) => `mailto:${PARTNER_EMAIL}?subject=${encodeURIComponent(subject)}`;
+
 const copy: Record<Lang, {
   loading: string;
   pontos: string;
@@ -29,13 +35,13 @@ const copy: Record<Lang, {
         tag: "Rede",
         title: ["Construímos", "a rede da", "última milha"],
         text: "Pontos de apoio físicos espalhados por São Paulo: líder local, água, banheiro, segurança — uma rede que cresce todos os dias.",
-        cta: { label: "Conhecer a rede", href: "https://app.meponto.com/register" },
+        cta: { label: "Conhecer a rede", href: PLAY_STORE },
       },
       {
         tag: "Turnos",
         title: ["Escala", "transparente,", "renda real"],
         text: "Turnos semanais direto no app, regras claras e acerto na conta. Você escolhe quando rodar — a gente organiza o resto.",
-        cta: { label: "Quero entregar", href: "https://app.meponto.com/register" },
+        cta: { label: "Quero entregar", href: PLAY_STORE },
       },
       {
         tag: "PontoMall",
@@ -46,8 +52,8 @@ const copy: Record<Lang, {
       {
         tag: "Parceria",
         title: ["Opere um", "território", "com sistema"],
-        text: "Parceiros regionais recebem modelo validado, sistema completo de operação, escala, finanças e suporte da rede MePonto.",
-        cta: { label: "Quero ser parceiro regional", href: "https://franchise.meponto.com" },
+        text: `Parceiros regionais, partners e fornecedores recebem modelo validado, sistema completo de operação, escala, finanças e suporte da rede MePonto. Candidate-se: ${PARTNER_EMAIL}`,
+        cta: { label: "Quero ser parceiro regional", href: partnerMail("Parceria Regional — MePonto") },
       },
     ],
     finale: {
@@ -59,11 +65,13 @@ const copy: Record<Lang, {
     footer: {
       tagline: "Conectar · Apoiar · Entregar",
       systems: [
-        { label: "App do Entregador", href: "https://app.meponto.com/register" },
+        { label: "App do Entregador (Google Play)", href: PLAY_STORE },
         { label: "PontoMall", href: "https://mall.meponto.com" },
         { label: "Painel do Parceiro Regional", href: "https://franchise.meponto.com" },
         { label: "Painel do Ponto", href: "https://ponto.meponto.com" },
+        { label: "Painel do Fornecedor", href: "https://supplier.meponto.com" },
         { label: "PontoSys (Matriz)", href: "https://sys.meponto.com" },
+        { label: `Parcerias & Fornecedores: ${PARTNER_EMAIL}`, href: partnerMail("Parceria — MePonto") },
       ],
     },
   },
@@ -71,20 +79,22 @@ const copy: Record<Lang, {
     loading: "网络加载中",
     pontos: "个站点",
     chapters: [
-      { tag: "网络", title: ["我们构建", "最后一公里", "服务网络"], text: "实体服务点遍布圣保罗：本地站长、饮水、卫生间、安全保障，网络每天都在生长。", cta: { label: "了解网络", href: "https://app.meponto.com/register" } },
-      { tag: "排班", title: ["透明排班", "真实收入"], text: "每周班次 App 直达，规则清晰、结算到账。你选择何时上线——其余交给我们。", cta: { label: "我要跑单", href: "https://app.meponto.com/register" } },
+      { tag: "网络", title: ["我们构建", "最后一公里", "服务网络"], text: "实体服务点遍布圣保罗：本地站长、饮水、卫生间、安全保障，网络每天都在生长。", cta: { label: "了解网络", href: PLAY_STORE } },
+      { tag: "排班", title: ["透明排班", "真实收入"], text: "每周班次 App 直达，规则清晰、结算到账。你选择何时上线——其余交给我们。", cta: { label: "我要跑单", href: PLAY_STORE } },
       { tag: "积分商城", title: ["每一单", "都变成权益"], text: "订单变积分，积分换商品、服务和街区合作伙伴的真实折扣。没有套路。", cta: { label: "逛逛商城", href: "https://mall.meponto.com" } },
-      { tag: "合作", title: ["用系统", "运营一片区域"], text: "区域伙伴获得验证过的模型、完整的运营/排班/财务系统，以及 MePonto 网络的支持。", cta: { label: "我要成为区域伙伴", href: "https://franchise.meponto.com" } },
+      { tag: "合作", title: ["用系统", "运营一片区域"], text: `区域伙伴、Partner 与供应链伙伴获得验证过的模型、完整的运营/排班/财务系统，以及 MePonto 网络的支持。合作申请：${PARTNER_EMAIL}`, cta: { label: "我要成为区域伙伴", href: partnerMail("MePonto 区域合作申请") } },
     ],
     finale: { title: ["共同定义", "配送的明天"], text: "加入正在让巴西最后一公里专业化的网络。", rider: "我要跑单", franchise: "我要成为区域伙伴" },
     footer: {
       tagline: "连接 · 支持 · 送达",
       systems: [
-        { label: "骑手 App", href: "https://app.meponto.com/register" },
+        { label: "骑手 App（Google Play）", href: PLAY_STORE },
         { label: "积分商城", href: "https://mall.meponto.com" },
         { label: "区域伙伴后台", href: "https://franchise.meponto.com" },
         { label: "站点后台", href: "https://ponto.meponto.com" },
+        { label: "供应商后台", href: "https://supplier.meponto.com" },
         { label: "PontoSys 主后台", href: "https://sys.meponto.com" },
+        { label: `合作申请：${PARTNER_EMAIL}`, href: partnerMail("MePonto 合作申请") },
       ],
     },
   },
@@ -92,20 +102,22 @@ const copy: Record<Lang, {
     loading: "Loading the network",
     pontos: "PONTOS",
     chapters: [
-      { tag: "Network", title: ["We build", "the last-mile", "network"], text: "Physical support points across São Paulo: local leaders, water, restrooms, safety — a network growing every day.", cta: { label: "Explore the network", href: "https://app.meponto.com/register" } },
-      { tag: "Shifts", title: ["Transparent", "shifts,", "real income"], text: "Weekly shifts in the app, clear rules, payouts on time. You choose when to ride — we handle the rest.", cta: { label: "I want to deliver", href: "https://app.meponto.com/register" } },
+      { tag: "Network", title: ["We build", "the last-mile", "network"], text: "Physical support points across São Paulo: local leaders, water, restrooms, safety — a network growing every day.", cta: { label: "Explore the network", href: PLAY_STORE } },
+      { tag: "Shifts", title: ["Transparent", "shifts,", "real income"], text: "Weekly shifts in the app, clear rules, payouts on time. You choose when to ride — we handle the rest.", cta: { label: "I want to deliver", href: PLAY_STORE } },
       { tag: "PontoMall", title: ["Every delivery", "becomes", "a benefit"], text: "Orders become points; points become products, services and real discounts at neighborhood partners.", cta: { label: "Visit PontoMall", href: "https://mall.meponto.com" } },
-      { tag: "Partnership", title: ["Run a", "territory", "with a system"], text: "Regional partners get a validated model, full operations, scheduling and finance systems, plus MePonto network support.", cta: { label: "Become a regional partner", href: "https://franchise.meponto.com" } },
+      { tag: "Partnership", title: ["Run a", "territory", "with a system"], text: `Regional partners, partners and supply-chain allies get a validated model, full operations, scheduling and finance systems, plus MePonto network support. Apply: ${PARTNER_EMAIL}`, cta: { label: "Become a regional partner", href: partnerMail("Regional Partnership — MePonto") } },
     ],
     finale: { title: ["And define the", "tomorrow of delivery"], text: "Join the network professionalizing the last mile in Brazil.", rider: "I want to deliver", franchise: "Become a regional partner" },
     footer: {
       tagline: "Connect · Support · Deliver",
       systems: [
-        { label: "Rider App", href: "https://app.meponto.com/register" },
+        { label: "Rider App (Google Play)", href: PLAY_STORE },
         { label: "PontoMall", href: "https://mall.meponto.com" },
         { label: "Regional Partner Panel", href: "https://franchise.meponto.com" },
         { label: "Ponto Panel", href: "https://ponto.meponto.com" },
+        { label: "Supplier Panel", href: "https://supplier.meponto.com" },
         { label: "PontoSys (HQ)", href: "https://sys.meponto.com" },
+        { label: `Partnerships: ${PARTNER_EMAIL}`, href: partnerMail("Partnership — MePonto") },
       ],
     },
   },
@@ -361,7 +373,7 @@ export default function HomePage() {
               {code === "zh" ? "中" : code}
             </button>
           ))}
-          <a href="https://app.meponto.com/register" className="ml-2 rounded-full px-4 py-1.5 text-[12px] font-black uppercase tracking-wider" style={{ background: "#f5b301", color: "#0b0e14" }}>
+          <a href={PLAY_STORE} className="ml-2 rounded-full px-4 py-1.5 text-[12px] font-black uppercase tracking-wider" style={{ background: "#f5b301", color: "#0b0e14" }}>
             App
           </a>
         </div>
@@ -426,10 +438,10 @@ export default function HomePage() {
               </h2>
               <p className="mp-rise-2 mx-auto mt-6 max-w-xl text-base font-medium leading-7 md:text-lg" style={{ color: "rgba(255,255,255,.65)" }}>{t.finale.text}</p>
               <div className="mp-rise-3 mt-10 flex flex-wrap items-center justify-center gap-4">
-                <a href="https://app.meponto.com/register" className="rounded-full px-8 py-4 text-sm font-black uppercase tracking-wider transition-transform hover:scale-105" style={{ background: "#f5b301", color: "#0b0e14" }}>
+                <a href={PLAY_STORE} className="rounded-full px-8 py-4 text-sm font-black uppercase tracking-wider transition-transform hover:scale-105" style={{ background: "#f5b301", color: "#0b0e14" }}>
                   {t.finale.rider}
                 </a>
-                <a href="https://franchise.meponto.com" className="rounded-full border px-8 py-4 text-sm font-black uppercase tracking-wider transition-transform hover:scale-105" style={{ borderColor: "rgba(245,179,1,.65)", color: "#f5b301" }}>
+                <a href={partnerMail("Parceria — MePonto")} className="rounded-full border px-8 py-4 text-sm font-black uppercase tracking-wider transition-transform hover:scale-105" style={{ borderColor: "rgba(245,179,1,.65)", color: "#f5b301" }}>
                   {t.finale.franchise}
                 </a>
               </div>
