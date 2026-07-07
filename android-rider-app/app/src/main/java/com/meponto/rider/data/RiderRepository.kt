@@ -10,18 +10,26 @@ import com.meponto.rider.data.remote.CheckinRequest
 import com.meponto.rider.data.remote.GoogleLoginRequest
 import com.meponto.rider.data.remote.InboxDto
 import com.meponto.rider.data.remote.LedgerDto
+import com.meponto.rider.data.remote.CouponDto
+import com.meponto.rider.data.remote.MallMarkReadRequest
+import com.meponto.rider.data.remote.MallOrderDto
 import com.meponto.rider.data.remote.MallRedeemRequest
 import com.meponto.rider.data.remote.MemberLoginRequest
+import com.meponto.rider.data.remote.MemberMessageDto
 import com.meponto.rider.data.remote.MissionDto
 import com.meponto.rider.data.remote.PartnerBenefitDto
 import com.meponto.rider.data.remote.PartnerDto
 import com.meponto.rider.data.remote.PerformanceDto
+import com.meponto.rider.data.remote.PontoDto
 import com.meponto.rider.data.remote.PointsLedgerDto
 import com.meponto.rider.data.remote.ProfileUpdateRequest
 import com.meponto.rider.data.remote.PushTokenRequest
 import com.meponto.rider.data.remote.RiderProfileDto
 import com.meponto.rider.data.remote.RiderSlotDto
+import com.meponto.rider.data.remote.ServerTierDto
 import com.meponto.rider.data.remote.SignupPayload
+import com.meponto.rider.data.remote.TaskClaimRequest
+import com.meponto.rider.data.remote.TaskDto
 import com.meponto.rider.data.remote.SlotCancelRequest
 import com.meponto.rider.data.remote.SlotEnrollRequest
 import com.meponto.rider.data.remote.SlotEnrollmentDto
@@ -58,6 +66,12 @@ data class RiderSnapshot(
     val partnerBenefits: List<PartnerBenefit>? = null,
     val missions: List<Mission>? = null,
     val inbox: List<InboxItem>? = null,
+    val servicePoints: List<ServicePoint>? = null,
+    val serverTier: ServerTier? = null,
+    val mallOrders: List<MallOrder>? = null,
+    val messages: List<MemberMessage>? = null,
+    val unreadMessages: Int? = null,
+    val coupons: List<MallCoupon>? = null,
 )
 
 /**
@@ -70,13 +84,20 @@ data class OtpResult(
     val rebind: Boolean = false,
     val needsCpf: Boolean = false,
     val activatedName: String? = null,
+    val activatedId: String? = null,
     val error: String? = null,
 )
 
-/** Google login: ok=signed in; needsLink=first time, bind via phone+CPF. */
+/**
+ * Google login: ok=signed in (needsVerification=true means the session is a
+ * Google guest — browsing works, wallet/points unlock after phone verify in
+ * Profile); needsLink=server wants an explicit phone+CPF bind (lite login off).
+ */
 data class GoogleResult(
     val ok: Boolean,
+    val id: String? = null,
     val name: String? = null,
+    val needsVerification: Boolean = false,
     val needsLink: Boolean = false,
     val email: String? = null,
     val error: String? = null,
@@ -101,7 +122,7 @@ class RiderRepository(context: Context) {
         val d = resp.data
         when {
             // Google guest + new phone: the backend issues the session directly.
-            d?.name != null && d.sent != true -> OtpResult(ok = true, activatedName = d.name)
+            d?.name != null && d.sent != true -> OtpResult(ok = true, activatedName = d.name, activatedId = d.id)
             d?.sent == true -> OtpResult(ok = true, rebind = d.rebind == true)
             d?.needsCpf == true -> OtpResult(ok = false, needsCpf = true)
             else -> OtpResult(ok = false, error = resp.error ?: "Falha ao enviar código")
@@ -111,10 +132,10 @@ class RiderRepository(context: Context) {
     }
 
     /** OTP step 2 — verify [code]; optionally bind a Google account on success. */
-    suspend fun verifyOtp(phone: String, code: String, googleCredential: String? = null): Result<String> = try {
+    suspend fun verifyOtp(phone: String, code: String, googleCredential: String? = null): Result<Pair<String, String?>> = try {
         val resp = service.verifyOtp(MemberLoginRequest(phone, action = "verify-otp", code = code, googleCredential = googleCredential))
         val name = resp.data?.name
-        if (name != null) Result.success(name)
+        if (name != null) Result.success(name to resp.data.id)
         else Result.failure(IllegalStateException(resp.error ?: "Código inválido"))
     } catch (e: Exception) {
         Result.failure(e)
@@ -125,12 +146,12 @@ class RiderRepository(context: Context) {
         val resp = service.googleLogin(GoogleLoginRequest(credential = credential))
         val d = resp.data
         when {
-            // GOOGLE_LITE_LOGIN guest session: has a name but is NOT a member
-            // yet — treat like needsLink so the app collects phone (+CPF) and
-            // finishes the binding instead of showing a hollow "member".
-            d?.needsVerification == true || d?.verified == false ->
-                GoogleResult(ok = false, needsLink = true, email = d.email, name = d.name)
-            d?.name != null -> GoogleResult(ok = true, name = d.name)
+            // GOOGLE_LITE_LOGIN guest session: signed in right away; the app
+            // flags the account so Profile offers the phone verification that
+            // unlocks wallet/points (backend keeps them locked until then).
+            (d?.needsVerification == true || d?.verified == false) && d.name != null ->
+                GoogleResult(ok = true, id = d.id, name = d.name, needsVerification = true)
+            d?.name != null -> GoogleResult(ok = true, id = d.id, name = d.name)
             d?.needsLink == true -> GoogleResult(ok = false, needsLink = true, email = d.email)
             else -> GoogleResult(ok = false, error = resp.error ?: "Falha no Google")
         }
@@ -140,13 +161,12 @@ class RiderRepository(context: Context) {
 
     fun logout() = api.cookieJar.clear()
 
-    /** Submit a slot application (rider must be tier-2+ and the week must be open). */
-    suspend fun enrollSlot(slotApiId: String): Result<Unit> = try {
+    /** Submit a slot application → null on success, failure reason otherwise. */
+    suspend fun enrollSlot(slotApiId: String): String? = try {
         val resp = service.enrollSlot(SlotEnrollRequest(slotId = slotApiId))
-        if (resp.data != null) Result.success(Unit)
-        else Result.failure(IllegalStateException(resp.error ?: "Falha ao inscrever"))
+        if (resp.data != null) null else resp.error ?: "Falha ao inscrever"
     } catch (e: Exception) {
-        Result.failure(e)
+        errorOf(e)
     }
 
     /** Pulls wallet → points → catalog → slots for the logged-in rider. */
@@ -177,6 +197,9 @@ class RiderRepository(context: Context) {
         // Home dashboard aggregate (performance / ledger / partners / missions / inbox).
         val home = runCatching { service.riderHome() }.getOrNull()?.data
 
+        // Real task progress (claimable/claimed) — richer than home.missions.
+        val tasks = runCatching { service.tasks() }.getOrNull()?.data?.tasks
+
         return RiderSnapshot(
             riderId = profile?.riderId ?: riderId,
             riderName = profile?.name ?: me?.name,
@@ -200,8 +223,14 @@ class RiderRepository(context: Context) {
             cashLedger = home?.cashLedger?.map { it.toDomain() },
             partners = home?.partners?.mapIndexedNotNull { idx, p -> p.toDomain(idx) },
             partnerBenefits = home?.partnerBenefits?.map { it.toDomain() },
-            missions = home?.missions?.map { it.toDomain() },
+            missions = tasks?.mapNotNull { it.toMission() } ?: home?.missions?.map { it.toDomain() },
             inbox = home?.inbox?.map { it.toDomain() },
+            servicePoints = home?.pontos?.mapNotNull { it.toDomain() },
+            serverTier = home?.tier?.toDomain(),
+            mallOrders = home?.mallOrders?.mapNotNull { it.toDomain() },
+            messages = home?.messages?.mapNotNull { it.toDomain() },
+            unreadMessages = home?.unreadMessages,
+            coupons = home?.coupons?.mapNotNull { it.toDomain() },
         )
     }
 
@@ -209,21 +238,68 @@ class RiderRepository(context: Context) {
     suspend fun fetchRiderProfile(): RiderProfileDto? =
         runCatching { service.riderProfile() }.getOrNull()?.data
 
-    // ----- Write paths (best-effort; Idempotency-Key added by ApiClient) -----
+    /**
+     * Public data any visitor can see BEFORE logging in: the mall catalog and
+     * the service-point map. Keeps the guest experience from being blank.
+     */
+    suspend fun loadPublicSnapshot(): RiderSnapshot {
+        val catalogEnv = runCatching { service.catalog() }.getOrNull()
+        val products = catalogEnv?.data
+            ?.filter { it.status == null || it.status == "active" }
+            ?.mapIndexedNotNull { idx, p -> p.toMallProduct(idx) }
+        val pontosEnv = runCatching { service.pontosPublic() }.getOrNull()
+        val pontos = pontosEnv?.data?.mapNotNull { it.toDomain() }
+        return RiderSnapshot(products = products, servicePoints = pontos)
+    }
+
+    /** Human-readable failure reason from an HTTP error body ({"error": …}). */
+    private fun errorOf(t: Throwable): String = when (t) {
+        is retrofit2.HttpException -> try {
+            val body = t.response()?.errorBody()?.string()
+            org.json.JSONObject(body ?: "{}").optString("error").ifBlank { "Erro ${t.code()}" }
+        } catch (_: Exception) {
+            "Erro ${t.code()}"
+        }
+        else -> t.message ?: "Sem conexão"
+    }
+
+    /** POST /tasks {action:"claim"} → null on success, error message otherwise. */
+    suspend fun claimTask(taskId: String): String? = try {
+        val resp = service.claimTask(TaskClaimRequest(taskId))
+        if (resp.data != null) null else resp.error ?: "Falha ao resgatar"
+    } catch (e: Exception) {
+        errorOf(e)
+    }
+
+    /** POST /mall markMessagesRead (best-effort). */
+    suspend fun markMessagesRead(riderId: String?) {
+        runCatching { service.markMessagesRead(MallMarkReadRequest(riderId)) }
+    }
+
+    // ----- Write paths — every write reports WHY it failed (null = ok) -----
 
     /** POST /wallet {action:"requestWithdrawal"} — identity is session-derived. */
-    suspend fun requestWithdrawal(riderName: String, amount: Double) {
-        runCatching { service.requestWithdrawal(WithdrawRequest(riderName = riderName, amount = amount)) }
+    suspend fun requestWithdrawal(riderName: String, amount: Double): String? = try {
+        service.requestWithdrawal(WithdrawRequest(riderName = riderName, amount = amount))
+        null
+    } catch (e: Exception) {
+        errorOf(e)
     }
 
     /** POST /mall {action:"redeem"} — session identity; riderId = demo fallback. */
-    suspend fun redeem(productApiId: String, riderId: String? = null) {
-        runCatching { service.redeem(MallRedeemRequest(productId = productApiId, riderId = riderId)) }
+    suspend fun redeem(productApiId: String, riderId: String? = null): String? = try {
+        service.redeem(MallRedeemRequest(productId = productApiId, riderId = riderId))
+        null
+    } catch (e: Exception) {
+        errorOf(e)
     }
 
     /** POST /slots {action:"cancelEnrollment"} — needs the enrollment id, not the slot id. */
-    suspend fun cancelSlot(enrollmentApiId: String) {
-        runCatching { service.cancelSlot(SlotCancelRequest(enrollmentId = enrollmentApiId)) }
+    suspend fun cancelSlot(enrollmentApiId: String): String? = try {
+        service.cancelSlot(SlotCancelRequest(enrollmentId = enrollmentApiId))
+        null
+    } catch (e: Exception) {
+        errorOf(e)
     }
 
     /** POST /checkin → awarded points (null on failure / already checked in). */
@@ -312,6 +388,81 @@ class RiderRepository(context: Context) {
         time = time ?: "",
     )
 
+    private fun ServerTierDto.toDomain(): ServerTier? {
+        val t = tier ?: return null
+        return ServerTier(
+            tier = t,
+            label = label ?: t,
+            earnedInWindow = earnedInWindow ?: 0,
+            nextTierAt = nextTierAt,
+            nextTierLabel = nextTierLabel,
+            redeemDiscount = redeemDiscount ?: 1.0,
+            windowDays = windowDays ?: 90,
+        )
+    }
+
+    private fun MallOrderDto.toDomain(): MallOrder? {
+        val oid = id ?: return null
+        return MallOrder(
+            id = oid,
+            productName = productName ?: "—",
+            pointsSpent = pointsSpent ?: 0,
+            status = status ?: "",
+            createdAt = createdAt ?: "",
+            pickupStoreName = pickupStoreName ?: "",
+            voucherCode = voucherCode ?: "",
+        )
+    }
+
+    private fun PontoDto.toDomain(): ServicePoint? {
+        val nm = name ?: return null
+        return ServicePoint(
+            id = id ?: nm,
+            name = nm,
+            bairro = bairro ?: "",
+            address = address ?: "",
+            leader = leader ?: "",
+            latitude = latitude ?: lat ?: 0.0,
+            longitude = longitude ?: lng ?: 0.0,
+        )
+    }
+
+    private fun TaskDto.toMission(): Mission? {
+        val t = title ?: return null
+        val target = (target ?: 0).coerceAtLeast(1)
+        return Mission(
+            title = t,
+            reward = "+${rewardPoints ?: 0} pts",
+            progress = ((progress ?: 0.0) / target).toFloat().coerceIn(0f, 1f),
+            id = id,
+            claimable = claimable == true,
+            claimed = claimed == true,
+        )
+    }
+
+    private fun MemberMessageDto.toDomain(): MemberMessage? {
+        val t = title ?: return null
+        return MemberMessage(
+            id = id ?: t,
+            title = t,
+            body = body ?: "",
+            time = createdAt ?: "",
+            read = read == true,
+        )
+    }
+
+    private fun CouponDto.toDomain(): MallCoupon? {
+        val t = title ?: return null
+        val v = value ?: 0
+        return MallCoupon(
+            id = id ?: t,
+            title = t,
+            valueLabel = if (type == "percent_off") "-$v%" else "-$v pts",
+            minPoints = minPoints ?: 0,
+            expiresAt = expiresAt ?: "",
+        )
+    }
+
     private fun parseTone(s: String?): Tone = when (s?.uppercase()) {
         "OK" -> Tone.OK
         "WARNING" -> Tone.WARNING
@@ -325,11 +476,13 @@ class RiderRepository(context: Context) {
         return MallProduct(
             id = id?.hashCode() ?: idx,
             name = nm,
-            category = category ?: "",
+            category = category ?: type ?: "",
             points = pointsPrice ?: 0,
             icon = Icons.Filled.ShoppingBag,
             stock = stock ?: 0,
             apiId = id,
+            imageUrl = imageUrl?.takeIf { it.isNotBlank() },
+            description = description ?: "",
         )
     }
 

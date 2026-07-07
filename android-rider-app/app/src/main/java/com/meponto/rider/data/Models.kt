@@ -21,6 +21,27 @@ data class Mission(
     val title: String,
     val reward: String,
     val progress: Float, // 0f..1f
+    val id: String? = null,        // backend task id (needed to claim)
+    val claimable: Boolean = false,
+    val claimed: Boolean = false,
+)
+
+/** Mall member message (chegou/retire notices, announcements). */
+data class MemberMessage(
+    val id: String,
+    val title: String,
+    val body: String,
+    val time: String,
+    val read: Boolean,
+)
+
+/** Storefront coupon (auto-applied at redemption; shown for transparency). */
+data class MallCoupon(
+    val id: String,
+    val title: String,
+    val valueLabel: String,   // "-50 pts" or "-10%"
+    val minPoints: Int,
+    val expiresAt: String,
 )
 
 data class InboxItem(
@@ -111,6 +132,41 @@ data class MallProduct(
     val icon: ImageVector,
     val stock: Int,
     val apiId: String? = null, // PontoSys catalog id (null for local mock)
+    val imageUrl: String? = null,
+    val description: String = "",
+)
+
+/** Backend-computed membership tier — single standard across app and mall. */
+data class ServerTier(
+    val tier: String,          // member|bronze|prata|ouro|diamante
+    val label: String,
+    val earnedInWindow: Int,
+    val nextTierAt: Int?,      // null at the top
+    val nextTierLabel: String?,
+    val redeemDiscount: Double,
+    val windowDays: Int,
+)
+
+/** One PontoMall redemption order (status flows created→arrived→picked up). */
+data class MallOrder(
+    val id: String,
+    val productName: String,
+    val pointsSpent: Int,
+    val status: String,
+    val createdAt: String,
+    val pickupStoreName: String,
+    val voucherCode: String,
+)
+
+/** A Ponto (service point) shown on the rider Map tab. */
+data class ServicePoint(
+    val id: String,
+    val name: String,
+    val bairro: String,
+    val address: String,
+    val leader: String,
+    val latitude: Double,
+    val longitude: Double,
 )
 
 data class Partner(

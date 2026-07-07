@@ -64,6 +64,12 @@ class AppStore {
         private set
     private var loginName: String? = null
 
+    /** Seed the rider id captured at login (referral/partner QR links need it
+     *  even before the first full hydration). API snapshots may refine it. */
+    fun seedRiderId(id: String?) {
+        if (riderId == null && !id.isNullOrBlank()) riderId = id
+    }
+
     /** Pull a fresh snapshot for [name] and apply it (login-time hydration). */
     suspend fun hydrate(name: String) {
         loginName = name
@@ -81,8 +87,6 @@ class AppStore {
         scope.launch { runCatching { apply(r.loadSnapshot(n)) } }
     }
 
-    val checkInReward = 50
-
     // Live, per-rider data from GET /rider/home (real collections only). Empty
     // until the API hydrates; screens hide the section when empty, so no
     // fabricated figures ever show. See docs/rider-app-data-closed-loop.md.
@@ -98,6 +102,25 @@ class AppStore {
         private set
     var partnerBenefits by mutableStateOf<List<PartnerBenefit>>(emptyList())
         private set
+    var servicePoints by mutableStateOf<List<ServicePoint>>(emptyList())
+        private set
+    // Backend-computed unified tier + the rider's own mall orders.
+    var serverTier by mutableStateOf<ServerTier?>(null)
+        private set
+    var mallOrders by mutableStateOf<List<MallOrder>>(emptyList())
+        private set
+    var mallMessages by mutableStateOf<List<MemberMessage>>(emptyList())
+        private set
+    var unreadMessages by mutableStateOf(0)
+        private set
+    var coupons by mutableStateOf<List<MallCoupon>>(emptyList())
+        private set
+
+    // One-shot user-facing notice (why a write was refused). Screens toast it.
+    var notice by mutableStateOf<String?>(null)
+        private set
+    fun clearNotice() { notice = null }
+    private fun report(error: String?) { if (error != null) notice = error }
 
     // Not modelled on the backend yet → stays empty (hidden), never faked.
     val todayStats: List<StatCard> = emptyList() // derive from performance later
@@ -110,9 +133,24 @@ class AppStore {
     var pointsLedger by mutableStateOf<List<PointsLedgerEntry>>(emptyList())
         private set
 
-    // Stable per-rider payloads encoded in the QR codes.
-    val myQRPayload: String get() = "meponto://rider/${profile.ninetyNineId}"
-    val inviteQRPayload: String get() = "meponto://invite/${profile.ninetyNineId}"
+    // QR payloads are REAL https URLs (any camera app can open them):
+    //  - my QR   → /scan?ref=…      partner-discount + register landing page
+    //  - invite  → /register?ref=…  signup with the inviter pre-filled (the
+    //    backend credits referral points once the friend verifies by SMS).
+    private val webBase: String =
+        com.meponto.rider.BuildConfig.BASE_URL.removeSuffix("api/").removeSuffix("api")
+
+    // ref fallback chain: rider id → 99 ID → name (the backend resolves all
+    // three), so EVERY logged-in member always has a working referral link.
+    private val refValue: String
+        get() = riderId
+            ?: profile.ninetyNineId.ifBlank { null }
+            ?: profile.name
+
+    val myQRPayload: String
+        get() = "${webBase}scan?ref=${android.net.Uri.encode(refValue)}"
+    val inviteQRPayload: String
+        get() = "${webBase}register?ref=${android.net.Uri.encode(refValue)}"
 
     // Each rider is bound to a Ponto. GET /slots is already scoped server-side
     // by the session, so the local filter is only a safety net: match loosely
@@ -164,13 +202,13 @@ class AppStore {
                 shifts[i] = s.copy(status = ShiftSignupStatus.NONE, takenSpots = (s.takenSpots - 1).coerceAtLeast(0))
                 // Cancel needs the ENROLLMENT id (the backend also refuses to
                 // cancel confirmed enrollments — the re-sync restores those).
-                s.enrollmentApiId?.let { id -> scope.launch { repo?.cancelSlot(id); syncAfterWrite() } }
+                s.enrollmentApiId?.let { id -> scope.launch { report(repo?.cancelSlot(id)); syncAfterWrite() } }
             }
             s.openSpots > 0 -> {
                 // New signups enter the approval queue (Em análise), matching the
                 // web dispatch flow where the station/franchise reviews them.
                 shifts[i] = s.copy(status = ShiftSignupStatus.SUBMITTED, takenSpots = s.takenSpots + 1)
-                s.apiId?.let { id -> scope.launch { repo?.enrollSlot(id); syncAfterWrite() } }
+                s.apiId?.let { id -> scope.launch { report(repo?.enrollSlot(id)); syncAfterWrite() } }
             }
         }
     }
@@ -181,7 +219,7 @@ class AppStore {
         if (i < 0 || pointsBalance < product.points || products[i].stock <= 0) return false
         pointsBalance -= product.points
         products[i] = products[i].copy(stock = products[i].stock - 1)
-        product.apiId?.let { id -> scope.launch { repo?.redeem(id, riderId); syncAfterWrite() } }
+        product.apiId?.let { id -> scope.launch { report(repo?.redeem(id, riderId)); syncAfterWrite() } }
         return true
     }
 
@@ -193,7 +231,7 @@ class AppStore {
         // POST /wallet {action:"requestWithdrawal"} — amount is required (the
         // backend has no "null = full"); it may refuse (profile incomplete,
         // pending withdrawal, insufficient T+1 balance) → re-sync reconciles.
-        scope.launch { repo?.requestWithdrawal(name, amount); syncAfterWrite() }
+        scope.launch { report(repo?.requestWithdrawal(name, amount)); syncAfterWrite() }
     }
 
     /** Update identity / payout details (Profile › Personal info). */
@@ -203,13 +241,17 @@ class AppStore {
         scope.launch { repo?.updateProfile(name, cpf, phone, pix); syncAfterWrite() }
     }
 
-    /** Station check-in (扫码签到): awards points; best-effort backend write. */
-    fun checkIn(pontoCode: String): Int {
-        pointsBalance += checkInReward
-        // The backend is authoritative (award size, once-per-day dedupe) —
-        // re-sync replaces the optimistic +50 with the ledger truth.
-        scope.launch { repo?.checkin(pontoCode); syncAfterWrite() }
-        return checkInReward
+    /**
+     * Station check-in (扫码签到) — SERVER-AUTHORITATIVE. The backend validates
+     * the QR (must be a real Ponto), enforces once-per-day, and decides the
+     * award. Returns the awarded points, or null when rejected (invalid code /
+     * already checked in / offline) — the UI must show a failure state, never
+     * a fabricated +50.
+     */
+    suspend fun checkIn(pontoCode: String): Int? {
+        val awarded = repo?.checkin(pontoCode)
+        if (awarded != null) syncAfterWrite()
+        return awarded
     }
 
     // MARK: - Live hydration (apply PontoSys API snapshot; nulls keep mock)
@@ -257,6 +299,26 @@ class AppStore {
         snapshot.partnerBenefits?.let { partnerBenefits = it }
         snapshot.missions?.let { missions = it }
         snapshot.inbox?.let { inbox = it }
+        snapshot.servicePoints?.let { servicePoints = it }
+        snapshot.serverTier?.let { serverTier = it }
+        snapshot.mallOrders?.let { mallOrders = it }
+        snapshot.messages?.let { mallMessages = it }
+        snapshot.unreadMessages?.let { unreadMessages = it }
+        snapshot.coupons?.let { coupons = it }
+    }
+
+    /** Claim a completed mission's reward (server awards ledger points). */
+    fun claimMission(mission: Mission) {
+        val id = mission.id ?: return
+        scope.launch { report(repo?.claimTask(id)); syncAfterWrite() }
+    }
+
+    /** Mark mall messages read (badge clears immediately; server follows). */
+    fun markMessagesRead() {
+        if (unreadMessages == 0) return
+        unreadMessages = 0
+        mallMessages = mallMessages.map { it.copy(read = true) }
+        scope.launch { repo?.markMessagesRead(riderId) }
     }
 
     private fun weekKey(dateKey: String): String {

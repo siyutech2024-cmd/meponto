@@ -4,6 +4,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AccountBalanceWallet
 import androidx.compose.material.icons.filled.CalendarMonth
@@ -22,8 +23,14 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import com.meponto.rider.data.LocalStore
 import com.meponto.rider.i18n.LocalLoc
 import com.meponto.rider.push.PushNavigator
 import com.meponto.rider.ui.screens.HomeScreen
@@ -43,6 +50,7 @@ private data class TabSpec(val labelKey: String, val icon: ImageVector)
 fun RootScaffold() {
     val me = LocalMe.current
     val loc = LocalLoc.current
+    val store = LocalStore.current
     var tab by remember { mutableStateOf(0) }
     var overlay by remember { mutableStateOf(Overlay.NONE) }
 
@@ -109,6 +117,25 @@ fun RootScaffold() {
                 ProfileScreen(onClose = { overlay = Overlay.NONE })
             }
             Overlay.NONE -> {}
+        }
+
+        // Global notice: WHY a write was refused (tier gate, pending withdrawal,
+        // already checked in…). Auto-dismisses; backend messages are pt-BR.
+        store.notice?.let { msg ->
+            LaunchedEffect(msg) {
+                kotlinx.coroutines.delay(3200)
+                store.clearNotice()
+            }
+            Box(
+                Modifier
+                    .align(Alignment.BottomCenter)
+                    .padding(bottom = 96.dp)
+                    .clip(RoundedCornerShape(14.dp))
+                    .background(me.danger.copy(alpha = if (me.isDark) 0.22f else 0.12f))
+                    .padding(horizontal = 16.dp, vertical = 10.dp),
+            ) {
+                Text(msg, color = me.danger, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+            }
         }
     }
 }

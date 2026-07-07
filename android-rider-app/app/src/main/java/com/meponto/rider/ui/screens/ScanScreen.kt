@@ -22,10 +22,11 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.ErrorOutline
 import androidx.compose.material.icons.filled.QrCodeScanner
 import androidx.compose.material.icons.filled.Verified
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -63,10 +64,13 @@ fun ScanScreen(onClose: () -> Unit) {
 
     var scanned by remember { mutableStateOf<String?>(null) }
     var awarded by remember { mutableStateOf<Int?>(null) }
-    // Scanning a station QR = check-in → award points (best-effort backend write).
+    var failed by remember { mutableStateOf(false) }
+    // Scanning a station QR = check-in. The BACKEND decides: real Ponto code,
+    // once per day, award size. null = rejected → failure state (no fake +50).
     LaunchedEffect(scanned) {
-        val code = scanned
-        if (code != null && awarded == null) awarded = store.checkIn(code)
+        val code = scanned ?: return@LaunchedEffect
+        val result = store.checkIn(code)
+        if (result != null) awarded = result else failed = true
     }
     var hasPermission by remember {
         mutableStateOf(
@@ -86,13 +90,17 @@ fun ScanScreen(onClose: () -> Unit) {
         OverlayTopBar(title = loc.t("scan.title"), onClose = onClose)
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
             when {
-                scanned != null -> ResultView(scanned!!, awarded, onDone = onClose)
-                hasPermission -> {
-                    CameraPreview(onScan = { if (scanned == null) scanned = it })
-                    ScannerOverlay(onSimulate = { scanned = "PONTO-LIBERDADE-SUL-7841" })
-                }
-                else -> NoCameraView(onSimulate = { scanned = "PONTO-LIBERDADE-SUL-7841" })
+                failed -> FailedView(
+                    code = scanned ?: "",
+                    onRetry = { scanned = null; awarded = null; failed = false },
+                    onDone = onClose,
+                )
+                awarded != null -> ResultView(scanned ?: "", awarded, onDone = onClose)
+                scanned != null -> PendingView()
+                hasPermission -> CameraPreview(onScan = { if (scanned == null) scanned = it })
+                else -> NoCameraView()
             }
+            if (scanned == null && hasPermission && !failed) ScannerOverlay()
         }
     }
 }
@@ -147,7 +155,7 @@ private fun CameraPreview(onScan: (String) -> Unit) {
 }
 
 @Composable
-private fun ScannerOverlay(onSimulate: () -> Unit) {
+private fun ScannerOverlay() {
     val me = LocalMe.current
     val loc = LocalLoc.current
     Column(
@@ -162,17 +170,17 @@ private fun ScannerOverlay(onSimulate: () -> Unit) {
         )
         Spacer(Modifier.size(16.dp))
         Text(loc.t("scan.hint"), color = Color.White, fontSize = 14.sp, textAlign = TextAlign.Center)
-        Spacer(Modifier.size(24.dp))
-        PrimaryButton(
-            title = loc.t("scan.simulate"),
-            icon = Icons.Filled.AutoAwesome,
-            modifier = Modifier.widthIn(max = 260.dp),
-        ) { onSimulate() }
     }
 }
 
 @Composable
-private fun NoCameraView(onSimulate: () -> Unit) {
+private fun PendingView() {
+    val me = LocalMe.current
+    CircularProgressIndicator(color = me.accent)
+}
+
+@Composable
+private fun NoCameraView() {
     val me = LocalMe.current
     val loc = LocalLoc.current
     Column(
@@ -183,12 +191,43 @@ private fun NoCameraView(onSimulate: () -> Unit) {
         Icon(Icons.Filled.QrCodeScanner, contentDescription = null, tint = me.accent, modifier = Modifier.size(72.dp))
         Spacer(Modifier.size(18.dp))
         Text(loc.t("scan.noCamera"), color = me.muted, fontSize = 14.sp, textAlign = TextAlign.Center)
+    }
+}
+
+@Composable
+private fun FailedView(code: String, onRetry: () -> Unit, onDone: () -> Unit) {
+    val me = LocalMe.current
+    val loc = LocalLoc.current
+    Column(
+        Modifier.fillMaxSize().padding(32.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center,
+    ) {
+        Icon(Icons.Filled.ErrorOutline, contentDescription = null, tint = me.danger, modifier = Modifier.size(64.dp))
+        Spacer(Modifier.size(18.dp))
+        Text(loc.t("scan.failed"), color = me.text, fontWeight = FontWeight.SemiBold, fontSize = 16.sp, textAlign = TextAlign.Center)
+        Spacer(Modifier.size(8.dp))
+        Text(
+            code,
+            color = me.muted,
+            fontSize = 12.sp,
+            modifier = Modifier
+                .clip(RoundedCornerShape(8.dp))
+                .background(me.surfaceRaised)
+                .padding(horizontal = 16.dp, vertical = 8.dp),
+        )
         Spacer(Modifier.size(18.dp))
         PrimaryButton(
-            title = loc.t("scan.simulate"),
-            icon = Icons.Filled.AutoAwesome,
+            title = loc.t("common.retry"),
+            icon = Icons.Filled.QrCodeScanner,
             modifier = Modifier.widthIn(max = 260.dp),
-        ) { onSimulate() }
+        ) { onRetry() }
+        Spacer(Modifier.size(10.dp))
+        PrimaryButton(
+            title = loc.t("common.done"),
+            icon = Icons.Filled.Check,
+            modifier = Modifier.widthIn(max = 260.dp),
+        ) { onDone() }
     }
 }
 

@@ -23,6 +23,7 @@ import androidx.compose.material.icons.filled.Badge
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.PhonelinkLock
 import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material.icons.filled.SupportAgent
 import androidx.compose.material3.Icon
@@ -100,6 +101,28 @@ fun ProfileScreen(onClose: () -> Unit) {
                     Column {
                         Text(store.riderName, color = me.text, fontWeight = FontWeight.Bold, fontSize = 18.sp)
                         Text("${store.pointsBalance} pts · ${loc.t("home.rider")}", color = me.muted, fontSize = 14.sp)
+                    }
+                }
+
+                // Google-only session: verify the phone here to unlock
+                // wallet / points / shifts (backend keeps them locked).
+                if (auth.phoneUnverified) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(MeRadius.card))
+                            .background(me.warning.copy(alpha = 0.14f))
+                            .clickable { auth.presentAuth() }
+                            .padding(16.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Icon(Icons.Filled.PhonelinkLock, contentDescription = null, tint = me.warning)
+                        Spacer(Modifier.width(12.dp))
+                        Column(Modifier.weight(1f)) {
+                            Text(loc.t("profile.verifyPhone"), color = me.text, fontWeight = FontWeight.SemiBold)
+                            Text(loc.t("profile.verifyPhoneHint"), color = me.muted, fontSize = 11.sp)
+                        }
+                        Icon(Icons.Filled.ChevronRight, contentDescription = null, tint = me.muted)
                     }
                 }
 

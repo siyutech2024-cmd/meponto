@@ -1,5 +1,7 @@
 package com.meponto.rider.ui.screens
 
+import android.content.Intent
+import android.net.Uri
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -27,6 +29,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -44,6 +47,15 @@ fun SupportScreen() {
     val me = LocalMe.current
     val loc = LocalLoc.current
     val store = LocalStore.current
+    val context = LocalContext.current
+
+    // Every support action opens the live HQ support portal (web session):
+    // tickets, chat and safety all route through /rider-app/support.
+    val supportUrl = com.meponto.rider.BuildConfig.BASE_URL
+        .removeSuffix("api/").removeSuffix("api") + "rider-app/support"
+    fun openSupport() {
+        runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(supportUrl))) }
+    }
 
     val faqs = listOf(
         loc.t("faq.q1") to loc.t("faq.a1"),
@@ -54,7 +66,10 @@ fun SupportScreen() {
     Screen(title = loc.t("support.title")) {
         Panel {
             store.helpActions.forEachIndexed { idx, action ->
-                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(vertical = 10.dp)) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.clickable { openSupport() }.padding(vertical = 10.dp),
+                ) {
                     Box(
                         Modifier.size(36.dp).clip(CircleShape).background(action.tone.bg(me)),
                         contentAlignment = Alignment.Center,

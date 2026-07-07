@@ -121,10 +121,16 @@ fun MePontoRiderApp() {
             showSplash = false
         }
     }
+    // Public data for EVERYONE (guests included): mall catalog + service-point
+    // map, so no tab is blank before login.
+    LaunchedEffect(Unit) {
+        runCatching { store.apply(repo.loadPublicSnapshot()) }
+    }
     // Hydrate from the PontoSys API whenever the user is (or becomes) a member,
     // and register this device's FCM push token.
     LaunchedEffect(auth.state) {
         if (auth.isMember) {
+            store.seedRiderId(session.memberId) // referral links work immediately
             session.memberName?.let { name ->
                 runCatching { store.hydrate(name) } // also remembers name for write re-syncs
                 FirebaseMessaging.getInstance().token.addOnSuccessListener { token ->

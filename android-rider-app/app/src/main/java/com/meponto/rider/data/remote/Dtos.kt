@@ -30,6 +30,7 @@ data class SignupPayload(
 // POST /api/member-login { action: "google", credential }
 data class GoogleLoginRequest(val credential: String, val action: String = "google")
 data class GoogleLoginData(
+    val id: String? = null,
     val name: String? = null,
     val needsLink: Boolean? = null,
     val email: String? = null,
@@ -46,9 +47,11 @@ data class OtpRequestData(
     val rebind: Boolean? = null,
     val needsCpf: Boolean? = null,
     val devCode: String? = null,
+    val id: String? = null,
     val name: String? = null,
 )
 data class MemberLoginData(
+    val id: String? = null,
     val name: String? = null,
     val role: String? = null,
     val portal: String? = null,
@@ -158,7 +161,9 @@ data class CatalogProductDto(
     val pointsPrice: Int? = null,
     val stock: Int? = null,
     val category: String? = null,
+    val type: String? = null,
     val imageUrl: String? = null,
+    val description: String? = null,
     val status: String? = null,
 )
 
@@ -187,6 +192,91 @@ data class RiderHomeDto(
     val partnerBenefits: List<PartnerBenefitDto>? = null,
     val missions: List<MissionDto>? = null,
     val inbox: List<InboxDto>? = null,
+    val pontos: List<PontoDto>? = null,
+    val tier: ServerTierDto? = null,
+    val mallOrders: List<MallOrderDto>? = null,
+    val messages: List<MemberMessageDto>? = null,
+    val unreadMessages: Int? = null,
+    val coupons: List<CouponDto>? = null,
+)
+
+// Unified membership tier computed by the backend (rolling-window earned
+// points) — the SAME engine PontoMall uses to price redemptions.
+data class ServerTierDto(
+    val tier: String? = null,          // member|bronze|prata|ouro|diamante
+    val label: String? = null,
+    val earnedInWindow: Int? = null,
+    val nextTierAt: Int? = null,
+    val nextTierLabel: String? = null,
+    val redeemDiscount: Double? = null,
+    val windowDays: Int? = null,
+)
+
+// The rider's own PontoMall orders (redemption history + fulfillment status).
+data class MallOrderDto(
+    val id: String? = null,
+    val productName: String? = null,
+    val pointsSpent: Int? = null,
+    val status: String? = null,
+    val createdAt: String? = null,
+    val pickupStoreName: String? = null,
+    val voucherCode: String? = null,
+)
+
+// Service points (Ponto) for the rider Map tab. latitude/longitude come from
+// /rider/home; lat/lng are the raw field names of the public GET /api/pontos.
+data class PontoDto(
+    val id: String? = null,
+    val name: String? = null,
+    val bairro: String? = null,
+    val address: String? = null,
+    val leader: String? = null,
+    val latitude: Double? = null,
+    val longitude: Double? = null,
+    val lat: Double? = null,
+    val lng: Double? = null,
+)
+
+// Mall member message (chegou / retire / announcements) from /rider/home.
+data class MemberMessageDto(
+    val id: String? = null,
+    val title: String? = null,
+    val body: String? = null,
+    val createdAt: String? = null,
+    val read: Boolean? = null,
+)
+
+// Storefront coupon the rider is eligible for (auto-applied at redeem).
+data class CouponDto(
+    val id: String? = null,
+    val title: String? = null,
+    val type: String? = null,       // points_off | percent_off
+    val value: Int? = null,
+    val minPoints: Int? = null,
+    val expiresAt: String? = null,
+)
+
+// GET /api/tasks (rider view) → data.tasks with REAL metric progress.
+data class TasksData(val tasks: List<TaskDto>? = null)
+data class TaskDto(
+    val id: String? = null,
+    val title: String? = null,
+    val description: String? = null,
+    val target: Int? = null,
+    val rewardPoints: Int? = null,
+    val period: String? = null,
+    val progress: Double? = null,
+    val claimed: Boolean? = null,
+    val claimable: Boolean? = null,
+)
+
+// POST /api/tasks { action: "claim", taskId }
+data class TaskClaimRequest(val taskId: String, val action: String = "claim")
+
+// POST /api/mall { action: "markMessagesRead" } — clears the unread badge.
+data class MallMarkReadRequest(
+    val riderId: String? = null,
+    val action: String = "markMessagesRead",
 )
 
 data class PartnerBenefitDto(

@@ -34,6 +34,20 @@ interface ApiService {
     @GET("marketplace/catalog")
     suspend fun catalog(): ApiEnvelope<List<CatalogProductDto>>
 
+    // Public service-point list (no session needed) — powers the guest Map.
+    @GET("pontos")
+    suspend fun pontosPublic(): ApiEnvelope<List<PontoDto>>
+
+    // Rider tasks with real metric progress; claim awards ledger points.
+    @GET("tasks")
+    suspend fun tasks(): ApiEnvelope<TasksData>
+
+    @POST("tasks")
+    suspend fun claimTask(@Body body: TaskClaimRequest): ApiEnvelope<AckDto>
+
+    @POST("mall")
+    suspend fun markMessagesRead(@Body body: MallMarkReadRequest): ApiEnvelope<AckDto>
+
     @GET("slots")
     suspend fun slots(): ApiEnvelope<SlotsData>
 

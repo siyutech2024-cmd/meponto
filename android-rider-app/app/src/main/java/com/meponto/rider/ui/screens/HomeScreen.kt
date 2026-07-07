@@ -180,7 +180,21 @@ fun HomeScreen(onScan: () -> Unit, onProfile: () -> Unit) {
                             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                                 Row(verticalAlignment = Alignment.CenterVertically) {
                                     Text(m.title, color = me.textSoft, fontSize = 14.sp, modifier = Modifier.weight(1f))
-                                    Badge(m.reward, Tone.ACCENT)
+                                    when {
+                                        m.claimed -> Badge(loc.t("mission.claimed"), Tone.OK)
+                                        m.claimable -> Text(
+                                            "${loc.t("mission.claim")} ${m.reward}",
+                                            color = me.accentInk,
+                                            fontWeight = FontWeight.Bold,
+                                            fontSize = 12.sp,
+                                            modifier = Modifier
+                                                .clip(CircleShape)
+                                                .background(me.accent)
+                                                .clickable { if (auth.requireMember()) store.claimMission(m) }
+                                                .padding(horizontal = 12.dp, vertical = 5.dp),
+                                        )
+                                        else -> Badge(m.reward, Tone.ACCENT)
+                                    }
                                 }
                                 ProgressBar(m.progress)
                             }

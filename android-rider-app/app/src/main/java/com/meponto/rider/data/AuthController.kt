@@ -56,14 +56,22 @@ class AuthController(
     /** Back to the phone-entry step (also used by "change number"). */
     fun resetOtp() { otpSent = false; needsCpf = false; rebind = false; needsGoogleLink = false; googleCred = null; errorKey = null }
 
-    /** Sign in with Google. Linked → member; first time → bind via phone+CPF. */
+    /** Backend session lacks a verified phone → Profile offers verification. */
+    val phoneUnverified: Boolean get() = session.phoneUnverified
+
+    /**
+     * Sign in with Google — DIRECT. Linked accounts go straight in; first-time
+     * Google users also enter immediately as an unverified session (browse the
+     * mall, see shifts) and verify their phone later in Profile to unlock
+     * wallet/points. No phone wall at the door.
+     */
     suspend fun googleLogin(credential: String) {
         working = true
         errorKey = null
         val r = repo.googleLogin(credential)
         when {
             r.ok && r.name != null -> {
-                session.setLoggedIn(r.name)
+                session.setLoggedIn(r.name, unverifiedPhone = r.needsVerification, riderId = r.id)
                 state = AuthState.MEMBER
                 presentingAuth = false
                 resetOtp()
@@ -88,7 +96,7 @@ class AuthController(
             // Google guest entering a NEW phone: backend activates the member
             // directly (no SMS round-trip) — finish the login here.
             r.activatedName != null -> {
-                session.setLoggedIn(r.activatedName)
+                session.setLoggedIn(r.activatedName, riderId = r.activatedId)
                 state = AuthState.MEMBER
                 presentingAuth = false
                 resetOtp()
@@ -105,8 +113,8 @@ class AuthController(
         working = true
         errorKey = null
         repo.verifyOtp(phone, code, googleCred)
-            .onSuccess { name ->
-                session.setLoggedIn(name)
+            .onSuccess { (name, id) ->
+                session.setLoggedIn(name, riderId = id)
                 state = AuthState.MEMBER
                 presentingAuth = false
                 resetOtp()
