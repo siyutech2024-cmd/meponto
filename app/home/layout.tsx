@@ -71,7 +71,18 @@ const jsonLd = {
       slogan: "Conectar · Apoiar · Entregar",
       description: DESCRIPTION,
       areaServed: { "@type": "City", name: "São Paulo", address: { "@type": "PostalAddress", addressLocality: "São Paulo", addressRegion: "SP", addressCountry: "BR" } },
-      sameAs: ["https://app.meponto.com", "https://mall.meponto.com", "https://franchise.meponto.com"],
+      sameAs: [
+        "https://play.google.com/store/apps/details?id=com.meponto.rider",
+        "https://app.meponto.com",
+        "https://mall.meponto.com",
+        "https://franchise.meponto.com",
+      ],
+      contactPoint: {
+        "@type": "ContactPoint",
+        email: "ishak.ma@meponto.com",
+        contactType: "Parcerias e fornecedores",
+        availableLanguage: ["pt", "zh", "en"],
+      },
     },
     {
       "@type": "WebSite",
@@ -107,7 +118,7 @@ const jsonLd = {
           name: "Como faço para entregar com o MePonto?",
           acceptedAnswer: {
             "@type": "Answer",
-            text: "Baixe ou acesse o app em app.meponto.com, faça o cadastro de entregador e escolha seus turnos semanais. Você decide quando rodar e acompanha ganhos e pontos no próprio app.",
+            text: "Baixe o app MePonto na Google Play (play.google.com/store/apps/details?id=com.meponto.rider), faça o cadastro de entregador e escolha seus turnos semanais. Você decide quando rodar e acompanha ganhos e pontos no próprio app.",
           },
         },
         {
@@ -123,7 +134,7 @@ const jsonLd = {
           name: "Como ser franqueado MePonto?",
           acceptedAnswer: {
             "@type": "Answer",
-            text: "Franqueados operam um território com modelo validado e sistema completo de operação, escala e finanças, com suporte da rede. Acesse franchise.meponto.com para iniciar a conversa.",
+            text: "Parceiros regionais, partners e fornecedores operam com modelo validado e sistema completo de operação, escala e finanças, com suporte da rede. Envie sua candidatura para ishak.ma@meponto.com; parceiros ativos acessam franchise.meponto.com.",
           },
         },
       ],
