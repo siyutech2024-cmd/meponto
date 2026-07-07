@@ -1,6 +1,5 @@
 package com.meponto.rider.ui.screens
 
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -33,11 +32,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.meponto.rider.R
 import com.meponto.rider.data.LocalAuth
 import com.meponto.rider.data.LocalStore
 import com.meponto.rider.i18n.LocalLoc
@@ -46,13 +43,11 @@ import com.meponto.rider.ui.components.Badge
 import com.meponto.rider.ui.components.LedgerRow
 import com.meponto.rider.ui.components.LoginPromptCard
 import com.meponto.rider.ui.components.MembershipCard
-import com.meponto.rider.ui.components.Metric
 import com.meponto.rider.ui.components.Panel
 import com.meponto.rider.ui.components.ProgressBar
 import com.meponto.rider.ui.components.QRSheet
 import com.meponto.rider.ui.components.SectionHeader
 import com.meponto.rider.ui.components.StatTile
-import com.meponto.rider.ui.components.VDivider
 import com.meponto.rider.ui.theme.LocalMe
 import com.meponto.rider.ui.theme.MeRadius
 import com.meponto.rider.ui.theme.Tone
@@ -75,23 +70,6 @@ fun HomeScreen(onScan: () -> Unit, onProfile: () -> Unit) {
     }
 
     Column(Modifier.fillMaxSize().background(me.background)) {
-        // Top bar
-        Row(
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Image(painter = painterResource(R.drawable.meponto_logo), contentDescription = null, modifier = Modifier.size(24.dp))
-            Spacer(Modifier.width(6.dp))
-            Text("MePonto", color = me.text, fontWeight = FontWeight.Bold, fontSize = 18.sp)
-            Spacer(Modifier.weight(1f))
-            Icon(
-                Icons.Filled.AccountCircle,
-                contentDescription = loc.t("profile.title"),
-                tint = me.text,
-                modifier = Modifier.size(28.dp).clickable { onProfile() },
-            )
-        }
-
         Column(
             modifier = Modifier
                 .weight(1f)
@@ -100,19 +78,35 @@ fun HomeScreen(onScan: () -> Unit, onProfile: () -> Unit) {
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
-            // Greeting (guest vs member) — compact, no decoration; the identity
-            // block below carries the visual weight.
-            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                Text(
-                    if (auth.isMember) "${loc.t("home.greeting")}, ${store.riderName}" else loc.t("home.greeting"),
-                    color = me.text,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 20.sp,
-                )
-                Text(
-                    if (auth.isMember) loc.t("home.rider") + " · " + store.profile.ponto else loc.t("profile.guest"),
-                    color = me.muted,
-                    fontSize = 13.sp,
+            // Spec: no logo top bar — the big greeting IS the header, with the
+            // profile entry on the same line. Empty name/ponto never leave
+            // dangling separators.
+            Row(verticalAlignment = Alignment.Top) {
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    val name = store.riderName.trim()
+                    Text(
+                        if (auth.isMember && name.isNotEmpty()) "${loc.t("home.greeting")}, $name" else loc.t("home.greeting"),
+                        color = me.text,
+                        fontWeight = FontWeight.Black,
+                        fontSize = 30.sp,
+                    )
+                    Text(
+                        if (auth.isMember) {
+                            listOf(loc.t("home.rider"), store.profile.ponto.trim())
+                                .filter { it.isNotEmpty() }
+                                .joinToString(" · ")
+                        } else {
+                            loc.t("profile.guest")
+                        },
+                        color = me.muted,
+                        fontSize = 13.sp,
+                    )
+                }
+                Icon(
+                    Icons.Filled.AccountCircle,
+                    contentDescription = loc.t("profile.title"),
+                    tint = me.text,
+                    modifier = Modifier.size(30.dp).clickable { onProfile() },
                 )
             }
 
@@ -153,19 +147,25 @@ fun HomeScreen(onScan: () -> Unit, onProfile: () -> Unit) {
                 trailing = Icons.Filled.QrCode2,
             ) { if (auth.requireMember()) showInvite = true }
 
-            // Performance
+            // Performance — spec's tri-color KPI blocks: yellow / blue-purple /
+            // pink tinted tiles, one hero number each.
             store.performance?.let { perf ->
                 Panel {
                     SectionHeader(loc.t("home.performance"))
-                    Spacer(Modifier.size(14.dp))
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Metric(loc.t("home.orders"), "${perf.orders}", Modifier.weight(1f))
-                        VDivider()
-                        Metric(loc.t("home.tsh"), String.format("%.1f", perf.tshHours), Modifier.weight(1f))
-                        VDivider()
-                        Metric(loc.t("home.ar"), "${perf.acceptanceRate}%", Modifier.weight(1f))
-                        VDivider()
-                        Metric(loc.t("home.caa"), "${perf.cancelledOrders}", Modifier.weight(1f))
+                    Spacer(Modifier.size(12.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        KpiTile(loc.t("home.orders"), "${perf.orders}", me.accent, Modifier.weight(1f))
+                        KpiTile(loc.t("home.tsh"), String.format("%.1f", perf.tshHours), me.tertiary, Modifier.weight(1f))
+                        KpiTile(loc.t("home.ar"), "${perf.acceptanceRate}%", me.secondary, Modifier.weight(1f))
+                    }
+                    if (perf.cancelledOrders > 0) {
+                        Spacer(Modifier.size(10.dp))
+                        Text(
+                            "${loc.t("home.caa")}: ${perf.cancelledOrders}",
+                            color = me.danger,
+                            fontWeight = FontWeight.SemiBold,
+                            fontSize = 12.sp,
+                        )
                     }
                 }
             }
@@ -298,5 +298,22 @@ fun HomeScreen(onScan: () -> Unit, onProfile: () -> Unit) {
 
             Spacer(Modifier.size(8.dp))
         }
+    }
+}
+
+/** Tinted KPI tile (spec §4): 14% tone wash, ink number, muted label. */
+@Composable
+private fun KpiTile(label: String, value: String, tone: androidx.compose.ui.graphics.Color, modifier: Modifier = Modifier) {
+    val me = LocalMe.current
+    Column(
+        modifier = modifier
+            .clip(RoundedCornerShape(MeRadius.small))
+            .background(tone.copy(alpha = 0.16f))
+            .padding(horizontal = 12.dp, vertical = 12.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        Box(Modifier.size(8.dp).clip(CircleShape).background(tone))
+        Text(value, color = me.text, fontWeight = FontWeight.Black, fontSize = 20.sp)
+        Text(label, color = me.muted, fontSize = 11.sp)
     }
 }

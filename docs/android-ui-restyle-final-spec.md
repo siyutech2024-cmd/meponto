@@ -43,11 +43,11 @@
 3. 渐变只出现在 hero 级卡(会员卡、积分卡),列表与面板保持纯色,防止廉价感。
 4. 波浪纹 alpha ≤ .25,只做背景纹理,禁止盖住文字。
 
-## 4. 待办(布局级,建议单独分支逐屏做)
+## 4. 布局级改造(已落地 ✅)
 
-- HomeScreen:问候语放大(30sp)、KPI 三色块(accent/secondary/tertiary 底)、顶栏去 logo 标题化。
-- ShiftsScreen:时段行加左侧状态色条(绿/粉/灰),日条选中态用 text 底+accent 数字。
-- 底部导航:活性态胶囊高亮。
+- [x] HomeScreen:问候语 30sp Black、KPI 三色块(accent/tertiary/secondary 16% 底 + 色点)、顶栏去 logo(问候即页头,头像同行)。
+- [x] ShiftsScreen:时段行左侧 4dp 状态色条(绿=已报名/粉=危急/灰=可报),日条选中态 ink 底 + accent 日期数字。
+- [x] 底部导航:活性态胶囊高亮(NavigationBarItem indicator=accent)。
 - 空状态插画/大图标(波浪纹可复用)。
 
 ## 5. 护栏与跨端同步(合并前必做)

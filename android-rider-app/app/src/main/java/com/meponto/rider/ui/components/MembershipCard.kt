@@ -160,13 +160,19 @@ fun MembershipCard() {
 
         Box(Modifier.fillMaxWidth().height(1.dp).background(Color.White.copy(alpha = 0.18f)))
 
-        // Identity rows
-        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            IdRow(Icons.Filled.LocationOn, loc.t("member.ponto"), p.ponto)
-            IdRow(Icons.Filled.Group, loc.t("member.leader"), p.leader)
-            IdRow(Icons.Filled.Map, loc.t("member.bairro"), p.bairro)
-            IdRow(Icons.Filled.Tag, loc.t("member.id99"), p.ninetyNineId)
+        // Identity rows — only the fields this rider actually has (public
+        // members without a station/99 ID don't get four empty lines).
+        val idRows = listOf(
+            Triple(Icons.Filled.LocationOn, loc.t("member.ponto"), p.ponto),
+            Triple(Icons.Filled.Group, loc.t("member.leader"), p.leader),
+            Triple(Icons.Filled.Map, loc.t("member.bairro"), p.bairro),
+            Triple(Icons.Filled.Tag, loc.t("member.id99"), p.ninetyNineId),
+        ).filter { it.third.isNotBlank() }
+        if (idRows.isNotEmpty()) {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                idRows.forEach { (icon, label, value) -> IdRow(icon, label, value) }
             }
+        }
         }
     }
 }

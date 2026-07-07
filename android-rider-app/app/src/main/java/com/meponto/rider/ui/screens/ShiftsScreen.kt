@@ -188,26 +188,27 @@ fun ShiftsScreen() {
         ) {
             weekDays.forEach { day ->
                 val isActive = day.id == activeDay
+                // Spec: selected day = INK block with the accent number popping.
                 Column(
                     modifier = Modifier
                         .width(56.dp)
                         .clip(RoundedCornerShape(MeRadius.card))
-                        .background(if (isActive) me.accent else me.surface)
+                        .background(if (isActive) me.text else me.surface)
                         .then(if (isActive) Modifier else Modifier.border(1.dp, me.line, RoundedCornerShape(MeRadius.card)))
                         .clickable { selectedDay = day.id }
                         .padding(vertical = 12.dp),
                     horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.spacedBy(6.dp),
                 ) {
-                    Text(day.weekday.uppercase(), color = if (isActive) me.accentInk else me.muted, fontWeight = FontWeight.Bold, fontSize = 11.sp)
-                    Text(day.dayLabel, color = if (isActive) me.accentInk else me.text, fontWeight = FontWeight.Black, fontSize = 14.sp)
+                    Text(day.weekday.uppercase(), color = if (isActive) me.background.copy(alpha = 0.75f) else me.muted, fontWeight = FontWeight.Bold, fontSize = 11.sp)
+                    Text(day.dayLabel, color = if (isActive) me.accent else me.text, fontWeight = FontWeight.Black, fontSize = 14.sp)
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(3.dp)) {
                         Box(
                             Modifier.size(5.dp).clip(CircleShape).background(
-                                if (day.subscribedCount > 0) me.ok else if (isActive) me.accentInk.copy(alpha = 0.5f) else me.muted.copy(alpha = 0.5f)
+                                if (day.subscribedCount > 0) me.ok else if (isActive) me.background.copy(alpha = 0.5f) else me.muted.copy(alpha = 0.5f)
                             )
                         )
-                        Text("${day.shiftIds.size}", color = if (isActive) me.accentInk else me.muted, fontWeight = FontWeight.Bold, fontSize = 11.sp)
+                        Text("${day.shiftIds.size}", color = if (isActive) me.background.copy(alpha = 0.75f) else me.muted, fontWeight = FontWeight.Bold, fontSize = 11.sp)
                     }
                 }
             }
@@ -238,10 +239,25 @@ fun ShiftsScreen() {
 private fun ScheduleRow(shift: Shift, onClick: () -> Unit) {
     val me = LocalMe.current
     val loc = LocalLoc.current
+    // Spec: left status bar — green = enrolled, brand pink = critical/peak,
+    // hairline gray = plain available.
+    val barColor = when {
+        shift.subscribed -> me.ok
+        shift.critical -> me.secondary
+        else -> me.line
+    }
     Row(
         modifier = Modifier.fillMaxWidth().clickable { onClick() }.padding(vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
+        Box(
+            Modifier
+                .width(4.dp)
+                .height(38.dp)
+                .clip(CircleShape)
+                .background(barColor)
+        )
+        Spacer(Modifier.width(10.dp))
         Column(Modifier.weight(1f)) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 Text(shift.window, color = me.text, fontWeight = FontWeight.Bold, fontSize = 14.sp)
