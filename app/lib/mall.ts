@@ -27,6 +27,13 @@ export type MallConfig = {
   birthdayBasePoints?: number;
   /** Company PIX key shown for hybrid (points + cash) checkout transfers. */
   pixKey?: string;
+  /** Points awarded per station check-in (rider app QR scan, 1×/day/station). */
+  checkinPoints?: number;
+  /** Unified tier ladder: points EARNED in a rolling window (days). */
+  tierWindowDays?: number;
+  tierPrataEarned?: number;
+  tierOuroEarned?: number;
+  tierDiamanteEarned?: number;
   /**
    * Redemption guardrails — adjustable from the mall back office. `0` means
    * "no limit" (the operator opts in by entering a positive value).
@@ -52,6 +59,11 @@ export const defaultMallConfig: MallConfig = {
   pointsPerBrl: 10,
   birthdayBasePoints: 50,
   pixKey: "",
+  checkinPoints: 10,
+  tierWindowDays: 90,
+  tierPrataEarned: 800,
+  tierOuroEarned: 1500,
+  tierDiamanteEarned: 3000,
   dailyRedeemCount: 20,
   dailyRedeemPoints: 0,
   monthlyRedeemPoints: 0,
@@ -141,4 +153,108 @@ export function resolveTier(lifetimeOrders: number | null): TierDefinition {
     if (definition.minOrders !== null && lifetimeOrders >= definition.minOrders) result = definition;
   }
   return result;
+}
+
+// ---------------------------------------------------------------------------
+// UNIFIED tier standard (the single source both PontoMall pricing and the
+// rider app display use): points EARNED in a rolling window. Earning maps to
+// real work (deliveries, check-ins, missions — all append-only ledger entries),
+// spending never demotes, and the ledger makes the score tamper-resistant.
+// Thresholds/window are operator-tunable in MallConfig.
+// ---------------------------------------------------------------------------
+
+// Coupon eligibility (pure — shared by the mall storefront and /rider/home).
+type CouponLike = {
+  id: string;
+  minTier: string;
+  perRiderLimit: number;
+  active: boolean;
+  expiresAt?: string;
+};
+type OrderLike = { couponId?: string; riderId?: string; status: string };
+
+export function couponTierRank(name: string): number {
+  return tierDefinitions.findIndex((t) => t.tier === name);
+}
+
+/** Coupons a rider is eligible for (tier + validity + per-rider limit). */
+export function eligibleCoupons<T extends CouponLike>(
+  coupons: T[],
+  orders: OrderLike[],
+  riderId: string,
+  tierName: string,
+  today: string = new Date().toISOString().slice(0, 10),
+): T[] {
+  const riderRank = couponTierRank(tierName);
+  return coupons.filter((c) => {
+    if (!c.active) return false;
+    if (c.expiresAt && c.expiresAt < today) return false;
+    if (riderRank < couponTierRank(c.minTier)) return false;
+    if (c.perRiderLimit > 0) {
+      const used = orders.filter((o) => o.couponId === c.id && o.riderId === riderId && o.status !== "cancelled").length;
+      if (used >= c.perRiderLimit) return false;
+    }
+    return true;
+  });
+}
+
+export type RiderTierStatus = {
+  tier: MembershipTier;
+  label: string;
+  /** Points earned (approved, earn-side) inside the rolling window. */
+  earnedInWindow: number;
+  /** Points still needed to reach the next tier; null at the top. */
+  nextTierAt: number | null;
+  nextTierLabel: string | null;
+  redeemDiscount: number;
+  pointsMultiplier: number;
+  perks: string[];
+  windowDays: number;
+};
+
+type TierLedgerEntry = { riderId: string; type: string; status: string; points: number; createdAt: string };
+
+const EARN_SIDE = new Set(["earn", "refund", "release"]);
+
+export function tierThresholds(config: MallConfig): Array<{ def: TierDefinition; minEarned: number | null }> {
+  return [
+    { def: tierDefinitions[0], minEarned: null },
+    { def: tierDefinitions[1], minEarned: 1 },
+    { def: tierDefinitions[2], minEarned: config.tierPrataEarned ?? 800 },
+    { def: tierDefinitions[3], minEarned: config.tierOuroEarned ?? 1500 },
+    { def: tierDefinitions[4], minEarned: config.tierDiamanteEarned ?? 3000 },
+  ];
+}
+
+export function resolveRiderTierStatus(
+  entries: TierLedgerEntry[],
+  riderId: string,
+  config: MallConfig,
+  now: Date = new Date(),
+): RiderTierStatus {
+  const windowDays = config.tierWindowDays ?? 90;
+  const cutoff = new Date(now.getTime() - windowDays * 24 * 60 * 60 * 1000).toISOString().slice(0, 16).replace("T", " ");
+  const earned = entries.reduce((sum, e) => {
+    if (e.riderId !== riderId || e.status !== "approved" || !EARN_SIDE.has(e.type)) return sum;
+    if ((e.createdAt ?? "") < cutoff) return sum;
+    return sum + Math.max(0, e.points);
+  }, 0);
+
+  const ladder = tierThresholds(config);
+  let current = ladder[0];
+  for (const step of ladder) {
+    if (step.minEarned !== null && earned >= step.minEarned) current = step;
+  }
+  const next = ladder[ladder.indexOf(current) + 1] ?? null;
+  return {
+    tier: current.def.tier,
+    label: current.def.label,
+    earnedInWindow: earned,
+    nextTierAt: next?.minEarned ?? null,
+    nextTierLabel: next?.def.label ?? null,
+    redeemDiscount: current.def.redeemDiscount,
+    pointsMultiplier: current.def.pointsMultiplier,
+    perks: current.def.perks,
+    windowDays,
+  };
 }

@@ -4,29 +4,13 @@ import { flushPendingToDatabase, persistDeleteRecord, refreshCollectionsFromData
 import { requirePermission, roleFromRequest } from "../../lib/server/authz";
 import { sendPushToRider } from "../../lib/server/notify";
 import { getAvailablePoints, getAvailablePartnerPoints, pointsRules, type MarketplaceOrder, type MarketplaceProduct, type PartnerPointsLedgerEntry, type PointsLedgerEntry } from "../../lib/points";
-import { defaultMallConfig, resolveTier, tierDefinitions, type MallConfig } from "../../lib/mall";
+import { defaultMallConfig, eligibleCoupons, resolveRiderTierStatus, resolveTier, tierDefinitions, type MallConfig } from "../../lib/mall";
 import type { CashLedgerEntry, MallCoupon } from "../../lib/mall-ops";
-
-/** Tier rank for coupon eligibility (member=0 … diamante=4). */
-function tierRank(name: string): number {
-  return tierDefinitions.findIndex((t) => t.tier === name);
-}
 
 /** Coupons a rider is eligible for (tier + validity + per-rider limit), ignoring
  *  the per-product minPoints threshold (applied per product at display/redeem). */
 function eligibleCouponsForRider(riderId: string, tierName: string): MallCoupon[] {
-  const today = new Date().toISOString().slice(0, 10);
-  const riderRank = tierRank(tierName);
-  return memory.mallCoupons.filter((c) => {
-    if (!c.active) return false;
-    if (c.expiresAt && c.expiresAt < today) return false;
-    if (riderRank < tierRank(c.minTier)) return false;
-    if (c.perRiderLimit > 0) {
-      const used = memory.marketplaceOrders.filter((o) => o.couponId === c.id && o.riderId === riderId && o.status !== "cancelled").length;
-      if (used >= c.perRiderLimit) return false;
-    }
-    return true;
-  });
+  return eligibleCoupons(memory.mallCoupons, memory.marketplaceOrders, riderId, tierName);
 }
 
 /** Best coupon (max discount) for a rider against a given tier-discounted price. */
@@ -233,8 +217,13 @@ export async function GET(request: Request) {
   if (rider) {
     expiredNow = applyPointsExpiry(rider.id);
     const orderCount = lifetimeOrders(rider.ninetyNineId);
-    const tier = resolveTier(orderCount);
+    // UNIFIED tier: rolling-window earned points (same engine prices redemptions).
+    const tier = resolveRiderTierStatus(memory.pointsLedgerEntries, rider.id, getConfig());
     me = {
+      tierStatus: tier,
+      orders: memory.marketplaceOrders
+        .filter((order) => order.riderId === rider.id)
+        .slice(0, 20),
       badges: badgeMilestones.map((m) => ({ ...m, achieved: (orderCount ?? 0) >= m.at })),
       expiredNow,
       riderId: rider.id,
@@ -420,7 +409,7 @@ function buildPointsLiability(supplierSettlement: Array<{ supplier: string; qty:
 }
 
 type Body =
-  | { action: "setConfig"; perOrderPoints?: number; referralPoints?: number; partnerServicePoints?: number; partnerServiceCount?: number; dailyRedeemCount?: number; dailyRedeemPoints?: number; monthlyRedeemPoints?: number; highValueReviewPoints?: number; newAccountWindowDays?: number; newAccountRedeemCap?: number }
+  | { action: "setConfig"; perOrderPoints?: number; referralPoints?: number; partnerServicePoints?: number; partnerServiceCount?: number; checkinPoints?: number; dailyRedeemCount?: number; dailyRedeemPoints?: number; monthlyRedeemPoints?: number; highValueReviewPoints?: number; newAccountWindowDays?: number; newAccountRedeemCap?: number }
   | { action: "supplierAddProduct"; name: string; supplierName: string; supplyPrice: number; deliveryCycleDays: number; stock: number; description?: string; imageUrl?: string; category?: string; isVirtual?: boolean; audience?: "rider" | "partner" | "both"; type?: string }
   | { action: "supplierUpdateProduct"; productId: string; name?: string; supplyPrice?: number; description?: string; imageUrl?: string; category?: string; stock?: number; deliveryCycleDays?: number; isVirtual?: boolean; audience?: "rider" | "partner" | "both"; type?: string }
   | { action: "supplierDeleteProduct"; productId: string }
@@ -466,7 +455,7 @@ async function handlePost(request: Request) {
   switch (body.action) {
     case "setConfig": {
       const config = { ...getConfig() };
-      const fields = ["perOrderPoints", "referralPoints", "partnerServicePoints", "partnerServiceCount", "pointsPerBrl", "birthdayBasePoints", "dailyRedeemCount", "dailyRedeemPoints", "monthlyRedeemPoints", "highValueReviewPoints", "newAccountWindowDays", "newAccountRedeemCap"] as const;
+      const fields = ["perOrderPoints", "referralPoints", "partnerServicePoints", "partnerServiceCount", "pointsPerBrl", "birthdayBasePoints", "checkinPoints", "tierWindowDays", "tierPrataEarned", "tierOuroEarned", "tierDiamanteEarned", "dailyRedeemCount", "dailyRedeemPoints", "monthlyRedeemPoints", "highValueReviewPoints", "newAccountWindowDays", "newAccountRedeemCap"] as const;
       for (const field of fields) {
         const value = Number(body[field]);
         if (Number.isFinite(value) && value >= 0) config[field] = value;
@@ -742,7 +731,7 @@ async function handlePost(request: Request) {
       // Expire stale points first so the redemption uses the true balance.
       applyPointsExpiry(rider.id);
 
-      const tier = resolveTier(lifetimeOrders(rider.ninetyNineId));
+      const tier = resolveRiderTierStatus(memory.pointsLedgerEntries, rider.id, getConfig());
       const basePrice = Math.ceil(product.pointsPrice * tier.redeemDiscount);
       // Auto-apply the best eligible storefront coupon (points discount).
       const couponPick = bestCouponForRider(rider.id, tier.tier, basePrice);

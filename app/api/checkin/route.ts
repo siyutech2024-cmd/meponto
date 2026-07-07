@@ -10,8 +10,11 @@ import { getAvailablePoints, type PointsLedgerEntry } from "../../lib/points";
  * Event: ponto.checkin.recorded.v1.
  */
 
-const COLLECTIONS = ["pointsLedgerEntries", "riders", "pontos"];
-const CHECKIN_POINTS = 50; // default; can be promoted to mall config later.
+const COLLECTIONS = ["pointsLedgerEntries", "riders", "pontos", "mallConfigs"];
+// Award size lives in the mall back office config (mall-config.checkinPoints).
+const DEFAULT_CHECKIN_POINTS = 10;
+const checkinPoints = () =>
+  memory.mallConfigs.find((c) => c.id === "mall-config")?.checkinPoints ?? DEFAULT_CHECKIN_POINTS;
 const nowStamp = () => new Date().toISOString().slice(0, 16).replace("T", " ");
 const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, "-").slice(0, 24);
 
@@ -27,13 +30,18 @@ async function handlePost(request: Request) {
 
   const body = (await request.json().catch(() => ({}))) as Body;
   const raw = String(body.pontoId ?? body.pontoCode ?? body.code ?? "").trim();
-  // Resolve the target station: explicit id/code → match a Ponto; otherwise
-  // fall back to the rider's home station.
+  // Resolve the target station. A SCANNED code must match a real Ponto —
+  // otherwise any random QR string would mint a fresh per-day dedupe key and
+  // farm unlimited points. Only an EMPTY code falls back to the home station.
   const codeKey = raw.replace(/^(ponto-|checkin-|p-)/i, "");
+  const matched = memory.pontos.find((p) => p.id === raw || p.id === codeKey || p.name === raw);
+  if (raw && !matched) {
+    return jsonResponse({ error: "QR inválido: este código não é de um Ponto MePonto.", code: "invalid_code" }, { status: 404 });
+  }
   const ponto =
-    memory.pontos.find((p) => p.id === raw || p.id === codeKey || p.name === raw) ??
+    matched ??
     (rider.ponto ? memory.pontos.find((p) => p.name === rider.ponto || p.id === rider.ponto) : undefined);
-  const pontoKey = ponto ? ponto.id : codeKey || slug(rider.ponto ?? "home");
+  const pontoKey = ponto ? ponto.id : slug(rider.ponto ?? "home");
   const pontoName = ponto?.name ?? rider.ponto ?? "Ponto";
 
   const date = nowStamp().slice(0, 10);
@@ -42,17 +50,18 @@ async function handlePost(request: Request) {
     return jsonResponse({ error: "Você já fez check-in nesta estação hoje.", code: "already_checked_in" }, { status: 409 });
   }
 
+  const award = checkinPoints();
   const available = getAvailablePoints(memory.pointsLedgerEntries, rider.id);
   const entry: PointsLedgerEntry = {
     id: checkinId,
     riderId: rider.id,
     accountId: `pts-${rider.id}`,
     type: "earn",
-    points: CHECKIN_POINTS,
+    points: award,
     status: "approved",
     sourceType: "mission",
     sourceId: checkinId,
-    balanceAfter: available + CHECKIN_POINTS,
+    balanceAfter: available + award,
     reasonCode: "PONTO_CHECKIN",
     note: `Check-in ${pontoName}`,
     createdBy: "Check-in",
@@ -65,11 +74,11 @@ async function handlePost(request: Request) {
     action: "ponto.checkin.recorded.v1",
     entity: "PointsLedger",
     entityId: entry.id,
-    detail: `${rider.name} check-in ${pontoName}: +${CHECKIN_POINTS} pts.`,
+    detail: `${rider.name} check-in ${pontoName}: +${award} pts.`,
     risk: "Low",
   });
 
-  return jsonResponse({ data: { awarded: CHECKIN_POINTS, available: available + CHECKIN_POINTS, ponto: pontoName } }, { status: 201 });
+  return jsonResponse({ data: { awarded: award, available: available + award, ponto: pontoName } }, { status: 201 });
 }
 
 export async function POST(request: Request) {

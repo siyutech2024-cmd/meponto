@@ -1,6 +1,8 @@
 import { jsonResponse, memory } from "../../../lib/server/memory";
 import { refreshCollectionsFromDatabase } from "../../../lib/server/persistence";
 import { sessionFromRequest } from "../../../lib/auth-session";
+import { defaultMallConfig, eligibleCoupons, resolveRiderTierStatus } from "../../../lib/mall";
+import { isSupplierCategory } from "../../../lib/server/crm-categories";
 
 /**
  * Rider Home dashboard aggregate (session-scoped). One read powering the
@@ -13,7 +15,9 @@ import { sessionFromRequest } from "../../../lib/auth-session";
  *   cashLedger         ← riderWithdrawals (outflow) + walletPayments (inflow)
  *   partners           ← crmPartners (name / category / bairro / services / geo)
  *   missions           ← appTasks (rider/all, enabled) + taskClaims (progress)
- *   inbox              ← notifications (recent announcements)
+ *   inbox              ← notifications (System announcements only — incident
+ *                        alerts are ops-internal and never rider-facing)
+ *   pontos             ← pontos (service-point name / address / geo for the Map)
  */
 
 const COLLECTIONS = [
@@ -25,6 +29,12 @@ const COLLECTIONS = [
   "notifications",
   "appTasks",
   "taskClaims",
+  "pontos",
+  "pointsLedgerEntries",
+  "marketplaceOrders",
+  "mallConfigs",
+  "memberMessages",
+  "mallCoupons",
 ];
 
 const brl = (n: number) => "R$ " + Math.abs(n).toFixed(2).replace(".", ",");
@@ -101,7 +111,11 @@ export async function GET(request: Request) {
     .map(({ title, subtitle, amount, status, tone }) => ({ title, subtitle, amount, status, tone }));
 
   // --- Partners (real geo + services + rider offer) ---
-  const activePartners = memory.crmPartners.filter((p) => p.status === "Active");
+  // Riders see SERVICE partners only (oficina, combustível, celular…);
+  // supply-chain vendors (供应商) are back-office and never rider-facing.
+  const activePartners = memory.crmPartners.filter(
+    (p) => p.status === "Active" && !isSupplierCategory(p.category),
+  );
   const partners = activePartners.map((p) => ({
     id: p.id,
     name: p.name,
@@ -138,13 +152,76 @@ export async function GET(request: Request) {
       progress: claimedTaskIds.has(t.id) ? 1 : 0,
     }));
 
-  // --- Inbox (recent announcements) ---
-  const inbox = [...memory.notifications]
+  // --- Inbox (rider-facing announcements ONLY) ---
+  // The notifications collection is seeded from ops incidents; those alerts
+  // are internal and must never reach the rider app. Only deliberate System
+  // announcements make the cut.
+  const inbox = memory.notifications
+    .filter((n) => n.source === "System")
     .sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1))
     .slice(0, 6)
     .map((n) => ({ title: n.title, detail: n.body, time: relativeTime(n.createdAt) }));
 
+  // --- Service points (Ponto locations for the rider Map tab) ---
+  const pontos = memory.pontos.map((p) => ({
+    id: p.id,
+    name: p.name,
+    bairro: p.bairro ?? "",
+    address: p.address ?? "",
+    leader: p.leader ?? "",
+    latitude: p.lat ?? 0,
+    longitude: p.lng ?? 0,
+  }));
+
+  // --- UNIFIED membership tier (rolling-window earned points; the same
+  // engine PontoMall uses to price redemptions — one standard everywhere) ---
+  const mallConfig = memory.mallConfigs.find((c) => c.id === "mall-config") ?? defaultMallConfig;
+  const tier = resolveRiderTierStatus(memory.pointsLedgerEntries, rider.id, mallConfig);
+
+  // --- Mall orders (the rider's own redemptions, newest first) ---
+  const mallOrders = memory.marketplaceOrders
+    .filter((order) => order.riderId === rider.id)
+    .slice(0, 20)
+    .map((order) => ({
+      id: order.id,
+      productName: order.productName ?? order.productId,
+      pointsSpent: order.pointsSpent,
+      status: order.status,
+      createdAt: order.createdAt,
+      pickupStoreName: order.pickupStoreName ?? order.station ?? "",
+      voucherCode: order.voucherCode ?? "",
+    }));
+
+  // --- Mall messages (chegou/retire notices) + eligible coupons ---
+  const messages = memory.memberMessages
+    .filter((m) => m.riderName === rider.name || m.riderId === rider.id)
+    .slice(0, 20)
+    .map((m) => ({ id: m.id, title: m.title, body: m.body, createdAt: m.createdAt, read: !!m.readAt }));
+  const unreadMessages = messages.filter((m) => !m.read).length;
+  const coupons = eligibleCoupons(memory.mallCoupons, memory.marketplaceOrders, rider.id, tier.tier).map((c) => ({
+    id: c.id,
+    title: c.title,
+    type: c.type,
+    value: c.value,
+    minPoints: c.minPoints,
+    expiresAt: c.expiresAt ?? "",
+  }));
+
   return jsonResponse({
-    data: { performance, weeklyGoalProgress, cashLedger, partners, partnerBenefits, missions, inbox },
+    data: {
+      performance,
+      weeklyGoalProgress,
+      cashLedger,
+      partners,
+      partnerBenefits,
+      missions,
+      inbox,
+      pontos,
+      tier,
+      mallOrders,
+      messages,
+      unreadMessages,
+      coupons,
+    },
   });
 }

@@ -321,7 +321,12 @@ async function createVerifiedMember(signup: OtpSignupData, normalizedPhone: stri
   memory.riders.unshift(created);
   appendServerAudit({ actor: "Self-registration", action: "MEMBER_REGISTERED", entity: "Rider", entityId: created.id, detail: `${created.name} (membro público, telefone verificado)`, risk: "Low" });
 
-  const inviter = signup.inviterId ? memory.riders.find((r) => r.id === signup.inviterId) : undefined;
+  // Accept any stable identifier as the referral ref: rider id, 99 ID or name
+  // (QR links in the wild may carry either — never drop a valid referral).
+  const ref = (signup.inviterId ?? "").trim();
+  const inviter = ref
+    ? memory.riders.find((r) => r.id === ref || r.ninetyNineId === ref || r.name === ref)
+    : undefined;
   if (inviter && inviter.id !== created.id) {
     const config = memory.mallConfigs.find((c) => c.id === "mall-config") ?? defaultMallConfig;
     const points = config.referralPoints || 20;
