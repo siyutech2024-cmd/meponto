@@ -355,25 +355,25 @@ export default function HomePage() {
         @keyframes meShine{to{background-position:-220% center}}
         @media (prefers-reduced-motion:reduce){.me-wordmark{animation:none;color:#fff;-webkit-text-fill-color:#fff}}
       `}</style>
-      <header className="fixed inset-x-0 top-0 z-40 flex items-center justify-between px-5 py-4 md:px-10">
-        <div className="flex items-center gap-3">
+      <header className="fixed inset-x-0 top-0 z-40 flex items-center justify-between gap-2 px-4 py-3 md:px-10 md:py-4">
+        <div className="flex min-w-0 items-center gap-2 md:gap-3">
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src="/meponto-app-icon.png" alt="MePonto" className="h-12 w-12 rounded-2xl md:h-14 md:w-14" style={{ filter: "drop-shadow(0 0 14px rgba(245,179,1,.35))" }} />
-          <span aria-hidden="true" className="me-wordmark select-none text-[26px] md:text-[30px]">MePonto</span>
+          <img src="/meponto-app-icon.png" alt="MePonto" className="h-10 w-10 shrink-0 rounded-xl md:h-14 md:w-14 md:rounded-2xl" style={{ filter: "drop-shadow(0 0 14px rgba(245,179,1,.35))" }} />
+          <span aria-hidden="true" className="me-wordmark hidden select-none text-[22px] min-[400px]:block md:text-[30px]">MePonto</span>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex shrink-0 items-center gap-1.5 md:gap-2">
           {(["pt", "zh", "en"] as Lang[]).map((code) => (
             <button
               key={code}
               type="button"
               onClick={() => setLang(code)}
-              className="rounded-full border px-3 py-1 text-[11px] font-black uppercase tracking-wider transition-colors"
+              className="rounded-full border px-2.5 py-1 text-[11px] font-black uppercase tracking-wider transition-colors md:px-3"
               style={{ borderColor: lang === code ? "#f5b301" : "rgba(255,255,255,.18)", color: lang === code ? "#f5b301" : "rgba(255,255,255,.6)" }}
             >
               {code === "zh" ? "中" : code}
             </button>
           ))}
-          <a href={PLAY_STORE} className="ml-2 rounded-full px-4 py-1.5 text-[12px] font-black uppercase tracking-wider" style={{ background: "#f5b301", color: "#0b0e14" }}>
+          <a href={PLAY_STORE} className="ml-1 rounded-full px-3 py-1.5 text-[12px] font-black uppercase tracking-wider md:ml-2 md:px-4" style={{ background: "#f5b301", color: "#0b0e14" }}>
             App
           </a>
         </div>
