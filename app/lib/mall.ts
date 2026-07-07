@@ -29,8 +29,12 @@ export type MallConfig = {
   pixKey?: string;
   /** Points awarded per station check-in (rider app QR scan, 1×/day/station). */
   checkinPoints?: number;
-  /** Unified tier ladder: points EARNED in a rolling window (days). */
+  /** Tier window in days; 0 = lifetime cumulative (the default). */
   tierWindowDays?: number;
+  /** Inactivity decay: after [decayGraceDays] with no earning, available
+   *  points shrink by [decayPointsPerDay] per idle day (ledgered, tier-safe). */
+  decayGraceDays?: number;
+  decayPointsPerDay?: number;
   tierPrataEarned?: number;
   tierOuroEarned?: number;
   tierDiamanteEarned?: number;
@@ -60,10 +64,12 @@ export const defaultMallConfig: MallConfig = {
   birthdayBasePoints: 50,
   pixKey: "",
   checkinPoints: 10,
-  tierWindowDays: 90,
-  tierPrataEarned: 800,
-  tierOuroEarned: 1500,
-  tierDiamanteEarned: 3000,
+  tierWindowDays: 0,
+  decayGraceDays: 30,
+  decayPointsPerDay: 5,
+  tierPrataEarned: 2000,
+  tierOuroEarned: 6000,
+  tierDiamanteEarned: 15000,
   dailyRedeemCount: 20,
   dailyRedeemPoints: 0,
   monthlyRedeemPoints: 0,
@@ -220,9 +226,9 @@ export function tierThresholds(config: MallConfig): Array<{ def: TierDefinition;
   return [
     { def: tierDefinitions[0], minEarned: null },
     { def: tierDefinitions[1], minEarned: 1 },
-    { def: tierDefinitions[2], minEarned: config.tierPrataEarned ?? 800 },
-    { def: tierDefinitions[3], minEarned: config.tierOuroEarned ?? 1500 },
-    { def: tierDefinitions[4], minEarned: config.tierDiamanteEarned ?? 3000 },
+    { def: tierDefinitions[2], minEarned: config.tierPrataEarned ?? 2000 },
+    { def: tierDefinitions[3], minEarned: config.tierOuroEarned ?? 6000 },
+    { def: tierDefinitions[4], minEarned: config.tierDiamanteEarned ?? 15000 },
   ];
 }
 
@@ -232,11 +238,16 @@ export function resolveRiderTierStatus(
   config: MallConfig,
   now: Date = new Date(),
 ): RiderTierStatus {
-  const windowDays = config.tierWindowDays ?? 90;
-  const cutoff = new Date(now.getTime() - windowDays * 24 * 60 * 60 * 1000).toISOString().slice(0, 16).replace("T", " ");
+  // Tier = CUMULATIVE earned points (lifetime by default; tierWindowDays > 0
+  // opts into a rolling window). Spending or inactivity decay never demotes —
+  // only the earn side counts.
+  const windowDays = config.tierWindowDays ?? 0;
+  const cutoff = windowDays > 0
+    ? new Date(now.getTime() - windowDays * 24 * 60 * 60 * 1000).toISOString().slice(0, 16).replace("T", " ")
+    : "";
   const earned = entries.reduce((sum, e) => {
     if (e.riderId !== riderId || e.status !== "approved" || !EARN_SIDE.has(e.type)) return sum;
-    if ((e.createdAt ?? "") < cutoff) return sum;
+    if (cutoff && (e.createdAt ?? "") < cutoff) return sum;
     return sum + Math.max(0, e.points);
   }, 0);
 

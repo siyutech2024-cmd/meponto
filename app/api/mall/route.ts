@@ -216,6 +216,7 @@ export async function GET(request: Request) {
   const rider = memory.riders.find((item) => (riderId && item.id === riderId) || (riderName && item.name === riderName));
   if (rider) {
     expiredNow = applyPointsExpiry(rider.id);
+    applyInactivityDecay(memory.pointsLedgerEntries, rider.id, getConfig());
     const orderCount = lifetimeOrders(rider.ninetyNineId);
     // UNIFIED tier: rolling-window earned points (same engine prices redemptions).
     const tier = resolveRiderTierStatus(memory.pointsLedgerEntries, rider.id, getConfig());
@@ -455,7 +456,7 @@ async function handlePost(request: Request) {
   switch (body.action) {
     case "setConfig": {
       const config = { ...getConfig() };
-      const fields = ["perOrderPoints", "referralPoints", "partnerServicePoints", "partnerServiceCount", "pointsPerBrl", "birthdayBasePoints", "checkinPoints", "tierWindowDays", "tierPrataEarned", "tierOuroEarned", "tierDiamanteEarned", "dailyRedeemCount", "dailyRedeemPoints", "monthlyRedeemPoints", "highValueReviewPoints", "newAccountWindowDays", "newAccountRedeemCap"] as const;
+      const fields = ["perOrderPoints", "referralPoints", "partnerServicePoints", "partnerServiceCount", "pointsPerBrl", "birthdayBasePoints", "checkinPoints", "tierWindowDays", "decayGraceDays", "decayPointsPerDay", "tierPrataEarned", "tierOuroEarned", "tierDiamanteEarned", "dailyRedeemCount", "dailyRedeemPoints", "monthlyRedeemPoints", "highValueReviewPoints", "newAccountWindowDays", "newAccountRedeemCap"] as const;
       for (const field of fields) {
         const value = Number(body[field]);
         if (Number.isFinite(value) && value >= 0) config[field] = value;
@@ -728,8 +729,10 @@ async function handlePost(request: Request) {
         }
       }
 
-      // Expire stale points first so the redemption uses the true balance.
+      // Expire stale points + inactivity decay first — redemption must use
+      // the true balance.
       applyPointsExpiry(rider.id);
+      applyInactivityDecay(memory.pointsLedgerEntries, rider.id, getConfig());
 
       const tier = resolveRiderTierStatus(memory.pointsLedgerEntries, rider.id, getConfig());
       const basePrice = Math.ceil(product.pointsPrice * tier.redeemDiscount);

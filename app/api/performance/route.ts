@@ -8,7 +8,7 @@ import {
   type RiderDailyEarning,
   type RiderDailyKpi,
 } from "../../lib/performance";
-import { defaultMallConfig, resolveTier } from "../../lib/mall";
+import { defaultMallConfig, resolveRiderTierStatus } from "../../lib/mall";
 import { getAvailablePoints } from "../../lib/points";
 import { sendPushToRider } from "../../lib/server/notify";
 
@@ -55,7 +55,9 @@ function creditOrderPoints(riderId: string, rider99Id: string, date: string, com
   const lifetime = memory.riderDailyKpis
     .filter((row) => row.rider99Id === rider99Id)
     .reduce((sum, row) => sum + (row.completedOrders ?? 0), 0);
-  const tier = resolveTier(lifetime > 0 ? lifetime : null);
+  // UNIFIED tier: the SAME rolling-window earned-points engine that prices
+  // redemptions also sets the earn multiplier — one ladder everywhere.
+  const tier = resolveRiderTierStatus(memory.pointsLedgerEntries, riderId, config);
   const points = Math.round(completedOrders * config.perOrderPoints * tier.pointsMultiplier);
   if (points <= 0) return;
 

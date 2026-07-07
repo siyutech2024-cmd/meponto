@@ -1,7 +1,8 @@
 import { jsonResponse, memory } from "../../../lib/server/memory";
 import { refreshCollectionsFromDatabase } from "../../../lib/server/persistence";
 import { sessionFromRequest } from "../../../lib/auth-session";
-import { defaultMallConfig, eligibleCoupons, resolveRiderTierStatus } from "../../../lib/mall";
+import { defaultMallConfig, eligibleCoupons, resolveRiderTierStatus, tierThresholds } from "../../../lib/mall";
+import { applyInactivityDecay } from "../../../lib/points";
 import { isSupplierCategory } from "../../../lib/server/crm-categories";
 
 /**
@@ -15,8 +16,8 @@ import { isSupplierCategory } from "../../../lib/server/crm-categories";
  *   cashLedger         ← riderWithdrawals (outflow) + walletPayments (inflow)
  *   partners           ← crmPartners (name / category / bairro / services / geo)
  *   missions           ← appTasks (rider/all, enabled) + taskClaims (progress)
- *   inbox              ← notifications (System announcements only — incident
- *                        alerts are ops-internal and never rider-facing)
+ *   inbox              ← memberMessages addressed to the rider (ops
+ *                        notifications NEVER surface in the rider app)
  *   pontos             ← pontos (service-point name / address / geo for the Map)
  */
 
@@ -26,7 +27,6 @@ const COLLECTIONS = [
   "riderWithdrawals",
   "walletPayments",
   "crmPartners",
-  "notifications",
   "appTasks",
   "taskClaims",
   "pontos",
@@ -69,12 +69,15 @@ export async function GET(request: Request) {
     .filter((k) => k.riderName === name || (!!nineId && k.rider99Id === nineId))
     .sort((a, b) => (a.date < b.date ? 1 : -1)); // newest first
   const latest = kpis[0];
+  // Every KPI block reads the LATEST imported day (T+1 = yesterday): orders,
+  // TSH hours, acceptance rate and cancellations all describe the same day,
+  // matching what the rider remembers doing.
   const performance = latest
     ? {
-        orders: kpis.reduce((s, k) => s + (k.completedOrders ?? 0), 0),
+        orders: latest.completedOrders ?? 0,
         tshHours: latest.tsh ?? 0,
         acceptanceRate: Math.round(latest.ar ?? 0),
-        cancelledOrders: kpis.reduce((s, k) => s + (k.caa ?? 0), 0),
+        cancelledOrders: latest.caa ?? 0,
       }
     : null;
   const onlineHoursWeek = kpis.slice(0, 7).reduce((s, k) => s + (k.onlineHours ?? 0), 0);
@@ -152,15 +155,14 @@ export async function GET(request: Request) {
       progress: claimedTaskIds.has(t.id) ? 1 : 0,
     }));
 
-  // --- Inbox (rider-facing announcements ONLY) ---
-  // The notifications collection is seeded from ops incidents; those alerts
-  // are internal and must never reach the rider app. Only deliberate System
-  // announcements make the cut.
-  const inbox = memory.notifications
-    .filter((n) => n.source === "System")
-    .sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1))
+  // --- Inbox: messages addressed to THIS rider only (memberMessages —
+  // chegou/retire notices, HQ direct messages). The ops notifications
+  // collection (review nudges, incident alerts) is console-internal and is
+  // NEVER surfaced in the rider app, whatever its source flag says.
+  const inbox = memory.memberMessages
+    .filter((m) => m.riderName === rider.name || m.riderId === rider.id)
     .slice(0, 6)
-    .map((n) => ({ title: n.title, detail: n.body, time: relativeTime(n.createdAt) }));
+    .map((m) => ({ title: m.title, detail: m.body, time: relativeTime(m.createdAt) }));
 
   // --- Service points (Ponto locations for the rider Map tab) ---
   const pontos = memory.pontos.map((p) => ({
@@ -176,7 +178,13 @@ export async function GET(request: Request) {
   // --- UNIFIED membership tier (rolling-window earned points; the same
   // engine PontoMall uses to price redemptions — one standard everywhere) ---
   const mallConfig = memory.mallConfigs.find((c) => c.id === "mall-config") ?? defaultMallConfig;
-  const tier = resolveRiderTierStatus(memory.pointsLedgerEntries, rider.id, mallConfig);
+  // Inactivity decay first (append-only, idempotent per day), THEN tier —
+  // decay shrinks the balance but never the cumulative-earned tier score.
+  applyInactivityDecay(memory.pointsLedgerEntries, rider.id, mallConfig);
+  const tier = {
+    ...resolveRiderTierStatus(memory.pointsLedgerEntries, rider.id, mallConfig),
+    ladder: tierThresholds(mallConfig).map((s) => ({ tier: s.def.tier, label: s.def.label, minEarned: s.minEarned ?? 0 })),
+  };
 
   // --- Mall orders (the rider's own redemptions, newest first) ---
   const mallOrders = memory.marketplaceOrders

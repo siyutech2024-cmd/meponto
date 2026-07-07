@@ -563,6 +563,67 @@ export const marketplaceProducts: MarketplaceProduct[] = [
 
 export const marketplaceOrders: MarketplaceOrder[] = [];
 
+/**
+ * Inactivity decay (积分不活动递减): once a rider goes [graceDays] without any
+ * EARN activity, the available balance shrinks by [perDay] points per idle day
+ * beyond the grace period. Applied lazily on read as ONE append-only `expire`
+ * catch-up entry per calendar day (idempotent id), capped at the available
+ * balance. Tier is untouched — it counts cumulative EARNED points only.
+ * Returns the points decayed now (0 when nothing to do).
+ */
+export function applyInactivityDecay(
+  entries: PointsLedgerEntry[],
+  riderId: string,
+  config: { decayGraceDays?: number; decayPointsPerDay?: number },
+  now: Date = new Date(),
+): number {
+  const graceDays = config.decayGraceDays ?? 30;
+  const perDay = config.decayPointsPerDay ?? 0;
+  if (perDay <= 0) return 0;
+
+  const EARN = new Set(["earn", "refund", "release"]);
+  const DAY = 24 * 60 * 60 * 1000;
+  const today = now.toISOString().slice(0, 10);
+  const decayId = `pts-decay-${today}-${riderId}`;
+  if (entries.some((e) => e.id === decayId)) return 0; // already applied today
+
+  const lastEarnAt = entries
+    .filter((e) => e.riderId === riderId && e.status === "approved" && EARN.has(e.type))
+    .reduce<string>((max, e) => (e.createdAt > max ? e.createdAt : max), "");
+  if (!lastEarnAt) return 0; // never earned -> nothing to decay
+
+  const idleDays = Math.floor((now.getTime() - Date.parse(lastEarnAt.replace(" ", "T"))) / DAY);
+  const dueDays = idleDays - graceDays;
+  if (dueDays <= 0) return 0;
+
+  // Catch-up: total due since lastEarn minus what previous decay entries in
+  // this idle stretch already took.
+  const alreadyDecayed = entries
+    .filter((e) => e.riderId === riderId && e.reasonCode === "INACTIVITY_DECAY" && e.createdAt > lastEarnAt)
+    .reduce((sum, e) => sum + e.points, 0);
+  const available = getAvailablePoints(entries, riderId);
+  const delta = Math.min(available, dueDays * perDay - alreadyDecayed);
+  if (delta <= 0) return 0;
+
+  const stamp = now.toISOString().slice(0, 16).replace("T", " ");
+  entries.unshift({
+    id: decayId,
+    riderId,
+    accountId: `pts-${riderId}`,
+    type: "expire",
+    points: delta,
+    status: "approved",
+    sourceType: "expiry",
+    sourceId: decayId,
+    balanceAfter: available - delta,
+    reasonCode: "INACTIVITY_DECAY",
+    note: `Inatividade: -${perDay} pts/dia após ${graceDays} dias sem ganhar`,
+    createdBy: "System",
+    createdAt: stamp,
+  });
+  return delta;
+}
+
 export function getAvailablePoints(entries: PointsLedgerEntry[], riderId: string) {
   return entries.reduce((balance, entry) => {
     if (entry.riderId !== riderId || entry.status !== "approved") return balance;
