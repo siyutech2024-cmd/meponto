@@ -5,7 +5,7 @@ const nextConfig: NextConfig = {
   // copies it into the serverless function. The push route imports it at
   // runtime; without this the import fails on Vercel with
   // "Push indisponível: dependência web-push não instalada".
-  serverExternalPackages: ["web-push"],
+  serverExternalPackages: ["web-push", "firebase-admin"],
 };
 
 export default nextConfig;

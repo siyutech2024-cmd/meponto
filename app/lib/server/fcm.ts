@@ -73,12 +73,11 @@ async function getMessaging(): Promise<Messaging | null> {
   if (!hasInlineKey && !hasAdcPath) return null; // capability off
 
   try {
-    // Optional runtime capability. A non-literal specifier keeps TypeScript from
-    // resolving firebase-admin at type-check time (typed as any) and keeps the
-    // bundler from inlining it, so a missing dependency degrades to "no push"
-    // instead of breaking the build (mirrors web-push in notify.ts).
-    const moduleName = "firebase-admin";
-    const admin = await import(/* webpackIgnore: true */ /* turbopackIgnore: true */ moduleName);
+    // Literal specifier so Vercel's output file tracing bundles the package
+    // into the serverless function (a variable specifier made nft skip it →
+    // "Cannot find package 'firebase-admin'" in production). The package is
+    // listed in next.config serverExternalPackages, mirroring web-push.
+    const admin = await import("firebase-admin");
     const root = (admin as { default?: unknown }).default ?? admin;
     const a = root as {
       apps: unknown[];
