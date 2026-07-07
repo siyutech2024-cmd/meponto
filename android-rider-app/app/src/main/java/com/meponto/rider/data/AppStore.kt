@@ -237,10 +237,10 @@ class AppStore {
     }
 
     /** Update identity / payout details (Profile › Personal info). */
-    fun updateProfile(name: String, cpf: String, phone: String, pix: String) {
-        profile = profile.copy(name = name, cpf = cpf, phone = phone, pix = pix)
+    fun updateProfile(name: String, cpf: String, phone: String, pix: String, birthday: String = "") {
+        profile = profile.copy(name = name, cpf = cpf, phone = phone, pix = pix, birthday = birthday)
         riderName = name.split(" ").firstOrNull() ?: name
-        scope.launch { repo?.updateProfile(name, cpf, phone, pix); syncAfterWrite() }
+        scope.launch { report(repo?.updateProfile(name, cpf, phone, pix, birthday.ifBlank { null })); syncAfterWrite() }
     }
 
     /**
@@ -268,6 +268,7 @@ class AppStore {
         snapshot.cpf?.let { p = p.copy(cpf = it) }
         snapshot.phone?.let { p = p.copy(phone = it) }
         snapshot.pix?.let { p = p.copy(pix = it) }
+        snapshot.birthday?.let { p = p.copy(birthday = it) }
         // Tier metrics (drive the membership tier).
         snapshot.ar?.let { p = p.copy(ar = it) }
         snapshot.nightShiftCount?.let { p = p.copy(nightShiftCount = it) }

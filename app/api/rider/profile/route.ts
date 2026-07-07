@@ -36,6 +36,8 @@ function profileView(r: (typeof memory.riders)[number]) {
     ar: r.ar ?? 0,
     nightShiftCount: r.nightShiftCount ?? 0,
     incidentCount: r.incidentCount ?? 0,
+    // Birthday (YYYY-MM-DD) — feeds the annual birthday-points grant.
+    birthday: r.birthday ?? "",
     isComplete: !!cpf && !!pix && !!phone,
   };
 }
@@ -49,7 +51,7 @@ export async function GET(request: Request) {
   return jsonResponse({ data: profileView(rider) });
 }
 
-type Body = { name?: string; cpf?: string; phone?: string; pix?: string };
+type Body = { name?: string; cpf?: string; phone?: string; pix?: string; birthday?: string };
 
 async function handlePost(request: Request) {
   const session = await sessionFromRequest(request);
@@ -67,6 +69,13 @@ async function handlePost(request: Request) {
   if (body.phone !== undefined && body.phone !== "" && onlyDigits(body.phone).length < 8) {
     return jsonResponse({ error: "Telefone inválido.", code: "invalid_phone" }, { status: 422 });
   }
+  if (
+    body.birthday !== undefined &&
+    body.birthday !== "" &&
+    !/^\d{4}-\d{2}-\d{2}$/.test(body.birthday.trim())
+  ) {
+    return jsonResponse({ error: "Data de nascimento inválida (AAAA-MM-DD).", code: "invalid_birthday" }, { status: 400 });
+  }
   if (body.pix !== undefined && body.pix !== "" && body.pix.trim().length < 3) {
     return jsonResponse({ error: "Chave PIX inválida.", code: "invalid_pix" }, { status: 422 });
   }
@@ -78,6 +87,7 @@ async function handlePost(request: Request) {
     ...(body.cpf !== undefined ? { cpf: String(body.cpf).trim().slice(0, 20) } : {}),
     ...(body.phone !== undefined ? { phone: String(body.phone).trim().slice(0, 30) } : {}),
     ...(body.pix !== undefined ? { pix: String(body.pix).trim().slice(0, 120) } : {}),
+    ...(body.birthday !== undefined ? { birthday: String(body.birthday).trim().slice(0, 10) } : {}),
   };
   memory.riders[index] = next;
 

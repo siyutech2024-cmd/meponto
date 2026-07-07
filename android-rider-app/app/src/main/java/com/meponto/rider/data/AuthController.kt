@@ -87,10 +87,12 @@ class AuthController(
      * [signupName] to create a brand-new account (member is built on verify,
      * mirroring the web /register phone-first signup).
      */
-    suspend fun requestOtp(phone: String, cpf: String?, signupName: String? = null) {
+    suspend fun requestOtp(phone: String, cpf: String?, signupName: String? = null, signupBirthday: String? = null) {
         working = true
         errorKey = null
-        val signup = signupName?.trim()?.takeIf { it.isNotEmpty() }?.let { SignupPayload(name = it) }
+        val signup = signupName?.trim()?.takeIf { it.isNotEmpty() }?.let {
+            SignupPayload(name = it, birthday = signupBirthday?.trim()?.takeIf { b -> Regex("""\d{4}-\d{2}-\d{2}""").matches(b) })
+        }
         val r = repo.requestOtp(phone, cpf?.ifBlank { null }, signup)
         when {
             // Google guest entering a NEW phone: backend activates the member

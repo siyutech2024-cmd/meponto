@@ -183,6 +183,7 @@ data class RiderProfileDto(
     val ar: Int? = null,
     val nightShiftCount: Int? = null,
     val incidentCount: Int? = null,
+    val birthday: String? = null,
 )
 
 // GET /rider/home — dashboard aggregate (real collections; empty when no data)
@@ -360,7 +361,7 @@ data class PushTokenRequest(
 )
 
 // ----- Write request bodies (all writes carry an Idempotency-Key header) -----
-data class ProfileUpdateRequest(val name: String, val cpf: String, val phone: String, val pix: String)
+data class ProfileUpdateRequest(val name: String, val cpf: String, val phone: String, val pix: String, val birthday: String? = null)
 
 // POST /api/mall { action: "redeem", productId, riderId?, pickupStoreId? }
 // Identity is session-derived on the backend; riderId is a demo-mode fallback.

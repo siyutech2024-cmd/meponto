@@ -85,6 +85,7 @@ data class MembershipProfile(
     val cpf: String = "",
     val phone: String = "",
     val pix: String = "",
+    val birthday: String = "",
 ) {
     val tierScore: Int get() = RiderTier.score(ar, nightShiftCount, incidentCount)
     val tier: RiderTierInfo get() = RiderTier.byScore(tierScore)

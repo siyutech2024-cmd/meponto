@@ -126,6 +126,7 @@ fun AuthSheet(onDismiss: () -> Unit) {
     var cpf by remember { mutableStateOf("") }
     var code by remember { mutableStateOf("") }
     var signupName by remember { mutableStateOf("") }
+    var signupBirthday by remember { mutableStateOf("") }
 
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState, containerColor = me.background) {
         Column(
@@ -178,6 +179,7 @@ fun AuthSheet(onDismiss: () -> Unit) {
                     AuthField(cpf, { cpf = it.filter { c -> c.isDigit() }.take(11) }, loc.t("auth.cpf"), KeyboardType.Number)
                     Text(loc.t("auth.signupPrompt"), color = me.muted, fontSize = 12.sp, modifier = Modifier.fillMaxWidth())
                     AuthField(signupName, { signupName = it.take(60) }, loc.t("auth.name"))
+                    AuthField(signupBirthday, { signupBirthday = it.filter { c -> c.isDigit() || c == '-' }.take(10) }, loc.t("auth.birthday"), KeyboardType.Number)
                 }
                 // ---- Step: enter the phone ----
                 else -> {
@@ -211,7 +213,7 @@ fun AuthSheet(onDismiss: () -> Unit) {
                     PrimaryButton(title = loc.t("auth.sendCode"), enabled = cpf.length == 11 || signupName.isNotBlank()) {
                         scope.launch {
                             if (cpf.length == 11) auth.requestOtp(phone, cpf)
-                            else auth.requestOtp(phone, null, signupName)
+                            else auth.requestOtp(phone, null, signupName, signupBirthday)
                         }
                     }
                 }

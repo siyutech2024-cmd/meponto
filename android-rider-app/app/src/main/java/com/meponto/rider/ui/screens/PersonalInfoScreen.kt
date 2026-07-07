@@ -55,6 +55,7 @@ fun PersonalInfoScreen(onClose: () -> Unit) {
     var cpf by remember { mutableStateOf(store.profile.cpf) }
     var phone by remember { mutableStateOf(store.profile.phone) }
     var pix by remember { mutableStateOf(store.profile.pix) }
+    var birthday by remember { mutableStateOf(store.profile.birthday) }
 
     val canSave = name.isNotBlank() && cpf.isNotBlank() && phone.isNotBlank() && pix.isNotBlank()
 
@@ -98,11 +99,20 @@ fun PersonalInfoScreen(onClose: () -> Unit) {
                     OutlinedTextField(value = cpf, onValueChange = { cpf = it }, label = { Text(loc.t("profile.cpf")) }, singleLine = true, modifier = Modifier.fillMaxWidth())
                     OutlinedTextField(value = phone, onValueChange = { phone = it }, label = { Text(loc.t("auth.phone")) }, singleLine = true, modifier = Modifier.fillMaxWidth())
                     OutlinedTextField(value = pix, onValueChange = { pix = it }, label = { Text(loc.t("profile.pix")) }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                    OutlinedTextField(
+                        value = birthday,
+                        onValueChange = { birthday = it.filter { c -> c.isDigit() || c == '-' }.take(10) },
+                        label = { Text(loc.t("profile.birthday")) },
+                        placeholder = { Text("1995-07-20") },
+                        supportingText = { Text(loc.t("profile.birthdayHint")) },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
                 }
             }
 
             PrimaryButton(title = loc.t("profile.save"), icon = Icons.Filled.Check, enabled = canSave) {
-                store.updateProfile(name, cpf, phone, pix)
+                store.updateProfile(name, cpf, phone, pix, birthday)
                 onClose()
             }
         }

@@ -3,7 +3,7 @@ import { appendEvent, MARKETPLACE_EVENTS, recentEvents } from "../../lib/server/
 import { flushPendingToDatabase, persistDeleteRecord, refreshCollectionsFromDatabase } from "../../lib/server/persistence";
 import { requirePermission, roleFromRequest } from "../../lib/server/authz";
 import { sendPushToRider } from "../../lib/server/notify";
-import { getAvailablePoints, getAvailablePartnerPoints, pointsRules, type MarketplaceOrder, type MarketplaceProduct, type PartnerPointsLedgerEntry, type PointsLedgerEntry } from "../../lib/points";
+import { applyInactivityDecay, getAvailablePoints, getAvailablePartnerPoints, pointsRules, type MarketplaceOrder, type MarketplaceProduct, type PartnerPointsLedgerEntry, type PointsLedgerEntry } from "../../lib/points";
 import { badgeMilestones, defaultMallConfig, eligibleCoupons, resolveRiderTierStatus, resolveTier, tierDefinitions, type MallConfig } from "../../lib/mall";
 import type { CashLedgerEntry, MallCoupon } from "../../lib/mall-ops";
 

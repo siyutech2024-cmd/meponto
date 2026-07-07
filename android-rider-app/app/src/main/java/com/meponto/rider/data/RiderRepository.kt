@@ -49,6 +49,7 @@ data class RiderSnapshot(
     val cpf: String? = null,
     val phone: String? = null,
     val pix: String? = null,
+    val birthday: String? = null,
     val walletAvailable: Double? = null,
     val walletPending: Double? = null,
     val weeklyGoalProgress: Int? = null,
@@ -210,6 +211,7 @@ class RiderRepository(context: Context) {
             cpf = profile?.cpf ?: me?.cpf,
             phone = profile?.phone ?: me?.phone,
             pix = profile?.pix ?: me?.pix,
+            birthday = profile?.birthday,
             walletAvailable = me?.available,
             walletPending = me?.held,
             weeklyGoalProgress = home?.weeklyGoalProgress,
@@ -312,9 +314,12 @@ class RiderRepository(context: Context) {
     suspend fun checkin(pontoCode: String): Int? =
         runCatching { service.checkin(CheckinRequest(pontoCode)) }.getOrNull()?.data?.awarded
 
-    /** POST /rider/profile. */
-    suspend fun updateProfile(name: String, cpf: String, phone: String, pix: String) {
-        runCatching { service.updateProfile(ProfileUpdateRequest(name, cpf, phone, pix)) }
+    /** POST /rider/profile → null on success, failure reason otherwise. */
+    suspend fun updateProfile(name: String, cpf: String, phone: String, pix: String, birthday: String? = null): String? = try {
+        service.updateProfile(ProfileUpdateRequest(name, cpf, phone, pix, birthday))
+        null
+    } catch (e: Exception) {
+        errorOf(e)
     }
 
     /** Register this device's FCM token with the backend (best-effort). */
