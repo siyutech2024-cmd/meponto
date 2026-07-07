@@ -27,8 +27,10 @@ export const defaultSplashConfig: AppSplashConfig = {
   headline: "MePonto",
   tagline: "",
   durationMs: 2200,
-  backgroundHex: "#07090d",
-  accentHex: "#ffd100",
+  // Brand-yellow launch (the logo's exact background) + navy ink text — keep
+  // in sync with the app-side default (android-rider-app SplashConfig.DEFAULT).
+  backgroundHex: "#ffd400",
+  accentHex: "#171b33",
   imageURL: "",
   linkURL: "",
   version: 1,
