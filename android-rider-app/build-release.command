@@ -7,8 +7,8 @@ STATUS=$?
 if [ $STATUS -eq 0 ]; then
   echo "== BUILD OK $(date) ==" >> build-release.log
   ls -la app/build/outputs/bundle/release/ >> build-release.log 2>&1
-  cp app/build/outputs/bundle/release/app-release.aab ../MePonto-v1.2.aab 2>>build-release.log \
-    && echo "AAB copied to repo root: MePonto-v1.2.aab" >> build-release.log
+  cp app/build/outputs/bundle/release/app-release.aab ../MePonto-v1.3.aab 2>>build-release.log \
+    && echo "AAB copied to repo root: MePonto-v1.3.aab" >> build-release.log
 else
   echo "== BUILD FAILED exit=$STATUS $(date) ==" >> build-release.log
 fi
