@@ -127,6 +127,19 @@ export type MarketplaceProduct = {
   minOrderQty?: number;
   /** Maximum order quantity per FPO line (0/undefined = unlimited). */
   maxOrderQty?: number;
+  /**
+   * Supplier distribution opt-in (direct procurement consent flow):
+   * "none" = supplier has not opened the product for franchise procurement,
+   * "pending" = supplier opted in / changed terms, awaiting HQ review,
+   * "approved" = HQ approved — the product may enter the procurement catalog.
+   * MIGRATION SEMANTICS: `undefined` on a product that is ALREADY
+   * procurement-enabled (procurementMode !== "off") is treated as "approved"
+   * (grandfathered) so enabling this flow does not break live catalogs.
+   */
+  procurementConsent?: "none" | "pending" | "approved";
+  /** Supplier-suggested distribution price (R$/unit). Advisory only — the
+   *  HQ-set `franchiseBuyoutPrice` remains the charged price. */
+  suggestedBuyoutPrice?: number;
 };
 
 export type MarketplaceOrderStatus = "created" | "arrived" | "fulfilled" | "cancelled";

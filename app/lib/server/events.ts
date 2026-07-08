@@ -51,6 +51,17 @@ export const PROCUREMENT_EVENTS = {
   depositDebited: "franchise.deposit.debited.v1",
   depositRefunded: "franchise.deposit.refunded.v1",
   depositToppedUp: "franchise.deposit.topped_up.v1",
+  /** Explicit procurement margin ledger accrual (buyout/consignment spread;
+   *  compensating reversals emit the same event with negative amounts). */
+  marginAccrued: "procurement.margin.accrued.v1",
+} as const;
+
+/** Versioned supplier-side event names (distribution consent flow). */
+export const SUPPLIER_EVENTS = {
+  /** Supplier opted in / withdrew / changed terms — resets HQ review to pending. */
+  procurementConsent: "supplier.procurement.consent.v1",
+  /** HQ decided a pending consent (payload.approve = true/false). */
+  procurementConsentApproved: "supplier.procurement.consent.approved.v1",
 } as const;
 
 /** Append a versioned domain event to the outbox (append-only, newest first). */

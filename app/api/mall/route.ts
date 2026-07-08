@@ -7,6 +7,7 @@ import { applyInactivityDecay, getAvailablePoints, getAvailablePartnerPoints, po
 import { badgeMilestones, defaultMallConfig, eligibleCoupons, resolveRiderTierStatus, resolveTier, tierDefinitions, type MallConfig } from "../../lib/mall";
 import type { CashLedgerEntry, MallCoupon } from "../../lib/mall-ops";
 import { consumeStationStockForOrder, postStationStock } from "../../lib/server/station-stock";
+import { accrueConsignmentMargin } from "../../lib/server/procurement-margin";
 import { stationAvailable, type FpoMode } from "../../lib/procurement";
 
 /** Coupons a rider is eligible for (tier + validity + per-rider limit), ignoring
@@ -36,7 +37,7 @@ function cashBalanceOf(riderId: string): number {
   return Math.round(balance * 100) / 100;
 }
 
-const COLLECTIONS = ["mallConfigs", "marketplaceProducts", "marketplaceOrders", "pointsLedgerEntries", "partnerPointsLedgerEntries", "riders", "riderDailyKpis", "mallCategories", "mallBanners", "mallCoupons", "mallPayments", "cashTopUps", "cashLedgerEntries", "inventoryLedgerEntries", "memberMessages", "franchises", "pontos", "mallRevenueShareEntries", "stationStockLedgerEntries", "purchaseOrders"];
+const COLLECTIONS = ["mallConfigs", "marketplaceProducts", "marketplaceOrders", "pointsLedgerEntries", "partnerPointsLedgerEntries", "riders", "riderDailyKpis", "mallCategories", "mallBanners", "mallCoupons", "mallPayments", "cashTopUps", "cashLedgerEntries", "inventoryLedgerEntries", "memberMessages", "franchises", "pontos", "mallRevenueShareEntries", "stationStockLedgerEntries", "purchaseOrders", "procurementMarginEntries"];
 
 /** M3 flag (docs/franchise-procurement-full-chain-plan.md): redemptions of
  *  physical rider goods reserve/consume STATION stock pools instead of the
@@ -1188,10 +1189,11 @@ async function handlePost(request: Request) {
           sourceId: order.id,
           createdBy: actor,
         });
+        let consignmentQty = consumed.ok && reservedPool === "consignment" ? 1 : 0;
         if (!consumed.ok) {
           // Reservation exists but the pool was drained by an adjustment —
           // fall back to whichever pool still has units.
-          consumeStationStockForOrder({
+          const fallback = consumeStationStockForOrder({
             stationId: order.pickupStoreId,
             stationName: order.pickupStoreName ?? order.station ?? "",
             productId: order.productId,
@@ -1200,6 +1202,14 @@ async function handlePost(request: Request) {
             orderId: order.id,
             createdBy: actor,
           });
+          consignmentQty = fallback.consumed.filter((c) => c.mode === "consignment").reduce((sum, c) => sum + c.qty, 0);
+        }
+        // Explicit margin ledger: consuming the CONSIGNMENT pool is the moment
+        // the supplier becomes payable → accrue the consignment spread now
+        // (buyout units were already margined at FPO debit — skip them here).
+        if (consignmentQty > 0) {
+          const stationFranchise = memory.pontos.find((p) => p.id === order.pickupStoreId)?.franchise ?? order.franchise ?? "";
+          accrueConsignmentMargin({ orderId: order.id, productId: order.productId, franchise: stationFranchise, qty: consignmentQty, actor });
         }
       }
       memory.marketplaceOrders[index] = { ...order, status: "fulfilled", pickedUpAt: stamp };

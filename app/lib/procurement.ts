@@ -158,6 +158,45 @@ export type FranchiseDepositLedgerEntry = {
   createdAt: string;
 };
 
+export type ProcurementMarginKind = "buyout_spread" | "consignment_spread";
+export type ProcurementMarginStatus = "accrued" | "settled";
+
+/**
+ * Explicit direct-procurement margin ledger (append-only, Hard Rule #4).
+ *
+ * Makes the platform's procurement profit VISIBLE to finance instead of an
+ * implicit price spread:
+ * - buyout_spread:      franchiseBuyoutPrice − supplyPrice (snapshots) at the
+ *   moment the franchise deposit is actually debited (FPO creation).
+ * - consignment_spread: redemption economic value − supplyPrice when a mall
+ *   redemption consumes the CONSIGNMENT station pool at pickup.
+ * Corrections (cancel/reject/short/exception) are compensating negative
+ * entries — records are never mutated (only `status` flips accrued→settled
+ * when the monthly supplier statement is paid).
+ */
+export type ProcurementMarginEntry = {
+  id: string;
+  /** Source document: FPO id for buyout_spread; mall order id for consignment_spread. */
+  fpoId: string;
+  franchise: string;
+  supplierName: string;
+  kind: ProcurementMarginKind;
+  /** Supplier goods cost (supplyPrice snapshot × qty). Negative on compensating reversals. */
+  goodsCostTotal: number;
+  /** Amount the platform actually charged (buyout price / redemption value). Negative on reversals. */
+  chargedTotal: number;
+  /** chargedTotal − goodsCostTotal. */
+  marginTotal: number;
+  /** Natural month "YYYY-MM" the margin belongs to. */
+  month: string;
+  /** accrued → settled when the month's supplier statement is paid (payStatement). */
+  status: ProcurementMarginStatus;
+  /** Idempotency key — one entry per business occurrence (accrual/reversal). */
+  sourceId: string;
+  note?: string;
+  createdAt: string;
+};
+
 export type DepositTopUpStatus = "submitted" | "confirmed" | "rejected";
 
 export type FranchiseDepositTopUp = {

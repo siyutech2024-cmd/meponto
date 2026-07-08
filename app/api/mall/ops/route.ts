@@ -33,6 +33,7 @@ const COLLECTIONS = [
   "pontos",
   "franchisePurchaseOrders",
   "stationStockLedgerEntries",
+  "procurementMarginEntries",
 ];
 
 export function cashBalanceOf(riderId: string): number {
@@ -608,6 +609,19 @@ async function handlePost(request: Request) {
       const statement = memory.supplierStatements[index];
       if (statement.status !== "confirmed") return jsonResponse({ error: "供应商确认后才能付款" }, { status: 409 });
       memory.supplierStatements[index] = { ...statement, status: "paid", paidAt: nowStamp(), paidBy: actor, receiptNote: String(body.receiptNote ?? "").slice(0, 200) || undefined };
+      // Settle the procurement margin ledger entries covered by this statement
+      // (same accrued→settled linkage as the batch3 ProcurementFeeEntry model).
+      // Statement line orderIds carry both buyout FPO ids and consignment mall
+      // order ids — margin entries store the same id in `fpoId`.
+      {
+        const lineIds = new Set(statement.lines.map((line) => line.orderId));
+        for (let i = 0; i < memory.procurementMarginEntries.length; i += 1) {
+          const entry = memory.procurementMarginEntries[i];
+          if (entry.status === "accrued" && entry.supplierName === statement.supplierName && lineIds.has(entry.fpoId)) {
+            memory.procurementMarginEntries[i] = { ...entry, status: "settled" };
+          }
+        }
+      }
       appendServerAudit({ actor, action: "MALL_STATEMENT_PAID", entity: "SupplierStatement", entityId: statement.id, detail: `${statement.supplierName} ${statement.month}: R$${statement.total}`, risk: "Medium" });
       return jsonResponse({ data: memory.supplierStatements[index] });
     }

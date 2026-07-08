@@ -288,4 +288,35 @@ UI 全量走 `t()` 三语 key;空态/加载/错误态齐全;遵循 `docs/design-
 
 **发布前待办（需在开发机执行,沙箱缺 linux/arm64 SWC 二进制无法跑 next build）**：`npm run codex:preflight:full`（build + lint + check,check 已含 procurement:smoke）→ 全绿后按 §8 分期开 flag。
 
+---
+
+## 11. 直采毛利显式账本（ProcurementMarginEntry,2026-07-08 自 batch3 模型移植）
+
+**问题**：直采利润原为隐式差价（买断 = `franchiseBuyoutPrice − supplyPrice`;代销 = 兑换定价差),财务不可见、不可对账。
+
+**方案**：新增 append-only 集合 `procurementMarginEntries`（`app/lib/procurement.ts` `ProcurementMarginEntry`,记账入口 `app/lib/server/procurement-margin.ts`,Hard Rule #4）。字段：`fpoId / franchise / supplierName / kind / goodsCostTotal / chargedTotal / marginTotal / month / status(accrued|settled) / sourceId(幂等键)`。
+
+| 类型 | 计提时点（以资金实际发生为准） | 口径 |
+| --- | --- | --- |
+| `buyout_spread` | `createFPO` 全部拆单腿扣款成功之后（预存扣款即资金发生;放在循环后使 split-rollback 永不需冲销） | 快照价:`totalBRL − Σ qty×supplyPrice`,不回读现价 |
+| `consignment_spread` | 兑换出库消耗**代销池**时（`markPickedUp` M3 outbound,即供应商应付发生时点） | **V1 简化口径**:兑换经济价值 = `pointsPrice / pointsPerBrlReference + cashPriceBRL`,毛利 = 价值 − 当前 `supplyPrice`（池无逐件价格快照,注释已写明） |
+
+**冲销（append-only,负分录,镜像押金账本补偿模式）**：cancel / reject / exception 全额冲销;`receiveFPO` 短装按 `shortQty×(unitPrice−supplyPrice)` 部分冲销。幂等键 `fpo:{id}:accrue` / `fpo:{id}:reverse:{reason}` / `order:{id}:consign`。
+
+**settled 联动**：`/api/mall/ops` `payStatement` 付款时,把该对账单行 `orderId`（买断 FPO id / 代销兑换单 id）命中且同供应商的 accrued 分录翻 `settled`（同 batch3 `ProcurementFeeEntry` 联动写法）。HQ 总仓腿无供应商应付,计提即 `settled`。
+
+**事件**：`procurement.margin.accrued.v1`（冲销复用同事件,金额为负）。**UI**：`/mall` 加盟商订货 Tab「直采毛利账本」表（月份/加盟商/供应商/类型/成本/实收/毛利/状态,按月小计）。
+
+## 12. 供应商分销 opt-in 审批流（procurementConsent,2026-07-08 自 batch3 模型移植）
+
+**问题**：`setProductProcurement` 为办公室单方配置,供应商对自己的货被买断/代销无同意权。
+
+**方案**：`MarketplaceProduct` 增 `procurementConsent?: "none"|"pending"|"approved"` 与 `suggestedBuyoutPrice?`（供应商建议价,仅参考;**买断价仍以总部 `franchiseBuyoutPrice` 为准**）。
+
+- 供应商门户（`/mall/supplier` 商品卡）：「开放直采」+ 可选建议分销价 → `setProcurementConsent { productId, consent, suggestedPrice? }`（supplier 会话,仅自己的商品);**任何修改重置 pending**,关闭 → `none` 立即阻断新单。
+- 总部审批：`reviewProcurementConsent { productId, approve }`（pontomall 会话,`/mall` Tab「直采开放审批」队列）。
+- **强制点清单**：① `createFPO` 每行商品 `consent==="approved"` 否则 409 `fpErrConsentRequired`（三语）;② `setProductProcurement` 开启非 off 模式前同校验（把商品加入可采目录的路径);③ `catalogProducts()` 加盟商可选目录只列 approved。
+- **存量兼容（迁移语义）**：consent 字段缺省且 `procurementMode !== "off"` 的存量商品按 **approved** 处理（grandfathered,上线不断流);HQ 自有商品（无 supplierName)无需同意。
+- **事件**：`supplier.procurement.consent.v1` / `supplier.procurement.consent.approved.v1`;审计 `SUPPLIER_PROCUREMENT_CONSENT` / `PROCUREMENT_CONSENT_APPROVED|REJECTED`。
+
 *Ledger first · Flag 默认关 · 三语齐全 · 事件 .v1 · 小步可回滚。*

@@ -66,6 +66,7 @@ import type {
   FranchiseDepositTopUp,
   FranchisePurchaseOrder,
   ProcurementDiscrepancy,
+  ProcurementMarginEntry,
   StationStockLedgerEntry,
 } from "../procurement";
 
@@ -146,6 +147,7 @@ const globalState = globalThis as typeof globalThis & {
     franchiseDepositLedgerEntries: FranchiseDepositLedgerEntry[];
     franchiseDepositTopUps: FranchiseDepositTopUp[];
     procurementDiscrepancies: ProcurementDiscrepancy[];
+    procurementMarginEntries: ProcurementMarginEntry[];
   };
 };
 
@@ -210,6 +212,7 @@ export const memory =
     franchiseDepositLedgerEntries: trackCollection<FranchiseDepositLedgerEntry>("franchiseDepositLedgerEntries", []),
     franchiseDepositTopUps: trackCollection<FranchiseDepositTopUp>("franchiseDepositTopUps", []),
     procurementDiscrepancies: trackCollection<ProcurementDiscrepancy>("procurementDiscrepancies", []),
+    procurementMarginEntries: trackCollection<ProcurementMarginEntry>("procurementMarginEntries", []),
   });
 
 // Restore persisted data from the database (no-op when USE_SUPABASE is off).
@@ -330,6 +333,8 @@ memory.franchiseDepositTopUps ??= [];
 memory.franchiseDepositTopUps = trackCollection("franchiseDepositTopUps", memory.franchiseDepositTopUps);
 memory.procurementDiscrepancies ??= [];
 memory.procurementDiscrepancies = trackCollection("procurementDiscrepancies", memory.procurementDiscrepancies);
+memory.procurementMarginEntries ??= [];
+memory.procurementMarginEntries = trackCollection("procurementMarginEntries", memory.procurementMarginEntries);
 
 export function jsonResponse<T>(data: T, init?: ResponseInit) {
   // Make sure pending mutations reach the database even on serverless,

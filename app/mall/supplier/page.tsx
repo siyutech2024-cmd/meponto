@@ -85,6 +85,8 @@ export default function SupplierWorkspacePage() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
   const [priceDraft, setPriceDraft] = useState<Record<string, string>>({});
+  /** Draft suggested distribution price per product (direct-procurement consent). */
+  const [suggestDraft, setSuggestDraft] = useState<Record<string, string>>({});
   const [pixDraft, setPixDraft] = useState("");
   const [orderFilter, setOrderFilter] = useState("");
   /** PO currently being shipped via the structured ship dialog (tracking no + note). */
@@ -225,11 +227,27 @@ export default function SupplierWorkspacePage() {
   async function fpoPost(body: Record<string, unknown>, okText?: string) {
     const response = await fetch("/api/mall/procurement", { method: "POST", headers, body: JSON.stringify(body) });
     const payload = await response.json().catch(() => ({}));
-    if (!response.ok) { setMessage({ tone: "err", text: payload.error ?? t("dynReqFail", { s: response.status }) }); return null; }
+    if (!response.ok) {
+      // Procurement API errors carry a tri-lingual errorKey — prefer it.
+      const key = payload.errorKey as TranslationKey | undefined;
+      setMessage({ tone: "err", text: key ? t(key) : payload.error ?? t("dynReqFail", { s: response.status }) });
+      return null;
+    }
     if (okText) setMessage({ tone: "ok", text: okText });
     void load();
     return payload.data;
   }
+
+  /** Distribution consent as the SERVER resolves it (grandfather rule: a
+   *  product already procurement-enabled without the field counts approved). */
+  function consentOf(product: MarketplaceProduct): "none" | "pending" | "approved" {
+    return product.procurementConsent ?? ((product.procurementMode ?? "off") !== "off" ? "approved" : "none");
+  }
+  const consentLabelKey: Record<"none" | "pending" | "approved", TranslationKey> = {
+    none: "fpoConsentNone",
+    pending: "fpoConsentPending",
+    approved: "fpoConsentApproved",
+  };
 
   async function supplierPost(body: Record<string, unknown>, okText?: string) {
     const response = await fetch("/api/supplier", { method: "POST", headers, body: JSON.stringify(body) });
@@ -414,6 +432,33 @@ export default function SupplierWorkspacePage() {
                     </>
                   )}
                 </div>
+                {/* 开放直采（供应商 opt-in;总部审批后加盟商方可买断/代销） */}
+                {product.isVirtual !== true && (
+                  <div className="mt-1 flex w-full flex-wrap items-center gap-2 border-t border-[var(--line)] pt-2 text-xs font-bold">
+                    <span className="font-black">{t("spConsentTitle")}</span>
+                    <Badge value={t(consentLabelKey[consentOf(product)])} />
+                    <input
+                      value={suggestDraft[product.id] ?? (product.suggestedBuyoutPrice ? String(product.suggestedBuyoutPrice) : "")}
+                      onChange={(e) => setSuggestDraft((prev) => ({ ...prev, [product.id]: e.target.value }))}
+                      placeholder={t("spConsentSuggestedPrice")}
+                      className="h-8 w-48 rounded-[8px] border border-[var(--line)] bg-[var(--surface-raised)] px-2 text-xs font-bold outline-none focus:border-[var(--accent)]"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const raw = (suggestDraft[product.id] ?? "").trim();
+                        const body: Record<string, unknown> = { action: "setProcurementConsent", productId: product.id, consent: true };
+                        if (raw !== "" && Number(raw) >= 0) body.suggestedPrice = Number(raw);
+                        void fpoPost(body, t("spConsentPendingHint"));
+                      }}
+                      className="h-8 rounded-[8px] bg-[var(--accent)] px-3 text-xs font-black text-[var(--accent-ink)]"
+                    >{t("spConsentOn")}</button>
+                    {consentOf(product) !== "none" && (
+                      <button type="button" onClick={() => void fpoPost({ action: "setProcurementConsent", productId: product.id, consent: false }, t("fpoDecideOk"))} className="h-8 rounded-[8px] border border-[var(--danger)]/40 px-3 text-xs font-black text-[var(--danger)]">{t("spConsentOff")}</button>
+                    )}
+                    <span className="basis-full text-[11px] font-bold text-[var(--muted)]">{consentOf(product) === "pending" ? t("spConsentPendingHint") : t("spConsentHint")}</span>
+                  </div>
+                )}
               </div>
             ))}
             {products.filter((product) => product.supplierName === supplierName).length === 0 && <div className="panel p-10 text-center text-sm font-bold text-[var(--muted)]">还没有你的商品，先在上方提报。</div>}

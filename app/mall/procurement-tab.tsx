@@ -6,7 +6,7 @@ import { Badge } from "../components/ui";
 import { readSession } from "../lib/session";
 import { useVentoStore } from "../lib/store";
 import { translate, type TranslationKey } from "../lib/i18n";
-import type { FranchisePurchaseOrder, ProcurementDiscrepancy, StationStockBucket } from "../lib/procurement";
+import type { FranchisePurchaseOrder, ProcurementDiscrepancy, ProcurementMarginEntry, StationStockBucket } from "../lib/procurement";
 
 /** PontoMall back office — 加盟商订货 tab (the ONLY write surface for
  *  procurement office actions, per plan §2). */
@@ -15,10 +15,12 @@ type ProductRow = {
   id: string; name: string; status: string; supplierName: string; supplyPrice: number;
   procurementMode: "off" | "consignment" | "buyout" | "both";
   franchiseBuyoutPrice: number; minOrderQty: number; maxOrderQty: number;
+  procurementConsent: "none" | "pending" | "approved"; suggestedBuyoutPrice: number;
 };
 type OfficeSnapshot = {
   config: { procurementEnabled: boolean; procurementFrozen: boolean; procurementAutoApproveBRL: number; procurementMaxOrderBRL: number; procurementShipTimeoutDays: number; stationStockEnforcement: boolean };
   products: ProductRow[];
+  marginEntries: ProcurementMarginEntry[];
   fpos: FranchisePurchaseOrder[];
   stock: StationStockBucket[];
   topUps: Array<{ id: string; franchise: string; amountBRL: number; pixRef: string; status: string; createdAt: string }>;
@@ -78,6 +80,11 @@ export default function ProcurementTab() {
   const isStalled = (fpo: FranchisePurchaseOrder) => fpo.status === "shipped" && fpo.shippedAt !== undefined && Date.now() - new Date(fpo.shippedAt.replace(" ", "T")).getTime() > timeoutMs;
   const pendingTopUps = data.topUps.filter((topUp) => topUp.status === "submitted");
   const pendingDiscrepancies = data.discrepancies.filter((d) => d.resolution === "pending");
+  const pendingConsents = data.products.filter((product) => product.procurementConsent === "pending");
+  const marginEntries = data.marginEntries ?? [];
+  const marginMonths = [...new Set(marginEntries.map((entry) => entry.month))].sort().reverse();
+  const consentKey = (consent: ProductRow["procurementConsent"]): TranslationKey =>
+    consent === "approved" ? "fpoConsentApproved" : consent === "pending" ? "fpoConsentPending" : "fpoConsentNone";
 
   const cfgValue = (key: keyof OfficeSnapshot["config"]) => (cfgDraft[key] !== undefined ? cfgDraft[key] : config[key]);
 
@@ -233,6 +240,30 @@ export default function ProcurementTab() {
         </div>
       </div>
 
+      {/* 供应商直采开放审批（opt-in consent 队列） */}
+      <div className="panel p-4">
+        <div className="mb-3 text-xs font-black uppercase text-[var(--accent)]">{t("fpoConsentQueue")}（{pendingConsents.length}）</div>
+        {pendingConsents.length === 0 ? (
+          <div className="py-4 text-center text-xs font-bold text-[var(--muted)]">{t("fpNoData")}</div>
+        ) : (
+          <div className="max-h-[240px] space-y-2 overflow-auto pr-1">
+            {pendingConsents.map((product) => (
+              <div key={product.id} className="flex flex-wrap items-center justify-between gap-2 rounded-[8px] border border-[var(--line)] bg-[var(--surface-raised)] p-2 text-xs font-bold">
+                <span className="min-w-40 font-black">
+                  {product.name}
+                  <span className="ml-1 text-[var(--muted)]">({product.supplierName || "HQ"})</span>
+                  <span className="ml-2 text-[var(--muted)]">{t("fpoConsentSuggested")} {product.suggestedBuyoutPrice > 0 ? product.suggestedBuyoutPrice.toFixed(2) : "—"} ｜ {t("fpSupplier")}价 R$ {product.supplyPrice.toFixed(2)}</span>
+                </span>
+                <span className="flex gap-2">
+                  <button type="button" onClick={() => void post({ action: "reviewProcurementConsent", productId: product.id, approve: true }, t("fpoDecideOk"))} className="inline-flex h-7 items-center gap-1 rounded-[6px] bg-[var(--accent)] px-2 text-[11px] font-black uppercase text-[var(--accent-ink)]"><CheckCircle2 size={11} /> {t("fpoConsentApprove")}</button>
+                  <button type="button" onClick={() => void post({ action: "reviewProcurementConsent", productId: product.id, approve: false }, t("fpoDecideOk"))} className="inline-flex h-7 items-center gap-1 rounded-[6px] border border-[var(--danger)] px-2 text-[11px] font-black uppercase text-[var(--danger-ink)]"><XCircle size={11} /> {t("fpoConsentReject")}</button>
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
       {/* 商品采购设置 */}
       <div className="panel p-4">
         <div className="mb-3 text-xs font-black uppercase text-[var(--accent)]">{t("fpoProductCfg")}</div>
@@ -241,7 +272,10 @@ export default function ProcurementTab() {
             const draft = productDrafts[product.id] ?? { mode: product.procurementMode, price: String(product.franchiseBuyoutPrice || ""), minQ: String(product.minOrderQty), maxQ: String(product.maxOrderQty) };
             return (
               <div key={product.id} className="flex flex-wrap items-center justify-between gap-2 rounded-[8px] border border-[var(--line)] bg-[var(--surface-raised)] p-2 text-xs font-bold">
-                <span className="min-w-40 font-black">{product.name}<span className="ml-1 text-[var(--muted)]">({product.supplierName || "HQ"})</span></span>
+                <span className="min-w-40 font-black">
+                  {product.name}<span className="ml-1 text-[var(--muted)]">({product.supplierName || "HQ"})</span>
+                  {product.supplierName ? <span className="ml-2 inline-block"><Badge value={t(consentKey(product.procurementConsent))} /></span> : null}
+                </span>
                 <span className="flex flex-wrap items-center gap-2">
                   {t("fpoModeCol")}
                   <select value={draft.mode} onChange={(e) => setProductDrafts((prev) => ({ ...prev, [product.id]: { ...draft, mode: e.target.value } }))} className={`h-8 ${inputCls}`}>
@@ -268,6 +302,59 @@ export default function ProcurementTab() {
             );
           })}
         </div>
+      </div>
+
+      {/* 直采毛利账本（append-only；负行为补偿冲销） */}
+      <div className="panel p-4">
+        <div className="mb-3 text-xs font-black uppercase text-[var(--accent)]">{t("fpoMarginLedger")}（{marginEntries.length}）</div>
+        {marginEntries.length === 0 ? (
+          <div className="py-4 text-center text-sm font-bold text-[var(--muted)]">{t("fpNoData")}</div>
+        ) : (
+          <div className="max-h-[380px] overflow-auto rounded-[8px] border border-[var(--line)]">
+            <table className="w-full text-xs">
+              <thead>
+                <tr className="bg-[var(--surface-raised)] text-left font-black uppercase text-[var(--muted)]">
+                  <th className="px-2 py-1.5">{t("fpoMarginMonth")}</th>
+                  <th className="px-2 py-1.5">{t("fpoMarginFranchise")}</th>
+                  <th className="px-2 py-1.5">{t("fpSupplier")}</th>
+                  <th className="px-2 py-1.5">{t("fpoModeCol")}</th>
+                  <th className="px-2 py-1.5 text-right">{t("fpoMarginCost")}</th>
+                  <th className="px-2 py-1.5 text-right">{t("fpoMarginCharged")}</th>
+                  <th className="px-2 py-1.5 text-right">{t("fpoMarginTotal")}</th>
+                  <th className="px-2 py-1.5">{t("fpoMarginState")}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {marginMonths.map((month) => {
+                  const rows = marginEntries.filter((entry) => entry.month === month);
+                  const sum = (pick: (entry: ProcurementMarginEntry) => number) =>
+                    Math.round(rows.reduce((acc, entry) => acc + pick(entry), 0) * 100) / 100;
+                  return [
+                    ...rows.map((entry) => (
+                      <tr key={entry.id} className="border-t border-[var(--line)] font-bold">
+                        <td className="px-2 py-1.5 text-[var(--muted)]">{entry.month}</td>
+                        <td className="px-2 py-1.5">{entry.franchise}</td>
+                        <td className="px-2 py-1.5">{entry.supplierName}</td>
+                        <td className="px-2 py-1.5">{t(entry.kind === "buyout_spread" ? "fpoMarginKindBuyout" : "fpoMarginKindConsign")}</td>
+                        <td className="px-2 py-1.5 text-right">R$ {entry.goodsCostTotal.toFixed(2)}</td>
+                        <td className="px-2 py-1.5 text-right">R$ {entry.chargedTotal.toFixed(2)}</td>
+                        <td className={`px-2 py-1.5 text-right ${entry.marginTotal < 0 ? "text-[var(--danger-ink)]" : ""}`}>R$ {entry.marginTotal.toFixed(2)}</td>
+                        <td className="px-2 py-1.5"><Badge value={t(entry.status === "settled" ? "fpoMarginSettled" : "fpoMarginAccrued")} /></td>
+                      </tr>
+                    )),
+                    <tr key={`${month}-total`} className="border-t border-[var(--line)] bg-[var(--surface-raised)] font-black">
+                      <td className="px-2 py-1.5" colSpan={4}>{month} · {t("fpoMarginMonthTotal")}</td>
+                      <td className="px-2 py-1.5 text-right">R$ {sum((e) => e.goodsCostTotal).toFixed(2)}</td>
+                      <td className="px-2 py-1.5 text-right">R$ {sum((e) => e.chargedTotal).toFixed(2)}</td>
+                      <td className="px-2 py-1.5 text-right">R$ {sum((e) => e.marginTotal).toFixed(2)}</td>
+                      <td className="px-2 py-1.5" />
+                    </tr>,
+                  ];
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
 
       {/* 站点库存总览 */}

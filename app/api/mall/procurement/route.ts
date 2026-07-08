@@ -2,7 +2,8 @@ import { appendInventoryLedger, appendServerAudit, jsonResponse, makeServerId, m
 import { refreshCollectionsFromDatabase } from "../../../lib/server/persistence";
 import { requirePermission, roleFromRequest } from "../../../lib/server/authz";
 import { sessionFromRequest } from "../../../lib/auth-session";
-import { appendEvent, PROCUREMENT_EVENTS } from "../../../lib/server/events";
+import { appendEvent, PROCUREMENT_EVENTS, SUPPLIER_EVENTS } from "../../../lib/server/events";
+import { accrueBuyoutMargin, reverseBuyoutMargin } from "../../../lib/server/procurement-margin";
 import { postFranchiseDeposit, franchiseDepositBalance } from "../../../lib/server/franchise-deposit";
 import { postStationStock } from "../../../lib/server/station-stock";
 import { defaultMallConfig } from "../../../lib/mall";
@@ -38,6 +39,7 @@ const COLLECTIONS = [
   "franchiseDepositLedgerEntries",
   "franchiseDepositTopUps",
   "procurementDiscrepancies",
+  "procurementMarginEntries",
   "marketplaceProducts",
   "mallConfigs",
   "franchises",
@@ -61,8 +63,9 @@ const OFFICE_ACTIONS = new Set([
   "confirmDepositTopUp",
   "rejectDepositTopUp",
   "resolveDiscrepancy",
+  "reviewProcurementConsent",
 ]);
-const SUPPLIER_ACTIONS = new Set(["confirmFPO", "shipFPO", "arriveFPO"]);
+const SUPPLIER_ACTIONS = new Set(["confirmFPO", "shipFPO", "arriveFPO", "setProcurementConsent"]);
 const STATION_ACTIONS = new Set(["receiveFPO"]);
 
 function mallConfig() {
@@ -77,10 +80,28 @@ type ApiError = { error: string; errorKey?: string };
 const err = (status: number, error: string, errorKey?: string) =>
   jsonResponse<ApiError>({ error, errorKey }, { status });
 
+/**
+ * Supplier distribution consent (opt-in flow). HQ-owned goods (no
+ * supplierName) never need consent. MIGRATION SEMANTICS: a supplier product
+ * that was ALREADY procurement-enabled before the consent field existed
+ * (procurementMode !== "off", consent undefined) is grandfathered as
+ * "approved" so shipping this flow does not break live catalogs.
+ */
+function resolvedConsent(product: {
+  supplierName?: string;
+  procurementMode?: "off" | "consignment" | "buyout" | "both";
+  procurementConsent?: "none" | "pending" | "approved";
+}): "none" | "pending" | "approved" {
+  if (!product.supplierName) return "approved";
+  if (product.procurementConsent) return product.procurementConsent;
+  return (product.procurementMode ?? "off") !== "off" ? "approved" : "none";
+}
+
 function catalogProducts() {
   return memory.marketplaceProducts
     // Virtual goods skip logistics entirely — they can never be stocked at a station.
-    .filter((product) => product.status === "active" && product.isVirtual !== true && (product.procurementMode ?? "off") !== "off")
+    // Supplier goods additionally require distribution consent (opt-in + HQ review).
+    .filter((product) => product.status === "active" && product.isVirtual !== true && (product.procurementMode ?? "off") !== "off" && resolvedConsent(product) === "approved")
     .map((product) => ({
       id: product.id,
       name: product.name,
@@ -153,7 +174,10 @@ export async function GET(request: Request) {
           franchiseBuyoutPrice: product.franchiseBuyoutPrice ?? 0,
           minOrderQty: Math.max(1, product.minOrderQty ?? 1),
           maxOrderQty: product.maxOrderQty ?? 0,
+          procurementConsent: resolvedConsent(product),
+          suggestedBuyoutPrice: product.suggestedBuyoutPrice ?? 0,
         })),
+        marginEntries: memory.procurementMarginEntries.slice(0, 500),
         fpos: memory.franchisePurchaseOrders.slice(0, 500),
         stock: stockBuckets(),
         stockLedger: memory.stationStockLedgerEntries.slice(0, 500),
@@ -295,7 +319,11 @@ export async function POST(request: Request) {
     return err(423, "Procurement is frozen", "fpErrFrozen");
   }
 
-  const supplierName = isSupplierActor ? session?.organization ?? "" : "";
+  const supplierName = isSupplierActor
+    ? session?.organization ?? ""
+    : process.env.NODE_ENV !== "production" && !session
+      ? String(body.supplierName ?? "")
+      : "";
   const franchiseName = isFranchiseActor
     ? session?.franchise || session?.organization || ""
     : process.env.NODE_ENV !== "production" && !session
@@ -327,6 +355,12 @@ export async function POST(request: Request) {
         const allowed = product.procurementMode ?? "off";
         if (allowed === "off" || (allowed !== "both" && allowed !== mode)) {
           return err(409, `Mode ${mode} not allowed for ${product.name}`, "fpErrModeNotAllowed");
+        }
+        // Supplier distribution consent gate: supplier goods can only be
+        // procured (consignment stocking OR buyout) after the supplier opted
+        // in and HQ approved. Grandfathered legacy configs resolve "approved".
+        if (resolvedConsent(product) !== "approved") {
+          return err(409, `Supplier has not opened ${product.name} for direct procurement`, "fpErrConsentRequired");
         }
         const minQty = Math.max(1, product.minOrderQty ?? 1);
         const maxQty = product.maxOrderQty ?? 0;
@@ -411,6 +445,10 @@ export async function POST(request: Request) {
         if (fpo.status === "approved") appendEvent(PROCUREMENT_EVENTS.fpoApproved, { fpoId: fpo.id, auto: true }, actor);
         appendServerAudit({ actor, action: "FPO_CREATED", entity: "FranchisePurchaseOrder", entityId: fpo.id, detail: `${franchiseName} → ${station.name} · ${supplier} · ${mode} · R$${total}`, risk: mode === "buyout" ? "Medium" : "Low" });
       }
+      // Buyout margin accrual — AFTER every leg's deposit debit succeeded
+      // (money actually moved; the split-rollback path above never reaches
+      // here, so no margin compensation is ever needed for rollbacks).
+      if (mode === "buyout") for (const fpo of created) accrueBuyoutMargin(fpo, actor);
       return jsonResponse({ data: created }, { status: 201 });
     }
 
@@ -428,6 +466,7 @@ export async function POST(request: Request) {
       }
       if (!assertTransition(fpo, "cancelled")) return err(409, "Illegal transition", "fpErrBadStatus");
       refundBuyout(fpo, fpo.totalBRL, "cancel", actor);
+      reverseBuyoutMargin(fpo, null, "cancel", actor); // compensating negative margin entry (append-only)
       const updated = updateFpo(index, { status: "cancelled", cancelledAt: nowStamp(), cancelReason: reason || undefined });
       appendEvent(PROCUREMENT_EVENTS.fpoCancelled, { fpoId: fpo.id, by: isFranchiseActor ? "franchise" : "office", reason }, actor);
       appendServerAudit({ actor, action: "FPO_CANCELLED", entity: "FranchisePurchaseOrder", entityId: fpo.id, detail: reason || "franchise cancel", risk: fpo.mode === "buyout" ? "Medium" : "Low" });
@@ -441,7 +480,10 @@ export async function POST(request: Request) {
       if (!fpo) return err(404, "FPO not found", "fpErrNotFound");
       const next: FpoStatus = action === "approveFPO" ? "approved" : "rejected";
       if (!assertTransition(fpo, next)) return err(409, "Only submitted orders can be decided", "fpErrBadStatus");
-      if (next === "rejected") refundBuyout(fpo, fpo.totalBRL, "reject", actor);
+      if (next === "rejected") {
+        refundBuyout(fpo, fpo.totalBRL, "reject", actor);
+        reverseBuyoutMargin(fpo, null, "reject", actor);
+      }
       const updated = updateFpo(index, next === "approved"
         ? { status: next, approvedAt: nowStamp(), approvedBy: actor }
         : { status: next, rejectedAt: nowStamp(), cancelReason: String(body.reason ?? "").slice(0, 200) || undefined });
@@ -514,6 +556,7 @@ export async function POST(request: Request) {
 
       const items = fpo.items.map((item) => ({ ...item, receivedQty: receivedMap.has(item.productId) ? receivedMap.get(item.productId)! : item.qty }));
       let refundTotal = 0;
+      let shortCostTotal = 0; // supply-cost share of the shorted units (margin reversal base)
       for (const item of items) {
         const inboundQty = Math.min(item.qty, item.receivedQty ?? item.qty);
         if (inboundQty > 0) {
@@ -536,6 +579,7 @@ export async function POST(request: Request) {
           const shortQty = Math.max(0, item.qty - received);
           const refundBRL = fpo.mode === "buyout" && kind === "short" ? round2(shortQty * item.unitPrice) : 0;
           refundTotal = round2(refundTotal + refundBRL);
+          if (refundBRL > 0) shortCostTotal = round2(shortCostTotal + shortQty * (item.supplyPrice ?? 0));
           const discrepancy: ProcurementDiscrepancy = {
             id: makeServerId("fpd", memory.procurementDiscrepancies.length + 1),
             fpoId: fpo.id,
@@ -556,7 +600,11 @@ export async function POST(request: Request) {
           memory.procurementDiscrepancies.unshift(discrepancy);
         }
       }
-      if (refundTotal > 0) refundBuyout(fpo, refundTotal, "short", actor);
+      if (refundTotal > 0) {
+        refundBuyout(fpo, refundTotal, "short", actor);
+        // Partial compensating margin entry — only the shorted units' spread.
+        reverseBuyoutMargin(fpo, { goodsCost: shortCostTotal, charged: refundTotal }, "short", actor);
+      }
 
       const updated = updateFpo(index, {
         status: "received",
@@ -598,6 +646,7 @@ export async function POST(request: Request) {
         });
       }
       refundBuyout(fpo, fpo.totalBRL, "exception", actor);
+      reverseBuyoutMargin(fpo, null, "exception", actor);
       const updated = updateFpo(index, { status: "cancelled", cancelledAt: nowStamp(), cancelReason: `exception: ${reason}` });
       appendEvent(PROCUREMENT_EVENTS.fpoCancelled, { fpoId: fpo.id, by: "office", exception: true, reason }, actor);
       appendServerAudit({ actor, action: "FPO_EXCEPTION_CLOSED", entity: "FranchisePurchaseOrder", entityId: fpo.id, detail: reason, risk: "High" });
@@ -673,6 +722,13 @@ export async function POST(request: Request) {
       const current = memory.marketplaceProducts[index];
       const modeValue = body.procurementMode;
       const nextMode = modeValue === "off" || modeValue === "consignment" || modeValue === "buyout" || modeValue === "both" ? modeValue : current.procurementMode ?? "off";
+      // Consent gate on the catalog-entry path: office cannot open a SUPPLIER
+      // product for procurement until the supplier opted in and HQ approved.
+      // Grandfathered legacy configs (already non-off, no consent field)
+      // resolve "approved", so editing existing catalog entries keeps working.
+      if (nextMode !== "off" && resolvedConsent(current) !== "approved") {
+        return err(409, `Supplier has not opened ${current.name} for direct procurement`, "fpErrConsentRequired");
+      }
       const price = Number(body.franchiseBuyoutPrice);
       const minQty = Math.trunc(Number(body.minOrderQty));
       const maxQty = Math.trunc(Number(body.maxOrderQty));
@@ -684,6 +740,45 @@ export async function POST(request: Request) {
         maxOrderQty: Number.isFinite(maxQty) && maxQty >= 0 ? maxQty : current.maxOrderQty,
       };
       appendServerAudit({ actor, action: "PRODUCT_PROCUREMENT_UPDATED", entity: "MarketplaceProduct", entityId: current.id, detail: `mode=${nextMode}`, risk: "Low" });
+      return jsonResponse({ data: memory.marketplaceProducts[index] });
+    }
+
+    // ---- Supplier distribution consent (opt-in + HQ review) --------------------
+    case "setProcurementConsent": {
+      // Supplier opens/closes its OWN product for franchise procurement and may
+      // suggest a distribution price (advisory — HQ's franchiseBuyoutPrice rules).
+      const index = memory.marketplaceProducts.findIndex((item) => item.id === body.productId);
+      if (index === -1) return err(404, "Product not found", "fpErrNotFound");
+      const product = memory.marketplaceProducts[index];
+      if (!supplierName || product.supplierName !== supplierName) return err(403, "Not your product", "fpErrForbidden");
+      const consent = body.consent === true;
+      const rawPrice = body.suggestedPrice === undefined ? undefined : Number(body.suggestedPrice);
+      if (rawPrice !== undefined && (!Number.isFinite(rawPrice) || rawPrice < 0)) {
+        return err(400, "Invalid amount", "fpErrAmountInvalid");
+      }
+      // ANY supplier-side change resets HQ review: opt-in/terms-change → pending,
+      // withdrawal → none (immediately blocks new FPOs for this product).
+      memory.marketplaceProducts[index] = {
+        ...product,
+        procurementConsent: consent ? "pending" : "none",
+        suggestedBuyoutPrice: rawPrice !== undefined ? round2(rawPrice) : product.suggestedBuyoutPrice,
+      };
+      appendEvent(SUPPLIER_EVENTS.procurementConsent, { productId: product.id, supplierName: product.supplierName ?? "", consent, suggestedPrice: rawPrice !== undefined ? round2(rawPrice) : product.suggestedBuyoutPrice ?? 0 }, actor);
+      appendServerAudit({ actor, action: "SUPPLIER_PROCUREMENT_CONSENT", entity: "MarketplaceProduct", entityId: product.id, detail: `${product.name}: consent=${consent}${rawPrice !== undefined ? ` · suggested R$${round2(rawPrice)}` : ""} → ${consent ? "pending HQ review" : "closed"}`, risk: "Low" });
+      return jsonResponse({ data: memory.marketplaceProducts[index] });
+    }
+
+    case "reviewProcurementConsent": {
+      // Office decides a pending supplier opt-in (approve=true opens the
+      // product for the procurement catalog; false sends it back to none).
+      const index = memory.marketplaceProducts.findIndex((item) => item.id === body.productId);
+      if (index === -1) return err(404, "Product not found", "fpErrNotFound");
+      const product = memory.marketplaceProducts[index];
+      if ((product.procurementConsent ?? "none") !== "pending") return err(409, "No pending consent to review", "fpErrBadStatus");
+      const approve = body.approve === true;
+      memory.marketplaceProducts[index] = { ...product, procurementConsent: approve ? "approved" : "none" };
+      appendEvent(SUPPLIER_EVENTS.procurementConsentApproved, { productId: product.id, supplierName: product.supplierName ?? "", approve, suggestedPrice: product.suggestedBuyoutPrice ?? 0 }, actor);
+      appendServerAudit({ actor, action: approve ? "PROCUREMENT_CONSENT_APPROVED" : "PROCUREMENT_CONSENT_REJECTED", entity: "MarketplaceProduct", entityId: product.id, detail: `${product.name} (${product.supplierName ?? "-"}): 直采开放${approve ? "通过" : "驳回"} · 建议价 R$${product.suggestedBuyoutPrice ?? 0}`, risk: "Medium" });
       return jsonResponse({ data: memory.marketplaceProducts[index] });
     }
 
