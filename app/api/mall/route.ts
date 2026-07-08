@@ -1,4 +1,4 @@
-import { appendServerAudit, jsonResponse, makeServerId, memory } from "../../lib/server/memory";
+import { appendInventoryLedger, appendServerAudit, jsonResponse, makeServerId, maybeAutoReplenishDraft, memory } from "../../lib/server/memory";
 import { appendEvent, MARKETPLACE_EVENTS, recentEvents } from "../../lib/server/events";
 import { flushPendingToDatabase, persistDeleteRecord, refreshCollectionsFromDatabase } from "../../lib/server/persistence";
 import { requirePermission, roleFromRequest } from "../../lib/server/authz";
@@ -36,7 +36,7 @@ function cashBalanceOf(riderId: string): number {
   return Math.round(balance * 100) / 100;
 }
 
-const COLLECTIONS = ["mallConfigs", "marketplaceProducts", "marketplaceOrders", "pointsLedgerEntries", "partnerPointsLedgerEntries", "riders", "riderDailyKpis", "mallCategories", "mallBanners", "mallCoupons", "mallPayments", "cashTopUps", "cashLedgerEntries", "memberMessages", "franchises", "pontos", "mallRevenueShareEntries", "stationStockLedgerEntries"];
+const COLLECTIONS = ["mallConfigs", "marketplaceProducts", "marketplaceOrders", "pointsLedgerEntries", "partnerPointsLedgerEntries", "riders", "riderDailyKpis", "mallCategories", "mallBanners", "mallCoupons", "mallPayments", "cashTopUps", "cashLedgerEntries", "inventoryLedgerEntries", "memberMessages", "franchises", "pontos", "mallRevenueShareEntries", "stationStockLedgerEntries", "purchaseOrders"];
 
 /** M3 flag (docs/franchise-procurement-full-chain-plan.md): redemptions of
  *  physical rider goods reserve/consume STATION stock pools instead of the
@@ -160,6 +160,24 @@ function applyPointsExpiry(riderId: string): number {
   return toExpire;
 }
 
+/**
+ * P1-5: does this order still carry an un-released points hold? High-value
+ * redemptions write type:"hold" (sourceType "marketplace_order_hold",
+ * sourceId = orderId); approve/reject/cancel must pair it with exactly one
+ * "release". Legacy pending orders (created before hold/release shipped)
+ * wrote a "spend" instead — for those this returns false and the old
+ * refund path still applies.
+ */
+function hasOpenHold(order: MarketplaceOrder): boolean {
+  let holds = 0;
+  let releases = 0;
+  for (const entry of memory.pointsLedgerEntries) {
+    if (entry.riderId !== order.riderId || entry.sourceId !== order.id) continue;
+    if (entry.type === "hold") holds += 1;
+    else if (entry.type === "release") releases += 1;
+  }
+  return holds > releases;
+}
 function creditPoints(riderId: string, points: number, reasonCode: string, note: string, sourceId: string, actor: string): PointsLedgerEntry {
   const available = getAvailablePoints(memory.pointsLedgerEntries, riderId);
   const entry: PointsLedgerEntry = {
@@ -212,6 +230,25 @@ function accrueRevenueShare(order: MarketplaceOrder, actor: string) {
     createdAt: nowStamp(),
   });
   appendServerAudit({ actor, action: "MALL_REVSHARE_ACCRUED", entity: "MarketplaceOrder", entityId: order.id, detail: `${franchise} 净 R$${franchiseNetBRL} · 站点 ${order.pickupStoreName ?? order.station} R$${stationShareBRL}（产品分成 R$${franchiseShareBRL}）`, risk: "Low" });
+}
+
+/** Full arrival transition for one order (shared by markArrived and
+ *  batchArrived): status → arrived + audit + versioned event + in-app inbox
+ *  message (站内信) + push. `index` must point at memory.marketplaceOrders. */
+async function markOrderArrived(index: number, actor: string): Promise<MarketplaceOrder> {
+  const order = memory.marketplaceOrders[index];
+  const stamp = nowStamp();
+  memory.marketplaceOrders[index] = { ...order, status: "arrived", arrivedAt: stamp, notifiedAt: stamp };
+  appendServerAudit({ actor, action: "MALL_ORDER_ARRIVED", entity: "MarketplaceOrder", entityId: order.id, detail: `${order.productName} for ${order.riderName} at ${order.station}.`, risk: "Low" });
+  appendEvent(MARKETPLACE_EVENTS.orderArrived, { orderId: order.id, accountType: order.accountType, riderId: order.riderId, partnerId: order.partnerId, productId: order.productId, station: order.station }, actor);
+  if (order.riderName) {
+    const title = "Seu resgate chegou! 🎁";
+    const msgBody = `「${order.productName}」já está em ${order.station}. Retire quando puder.`;
+    // 站内信 (in-app inbox) — reaches members even without the app/push.
+    memory.memberMessages.unshift({ id: makeServerId("msg", memory.memberMessages.length + 1), riderName: order.riderName, riderId: order.riderId, title, body: msgBody, href: "/mall", createdAt: nowStamp() });
+    await sendPushToRider(order.riderName, title, msgBody, "/rider-app/mall");
+  }
+  return memory.marketplaceOrders[index];
 }
 
 export async function GET(request: Request) {
@@ -438,7 +475,7 @@ type Body =
   | { action: "supplierAddProduct"; name: string; supplierName: string; supplyPrice: number; deliveryCycleDays: number; stock: number; description?: string; imageUrl?: string; category?: string; isVirtual?: boolean; audience?: "rider" | "partner" | "both"; type?: string }
   | { action: "supplierUpdateProduct"; productId: string; name?: string; supplyPrice?: number; description?: string; imageUrl?: string; category?: string; stock?: number; deliveryCycleDays?: number; isVirtual?: boolean; audience?: "rider" | "partner" | "both"; type?: string }
   | { action: "supplierDeleteProduct"; productId: string }
-  | { action: "updateProduct"; productId: string; name?: string; description?: string; imageUrl?: string; category?: string; stock?: number; deliveryCycleDays?: number; purchaseLimit?: number }
+  | { action: "updateProduct"; productId: string; name?: string; description?: string; imageUrl?: string; category?: string; stock?: number; deliveryCycleDays?: number; purchaseLimit?: number; restockThreshold?: number; reason?: string }
   | { action: "priceProduct"; productId: string; pointsPrice: number; marginPct?: number; status?: "active" | "paused" }
   | { action: "deleteProduct"; productId: string }
   | { action: "redeem"; productId: string; riderId?: string; riderName?: string; accountType?: "rider" | "partner" }
@@ -446,6 +483,7 @@ type Body =
   | { action: "markMessagesRead"; riderId?: string; riderName?: string; messageId?: string }
   | { action: "confirmReceipt"; orderId: string }
   | { action: "markArrived"; orderId: string }
+  | { action: "batchArrived"; orderIds?: string[]; poId?: string }
   | { action: "markPickedUp"; orderId: string }
   | { action: "reviewOrder"; orderId: string; decision: "approve" | "reject" }
   | { action: "awardReferral"; inviterRiderId: string; newRiderName: string }
@@ -466,7 +504,7 @@ async function handlePost(request: Request) {
       ? requirePermission(request, "manage_partner_services")
       : peek.action === "scanPartner" || peek.action === "cancelOrder" || peek.action === "markMessagesRead"
         ? requirePermission(request, "use_rider_app")
-        : peek.action === "markArrived" || peek.action === "markPickedUp"
+        : peek.action === "markArrived" || peek.action === "markPickedUp" || peek.action === "batchArrived"
         ? requirePermission(request, "manage_slots")
         : peek.action === "supplierAddProduct" || peek.action === "updateProduct" || peek.action === "supplierUpdateProduct" || peek.action === "supplierDeleteProduct"
           ? requirePermission(request, "manage_supplier_catalog")
@@ -521,6 +559,7 @@ async function handlePost(request: Request) {
         isVirtual: isVirtual === true,
         imageUrl: String(imageUrl).slice(0, 400000),
         category: String(category).slice(0, 40),
+        createdAt: nowStamp(),
       };
       memory.marketplaceProducts.unshift(product);
       appendServerAudit({ actor, action: "MALL_PRODUCT_SUBMITTED", entity: "MarketplaceProduct", entityId: product.id, detail: `${product.name} by ${supplierName} @ R$${supplyPrice} (cycle ${deliveryCycleDays}d, ${audience}/${type}).`, risk: "Low" });
@@ -554,6 +593,20 @@ async function handlePost(request: Request) {
         ...((PRODUCT_TYPES as readonly string[]).includes(String(fields.type)) ? { type: String(fields.type) as MarketplaceProduct["type"] } : {}),
         ...((["rider", "partner", "both"] as readonly string[]).includes(String(fields.audience)) ? { audience: String(fields.audience) as MarketplaceProduct["audience"] } : {}),
       };
+      // Supplier self-edit may change stock → append-only inventory ledger record.
+      const supplierNewStock = memory.marketplaceProducts[index].stock;
+      if (fields.stock !== undefined && supplierNewStock !== current.stock) {
+        appendInventoryLedger({
+          productId: current.id,
+          productName: memory.marketplaceProducts[index].name,
+          type: "manual_adjust",
+          qty: supplierNewStock - current.stock,
+          stockAfter: supplierNewStock,
+          sourceId: current.id,
+          note: `supplier self-edit (${supplier})`,
+          createdBy: session?.name || actor,
+        });
+      }
       appendServerAudit({ actor, action: "MALL_PRODUCT_SUPPLIER_UPDATED", entity: "MarketplaceProduct", entityId: productId ?? "", detail: `${supplier} editou ${current.name}.`, risk: "Low" });
       return jsonResponse({ data: memory.marketplaceProducts[index] });
     }
@@ -612,7 +665,24 @@ async function handlePost(request: Request) {
         ...(fields.stock !== undefined ? { stock: Math.max(0, Number(fields.stock) || 0) } : {}),
         ...(fields.deliveryCycleDays !== undefined ? { deliveryCycleDays: Math.max(0, Number(fields.deliveryCycleDays) || 0) } : {}),
         ...(fields.purchaseLimit !== undefined ? { purchaseLimit: Math.max(0, Math.floor(Number(fields.purchaseLimit) || 0)) } : {}),
+        // Low-stock auto-replenish threshold (P1-2); undefined keeps default 3.
+        ...(fields.restockThreshold !== undefined ? { restockThreshold: Math.max(0, Math.floor(Number(fields.restockThreshold) || 0)) } : {}),
       };
+      // Manual stock edit → append-only inventory ledger record. `reason` is
+      // optional for now (the back-office UI will make it mandatory later).
+      const newStock = memory.marketplaceProducts[index].stock;
+      if (fields.stock !== undefined && newStock !== current.stock) {
+        appendInventoryLedger({
+          productId: current.id,
+          productName: memory.marketplaceProducts[index].name,
+          type: "manual_adjust",
+          qty: newStock - current.stock,
+          stockAfter: newStock,
+          sourceId: `manual-${Date.now()}`,
+          note: String(fields.reason ?? "").trim().slice(0, 200) || undefined,
+          createdBy: actor,
+        });
+      }
       appendServerAudit({ actor, action: "MALL_PRODUCT_UPDATED", entity: "MarketplaceProduct", entityId: productId ?? "", detail: JSON.stringify(fields).slice(0, 180), risk: "Low" });
       return jsonResponse({ data: memory.marketplaceProducts[index] });
     }
@@ -706,7 +776,11 @@ async function handlePost(request: Request) {
         };
         memory.partnerPointsLedgerEntries.unshift(ledger);
         const partnerProductIndex = memory.marketplaceProducts.findIndex((item) => item.id === product.id);
-        if (partnerProductIndex !== -1) memory.marketplaceProducts[partnerProductIndex] = { ...product, stock: product.stock - 1 };
+        if (partnerProductIndex !== -1) {
+          memory.marketplaceProducts[partnerProductIndex] = { ...product, stock: product.stock - 1 };
+          appendInventoryLedger({ productId: product.id, productName: product.name, type: "redeem", qty: -1, stockAfter: product.stock - 1, sourceId: order.id, createdBy: "PontoMall" });
+          maybeAutoReplenishDraft(product.id, actor); // P1-2 low-stock draft PO
+        }
         appendServerAudit({ actor, action: "MALL_REDEEMED", entity: "MarketplaceOrder", entityId: order.id, detail: `${partner.name} (parceiro) resgatou ${product.name} por ${price} pts.`, risk: price >= 8000 ? "High" : "Low" });
         appendEvent(MARKETPLACE_EVENTS.orderCreated, { orderId: order.id, accountType: "partner", partnerId: partner.id, productId: product.id, productName: product.name, pointsSpent: price }, actor);
         return jsonResponse({ data: { order, balance: available - price } }, { status: 201 });
@@ -904,18 +978,23 @@ async function handlePost(request: Request) {
         memory.cashLedgerEntries.unshift(ledgerEntry);
       }
 
+      // P1-5: high-value orders FREEZE the points ("hold") instead of spending
+      // them. The formal "spend" is written only when the review is approved;
+      // reject/cancel writes a "release" (never a refund — nothing was spent).
+      // Either way the available balance drops by `price` right now (see the
+      // hold/release invariants in app/lib/points.ts).
       const entry: PointsLedgerEntry = {
         id: makeServerId("pts", memory.pointsLedgerEntries.length + 1),
         riderId: rider.id,
         accountId: `pts-${rider.id}`,
-        type: "spend",
+        type: heldForReview ? "hold" : "spend",
         points: price,
         status: "approved",
-        sourceType: "marketplace_order",
+        sourceType: heldForReview ? "marketplace_order_hold" : "marketplace_order",
         sourceId: order.id,
         marketplaceOrderId: order.id,
         balanceAfter: available - price,
-        reasonCode: "MALL_REDEMPTION",
+        reasonCode: heldForReview ? "MALL_REDEMPTION_HOLD" : "MALL_REDEMPTION",
         note: `${product.name}（${tier.label}${tier.redeemDiscount < 1 ? ` ${Math.round(tier.redeemDiscount * 100)}折` : ""}${couponDiscount > 0 ? ` · cupom -${couponDiscount}` : ""}）`,
         createdBy: "PontoMall",
         createdAt,
@@ -926,6 +1005,8 @@ async function handlePost(request: Request) {
         const productIndex = memory.marketplaceProducts.findIndex((item) => item.id === product.id);
         if (productIndex !== -1) {
           memory.marketplaceProducts[productIndex] = { ...product, stock: product.stock - 1 };
+          appendInventoryLedger({ productId: product.id, productName: product.name, type: "redeem", qty: -1, stockAfter: product.stock - 1, sourceId: order.id, createdBy: "PontoMall" });
+          maybeAutoReplenishDraft(product.id, actor); // P1-2 low-stock draft PO
         }
       }
 
@@ -960,24 +1041,45 @@ async function handlePost(request: Request) {
       }
 
       const stamp = nowStamp();
-      // Refund points (auditable refund ledger entry).
       const pointsAvailable = getAvailablePoints(memory.pointsLedgerEntries, order.riderId);
-      memory.pointsLedgerEntries.unshift({
-        id: makeServerId("pts", memory.pointsLedgerEntries.length + 1),
-        riderId: order.riderId,
-        accountId: `pts-${order.riderId}`,
-        type: "refund",
-        points: order.pointsSpent,
-        status: "approved",
-        sourceType: "marketplace_order",
-        sourceId: order.id,
-        marketplaceOrderId: order.id,
-        balanceAfter: pointsAvailable + order.pointsSpent,
-        reasonCode: "MALL_REFUND",
-        note: `Cancelamento de ${order.productName ?? "resgate"}`,
-        createdBy: "PontoMall",
-        createdAt: stamp,
-      });
+      if (order.reviewStatus === "pending" && hasOpenHold(order)) {
+        // P1-5 e): held high-value order — release the hold. No refund entry:
+        // the points were frozen, never spent (hold + release nets to zero).
+        memory.pointsLedgerEntries.unshift({
+          id: makeServerId("pts", memory.pointsLedgerEntries.length + 1),
+          riderId: order.riderId,
+          accountId: `pts-${order.riderId}`,
+          type: "release",
+          points: order.pointsSpent,
+          status: "approved",
+          sourceType: "marketplace_order_hold",
+          sourceId: order.id,
+          marketplaceOrderId: order.id,
+          balanceAfter: pointsAvailable + order.pointsSpent,
+          reasonCode: "MALL_HOLD_RELEASED",
+          note: `Cancelamento de ${order.productName ?? "resgate"} (pontos liberados da análise)`,
+          createdBy: "PontoMall",
+          createdAt: stamp,
+        });
+      } else {
+        // Refund points (auditable refund ledger entry).
+        memory.pointsLedgerEntries.unshift({
+          id: makeServerId("pts", memory.pointsLedgerEntries.length + 1),
+          riderId: order.riderId,
+          accountId: `pts-${order.riderId}`,
+          type: "refund",
+          points: order.pointsSpent,
+          status: "approved",
+          sourceType: "marketplace_order",
+          sourceId: order.id,
+          marketplaceOrderId: order.id,
+          balanceAfter: pointsAvailable + order.pointsSpent,
+          reasonCode: "MALL_REFUND",
+          note: `Cancelamento de ${order.productName ?? "resgate"}`,
+          createdBy: "PontoMall",
+          createdAt: stamp,
+        });
+      }
 
       // Refund the cash part to the prepaid balance, if any was charged.
       const cashRefund = Math.round((order.cashDue ?? 0) * 100) / 100;
@@ -999,7 +1101,8 @@ async function handlePost(request: Request) {
       }
 
       // Restock: release the station reservation when enforcement holds it,
-      // otherwise return the unit to the central counter (legacy path).
+      // otherwise return the unit to the central counter (with an append-only
+      // inventory ledger record).
       if (reservedPoolForOrder(order.id)) {
         releaseOrderReservation(order, actor);
       } else {
@@ -1007,6 +1110,7 @@ async function handlePost(request: Request) {
         if (productIndex !== -1) {
           const product = memory.marketplaceProducts[productIndex];
           memory.marketplaceProducts[productIndex] = { ...product, stock: product.stock + 1 };
+          appendInventoryLedger({ productId: product.id, productName: product.name, type: "cancel_restock", qty: 1, stockAfter: product.stock + 1, sourceId: order.id, createdBy: "PontoMall" });
         }
       }
 
@@ -1059,58 +1163,85 @@ async function handlePost(request: Request) {
       if (order.reviewStatus === "pending") {
         return jsonResponse({ error: "Resgate em análise — aprove a revisão antes de avançar." }, { status: 409 });
       }
-      const stamp = nowStamp();
       if (body.action === "markArrived") {
-        memory.marketplaceOrders[index] = { ...order, status: "arrived", arrivedAt: stamp, notifiedAt: stamp };
-      } else {
-        if (order.paymentStatus && order.paymentStatus !== "paid") {
-          return jsonResponse({ error: "现金部分尚未核销，不能交付（先在商城后台确认收款）。" }, { status: 409 });
-        }
-        // Station-stock enforcement: pickup consumes the reserved pool
-        // (consignment first). The outbound pool decides supplier settlement —
-        // buyout units are already settled through the FPO and must not be
-        // billed again in the monthly statement.
-        const reservedPool = reservedPoolForOrder(order.id);
-        if (reservedPool && order.pickupStoreId) {
-          const consumed = postStationStock({
+        return jsonResponse({ data: await markOrderArrived(index, actor) });
+      }
+      const stamp = nowStamp();
+      if (order.paymentStatus && order.paymentStatus !== "paid") {
+        return jsonResponse({ error: "现金部分尚未核销，不能交付（先在商城后台确认收款）。" }, { status: 409 });
+      }
+      // Station-stock enforcement: pickup consumes the reserved pool
+      // (consignment first). The outbound pool decides supplier settlement —
+      // buyout units are already settled through the FPO and must not be
+      // billed again in the monthly statement.
+      const reservedPool = reservedPoolForOrder(order.id);
+      if (reservedPool && order.pickupStoreId) {
+        const consumed = postStationStock({
+          stationId: order.pickupStoreId,
+          stationName: order.pickupStoreName ?? order.station ?? "",
+          productId: order.productId,
+          productName: order.productName ?? order.productId,
+          mode: reservedPool,
+          type: "outbound",
+          qty: -1,
+          sourceType: "mall_order",
+          sourceId: order.id,
+          createdBy: actor,
+        });
+        if (!consumed.ok) {
+          // Reservation exists but the pool was drained by an adjustment —
+          // fall back to whichever pool still has units.
+          consumeStationStockForOrder({
             stationId: order.pickupStoreId,
             stationName: order.pickupStoreName ?? order.station ?? "",
             productId: order.productId,
             productName: order.productName ?? order.productId,
-            mode: reservedPool,
-            type: "outbound",
-            qty: -1,
-            sourceType: "mall_order",
-            sourceId: order.id,
+            qty: 1,
+            orderId: order.id,
             createdBy: actor,
           });
-          if (!consumed.ok) {
-            // Reservation exists but the pool was drained by an adjustment —
-            // fall back to whichever pool still has units.
-            consumeStationStockForOrder({
-              stationId: order.pickupStoreId,
-              stationName: order.pickupStoreName ?? order.station ?? "",
-              productId: order.productId,
-              productName: order.productName ?? order.productId,
-              qty: 1,
-              orderId: order.id,
-              createdBy: actor,
-            });
-          }
         }
-        memory.marketplaceOrders[index] = { ...order, status: "fulfilled", pickedUpAt: stamp };
-        accrueRevenueShare(memory.marketplaceOrders[index], actor);
       }
-      appendServerAudit({ actor, action: body.action === "markArrived" ? "MALL_ORDER_ARRIVED" : "MALL_ORDER_PICKED_UP", entity: "MarketplaceOrder", entityId: orderId ?? "", detail: `${order.productName} for ${order.riderName} at ${order.station}.`, risk: "Low" });
-      appendEvent(body.action === "markArrived" ? MARKETPLACE_EVENTS.orderArrived : MARKETPLACE_EVENTS.orderFulfilled, { orderId: order.id, accountType: order.accountType, riderId: order.riderId, partnerId: order.partnerId, productId: order.productId, station: order.station }, actor);
-      if (body.action === "markArrived" && order.riderName) {
-        const title = "Seu resgate chegou! 🎁";
-        const msgBody = `「${order.productName}」já está em ${order.station}. Retire quando puder.`;
-        // 站内信 (in-app inbox) — reaches members even without the app/push.
-        memory.memberMessages.unshift({ id: makeServerId("msg", memory.memberMessages.length + 1), riderName: order.riderName, riderId: order.riderId, title, body: msgBody, href: "/mall", createdAt: nowStamp() });
-        await sendPushToRider(order.riderName, title, msgBody, "/rider-app/mall");
-      }
+      memory.marketplaceOrders[index] = { ...order, status: "fulfilled", pickedUpAt: stamp };
+      accrueRevenueShare(memory.marketplaceOrders[index], actor);
+      appendServerAudit({ actor, action: "MALL_ORDER_PICKED_UP", entity: "MarketplaceOrder", entityId: orderId ?? "", detail: `${order.productName} for ${order.riderName} at ${order.station}.`, risk: "Low" });
+      appendEvent(MARKETPLACE_EVENTS.orderFulfilled, { orderId: order.id, accountType: order.accountType, riderId: order.riderId, partnerId: order.partnerId, productId: order.productId, station: order.station }, actor);
       return jsonResponse({ data: memory.marketplaceOrders[index] });
+    }
+
+    case "batchArrived": {
+      // Bulk arrival (P1-3): apply the SAME full markArrived flow (audit,
+      // versioned event, 站内信, push, ETA-aware inbox copy) to every eligible
+      // order — status "created", physical (non-virtual), not held for review.
+      // Input: explicit orderIds, or a poId → all pending orders of the PO's
+      // products (the replenishment that just landed at the station).
+      const { orderIds, poId } = body as { orderIds?: unknown; poId?: string };
+      let targetIds: string[] = [];
+      if (Array.isArray(orderIds)) {
+        targetIds = orderIds.filter((id): id is string => typeof id === "string");
+      } else if (poId) {
+        const po = memory.purchaseOrders.find((p) => p.id === poId);
+        if (!po) return jsonResponse({ error: "PO not found" }, { status: 404 });
+        const poProductIds = new Set(po.items.map((item) => item.productId));
+        targetIds = memory.marketplaceOrders.filter((o) => o.status === "created" && poProductIds.has(o.productId)).map((o) => o.id);
+      }
+      if (targetIds.length === 0 && !poId) return jsonResponse({ error: "orderIds ou poId são obrigatórios" }, { status: 400 });
+      const virtualProductIds = new Set(memory.marketplaceProducts.filter((p) => p.isVirtual === true).map((p) => p.id));
+      let arrived = 0;
+      let skipped = 0;
+      const updated: MarketplaceOrder[] = [];
+      for (const id of new Set(targetIds)) {
+        const index = memory.marketplaceOrders.findIndex((o) => o.id === id);
+        const order = index === -1 ? undefined : memory.marketplaceOrders[index];
+        if (!order || order.status !== "created" || order.reviewStatus === "pending" || virtualProductIds.has(order.productId)) {
+          skipped += 1;
+          continue;
+        }
+        updated.push(await markOrderArrived(index, actor));
+        arrived += 1;
+      }
+      appendServerAudit({ actor, action: "MALL_ORDERS_BATCH_ARRIVED", entity: "MarketplaceOrder", entityId: poId ?? `batch-${Date.now()}`, detail: `Chegada em lote: ${arrived} marcados, ${skipped} pulados${poId ? ` (PO ${poId})` : ""}.`, risk: "Low" });
+      return jsonResponse({ data: { arrived, skipped, orders: updated } });
     }
 
     case "reviewOrder": {
@@ -1125,6 +1256,45 @@ async function handlePost(request: Request) {
       const stamp = nowStamp();
 
       if (decision === "approve") {
+        // P1-5 c): settle the freeze — write "release" (pairs off the hold,
+        // net zero) plus the FORMAL "spend", so every downstream stat that
+        // counts type "spend" keeps its口径. Available balance is unchanged
+        // here: it already dropped when the hold was written at redeem time.
+        if (order.accountType === "rider" && order.riderId && hasOpenHold(order)) {
+          const availableBefore = getAvailablePoints(memory.pointsLedgerEntries, order.riderId);
+          memory.pointsLedgerEntries.unshift({
+            id: makeServerId("pts", memory.pointsLedgerEntries.length + 1),
+            riderId: order.riderId,
+            accountId: `pts-${order.riderId}`,
+            type: "release",
+            points: order.pointsSpent,
+            status: "approved",
+            sourceType: "marketplace_order_hold",
+            sourceId: order.id,
+            marketplaceOrderId: order.id,
+            balanceAfter: availableBefore + order.pointsSpent,
+            reasonCode: "MALL_REVIEW_RELEASE",
+            note: `Análise aprovada: ${order.productName ?? "resgate"} (hold liberado)`,
+            createdBy: actor,
+            createdAt: stamp,
+          });
+          memory.pointsLedgerEntries.unshift({
+            id: makeServerId("pts", memory.pointsLedgerEntries.length + 1),
+            riderId: order.riderId,
+            accountId: `pts-${order.riderId}`,
+            type: "spend",
+            points: order.pointsSpent,
+            status: "approved",
+            sourceType: "marketplace_order",
+            sourceId: order.id,
+            marketplaceOrderId: order.id,
+            balanceAfter: availableBefore,
+            reasonCode: "MALL_REDEMPTION",
+            note: `${order.productName ?? "resgate"} (aprovado na análise de alto valor)`,
+            createdBy: actor,
+            createdAt: stamp,
+          });
+        }
         const product = memory.marketplaceProducts.find((item) => item.id === order.productId);
         const isVirtual = product?.isVirtual === true;
         if (isVirtual) {
@@ -1140,25 +1310,48 @@ async function handlePost(request: Request) {
         return jsonResponse({ data: memory.marketplaceOrders[index] });
       }
 
-      // Reject → refund points (+ cash), restock and cancel.
+      // Reject → release the hold (P1-5 d — points were frozen, not spent, so
+      // NO refund entry), restock and cancel. Cash was actually charged at
+      // redeem time, so the cash refund below stays.
       if (order.accountType === "rider" && order.riderId) {
         const pointsAvailable = getAvailablePoints(memory.pointsLedgerEntries, order.riderId);
-        memory.pointsLedgerEntries.unshift({
-          id: makeServerId("pts", memory.pointsLedgerEntries.length + 1),
-          riderId: order.riderId,
-          accountId: `pts-${order.riderId}`,
-          type: "refund",
-          points: order.pointsSpent,
-          status: "approved",
-          sourceType: "marketplace_order",
-          sourceId: order.id,
-          marketplaceOrderId: order.id,
-          balanceAfter: pointsAvailable + order.pointsSpent,
-          reasonCode: "MALL_REVIEW_REJECTED",
-          note: `Revisão recusada: ${order.productName ?? "resgate"}`,
-          createdBy: actor,
-          createdAt: stamp,
-        });
+        if (hasOpenHold(order)) {
+          memory.pointsLedgerEntries.unshift({
+            id: makeServerId("pts", memory.pointsLedgerEntries.length + 1),
+            riderId: order.riderId,
+            accountId: `pts-${order.riderId}`,
+            type: "release",
+            points: order.pointsSpent,
+            status: "approved",
+            sourceType: "marketplace_order_hold",
+            sourceId: order.id,
+            marketplaceOrderId: order.id,
+            balanceAfter: pointsAvailable + order.pointsSpent,
+            reasonCode: "MALL_REVIEW_REJECTED",
+            note: `Revisão recusada: ${order.productName ?? "resgate"} (hold liberado)`,
+            createdBy: actor,
+            createdAt: stamp,
+          });
+        } else {
+          // Legacy pending order that debited a real spend before hold/release
+          // shipped — keep the historical refund path for it.
+          memory.pointsLedgerEntries.unshift({
+            id: makeServerId("pts", memory.pointsLedgerEntries.length + 1),
+            riderId: order.riderId,
+            accountId: `pts-${order.riderId}`,
+            type: "refund",
+            points: order.pointsSpent,
+            status: "approved",
+            sourceType: "marketplace_order",
+            sourceId: order.id,
+            marketplaceOrderId: order.id,
+            balanceAfter: pointsAvailable + order.pointsSpent,
+            reasonCode: "MALL_REVIEW_REJECTED",
+            note: `Revisão recusada: ${order.productName ?? "resgate"}`,
+            createdBy: actor,
+            createdAt: stamp,
+          });
+        }
         const cashRefund = Math.round((order.cashDue ?? 0) * 100) / 100;
         if (cashRefund > 0) {
           const cashAvailable = cashBalanceOf(order.riderId);
@@ -1184,6 +1377,7 @@ async function handlePost(request: Request) {
         if (productIndex !== -1) {
           const product = memory.marketplaceProducts[productIndex];
           memory.marketplaceProducts[productIndex] = { ...product, stock: product.stock + 1 };
+          appendInventoryLedger({ productId: product.id, productName: product.name, type: "review_reject_restock", qty: 1, stockAfter: product.stock + 1, sourceId: order.id, createdBy: actor });
         }
       }
       memory.marketplaceOrders[index] = { ...order, status: "cancelled", reviewStatus: "rejected" };

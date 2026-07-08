@@ -1,4 +1,4 @@
-import { appendServerAudit, jsonResponse, makeServerId, memory } from "../../../lib/server/memory";
+import { appendInventoryLedger, appendServerAudit, jsonResponse, makeServerId, memory } from "../../../lib/server/memory";
 import { refreshCollectionsFromDatabase } from "../../../lib/server/persistence";
 import { requirePermission, roleFromRequest } from "../../../lib/server/authz";
 import { sessionFromRequest } from "../../../lib/auth-session";
@@ -477,7 +477,11 @@ export async function POST(request: Request) {
         }
         for (const item of fpo.items) {
           const productIndex = memory.marketplaceProducts.findIndex((p) => p.id === item.productId);
-          memory.marketplaceProducts[productIndex] = { ...memory.marketplaceProducts[productIndex], stock: memory.marketplaceProducts[productIndex].stock - item.qty };
+          const nextStock = memory.marketplaceProducts[productIndex].stock - item.qty;
+          memory.marketplaceProducts[productIndex] = { ...memory.marketplaceProducts[productIndex], stock: nextStock };
+          // Hard Rule #4: every central-stock mutation gets an append-only
+          // inventory ledger record (this is the HQ-warehouse FPO outbound).
+          appendInventoryLedger({ productId: item.productId, productName: item.name, type: "fpo_ship", qty: -item.qty, stockAfter: nextStock, sourceId: fpo.id, createdBy: actor });
         }
       }
       const updated = updateFpo(index, { status: "shipped", shippedAt: nowStamp(), shipNote: String(body.shipNote ?? "").slice(0, 200) || undefined });

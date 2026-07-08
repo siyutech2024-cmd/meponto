@@ -1,5 +1,7 @@
 # PontoSys Integration Provider Skeletons
 
+> Related: the Mercado Pago PSP integration design (PIX collection + payouts for PontoMall's four cash flows) lives in [`docs/psp-mercadopago-integration.md`](./psp-mercadopago-integration.md). / Mercado Pago PSP 集成方案(PontoMall 四条资金流)见 `docs/psp-mercadopago-integration.md`。
+
 The MVP exposes typed integration readiness only. It does not make external calls, verify credentials with vendors, enqueue jobs, or send messages. Readiness is based on required environment variables being present and non-empty.
 
 ## Endpoint

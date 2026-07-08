@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Banknote, BarChart3, Boxes, CheckCircle2, CircleDollarSign, LayoutGrid, Package, RefreshCcw, Settings2, ShoppingBag, Truck, XCircle } from "lucide-react";
 import { AppShell, Badge, PageTitle } from "../components/ui";
+import { useDialog } from "../components/dialog";
 import { downloadCsv } from "../lib/csv";
 import type { MarketplaceOrder, MarketplaceProduct } from "../lib/points";
 import type { MallConfig } from "../lib/mall";
@@ -36,12 +37,19 @@ type OpsPayload = {
   payments: MallPayment[];
   topUps: CashTopUp[];
   cashLedger: CashLedgerEntry[];
-  summary: { orders: number; pointsGmv: number; cashGmv: number; pendingPayments: number; reviewPending?: number; partnerOrders?: number; partnerPointsSpent?: number; topProducts?: Array<{ name: string; count: number }>; daily: Array<{ date: string; count: number }> };
+  summary: { orders: number; pointsGmv: number; cashGmv: number; pendingPayments: number; reviewPending?: number; partnerOrders?: number; partnerPointsSpent?: number; topProducts?: Array<{ name: string; count: number }>; daily: Array<{ date: string; count: number }>; aging?: { pricingOver48h: number; priceChangesOver48h: number; topUpsOver48h: number } };
 };
+
+/** Local fallbacks while the ops backend rolls out "disputed"/"draft" states. */
+const extraStatementLabel: Record<string, string> = { disputed: "有异议" };
+const extraPoLabel: Record<string, string> = { draft: "草稿·待确认" };
 
 const orderStatusLabel: Record<string, string> = { created: "在途", arrived: "已到站", fulfilled: "已交付", cancelled: "已取消" };
 const productStatusLabel: Record<string, string> = { active: "已上架", paused: "已下架", pending_pricing: "待定价" };
-const payChipTone: Record<string, string> = { pending: "#b3540a", submitted: "#9a7400", paid: "#1d7a3e" };
+const payChipTone: Record<string, string> = { pending: "#b3540a", submitted: "var(--warn)", paid: "var(--success)" };
+
+const PRODUCT_PAGE_SIZE = 20;
+const ORDER_PAGE_SIZE = 50;
 
 const TABS = [
   { id: "overview", label: "总览", icon: BarChart3 },
@@ -55,6 +63,16 @@ const TABS = [
 ] as const;
 
 
+function Pager({ page, pages, total, onPage }: { page: number; pages: number; total: number; onPage: (page: number) => void }) {
+  return (
+    <div className="flex items-center gap-2 text-xs font-black text-[var(--muted)]">
+      <button type="button" disabled={page <= 1} onClick={() => onPage(page - 1)} className="h-8 rounded-[8px] border border-[var(--line)] px-3 disabled:opacity-40">上一页</button>
+      <span>第 {page} / {pages} 页 · 共 {total} 条</span>
+      <button type="button" disabled={page >= pages} onClick={() => onPage(page + 1)} className="h-8 rounded-[8px] border border-[var(--line)] px-3 disabled:opacity-40">下一页</button>
+    </div>
+  );
+}
+
 function Stat({ label, value, hint }: { label: string; value: string; hint?: string }) {
   return (
     <div className="panel p-4">
@@ -66,6 +84,7 @@ function Stat({ label, value, hint }: { label: string; value: string; hint?: str
 }
 
 export default function MallAdminPage() {
+  const dialog = useDialog();
   const language = useVentoStore((s) => s.language);
   const t = (k: TranslationKey, vars?: Record<string, string | number | undefined>) => {
     let s = translate(language, k);
@@ -84,6 +103,13 @@ export default function MallAdminPage() {
   const [bannerDraft, setBannerDraft] = useState({ title: "", imageUrl: "", href: "" });
   const [couponDraft, setCouponDraft] = useState({ title: "", type: "points_off", value: "", minPoints: "", minTier: "member", perRiderLimit: "", expiresAt: "" });
   const [orderFilter, setOrderFilter] = useState("");
+  const [productSearch, setProductSearch] = useState("");
+  const [productStatusFilter, setProductStatusFilter] = useState("");
+  const [productPage, setProductPage] = useState(1);
+  const [orderSearch, setOrderSearch] = useState("");
+  const [orderDateFrom, setOrderDateFrom] = useState("");
+  const [orderDateTo, setOrderDateTo] = useState("");
+  const [orderPage, setOrderPage] = useState(1);
   const [poSupplier, setPoSupplier] = useState("");
   const [poItems, setPoItems] = useState<Record<string, string>>({});
   const [statementMonth, setStatementMonth] = useState(() => {
@@ -124,8 +150,67 @@ export default function MallAdminPage() {
     return payload.data;
   }
 
-  const products = mall?.products ?? [];
-  const orders = (mall?.orders ?? []).filter((order) => !orderFilter || order.status === orderFilter);
+  /**
+   * Optimistic mutation for high-frequency ops actions: patch the local
+   * record first, roll back on failure, and re-run a silent load() on
+   * success so the server stays the source of truth.
+   */
+  async function optimisticPost(path: "/api/mall" | "/api/mall/ops", body: Record<string, unknown>, okText: string, apply: () => void, rollback: () => void) {
+    apply();
+    const response = await fetch(path, { method: "POST", headers, body: JSON.stringify(body) });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      rollback();
+      setMessage({ tone: "err", text: payload.error ?? t("dynReqFail", { s: response.status }) });
+      return null;
+    }
+    setMessage({ tone: "ok", text: okText });
+    void load(); // silent recalibration
+    return payload.data;
+  }
+
+  function patchOrder(orderId: string, patch: Partial<MarketplaceOrder>) {
+    setMall((prev) => (prev ? { ...prev, orders: prev.orders.map((o) => (o.id === orderId ? { ...o, ...patch } : o)) } : prev));
+  }
+
+  function patchTopUp(topUpId: string, patch: Partial<CashTopUp>) {
+    setOps((prev) => (prev ? { ...prev, topUps: prev.topUps.map((u) => (u.id === topUpId ? { ...u, ...patch } : u)) } : prev));
+  }
+
+  const products = useMemo(() => mall?.products ?? [], [mall]);
+  /** Money equivalence reference: how many points ≈ R$1 (from GET /api/mall config). */
+  const pointsPerBrlRate = mall?.config?.pointsPerBrl || 10;
+
+  // ---- Products tab: keyword + status filter + pagination (client-side) ----
+  const filteredProducts = useMemo(() => {
+    const q = productSearch.trim().toLowerCase();
+    return products.filter((product) => {
+      if (productStatusFilter && product.status !== productStatusFilter) return false;
+      if (!q) return true;
+      return [product.name, product.supplierName ?? "", product.category ?? ""].some((text) => text.toLowerCase().includes(q));
+    });
+  }, [products, productSearch, productStatusFilter]);
+  const productPages = Math.max(1, Math.ceil(filteredProducts.length / PRODUCT_PAGE_SIZE));
+  const safeProductPage = Math.min(productPage, productPages);
+  const pagedProducts = useMemo(() => filteredProducts.slice((safeProductPage - 1) * PRODUCT_PAGE_SIZE, safeProductPage * PRODUCT_PAGE_SIZE), [filteredProducts, safeProductPage]);
+
+  // ---- Orders tab: status + keyword + date range filter + pagination ----
+  const allOrders = useMemo(() => mall?.orders ?? [], [mall]);
+  const filteredOrders = useMemo(() => {
+    const q = orderSearch.trim().toLowerCase();
+    return allOrders.filter((order) => {
+      if (orderFilter && order.status !== orderFilter) return false;
+      if (q && ![order.productName ?? "", order.riderName ?? "", order.station ?? "", order.id].some((text) => text.toLowerCase().includes(q))) return false;
+      const day = (order.createdAt ?? "").slice(0, 10);
+      if (orderDateFrom && day < orderDateFrom) return false;
+      if (orderDateTo && day > orderDateTo) return false;
+      return true;
+    });
+  }, [allOrders, orderFilter, orderSearch, orderDateFrom, orderDateTo]);
+  const orderPages = Math.max(1, Math.ceil(filteredOrders.length / ORDER_PAGE_SIZE));
+  const safeOrderPage = Math.min(orderPage, orderPages);
+  const pagedOrders = useMemo(() => filteredOrders.slice((safeOrderPage - 1) * ORDER_PAGE_SIZE, safeOrderPage * ORDER_PAGE_SIZE), [filteredOrders, safeOrderPage]);
+
   const suppliers = useMemo(() => [...new Set(products.map((product) => product.supplierName).filter(Boolean))] as string[], [products]);
   const summary = ops?.summary;
   const pendingPricing = products.filter((product) => product.status === "pending_pricing").length;
@@ -139,7 +224,7 @@ export default function MallAdminPage() {
       <p className="-mt-3 mb-5 text-sm font-bold text-[var(--muted)]">商品、运营、履约、收款与供应链——商城业务的独立工作台。</p>
 
       {message && (
-        <div className="mb-4 rounded-[10px] border px-4 py-3 text-sm font-bold" style={message.tone === "ok" ? { borderColor: "rgba(29,122,62,.4)", background: "rgba(29,122,62,.08)", color: "#1d7a3e" } : { borderColor: "rgba(196,66,59,.4)", background: "rgba(196,66,59,.08)", color: "#c4423b" }}>
+        <div className={`mb-4 rounded-[10px] border px-4 py-3 text-sm font-bold ${message.tone === "ok" ? "border-[var(--success)]/40 bg-[var(--success)]/10 text-[var(--success)]" : "border-[var(--danger)]/40 bg-[var(--danger)]/10 text-[var(--danger)]"}`}>
           {message.text}
         </div>
       )}
@@ -154,8 +239,8 @@ export default function MallAdminPage() {
             className={`inline-flex h-10 items-center gap-2 rounded-[10px] border px-4 text-[13px] font-black transition-colors ${tab === id ? "border-[var(--accent)] bg-[var(--accent)] text-[var(--accent-ink)]" : "border-[var(--line)] bg-[var(--surface)] text-[var(--muted)] hover:border-[var(--accent)]"}`}
           >
             <Icon size={15} /> {label}
-            {id === "payments" && (summary?.pendingPayments ?? 0) > 0 && <span className="rounded-full bg-[#e2554d] px-1.5 text-[10px] font-black text-white">{summary?.pendingPayments}</span>}
-            {id === "supply" && (ops?.priceChanges ?? []).some((row) => row.status === "pending") && <span className="h-2 w-2 rounded-full bg-[#e2554d]" />}
+            {id === "payments" && (summary?.pendingPayments ?? 0) > 0 && <span className="rounded-full bg-[var(--danger)] px-1.5 text-[10px] font-black text-white">{summary?.pendingPayments}</span>}
+            {id === "supply" && (ops?.priceChanges ?? []).some((row) => row.status === "pending") && <span className="h-2 w-2 rounded-full bg-[var(--danger)]" />}
           </button>
         ))}
         <button type="button" onClick={() => void load()} className="ml-auto inline-flex h-10 items-center gap-2 rounded-[10px] border border-[var(--line)] px-4 text-[13px] font-black text-[var(--muted)] hover:border-[var(--accent)]">
@@ -179,15 +264,38 @@ export default function MallAdminPage() {
             <Stat label="调价待审批" value={String((ops?.priceChanges ?? []).filter((row) => row.status === "pending").length)} hint="供应链 Tab 处理" />
           </div>
           <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-            <button type="button" onClick={() => setTab("orders")} className="panel p-4 text-left transition-colors hover:border-[var(--accent)]" style={(summary?.reviewPending ?? 0) > 0 ? { borderColor: "#9a7400" } : undefined}>
+            <button type="button" onClick={() => setTab("orders")} className="panel p-4 text-left transition-colors hover:border-[var(--accent)]" style={(summary?.reviewPending ?? 0) > 0 ? { borderColor: "var(--warn)" } : undefined}>
               <div className="text-[11px] font-black uppercase text-[var(--muted)]">高价值待审核</div>
-              <div className="mt-1 text-2xl font-black" style={(summary?.reviewPending ?? 0) > 0 ? { color: "#9a7400" } : undefined}>{summary?.reviewPending ?? 0}</div>
+              <div className="mt-1 text-2xl font-black" style={(summary?.reviewPending ?? 0) > 0 ? { color: "var(--warn)" } : undefined}>{summary?.reviewPending ?? 0}</div>
               <div className="mt-0.5 text-[11px] font-bold text-[var(--muted)]">点击去订单 Tab 处理</div>
             </button>
             <Stat label="合作方兑换" value={String(summary?.partnerOrders ?? 0)} hint="Partner 兑换单数" />
             <Stat label="合作方积分消耗" value={`${(summary?.partnerPointsSpent ?? 0).toLocaleString()} ${t("dynPts")}`} hint="Partner 积分账户（独立口径）" />
             <Stat label="近 30 天兑换" value={String((summary?.daily ?? []).reduce((sum, d) => sum + d.count, 0))} hint="最近 30 天订单合计" />
           </div>
+
+          {/* 老化警示：超过 48 小时未处理的排队事项（点击直达对应 Tab） */}
+          {summary?.aging && (
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+              {([
+                { label: "定价超 48h 未处理", count: summary.aging.pricingOver48h, hint: "供应商提报后待定价", target: "products" as const },
+                { label: "调价超 48h 未审批", count: summary.aging.priceChangesOver48h, hint: "供应链 Tab 审批", target: "supply" as const },
+                { label: "充值超 48h 未核销", count: summary.aging.topUpsOver48h, hint: "充值与收款 Tab 核销", target: "payments" as const },
+              ]).map((card) => (
+                <button
+                  key={card.label}
+                  type="button"
+                  onClick={() => setTab(card.target)}
+                  className="panel p-4 text-left transition-colors hover:border-[var(--accent)]"
+                  style={card.count > 0 ? { borderColor: "var(--warn)", background: "rgba(154,116,0,.08)" } : undefined}
+                >
+                  <div className="text-[11px] font-black uppercase text-[var(--muted)]">{card.label}</div>
+                  <div className="mt-1 text-2xl font-black" style={card.count > 0 ? { color: "var(--warn)" } : undefined}>{card.count}</div>
+                  <div className="mt-0.5 text-[11px] font-bold text-[var(--muted)]">{card.count > 0 ? `⚠ ${card.hint}` : "无积压"}</div>
+                </button>
+              ))}
+            </div>
+          )}
 
           {(summary?.topProducts ?? []).length > 0 && (
             <div className="panel p-5">
@@ -233,10 +341,32 @@ export default function MallAdminPage() {
       {/* ================= 商品与定价 ================= */}
       {tab === "products" && (
         <div className="space-y-3">
+          <div className="panel flex flex-wrap items-center gap-2 p-4">
+            <input value={productSearch} onChange={(e) => { setProductSearch(e.target.value); setProductPage(1); }} placeholder="搜索商品名 / 供应商 / 分类…" className="h-10 w-64 rounded-[8px] border border-[var(--line)] bg-[var(--surface-raised)] px-3 text-sm font-bold outline-none focus:border-[var(--accent)]" />
+            {["", "active", "paused", "pending_pricing"].map((status) => (
+              <button key={status || "all"} type="button" onClick={() => { setProductStatusFilter(status); setProductPage(1); }} className={`rounded-full border px-3.5 py-1.5 text-xs font-black ${productStatusFilter === status ? "border-[var(--accent)] bg-[var(--accent)] text-[var(--accent-ink)]" : "border-[var(--line)] text-[var(--muted)]"}`}>
+                {status === "" ? "全部" : productStatusLabel[status]}
+              </button>
+            ))}
+            <div className="ml-auto">
+              <Pager page={safeProductPage} pages={productPages} total={filteredProducts.length} onPage={setProductPage} />
+            </div>
+          </div>
           {products.length === 0 && <div className="panel p-10 text-center text-sm font-bold text-[var(--muted)]">还没有商品——等供应商在供应链后台提报。</div>}
-          {products.map((product) => {
+          {products.length > 0 && filteredProducts.length === 0 && <div className="panel p-10 text-center text-sm font-bold text-[var(--muted)]">没有匹配的商品——换个关键字或状态试试。</div>}
+          {pagedProducts.map((product) => {
             const draft = priceDrafts[product.id] ?? { points: String(product.pointsPrice || ""), cash: product.cashPriceBRL ? String(product.cashPriceBRL) : "", share: product.franchiseShareBRL ? String(product.franchiseShareBRL) : "" };
             const editing = editOpen === product.id;
+            // Pricing margin context: points value in R$ at the reference rate,
+            // total revenue vs. supply cost + franchise share.
+            const draftPoints = Number(draft.points) || 0;
+            const draftCash = Number(draft.cash) || 0;
+            const draftShare = Number(draft.share) || 0;
+            const pointsAsBrl = pointsPerBrlRate > 0 ? draftPoints / pointsPerBrlRate : 0;
+            const grossRevenue = pointsAsBrl + draftCash;
+            const grossCost = (product.supplyPrice ?? 0) + draftShare;
+            const grossMargin = grossRevenue - grossCost;
+            const grossMarginPct = grossRevenue > 0 ? (grossMargin / grossRevenue) * 100 : 0;
             return (
               <div key={product.id} className="panel p-4">
                 <div className="flex flex-wrap items-center gap-3">
@@ -248,7 +378,7 @@ export default function MallAdminPage() {
                     <div className="flex flex-wrap items-center gap-2">
                       <span className="text-sm font-black">{product.name}</span>
                       <Badge value={productStatusLabel[product.status] ?? product.status} />
-                      <span className="rounded-full px-2 py-0.5 text-[11px] font-black" style={product.audience === "partner" ? { background: "#eef2ff", color: "#3b4a9a" } : product.audience === "both" ? { background: "#fff4cf", color: "#9a7400" } : { background: "rgba(0,0,0,.06)", color: "rgba(0,0,0,.6)" }}>{product.audience === "partner" ? "合作方" : product.audience === "both" ? "骑手+合作方" : "骑手"}</span>
+                      <span className="rounded-full px-2 py-0.5 text-[11px] font-black" style={product.audience === "partner" ? { background: "#eef2ff", color: "#3b4a9a" } : product.audience === "both" ? { background: "#fff4cf", color: "var(--warn)" } : { background: "rgba(0,0,0,.06)", color: "rgba(0,0,0,.6)" }}>{product.audience === "partner" ? "合作方" : product.audience === "both" ? "骑手+合作方" : "骑手"}</span>
                       {product.isVirtual && <Badge value="虚拟" />}
                       {product.category && <span className="tag">{product.category}</span>}
                     </div>
@@ -266,12 +396,15 @@ export default function MallAdminPage() {
                     <label className="text-[11px] font-black text-[var(--muted)]" title="每次成功取货付给取货门店加盟商的固定 R$（销售分成）">加盟商分成 R$
                       <input value={draft.share} onChange={(e) => setPriceDrafts((prev) => ({ ...prev, [product.id]: { ...draft, share: e.target.value } }))} placeholder="0" className="ml-1.5 h-9 w-20 rounded-[8px] border border-[var(--line)] bg-[var(--surface-raised)] px-2 text-sm font-bold outline-none focus:border-[var(--accent)]" />
                     </label>
-                    <button type="button" onClick={() => void post("/api/mall", { action: "priceProduct", productId: product.id, pointsPrice: Number(draft.points) || 0, cashPriceBRL: Number(draft.cash) || 0, franchiseShareBRL: Number(draft.share) || 0, status: "active" }, "已定价上架")} className="h-9 rounded-[8px] bg-[var(--accent)] px-3 text-xs font-black text-[var(--accent-ink)]">定价上架</button>
+                    <button type="button" onClick={async () => { if (grossMargin < 0 && !(await dialog.confirm("负毛利定价确认", { message: `当前定价为负毛利：每单亏损 R$ ${Math.abs(grossMargin).toFixed(2)}（收入 R$ ${grossRevenue.toFixed(2)} − 成本 R$ ${grossCost.toFixed(2)}）。确认仍要定价上架？`, confirmText: "仍要上架", tone: "danger" }))) return; void post("/api/mall", { action: "priceProduct", productId: product.id, pointsPrice: draftPoints, cashPriceBRL: draftCash, franchiseShareBRL: draftShare, status: "active" }, "已定价上架"); }} className="h-9 rounded-[8px] bg-[var(--accent)] px-3 text-xs font-black text-[var(--accent-ink)]">定价上架</button>
                     {product.status === "active" && (
                       <button type="button" onClick={() => void post("/api/mall", { action: "priceProduct", productId: product.id, pointsPrice: product.pointsPrice, cashPriceBRL: product.cashPriceBRL ?? 0, status: "paused" }, "已下架")} className="h-9 rounded-[8px] border border-[var(--line)] px-3 text-xs font-black text-[var(--muted)]">下架</button>
                     )}
-                    <button type="button" onClick={() => { setEditOpen(editing ? "" : product.id); setEditDraft({ name: product.name, description: product.description ?? "", imageUrl: product.imageUrl ?? "", category: product.category ?? "", stock: String(product.stock), purchaseLimit: String(product.purchaseLimit ?? 0) }); }} className="h-9 rounded-[8px] border border-[var(--line)] px-3 text-xs font-black text-[var(--muted)]">{editing ? "收起" : "编辑"}</button>
+                    <button type="button" onClick={() => { setEditOpen(editing ? "" : product.id); setEditDraft({ name: product.name, description: product.description ?? "", imageUrl: product.imageUrl ?? "", category: product.category ?? "", stock: String(product.stock), purchaseLimit: String(product.purchaseLimit ?? 0), restockThreshold: String(product.restockThreshold ?? 0) }); }} className="h-9 rounded-[8px] border border-[var(--line)] px-3 text-xs font-black text-[var(--muted)]">{editing ? "收起" : "编辑"}</button>
                   </div>
+                </div>
+                <div className="mt-2 text-right text-[11px] font-bold" style={{ color: grossMargin < 0 ? "var(--danger)" : "var(--muted)" }}>
+                  积分价折合 R$ {pointsAsBrl.toFixed(2)}（{pointsPerBrlRate} 分 = R$1） · 总收入 R$ {grossRevenue.toFixed(2)} · 成本 R$ {grossCost.toFixed(2)}（供货 {(product.supplyPrice ?? 0).toFixed(2)} + 分成 {draftShare.toFixed(2)}） · 毛利 R$ {grossMargin.toFixed(2)}（{grossMarginPct.toFixed(1)}%）{grossMargin < 0 ? " ⚠ 负毛利" : ""}
                 </div>
                 {editing && (
                   <div className="mt-3 grid gap-2 border-t border-[var(--line)] pt-3 md:grid-cols-3">
@@ -282,14 +415,25 @@ export default function MallAdminPage() {
                       { key: "description", label: "描述" },
                       { key: "stock", label: "库存" },
                       { key: "purchaseLimit", label: "每人每月限购（0=不限）" },
+                      { key: "restockThreshold", label: "补货提醒阈值（0=不提醒）" },
                     ].map((field) => (
                       <label key={field.key} className="text-[11px] font-black text-[var(--muted)]">{field.label}
                         <input value={editDraft[field.key] ?? ""} onChange={(e) => setEditDraft((prev) => ({ ...prev, [field.key]: e.target.value }))} className="mt-1 h-9 w-full rounded-[8px] border border-[var(--line)] bg-[var(--surface-raised)] px-2 text-sm font-bold outline-none focus:border-[var(--accent)]" />
                       </label>
                     ))}
                     <div className="flex items-end gap-2">
-                      <button type="button" onClick={() => void post("/api/mall", { action: "updateProduct", productId: product.id, name: editDraft.name, description: editDraft.description, imageUrl: editDraft.imageUrl, category: editDraft.category, stock: Number(editDraft.stock) || 0, purchaseLimit: Number(editDraft.purchaseLimit) || 0 }, "商品已更新").then(() => setEditOpen(""))} className="h-9 rounded-[8px] bg-[var(--accent)] px-4 text-xs font-black text-[var(--accent-ink)]">保存</button>
-                      <button type="button" onClick={() => { if (confirm(t("dynDelProduct", { n: product.name }))) void post("/api/mall", { action: "deleteProduct", productId: product.id }, "已删除"); }} className="h-9 rounded-[8px] border border-[#c4423b]/40 px-4 text-xs font-black text-[#c4423b]">删除</button>
+                      <button type="button" onClick={async () => {
+                        const newStock = Number(editDraft.stock) || 0;
+                        let reason: string | undefined;
+                        if (newStock !== product.stock) {
+                          const input = await dialog.prompt("库存变更原因", { message: `库存将由 ${product.stock} 改为 ${newStock}，请填写修改原因（必填，将随库存台账记录）。`, placeholder: "如：盘点修正 / 破损报废…" });
+                          if (input === null) return;
+                          if (!input.trim()) { setMessage({ tone: "err", text: "库存变更必须填写修改原因" }); return; }
+                          reason = input.trim();
+                        }
+                        void post("/api/mall", { action: "updateProduct", productId: product.id, name: editDraft.name, description: editDraft.description, imageUrl: editDraft.imageUrl, category: editDraft.category, stock: newStock, purchaseLimit: Number(editDraft.purchaseLimit) || 0, restockThreshold: Number(editDraft.restockThreshold) || 0, ...(reason ? { reason } : {}) }, "商品已更新").then(() => setEditOpen(""));
+                      }} className="h-9 rounded-[8px] bg-[var(--accent)] px-4 text-xs font-black text-[var(--accent-ink)]">保存</button>
+                      <button type="button" onClick={async () => { if (await dialog.confirm("删除商品", { message: `删除商品「${product.name}」？当前库存 ${product.stock}、状态「${productStatusLabel[product.status] ?? product.status}」。删除后不可恢复。`, confirmText: "删除", tone: "danger" })) void post("/api/mall", { action: "deleteProduct", productId: product.id }, "已删除"); }} className="h-9 rounded-[8px] border border-[var(--danger)]/40 px-4 text-xs font-black text-[var(--danger)]">删除</button>
                     </div>
                   </div>
                 )}
@@ -313,7 +457,7 @@ export default function MallAdminPage() {
                 <div key={category.id} className="flex items-center gap-2 rounded-[10px] border border-[var(--line)] bg-[var(--surface-raised)] px-3 py-2">
                   <span className="flex-1 text-sm font-black" style={{ opacity: category.active ? 1 : 0.45 }}>{category.name}</span>
                   <button type="button" onClick={() => void post("/api/mall/ops", { action: "updateCategory", categoryId: category.id, active: !category.active })} className="tag">{category.active ? "停用" : "启用"}</button>
-                  <button type="button" onClick={() => void post("/api/mall/ops", { action: "deleteCategory", categoryId: category.id })} className="text-xs font-black text-[#c4423b]">删除</button>
+                  <button type="button" onClick={() => void post("/api/mall/ops", { action: "deleteCategory", categoryId: category.id })} className="text-xs font-black text-[var(--danger)]">删除</button>
                 </div>
               ))}
               {(ops?.categories ?? []).length === 0 && <div className="py-4 text-center text-xs font-bold text-[var(--muted)]">未配置分类时，门面按商品自带分类自动归组。</div>}
@@ -337,7 +481,7 @@ export default function MallAdminPage() {
                   {banner.imageUrl ? <img src={banner.imageUrl} alt="" className="h-10 w-20 rounded object-cover" /> : <div className="grid h-10 w-20 place-items-center rounded bg-[var(--line)] text-[10px] font-black text-[var(--muted)]">文字</div>}
                   <span className="flex-1 truncate text-sm font-black" style={{ opacity: banner.active ? 1 : 0.45 }}>{banner.title}</span>
                   <button type="button" onClick={() => void post("/api/mall/ops", { action: "updateBanner", bannerId: banner.id, active: !banner.active })} className="tag">{banner.active ? "停用" : "启用"}</button>
-                  <button type="button" onClick={() => void post("/api/mall/ops", { action: "deleteBanner", bannerId: banner.id })} className="text-xs font-black text-[#c4423b]">删除</button>
+                  <button type="button" onClick={() => void post("/api/mall/ops", { action: "deleteBanner", bannerId: banner.id })} className="text-xs font-black text-[var(--danger)]">删除</button>
                 </div>
               ))}
             </div>
@@ -375,7 +519,7 @@ export default function MallAdminPage() {
                   <span className="rounded-full bg-[var(--accent)]/15 px-2 py-0.5 text-[11px] font-black text-[var(--accent)]">{coupon.type === "percent_off" ? t("dynPctOff", { v: coupon.value }) : t("dynPtsOff", { v: coupon.value })}</span>
                   <span className="text-[11px] font-bold text-[var(--muted)]">{t("dynCouponMeta", { min: coupon.minPoints, tier: ({ member: t("dynTierAll"), bronze: t("dynTierBronze"), prata: t("dynTierSilver"), ouro: t("dynTierGold"), diamante: t("dynTierDiamond") } as Record<string, string>)[coupon.minTier], limit: coupon.perRiderLimit === 0 ? t("dynLimitNone") : coupon.perRiderLimit, until: coupon.expiresAt ? t("dynUntil", { d: coupon.expiresAt }) : "" })}</span>
                   <button type="button" onClick={() => void post("/api/mall/ops", { action: "updateCoupon", couponId: coupon.id, active: !coupon.active })} className="tag ml-auto">{coupon.active ? "停用" : "启用"}</button>
-                  <button type="button" onClick={() => void post("/api/mall/ops", { action: "deleteCoupon", couponId: coupon.id })} className="text-xs font-black text-[#c4423b]">删除</button>
+                  <button type="button" onClick={() => void post("/api/mall/ops", { action: "deleteCoupon", couponId: coupon.id })} className="text-xs font-black text-[var(--danger)]">删除</button>
                 </div>
               ))}
               {(ops?.coupons ?? []).length === 0 && <div className="py-4 text-center text-xs font-bold text-[var(--muted)]">暂无优惠券。创建后骑手兑换时自动按等级匹配最优券抵扣。</div>}
@@ -389,43 +533,55 @@ export default function MallAdminPage() {
         <div className="panel p-5">
           <div className="mb-3 flex flex-wrap items-center gap-2">
             {["", "created", "arrived", "fulfilled", "cancelled"].map((status) => (
-              <button key={status || "all"} type="button" onClick={() => setOrderFilter(status)} className={`rounded-full border px-3.5 py-1.5 text-xs font-black ${orderFilter === status ? "border-[var(--accent)] bg-[var(--accent)] text-[var(--accent-ink)]" : "border-[var(--line)] text-[var(--muted)]"}`}>
+              <button key={status || "all"} type="button" onClick={() => { setOrderFilter(status); setOrderPage(1); }} className={`rounded-full border px-3.5 py-1.5 text-xs font-black ${orderFilter === status ? "border-[var(--accent)] bg-[var(--accent)] text-[var(--accent-ink)]" : "border-[var(--line)] text-[var(--muted)]"}`}>
                 {status === "" ? "全部" : orderStatusLabel[status]}
               </button>
             ))}
-            <button type="button" onClick={() => downloadCsv("pontomall-orders.csv", ["订单", "商品", "骑手", "站点", "积分", "现金", "支付", "状态", "创建时间"], orders.map((order) => [order.id, order.productName ?? "", order.riderName ?? "", order.station ?? "", String(order.pointsSpent), order.cashDue ? order.cashDue.toFixed(2) : "", order.paymentStatus ?? "", orderStatusLabel[order.status] ?? order.status, order.createdAt]))} className="ml-auto h-9 rounded-[8px] border border-[var(--line)] px-3 text-xs font-black text-[var(--muted)] hover:border-[var(--accent)]">导出 CSV</button>
+            <button type="button" onClick={() => downloadCsv("pontomall-orders.csv", ["订单", "商品", "骑手", "站点", "积分", "现金", "支付", "状态", "创建时间"], filteredOrders.map((order) => [order.id, order.productName ?? "", order.riderName ?? "", order.station ?? "", String(order.pointsSpent), order.cashDue ? order.cashDue.toFixed(2) : "", order.paymentStatus ?? "", orderStatusLabel[order.status] ?? order.status, order.createdAt]))} className="ml-auto h-9 rounded-[8px] border border-[var(--line)] px-3 text-xs font-black text-[var(--muted)] hover:border-[var(--accent)]">导出 CSV（当前筛选）</button>
+          </div>
+          <div className="mb-3 flex flex-wrap items-center gap-2">
+            <input value={orderSearch} onChange={(e) => { setOrderSearch(e.target.value); setOrderPage(1); }} placeholder="搜索商品 / 骑手 / 站点 / 订单号…" className="h-9 w-64 rounded-[8px] border border-[var(--line)] bg-[var(--surface-raised)] px-3 text-sm font-bold outline-none focus:border-[var(--accent)]" />
+            <label className="text-[11px] font-black text-[var(--muted)]">从
+              <input type="date" value={orderDateFrom} onChange={(e) => { setOrderDateFrom(e.target.value); setOrderPage(1); }} className="ml-1.5 h-9 rounded-[8px] border border-[var(--line)] bg-[var(--surface-raised)] px-2 text-sm font-bold outline-none focus:border-[var(--accent)]" />
+            </label>
+            <label className="text-[11px] font-black text-[var(--muted)]">至
+              <input type="date" value={orderDateTo} onChange={(e) => { setOrderDateTo(e.target.value); setOrderPage(1); }} className="ml-1.5 h-9 rounded-[8px] border border-[var(--line)] bg-[var(--surface-raised)] px-2 text-sm font-bold outline-none focus:border-[var(--accent)]" />
+            </label>
+            <div className="ml-auto">
+              <Pager page={safeOrderPage} pages={orderPages} total={filteredOrders.length} onPage={setOrderPage} />
+            </div>
           </div>
           <div className="overflow-x-auto">
             <table className="w-full min-w-[860px] text-sm">
               <thead><tr className="text-left text-[11px] font-black uppercase text-[var(--muted)]"><th className="py-2">商品</th><th>骑手</th><th>站点</th><th>金额</th><th>支付</th><th>状态</th><th>时间</th><th className="text-right">操作</th></tr></thead>
               <tbody>
-                {orders.map((order) => (
+                {pagedOrders.map((order) => (
                   <tr key={order.id} className="border-t border-[var(--line)] font-bold">
                     <td className="py-2.5">{order.productName}</td>
                     <td>{order.riderName}</td>
                     <td>{order.station}</td>
                     <td>{order.pointsSpent} 分{order.cashDue ? ` + R$${order.cashDue.toFixed(2)}` : ""}</td>
                     <td>{order.paymentStatus ? <span style={{ color: payChipTone[order.paymentStatus] }}>{order.paymentStatus === "paid" ? "已收款" : order.paymentStatus === "submitted" ? "凭证待核" : "待付款"}</span> : "—"}</td>
-                    <td>{order.reviewStatus === "pending" ? <span className="rounded-full px-2 py-0.5 text-[11px] font-black" style={{ background: "#fff4cf", color: "#9a7400" }}>待审核·高价值</span> : <Badge value={orderStatusLabel[order.status] ?? order.status} />}</td>
+                    <td>{order.reviewStatus === "pending" ? <span className="rounded-full px-2 py-0.5 text-[11px] font-black" style={{ background: "#fff4cf", color: "var(--warn)" }}>待审核·高价值</span> : <Badge value={orderStatusLabel[order.status] ?? order.status} />}</td>
                     <td className="text-xs text-[var(--muted)]">{order.createdAt}</td>
                     <td className="text-right">
                       {order.reviewStatus === "pending" ? (
                         <>
-                          <button type="button" onClick={() => void post("/api/mall", { action: "reviewOrder", orderId: order.id, decision: "approve" }, "已批准，资格放行")} className="h-8 rounded-[8px] bg-[var(--accent)] px-2.5 text-xs font-black text-[var(--accent-ink)]">批准</button>
-                          <button type="button" onClick={() => { if (confirm(`拒绝并退还 ${order.pointsSpent} 分给 ${order.riderName}？`)) void post("/api/mall", { action: "reviewOrder", orderId: order.id, decision: "reject" }, "已拒绝并退分"); }} className="ml-1.5 h-8 rounded-[8px] border border-[#c4423b]/40 px-2.5 text-xs font-black text-[#c4423b]">拒绝</button>
+                          <button type="button" onClick={() => { const prev = mall; void optimisticPost("/api/mall", { action: "reviewOrder", orderId: order.id, decision: "approve" }, "已批准，资格放行", () => patchOrder(order.id, { reviewStatus: "approved" }), () => setMall(prev)); }} className="h-8 rounded-[8px] bg-[var(--accent)] px-2.5 text-xs font-black text-[var(--accent-ink)]">批准</button>
+                          <button type="button" onClick={async () => { if (!(await dialog.confirm("拒绝高价值兑换", { message: `拒绝并退还 ${order.pointsSpent} 分给 ${order.riderName}？`, confirmText: "拒绝并退分", tone: "danger" }))) return; const prev = mall; void optimisticPost("/api/mall", { action: "reviewOrder", orderId: order.id, decision: "reject" }, "已拒绝并退分", () => patchOrder(order.id, { reviewStatus: "rejected", status: "cancelled" }), () => setMall(prev)); }} className="ml-1.5 h-8 rounded-[8px] border border-[var(--danger)]/40 px-2.5 text-xs font-black text-[var(--danger)]">拒绝</button>
                         </>
                       ) : order.accountType === "partner" ? (
                         <span className="text-xs text-[var(--muted)]">{order.status === "fulfilled" ? "合作方已确认收货" : "直送门店·待合作方确认"}</span>
                       ) : (
                         <>
-                          {order.status === "created" && !order.voucherCode && <button type="button" onClick={() => void post("/api/mall", { action: "markArrived", orderId: order.id }, "已标记到站并推送骑手")} className="h-8 rounded-[8px] border border-[var(--line)] px-2.5 text-xs font-black text-[var(--muted)] hover:border-[var(--accent)]">到站</button>}
-                          {order.status === "arrived" && <button type="button" onClick={() => void post("/api/mall", { action: "markPickedUp", orderId: order.id }, "已交付")} className="ml-1.5 h-8 rounded-[8px] bg-[var(--accent)] px-2.5 text-xs font-black text-[var(--accent-ink)]">交付</button>}
+                          {order.status === "created" && !order.voucherCode && <button type="button" onClick={() => { const prev = mall; void optimisticPost("/api/mall", { action: "markArrived", orderId: order.id }, "已标记到站并推送骑手", () => patchOrder(order.id, { status: "arrived" }), () => setMall(prev)); }} className="h-8 rounded-[8px] border border-[var(--line)] px-2.5 text-xs font-black text-[var(--muted)] hover:border-[var(--accent)]">到站</button>}
+                          {order.status === "arrived" && <button type="button" onClick={() => { const prev = mall; void optimisticPost("/api/mall", { action: "markPickedUp", orderId: order.id }, "已交付", () => patchOrder(order.id, { status: "fulfilled" }), () => setMall(prev)); }} className="ml-1.5 h-8 rounded-[8px] bg-[var(--accent)] px-2.5 text-xs font-black text-[var(--accent-ink)]">交付</button>}
                         </>
                       )}
                     </td>
                   </tr>
                 ))}
-                {orders.length === 0 && <tr><td colSpan={8} className="py-8 text-center font-bold text-[var(--muted)]">暂无订单。</td></tr>}
+                {filteredOrders.length === 0 && <tr><td colSpan={8} className="py-8 text-center font-bold text-[var(--muted)]">{allOrders.length === 0 ? "暂无订单。" : "没有匹配的订单——调整关键字、状态或日期范围。"}</td></tr>}
               </tbody>
             </table>
           </div>
@@ -452,8 +608,8 @@ export default function MallAdminPage() {
                       <td className="text-right">
                         {topUp.status === "submitted" && (
                           <span className="inline-flex gap-1.5">
-                            <button type="button" onClick={() => void post("/api/mall/ops", { action: "confirmTopUp", topUpId: topUp.id }, "已确认到账，余额已入账")} className="inline-flex h-8 items-center gap-1 rounded-[8px] bg-[var(--accent)] px-2.5 text-xs font-black text-[var(--accent-ink)]"><CheckCircle2 size={13} /> 确认到账</button>
-                            <button type="button" onClick={() => { const note = prompt("驳回原因（可空）") ?? ""; void post("/api/mall/ops", { action: "rejectTopUp", topUpId: topUp.id, note }, "已驳回"); }} className="inline-flex h-8 items-center gap-1 rounded-[8px] border border-[#c4423b]/40 px-2.5 text-xs font-black text-[#c4423b]"><XCircle size={13} /> 驳回</button>
+                            <button type="button" onClick={() => { const prev = ops; void optimisticPost("/api/mall/ops", { action: "confirmTopUp", topUpId: topUp.id }, "已确认到账，余额已入账", () => patchTopUp(topUp.id, { status: "confirmed" }), () => setOps(prev)); }} className="inline-flex h-8 items-center gap-1 rounded-[8px] bg-[var(--accent)] px-2.5 text-xs font-black text-[var(--accent-ink)]"><CheckCircle2 size={13} /> 确认到账</button>
+                            <button type="button" onClick={async () => { const note = await dialog.prompt("驳回充值", { message: `驳回 ${topUp.riderName} 的 R$ ${topUp.amountBRL.toFixed(2)} 充值申请。`, placeholder: "驳回原因（可空）" }); if (note === null) return; const prev = ops; void optimisticPost("/api/mall/ops", { action: "rejectTopUp", topUpId: topUp.id, note }, "已驳回", () => patchTopUp(topUp.id, { status: "rejected" }), () => setOps(prev)); }} className="inline-flex h-8 items-center gap-1 rounded-[8px] border border-[var(--danger)]/40 px-2.5 text-xs font-black text-[var(--danger)]"><XCircle size={13} /> 驳回</button>
                           </span>
                         )}
                       </td>
@@ -479,7 +635,7 @@ export default function MallAdminPage() {
                       <td className="py-2.5 text-xs text-[var(--muted)]">{entry.createdAt}</td>
                       <td>{entry.riderName}</td>
                       <td>{entry.type === "topup" ? "充值" : entry.type === "spend" ? "消费" : entry.type === "refund" ? "退款" : "调整"}</td>
-                      <td style={{ color: entry.type === "spend" ? "#c4423b" : "#1d7a3e" }}>{entry.type === "spend" ? "-" : "+"}R$ {Math.abs(entry.amountBRL).toFixed(2)}</td>
+                      <td style={{ color: entry.type === "spend" ? "var(--danger)" : "var(--success)" }}>{entry.type === "spend" ? "-" : "+"}R$ {Math.abs(entry.amountBRL).toFixed(2)}</td>
                       <td>R$ {entry.balanceAfter.toFixed(2)}</td>
                       <td className="font-mono text-xs">{entry.sourceId}{entry.note ? ` · ${entry.note}` : ""}</td>
                       <td className="text-xs text-[var(--muted)]">{entry.createdBy}</td>
@@ -525,7 +681,7 @@ export default function MallAdminPage() {
                 <div key={row.id} className="flex flex-wrap items-center gap-3 rounded-[10px] border border-[var(--line)] bg-[var(--surface-raised)] px-3.5 py-2.5">
                   <div className="min-w-0 flex-1">
                     <div className="text-sm font-black">{row.productName} <span className="text-[var(--muted)]">· {row.supplierName}</span></div>
-                    <div className="text-xs font-bold text-[var(--muted)]">R$ {row.oldPrice.toFixed(2)} → <b style={{ color: row.newPrice > row.oldPrice ? "#c4423b" : "#1d7a3e" }}>R$ {row.newPrice.toFixed(2)}</b>{row.note ? ` · ${row.note}` : ""} · {row.createdAt}</div>
+                    <div className="text-xs font-bold text-[var(--muted)]">R$ {row.oldPrice.toFixed(2)} → <b style={{ color: row.newPrice > row.oldPrice ? "var(--danger)" : "var(--success)" }}>R$ {row.newPrice.toFixed(2)}</b>{row.note ? ` · ${row.note}` : ""} · {row.createdAt}</div>
                   </div>
                   {row.status === "pending" ? (
                     <span className="flex gap-1.5">
@@ -580,11 +736,12 @@ export default function MallAdminPage() {
                   <div className="flex flex-wrap items-center gap-2">
                     <Boxes size={15} className="text-[var(--muted)]" />
                     <span className="text-sm font-black">{po.supplierName}</span>
-                    <Badge value={poStatusLabel[po.status]} />
+                    <Badge value={(poStatusLabel as Record<string, string>)[po.status] ?? extraPoLabel[po.status] ?? po.status} />
                     <span className="text-xs font-bold text-[var(--muted)]">{po.items.reduce((sum, item) => sum + item.qty, 0)} 件 · 备货参考成本 R$ {po.totalCost.toFixed(2)} · {po.createdAt}</span>
                     <span className="ml-auto flex gap-1.5">
+                      {(po.status as string) === "draft" && <button type="button" onClick={() => void post("/api/mall/ops", { action: "confirmDraftPO", poId: po.id }, "补货单已下达，等待供应商确认")} className="h-8 rounded-[8px] bg-[var(--accent)] px-3 text-xs font-black text-[var(--accent-ink)]">确认下达</button>}
                       {po.status === "shipped" && <button type="button" onClick={() => void post("/api/mall/ops", { action: "receivePO", poId: po.id }, "已入库，库存已增加")} className="h-8 rounded-[8px] bg-[var(--accent)] px-3 text-xs font-black text-[var(--accent-ink)]">确认入库</button>}
-                      {(po.status === "ordered" || po.status === "confirmed") && <button type="button" onClick={() => void post("/api/mall/ops", { action: "cancelPO", poId: po.id }, "已取消")} className="h-8 rounded-[8px] border border-[var(--line)] px-3 text-xs font-black text-[var(--muted)]">取消</button>}
+                      {((po.status as string) === "draft" || po.status === "ordered" || po.status === "confirmed") && <button type="button" onClick={() => void post("/api/mall/ops", { action: "cancelPO", poId: po.id }, "已取消")} className="h-8 rounded-[8px] border border-[var(--line)] px-3 text-xs font-black text-[var(--muted)]">取消</button>}
                     </span>
                   </div>
                   <div className="mt-1 text-xs font-bold text-[var(--muted)]">{po.items.map((item) => `${item.name}×${item.qty}`).join("、")}{po.shipNote ? t("dynLogistics", { x: po.shipNote }) : ""}</div>
@@ -606,15 +763,21 @@ export default function MallAdminPage() {
                   <div className="flex flex-wrap items-center gap-2">
                     <CircleDollarSign size={15} className="text-[var(--muted)]" />
                     <span className="text-sm font-black">{statement.supplierName} · {statement.month}</span>
-                    <Badge value={statementStatusLabel[statement.status]} />
+                    <Badge value={(statementStatusLabel as Record<string, string>)[statement.status] ?? extraStatementLabel[statement.status] ?? statement.status} />
                     <span className="text-xs font-bold text-[var(--muted)]">{statement.lines.length} 笔 · <b>R$ {statement.total.toFixed(2)}</b>{statement.pixKey ? ` · PIX ${statement.pixKey}` : ""}</span>
                     <span className="ml-auto flex gap-1.5">
                       {statement.status === "confirmed" && (
-                        <button type="button" onClick={() => { const note = prompt("付款凭证备注（转账ID等，可空）") ?? ""; void post("/api/mall/ops", { action: "payStatement", statementId: statement.id, receiptNote: note }, "已标记付款"); }} className="h-8 rounded-[8px] bg-[var(--accent)] px-3 text-xs font-black text-[var(--accent-ink)]">标记已付款</button>
+                        <button type="button" onClick={async () => { if (!(await dialog.confirm("标记付款", { message: `确认向供应商「${statement.supplierName}」标记已付款 R$ ${statement.total.toFixed(2)}（${statement.month} 月对账单，${statement.lines.length} 笔）？` }))) return; const note = await dialog.prompt("付款凭证备注", { message: "转账ID等，可空。", placeholder: "如 PIX E2E ID" }); if (note === null) return; void post("/api/mall/ops", { action: "payStatement", statementId: statement.id, receiptNote: note }, "已标记付款"); }} className="h-8 rounded-[8px] bg-[var(--accent)] px-3 text-xs font-black text-[var(--accent-ink)]">标记已付款</button>
+                      )}
+                      {(statement.status as string) === "disputed" && (
+                        <button type="button" onClick={async () => { if (!(await dialog.confirm("重新打开对账单", { message: `将「${statement.supplierName} · ${statement.month}」重置为待确认，供应商可重新核对。` }))) return; void post("/api/mall/ops", { action: "reopenStatement", statementId: statement.id }, "已重新打开，等待供应商确认"); }} className="h-8 rounded-[8px] border border-[var(--warn)]/50 px-3 text-xs font-black text-[var(--warn)]">重新打开</button>
                       )}
                       <button type="button" onClick={() => downloadCsv(`statement-${statement.supplierName}-${statement.month}.csv`, ["日期", "订单", "商品", "供货价"], statement.lines.map((line) => [line.date, line.orderId, line.productName, line.supplyPrice.toFixed(2)]))} className="h-8 rounded-[8px] border border-[var(--line)] px-3 text-xs font-black text-[var(--muted)]">明细 CSV</button>
                     </span>
                   </div>
+                  {(statement.status as string) === "disputed" && (statement as SupplierStatement & { disputeNote?: string }).disputeNote && (
+                    <div className="mt-1 text-xs font-bold" style={{ color: "var(--warn)" }}>异议原因：{(statement as SupplierStatement & { disputeNote?: string }).disputeNote}</div>
+                  )}
                   {statement.paidAt && <div className="mt-1 text-xs font-bold text-[var(--muted)]">{t("dynPaidOn", { d: statement.paidAt })}{statement.receiptNote ? ` · ${statement.receiptNote}` : ""}</div>}
                 </div>
               ))}
@@ -629,17 +792,21 @@ export default function MallAdminPage() {
               <button type="button" onClick={() => void post("/api/mall/ops", { action: "generateRevShareStatement", month: statementMonth }, t("dynShareStatementGen", { m: statementMonth }))} className="h-9 rounded-[8px] bg-[var(--accent)] px-3.5 text-xs font-black text-[var(--accent-ink)]">生成分成对账单</button>
             </div>
             <div className="space-y-2">
-              {(((ops as { revShareStatements?: Array<{ id: string; franchise: string; month: string; status: "draft" | "confirmed" | "paid"; total: number; orders: number; stationShareTotal: number; franchiseNetTotal: number; paidAt?: string }> } | null)?.revShareStatements) ?? []).map((s) => (
+              {(((ops as { revShareStatements?: Array<{ id: string; franchise: string; month: string; status: "draft" | "confirmed" | "paid" | "disputed"; total: number; orders: number; stationShareTotal: number; franchiseNetTotal: number; paidAt?: string; disputeNote?: string }> } | null)?.revShareStatements) ?? []).map((s) => (
                 <div key={s.id} className="rounded-[10px] border border-[var(--line)] bg-[var(--surface-raised)] px-3.5 py-2.5">
                   <div className="flex flex-wrap items-center gap-2">
                     <CircleDollarSign size={15} className="text-[var(--muted)]" />
                     <span className="text-sm font-black">{s.franchise} · {s.month}</span>
-                    <Badge value={{ draft: "待加盟商确认", confirmed: "待付款", paid: "已付款" }[s.status]} />
+                    <Badge value={({ draft: "待加盟商确认", confirmed: "待付款", paid: "已付款", disputed: "有异议" } as Record<string, string>)[s.status] ?? s.status} />
                     <span className="text-xs font-bold text-[var(--muted)]">{s.orders} 单 · 加盟商净 R$ {s.franchiseNetTotal.toFixed(2)} · 站点 R$ {s.stationShareTotal.toFixed(2)} · 合计 <b>R$ {s.total.toFixed(2)}</b></span>
                     {s.status === "confirmed" && (
-                      <button type="button" onClick={() => { const note = prompt("付款凭证备注（可空）") ?? ""; void post("/api/mall/ops", { action: "payRevShareStatement", statementId: s.id, note }, "已标记付款"); }} className="ml-auto h-8 rounded-[8px] bg-[var(--accent)] px-3 text-xs font-black text-[var(--accent-ink)]">标记已付款</button>
+                      <button type="button" onClick={async () => { if (!(await dialog.confirm("标记付款", { message: `确认向加盟商「${s.franchise}」标记已付款 R$ ${s.total.toFixed(2)}（${s.month} 月分成对账单，${s.orders} 单）？` }))) return; const note = await dialog.prompt("付款凭证备注", { message: "转账ID等，可空。", placeholder: "如 PIX E2E ID" }); if (note === null) return; void post("/api/mall/ops", { action: "payRevShareStatement", statementId: s.id, note }, "已标记付款"); }} className="ml-auto h-8 rounded-[8px] bg-[var(--accent)] px-3 text-xs font-black text-[var(--accent-ink)]">标记已付款</button>
+                    )}
+                    {s.status === "disputed" && (
+                      <button type="button" onClick={async () => { if (!(await dialog.confirm("重新打开分成对账单", { message: `将「${s.franchise} · ${s.month}」重置为待确认，加盟商可重新核对。` }))) return; void post("/api/mall/ops", { action: "reopenRevShareStatement", statementId: s.id }, "已重新打开，等待加盟商确认"); }} className="ml-auto h-8 rounded-[8px] border border-[var(--warn)]/50 px-3 text-xs font-black text-[var(--warn)]">重新打开</button>
                     )}
                   </div>
+                  {s.status === "disputed" && s.disputeNote && <div className="mt-1 text-xs font-bold" style={{ color: "var(--warn)" }}>异议原因：{s.disputeNote}</div>}
                   {s.paidAt && <div className="mt-1 text-xs font-bold text-[var(--muted)]">{t("dynPaidOn", { d: s.paidAt })}</div>}
                 </div>
               ))}

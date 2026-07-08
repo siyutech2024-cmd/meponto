@@ -51,7 +51,7 @@ import { dispatchShifts, shiftQuotas, shiftSignups, type DispatchShift, type Shi
 import { appUsers, type AppUser } from "../users";
 import { riderDailyEarnings, riderDailyKpis, type RiderDailyEarning, type RiderDailyKpi } from "../performance";
 import { mallConfigs, type MallConfig } from "../mall";
-import type { CashLedgerEntry, CashTopUp, MallBanner, MallCategory, MallCoupon, MallPayment, MemberMessage, PriceChangeRequest, PurchaseOrder, RevenueShareEntry, RevenueShareStatement, SupplierStatement } from "../mall-ops";
+import type { CashLedgerEntry, CashTopUp, InventoryLedgerEntry, MallBanner, MallCategory, MallCoupon, MallPayment, MemberMessage, PriceChangeRequest, PurchaseOrder, RevenueShareEntry, RevenueShareStatement, SupplierStatement } from "../mall-ops";
 import { riderWithdrawals, walletPayments, type RiderWithdrawal, type WalletPayment } from "../finance";
 import { assessmentRules, type AssessmentRule } from "../assessment";
 import { supportTickets, type SupportTicket } from "../support";
@@ -137,6 +137,7 @@ const globalState = globalThis as typeof globalThis & {
     mallPayments: MallPayment[];
     cashTopUps: CashTopUp[];
     cashLedgerEntries: CashLedgerEntry[];
+    inventoryLedgerEntries: InventoryLedgerEntry[];
     mallRevenueShareEntries: RevenueShareEntry[];
     revenueShareStatements: RevenueShareStatement[];
     memberMessages: MemberMessage[];
@@ -200,6 +201,7 @@ export const memory =
     mallPayments: trackCollection("mallPayments", []),
     cashTopUps: trackCollection("cashTopUps", []),
     cashLedgerEntries: trackCollection("cashLedgerEntries", []),
+    inventoryLedgerEntries: trackCollection<InventoryLedgerEntry>("inventoryLedgerEntries", []),
     mallRevenueShareEntries: trackCollection("mallRevenueShareEntries", []),
     revenueShareStatements: trackCollection("revenueShareStatements", []),
     memberMessages: trackCollection("memberMessages", []),
@@ -306,6 +308,8 @@ memory.cashTopUps ??= [];
 memory.cashTopUps = trackCollection("cashTopUps", memory.cashTopUps);
 memory.cashLedgerEntries ??= [];
 memory.cashLedgerEntries = trackCollection("cashLedgerEntries", memory.cashLedgerEntries);
+memory.inventoryLedgerEntries ??= [];
+memory.inventoryLedgerEntries = trackCollection("inventoryLedgerEntries", memory.inventoryLedgerEntries);
 memory.mallRevenueShareEntries ??= [];
 memory.mallRevenueShareEntries = trackCollection("mallRevenueShareEntries", memory.mallRevenueShareEntries);
 memory.revenueShareStatements ??= [];
@@ -349,6 +353,57 @@ export function makeServerId(prefix: string, count: number) {
  *  store and the server/database share the same record ids. */
 export function acceptClientId(id: unknown): string | null {
   return typeof id === "string" && /^[\w.:-]{1,64}$/.test(id) ? id : null;
+}
+
+/** Append a record to the append-only inventory ledger (Hard Rule #4 —
+ *  every `product.stock` mutation must leave a ledger record). */
+export function appendInventoryLedger(entry: Omit<InventoryLedgerEntry, "id" | "createdAt">) {
+  const row: InventoryLedgerEntry = {
+    id: makeServerId("inv", memory.inventoryLedgerEntries.length + 1),
+    createdAt: new Date().toISOString().slice(0, 16).replace("T", " "),
+    ...entry,
+  };
+  memory.inventoryLedgerEntries.unshift(row);
+  return row;
+}
+
+/**
+ * P1-2 low-stock auto-replenish: called right after a redemption decrements
+ * `product.stock` (mall route + marketplace/orders share this single point).
+ * Creates a status:"draft" PO (needs `confirmDraftPO` in the mall office to
+ * become "ordered") when:
+ *  - the product has a supplierName, AND
+ *  - stock ≤ (restockThreshold ?? 3), AND
+ *  - no open PO (draft/ordered/confirmed/shipped) already covers this product.
+ * qty = max(ceil(30-day redemptions × (deliveryCycleDays ?? 7) / 30), threshold × 2).
+ */
+export function maybeAutoReplenishDraft(productId: string, actor: string): PurchaseOrder | null {
+  const product = memory.marketplaceProducts.find((item) => item.id === productId);
+  if (!product?.supplierName) return null;
+  const threshold = product.restockThreshold ?? 3;
+  if (product.stock > threshold) return null;
+  const OPEN_PO = new Set<PurchaseOrder["status"]>(["draft", "ordered", "confirmed", "shipped"]);
+  if (memory.purchaseOrders.some((po) => OPEN_PO.has(po.status) && po.items.some((item) => item.productId === product.id))) return null;
+  const since = Date.now() - 30 * 24 * 3600 * 1000;
+  const recentRedemptions = memory.marketplaceOrders.filter(
+    (order) => order.productId === product.id && order.status !== "cancelled" && new Date(order.createdAt.replace(" ", "T")).getTime() >= since,
+  ).length;
+  const cycleDays = product.deliveryCycleDays ?? 7;
+  const qty = Math.max(Math.ceil((recentRedemptions * cycleDays) / 30), threshold * 2);
+  const supplyPrice = product.supplyPrice ?? 0;
+  const po: PurchaseOrder = {
+    id: makeServerId("mpo", memory.purchaseOrders.length + 1),
+    supplierName: product.supplierName,
+    items: [{ productId: product.id, name: product.name, qty, supplyPrice }],
+    totalCost: Math.round(qty * supplyPrice * 100) / 100,
+    note: `auto-replenish: estoque ${product.stock} ≤ limiar ${threshold}`,
+    status: "draft",
+    createdAt: new Date().toISOString().slice(0, 16).replace("T", " "),
+    createdBy: "System",
+  };
+  memory.purchaseOrders.unshift(po);
+  appendServerAudit({ actor, action: "MALL_PO_AUTODRAFT", entity: "PurchaseOrder", entityId: po.id, detail: `${product.name} (${product.supplierName}): estoque ${product.stock} ≤ ${threshold} → rascunho de ${qty} un.`, risk: "Low" });
+  return po;
 }
 
 export function appendServerAudit(entry: Omit<ServerAuditEntry, "id" | "createdAt">) {
