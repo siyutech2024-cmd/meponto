@@ -226,9 +226,18 @@ export default function RiderMonitorPage() {
       />
 
       {isStale ? (
-        <div className="mb-3 flex items-center gap-2 rounded-[8px] border border-[var(--danger)] bg-[var(--danger-bg)] px-4 py-3 text-sm font-black text-[var(--danger-ink)]">
-          {t("rmStale", { min: staleMin })}
-        </div>
+        isHQ ? (
+          // HQ sees the operational truth (scraper likely down, re-login needed).
+          <div className="mb-3 flex items-center gap-2 rounded-[8px] border border-[var(--danger)] bg-[var(--danger-bg)] px-4 py-3 text-sm font-black text-[var(--danger-ink)]">
+            {t("rmStale", { min: staleMin })}
+          </div>
+        ) : (
+          // Franchise/station portals get a soft "data as of …" note — no
+          // internal scraper/Eastwind details outside HQ.
+          <div className="mb-3 flex items-center gap-2 rounded-[8px] border border-[var(--line)] bg-[var(--surface-raised)] px-4 py-3 text-sm font-bold text-[var(--muted-strong)]">
+            {t("rmDataAsOf", { time: batchLabel })}
+          </div>
+        )
       ) : null}
 
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
