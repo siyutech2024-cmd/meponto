@@ -3,6 +3,8 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { RefreshCcw, Search, Bike, X, MapPin, Phone } from "lucide-react";
 import { AppShell, DataTable, PageTitle } from "../components/ui";
+import RiderMap, { type MapRider } from "./RiderMap";
+import { HOT_ZONES } from "./hot-zones";
 import { readSession } from "../lib/session";
 import { useVentoStore } from "../lib/store";
 import { translate, type TranslationKey } from "../lib/i18n";
@@ -94,6 +96,10 @@ export default function RiderMonitorPage() {
   const [onlyUnassigned, setOnlyUnassigned] = useState(false);
   const [updatedAt, setUpdatedAt] = useState("");
   const [detailKey, setDetailKey] = useState<string | null>(null);
+  // Hot zone → franchise assignments (HQ assigns; franchise portals are
+  // limited to their own zones). { [zoneId]: franchiseName }
+  const [zoneAssign, setZoneAssign] = useState<Record<string, string>>({});
+  const [showZonePanel, setShowZonePanel] = useState(false);
 
   const headers = useMemo(() => ({ "Content-Type": "application/json", "x-vento-role": session?.role ?? "Super Admin" }), [session]);
 
@@ -108,11 +114,28 @@ export default function RiderMonitorPage() {
     }
   }, [headers, scopeFranchise, scopeStation]);
 
+  const loadZoneAssignments = useCallback(async () => {
+    const res = await fetch("/api/eastwind/zone-assignments", { headers, cache: "no-store" });
+    if (res.ok) {
+      const list = ((await res.json()).data ?? []) as Array<{ id: string; franchise: string }>;
+      setZoneAssign(Object.fromEntries(list.map((a) => [a.id, a.franchise])));
+    }
+  }, [headers]);
+
+  const saveZoneAssignment = useCallback(async (zoneId: string, franchise: string) => {
+    setZoneAssign((prev) => ({ ...prev, [zoneId]: franchise })); // optimistic
+    const res = await fetch("/api/eastwind/zone-assignments", {
+      method: "POST", headers, body: JSON.stringify({ zoneId, franchise }),
+    });
+    if (!res.ok) void loadZoneAssignments(); // roll back to server truth
+  }, [headers, loadZoneAssignments]);
+
   useEffect(() => {
     void load();
+    void loadZoneAssignments();
     const timer = setInterval(() => void load(), 60_000);
     return () => clearInterval(timer);
-  }, [load]);
+  }, [load, loadZoneAssignments]);
 
   const riders = data?.riders ?? [];
   const cats = data?.summary.cats;
@@ -136,6 +159,35 @@ export default function RiderMonitorPage() {
   const na = (v: number | string | null | undefined, suffix = "") => (v == null ? "N/A" : `${v}${suffix}`);
   const naPct = (v: number | null | undefined) => (v == null ? "N/A" : `${v}%`);
   const detail = detailKey ? riders.find((r) => riderKey(r) === detailKey) ?? null : null;
+
+  // Map dots: every scoped rider with a GPS fix, colored by status category.
+  const mapRiders: MapRider[] = useMemo(
+    () =>
+      riders
+        .filter((r) => r.lat != null && r.lng != null)
+        .map((r) => ({
+          key: riderKey(r), name: r.name || "—", phone: r.phone,
+          statusText: catLabel(r), color: CAT_COLOR[r.cat], lat: r.lat as number, lng: r.lng as number,
+        })),
+    [riders, catLabel],
+  );
+  const noGpsCount = riders.length - mapRiders.length;
+
+  // Zone visibility per portal: HQ sees everything; a franchise portal only
+  // its assigned zones; a station portal sees all zones (its riders are
+  // already scoped, and station→franchise ownership isn't in this payload).
+  const visibleZones = useMemo(
+    () => (scopeFranchise ? HOT_ZONES.filter((z) => zoneAssign[z.id] === scopeFranchise) : HOT_ZONES),
+    [scopeFranchise, zoneAssign],
+  );
+  // Franchise choices for the HQ assign panel: every franchise seen in the
+  // city-wide summary plus any already holding an assignment.
+  const franchiseOptions = useMemo(() => {
+    const names = new Set<string>();
+    for (const f of data?.summary.byFranchise ?? []) if (f.name && f.name !== "未归属") names.add(f.name);
+    for (const f of Object.values(zoneAssign)) if (f) names.add(f);
+    return [...names].sort((a, b) => a.localeCompare(b));
+  }, [data, zoneAssign]);
 
   const catChips: Array<[Cat | "", string]> = [
     ["", t("rmAllStatus")], ["delivering", t("rmDelivering")], ["online", t("rmOnline")], ["notOnline", t("rmNotOnline")], ["below", t("rmBelow")], ["outArea", t("rmOutArea")],
@@ -184,6 +236,59 @@ export default function RiderMonitorPage() {
           <span className="ml-auto self-center text-[10px] text-[var(--muted)]">{t("rmKpiCityNote")}</span>
         </div>
       ) : null}
+
+      <div className="mt-5">
+        <div className="mb-2 flex items-center gap-3">
+          <span className="text-[11px] font-bold uppercase tracking-wider text-[var(--muted)]">{t("rmMap")}</span>
+          <span className="text-[11px] text-[var(--muted)]">{mapRiders.length} {t("rmRidersUnit")}{noGpsCount > 0 ? ` · ${t("rmNoGps", { n: noGpsCount })}` : ""}</span>
+          {scopeFranchise && visibleZones.length === 0 ? (
+            <span className="text-[11px] font-bold text-[var(--danger-ink)]">{t("rmZoneNone")}</span>
+          ) : null}
+          {isHQ ? (
+            <button
+              onClick={() => setShowZonePanel((v) => !v)}
+              className={`ml-auto h-7 rounded-full border px-3 text-[11px] font-bold transition-colors ${showZonePanel ? "border-[var(--accent)] bg-[rgba(255,209,0,0.12)] text-[var(--accent)]" : "border-[var(--line)] text-[var(--muted-strong)] hover:border-[var(--accent)]"}`}
+            >
+              {t("rmZoneAssign")}
+            </button>
+          ) : null}
+        </div>
+
+        {isHQ && showZonePanel ? (
+          <div className="mb-3 rounded-[10px] border border-[var(--line)] bg-[var(--surface-raised)] p-4">
+            <div className="mb-2 text-[11px] font-bold uppercase tracking-wider text-[var(--muted)]">{t("rmZoneAssignHint")}</div>
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-4">
+              {HOT_ZONES.map((z) => (
+                <div key={z.id} className="flex items-center gap-2 rounded-[8px] border border-[var(--line)] bg-[var(--surface)] px-3 py-2">
+                  <span className="inline-block h-3 w-3 shrink-0 rounded-sm" style={{ background: z.color }} />
+                  <div className="min-w-0 flex-1">
+                    <div className="truncate text-xs font-bold text-[var(--text)]">{z.group}</div>
+                    <div className="text-[10px] text-[var(--muted)]">{z.hotZone ?? z.id}</div>
+                  </div>
+                  <select
+                    value={zoneAssign[z.id] ?? ""}
+                    onChange={(e) => void saveZoneAssignment(z.id, e.target.value)}
+                    className="h-8 max-w-[45%] rounded-[6px] border border-[var(--line)] bg-[var(--surface-raised)] px-2 text-xs font-bold text-[var(--text)] outline-none focus:border-[var(--accent)]"
+                  >
+                    <option value="">{t("rmZoneUnassigned")}</option>
+                    {franchiseOptions.map((f) => (
+                      <option key={f} value={f}>{f}</option>
+                    ))}
+                  </select>
+                </div>
+              ))}
+            </div>
+          </div>
+        ) : null}
+
+        <RiderMap
+          riders={mapRiders}
+          zones={visibleZones}
+          zoneLabel={(zoneId) => zoneAssign[zoneId] || null}
+          focusKey={detailKey}
+          onSelect={setDetailKey}
+        />
+      </div>
 
       {isHQ && data ? (
         <div className="mt-5 grid grid-cols-1 gap-5 xl:grid-cols-2">

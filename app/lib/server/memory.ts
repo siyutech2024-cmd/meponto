@@ -133,8 +133,13 @@ const globalState = globalThis as typeof globalThis & {
     mallRevenueShareEntries: RevenueShareEntry[];
     revenueShareStatements: RevenueShareStatement[];
     memberMessages: MemberMessage[];
+    hotZoneAssignments: HotZoneAssignment[];
   };
 };
+
+/** HQ assignment of an Eastwind hot zone (see app/rider-monitor/hot-zones.ts)
+ *  to a franchise. id = the zone's stable id; franchise = franchise name. */
+export type HotZoneAssignment = { id: string; franchise: string; updatedAt: string };
 
 export const memory =
   globalState.ventoMemory ??
@@ -191,6 +196,7 @@ export const memory =
     mallRevenueShareEntries: trackCollection("mallRevenueShareEntries", []),
     revenueShareStatements: trackCollection("revenueShareStatements", []),
     memberMessages: trackCollection("memberMessages", []),
+    hotZoneAssignments: trackCollection<HotZoneAssignment>("hotZoneAssignments", []),
   });
 
 // Restore persisted data from the database (no-op when USE_SUPABASE is off).
@@ -299,6 +305,8 @@ memory.walletPayments ??= [];
 memory.walletPayments = trackCollection("walletPayments", memory.walletPayments);
 memory.assessmentRules ??= [];
 memory.assessmentRules = trackCollection("assessmentRules", memory.assessmentRules);
+memory.hotZoneAssignments ??= [];
+memory.hotZoneAssignments = trackCollection("hotZoneAssignments", memory.hotZoneAssignments);
 
 export function jsonResponse<T>(data: T, init?: ResponseInit) {
   // Make sure pending mutations reach the database even on serverless,
