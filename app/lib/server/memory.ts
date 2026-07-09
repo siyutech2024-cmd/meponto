@@ -138,8 +138,10 @@ const globalState = globalThis as typeof globalThis & {
 };
 
 /** HQ assignment of an Eastwind hot zone (see app/rider-monitor/hot-zones.ts)
- *  to a franchise. id = the zone's stable id; franchise = franchise name. */
-export type HotZoneAssignment = { id: string; franchise: string; updatedAt: string };
+ *  to one or MORE franchises (zones can be shared). id = the zone's stable id.
+ *  Legacy rows persisted with a single `franchise` string are normalized on
+ *  read by the zone-assignments route. */
+export type HotZoneAssignment = { id: string; franchises: string[]; updatedAt: string; franchise?: string };
 
 export const memory =
   globalState.ventoMemory ??

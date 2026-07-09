@@ -20,9 +20,13 @@ export type MapRider = {
   color: string;
   lat: number;
   lng: number;
+  /** Pre-localized summary lines shown in the hover tooltip (shift, zone, …). */
+  metaLines?: string[];
 };
 
 const FOCUS_ZOOM = 16;
+const DEFAULT_CENTER: [number, number] = [-23.63, -46.66];
+const DEFAULT_ZOOM = 12;
 
 export default function RiderMap({
   riders,
@@ -43,6 +47,8 @@ export default function RiderMap({
   const mapRef = useRef<any>(null);
   const markersRef = useRef<Map<string, any>>(new Map());
   const zoneLayerRef = useRef<any>(null);
+  const zoneBoundsRef = useRef<any>(null);
+  const prevFocusRef = useRef<string | null>(null);
   const zoneLabelRef = useRef(zoneLabel);
   zoneLabelRef.current = zoneLabel;
   const onSelectRef = useRef(onSelect);
@@ -114,6 +120,9 @@ export default function RiderMap({
     }
     layer.addTo(map);
     zoneLayerRef.current = layer;
+    zoneBoundsRef.current = zones.length
+      ? (window as any).L.latLngBounds(zones.flatMap((z) => z.points.map(([lng, lat]) => [lat, lng])))
+      : null;
   }, [zones, ready]);
 
   // Sync markers whenever riders change (and once the map is ready).
@@ -135,6 +144,7 @@ export default function RiderMap({
         existing.setLatLng([r.lat, r.lng]);
         existing.setStyle({ color: r.color, fillColor: r.color });
         existing.setPopupContent(popupHtml(r));
+        existing.setTooltipContent(tooltipHtml(r));
       } else {
         const m = L.circleMarker([r.lat, r.lng], {
           radius: 8,
@@ -144,7 +154,9 @@ export default function RiderMap({
           fillOpacity: 0.85,
         })
           .addTo(map)
-          .bindPopup(popupHtml(r));
+          .bindPopup(popupHtml(r))
+          // Hover card: rider summary (name, status, shift, zone, online, done).
+          .bindTooltip(tooltipHtml(r), { direction: "top", offset: [0, -8], opacity: 0.95 });
         m.on("click", () => {
           onSelectRef.current(r.key);
           map.flyTo([r.lat, r.lng], Math.max(map.getZoom(), FOCUS_ZOOM));
@@ -154,10 +166,22 @@ export default function RiderMap({
     }
   }, [riders, ready]);
 
-  // Fly to the focused rider (selected from the list or drawer).
+  // Fly to the focused rider (selected from the list or drawer). When the
+  // focus is CLEARED (detail drawer closed), fly back to the default view:
+  // the visible zones' bounds, or the city default when no zones are drawn.
   useEffect(() => {
     const map = mapRef.current;
-    if (!map || !focusKey) return;
+    const hadFocus = prevFocusRef.current;
+    prevFocusRef.current = focusKey;
+    if (!map) return;
+    if (!focusKey) {
+      if (hadFocus) {
+        map.closePopup();
+        if (zoneBoundsRef.current) map.flyToBounds(zoneBoundsRef.current, { padding: [24, 24] });
+        else map.flyTo(DEFAULT_CENTER, DEFAULT_ZOOM);
+      }
+      return;
+    }
     const r = riders.find((x) => x.key === focusKey);
     if (!r) return;
     map.flyTo([r.lat, r.lng], Math.max(map.getZoom(), FOCUS_ZOOM));
@@ -178,4 +202,9 @@ const esc = (s: string) => s.replace(/[<>&"]/g, (c) => ({ "<": "&lt;", ">": "&gt
 
 function popupHtml(r: MapRider): string {
   return `<b>${esc(r.name)}</b><br><span style="color:${esc(r.color)};font-weight:700">${esc(r.statusText)}</span>${r.phone ? `<br><small>${esc(r.phone)}</small>` : ""}`;
+}
+
+function tooltipHtml(r: MapRider): string {
+  const meta = (r.metaLines ?? []).map((l) => `<br><small>${esc(l)}</small>`).join("");
+  return `<b>${esc(r.name)}</b><br><span style="color:${esc(r.color)};font-weight:700">${esc(r.statusText)}</span>${meta}${r.phone ? `<br><small>${esc(r.phone)}</small>` : ""}`;
 }
