@@ -14,3 +14,6 @@ supabase/.temp
 
 # Local-only documents (contracts etc.) — never commit
 /Contrato_Credenciamento_MePonto_revisado.docx
+
+*.aab
+*.log

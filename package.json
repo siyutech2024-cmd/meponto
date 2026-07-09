@@ -9,6 +9,7 @@
     "smoke": "node scripts/smoke.mjs",
     "a11y:smoke": "node scripts/a11y-smoke.mjs",
     "workflow:smoke": "node scripts/workflow-smoke.mjs",
+    "procurement:smoke": "node scripts/procurement-smoke.mjs",
     "verify:persistence": "node scripts/verify-persistence.mjs",
     "module:guard": "node scripts/module-guard.mjs",
     "codex:preflight": "node scripts/codex-preflight.mjs",

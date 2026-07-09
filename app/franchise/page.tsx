@@ -1,8 +1,10 @@
 "use client";
 
-import { AlertTriangle, CalendarDays, CheckCircle2, FileText, MapPinned, Target, TrendingUp } from "lucide-react";
+import { useEffect, useState } from "react";
+import { AlertTriangle, CalendarDays, CheckCircle2, FileText, MapPinned, Store, Target, TrendingUp } from "lucide-react";
 import { AppShell, Badge, PageTitle } from "../components/ui";
-import type { Language } from "../lib/i18n";
+import { translate, type Language, type TranslationKey } from "../lib/i18n";
+import { readSession } from "../lib/session";
 import { useVentoStore } from "../lib/store";
 
 type CardTuple = [string, string, string?];
@@ -406,9 +408,49 @@ function ActionCard({ title, detail, meta }: { title: string; detail: string; me
   );
 }
 
+/** PontoMall revenue-share summary for franchise sessions (silent on 403/no scope). */
+type MallShareSummary = { total: number; orders: number; pending: number };
+
+function useMallShareSummary(): MallShareSummary | null {
+  const [summary, setSummary] = useState<MallShareSummary | null>(null);
+
+  useEffect(() => {
+    const session = readSession();
+    if (!session) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const response = await fetch("/api/mall/ops", { headers: { "x-vento-role": session.role ?? "" }, cache: "no-store" });
+        if (!response.ok) return; // 403 / not logged in → degrade silently.
+        const data = (await response.json())?.data;
+        if (!data || data.scope !== "franchise") return; // only franchise-scoped sessions get the card.
+        const month = new Date().toISOString().slice(0, 7);
+        const entries = (data.revShareEntries ?? []) as Array<{ month?: string; franchiseShareBRL?: number }>;
+        const monthEntries = entries.filter((entry) => entry.month === month);
+        const total = Math.round(monthEntries.reduce((sum, entry) => sum + (entry.franchiseShareBRL ?? 0), 0) * 100) / 100;
+        const pending = ((data.revShareStatements ?? []) as Array<{ status?: string }>).filter((s) => s.status === "draft").length;
+        if (!cancelled) setSummary({ total, orders: monthEntries.length, pending });
+      } catch {
+        // Network failure → keep the page working without the card.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  return summary;
+}
+
 export default function FranchisePage() {
   const language = useVentoStore((state) => state.language);
   const copy = franchiseCopies[language];
+  const mallShare = useMallShareSummary();
+  const t = (key: TranslationKey, vars?: Record<string, string | number | undefined>) => {
+    let text = translate(language, key);
+    if (vars) for (const [name, value] of Object.entries(vars)) text = text.replace(`{${name}}`, String(value ?? ""));
+    return text;
+  };
 
   return (
     <AppShell>
@@ -424,6 +466,29 @@ export default function FranchisePage() {
           </div>
         ))}
       </section>
+
+      {mallShare && (
+        <section className="mt-5 rounded-xl border border-[var(--line)] bg-[var(--surface)] p-5">
+          <div className="flex flex-wrap items-center justify-between gap-4">
+            <div className="flex items-start gap-3">
+              <Store className="mt-1 shrink-0 text-[var(--accent)]" size={20} />
+              <div>
+                <div className="text-xs font-black uppercase text-[var(--accent)]">{t("frMsTitle")}</div>
+                <div className="mt-1 flex flex-wrap items-baseline gap-3">
+                  <span className="text-3xl font-black text-[var(--text)]">R$ {mallShare.total.toFixed(2)}</span>
+                  <span className="text-xs font-black uppercase text-[var(--muted)]">{t("frMsMonthLabel")}</span>
+                </div>
+                <p className="mt-1 text-sm leading-6 text-[var(--text-soft)]">
+                  {t("frMsOrdersLine", { n: mallShare.orders })} · {mallShare.pending > 0 ? t("frMsPending", { n: mallShare.pending }) : t("frMsNoPending")}
+                </p>
+              </div>
+            </div>
+            <a href="/wallet" className="rounded-lg border border-[var(--line)] bg-[var(--surface-raised)] px-4 py-2 text-sm font-black text-[var(--accent)]">
+              {t("frMsGoWallet")}
+            </a>
+          </div>
+        </section>
+      )}
 
       <section className="mt-5 rounded-xl border border-[#5542a0] bg-[#151129] p-5">
         <div className="mb-4 flex flex-wrap items-start justify-between gap-3">

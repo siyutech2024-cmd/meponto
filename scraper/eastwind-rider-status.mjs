@@ -170,11 +170,17 @@ function inShiftWindow() {
   return cur >= cfg.shiftStartMin || cur < cfg.shiftEndMin; // window wraps midnight
 }
 
+let pulling = false; // re-entrancy guard: a slow round must not overlap the next tick
 async function pull(ctx) {
+  if (pulling) {
+    log("previous round still running — skip");
+    return;
+  }
   if (!inShiftWindow()) {
     log("outside shift window — skip");
     return;
   }
+  pulling = true;
   const capturedAt = new Date().toISOString();
   const page = await ctx.newPage();
 
@@ -243,6 +249,7 @@ async function pull(ctx) {
     if (!res.ok) await alert("ingest", `ingest failed HTTP ${res.status}: ${txt.slice(0, 200)}`);
     else _alertedAt.delete("login"); // healthy round clears the login alert throttle
   } finally {
+    pulling = false;
     await page.close();
   }
 }

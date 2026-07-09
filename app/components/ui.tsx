@@ -625,6 +625,92 @@ export function Field({ label, value }: { label: string; value: React.ReactNode 
   );
 }
 
+/**
+ * Lightweight in-app form dialog — the shared replacement for window.prompt /
+ * window.confirm when a flow needs a title/body plus zero or more input
+ * fields (e.g. structured ship notes). For simple one-shot confirm/prompt
+ * flows prefer the promise-based `useDialog()` from `./dialog`; both render
+ * the same surface (--surface/--line/--accent), no third-party libs.
+ */
+export type FormDialogField = {
+  key: string;
+  label: string;
+  placeholder?: string;
+  defaultValue?: string;
+  /** Confirm stays disabled until required fields are non-empty. */
+  required?: boolean;
+};
+
+export function FormDialog({
+  open,
+  title,
+  body,
+  fields = [],
+  confirmText = "确定",
+  cancelText = "取消",
+  tone = "default",
+  onConfirm,
+  onClose,
+}: {
+  open: boolean;
+  title: string;
+  body?: React.ReactNode;
+  fields?: FormDialogField[];
+  confirmText?: string;
+  cancelText?: string;
+  tone?: "default" | "danger";
+  onConfirm: (values: Record<string, string>) => void | Promise<void>;
+  onClose: () => void;
+}) {
+  const [values, setValues] = useState<Record<string, string>>({});
+
+  useEffect(() => {
+    if (!open) return;
+    const initial: Record<string, string> = {};
+    for (const field of fields) initial[field.key] = field.defaultValue ?? "";
+    setValues(initial);
+    // Re-seed only when the dialog (re)opens.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
+
+  if (!open) return null;
+  const missingRequired = fields.some((field) => field.required && !(values[field.key] ?? "").trim());
+
+  return (
+    <div className="fixed inset-0 z-[100] grid place-items-center bg-[var(--overlay)] p-4 backdrop-blur-sm" onMouseDown={onClose}>
+      <div className="w-full max-w-md rounded-[12px] border border-[var(--line)] bg-[var(--surface)] p-5 shadow-2xl" onMouseDown={(e) => e.stopPropagation()}>
+        <h2 className="text-lg font-black text-[var(--text)]">{title}</h2>
+        {body && <div className="mt-2 whitespace-pre-line text-sm font-bold leading-6 text-[var(--muted-strong)]">{body}</div>}
+        {fields.map((field, index) => (
+          <label key={field.key} className="mt-3 block">
+            <span className="mb-1 block text-[10px] font-black uppercase text-[var(--muted)]">{field.label}</span>
+            <input
+              autoFocus={index === 0}
+              value={values[field.key] ?? ""}
+              onChange={(e) => setValues((prev) => ({ ...prev, [field.key]: e.target.value }))}
+              placeholder={field.placeholder}
+              className="h-11 w-full rounded-[8px] border border-[var(--line)] bg-[var(--surface-raised)] px-3 text-sm font-bold text-[var(--text)] outline-none focus:border-[var(--accent)]"
+            />
+          </label>
+        ))}
+        <div className="mt-5 flex justify-end gap-2">
+          <button type="button" onClick={onClose} className="h-10 rounded-[8px] border border-[var(--line)] px-4 text-sm font-black text-[var(--muted-strong)] hover:border-[var(--muted)]">
+            {cancelText}
+          </button>
+          <button
+            type="button"
+            disabled={missingRequired}
+            onClick={() => void onConfirm(values)}
+            className={`h-10 rounded-[8px] px-5 text-sm font-black disabled:cursor-not-allowed disabled:opacity-50 ${tone === "danger" ? "bg-[var(--danger)] text-white" : "bg-[var(--accent)] text-[var(--accent-ink)]"}`}
+          >
+            {confirmText}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function AlertRow({ title, detail }: { title: string; detail: string }) {
   return (
     <div className="flex items-start gap-3 rounded-[8px] border border-[var(--line)] bg-[var(--surface-raised)] p-3.5">

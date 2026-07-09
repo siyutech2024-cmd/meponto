@@ -5,6 +5,9 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.Row
@@ -184,6 +187,80 @@ fun RootScaffold() {
                     .padding(horizontal = 16.dp, vertical = 10.dp),
             ) {
                 Text(msg, color = me.danger, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+            }
+        }
+
+        // Push detail card: the tray truncates long messages — tapping the
+        // notification opens the app AND shows the full title/body/banner here.
+        // The same content is also persisted server-side in the message center
+        // (Mall › Mensagens), so it can be reread any time.
+        PushNavigator.pendingNotice.value?.let { notice ->
+            androidx.compose.ui.window.Dialog(onDismissRequest = { PushNavigator.clearNotice() }) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(22.dp))
+                        .background(me.surface),
+                ) {
+                    notice.imageUrl?.let { img ->
+                        coil.compose.AsyncImage(
+                            model = img,
+                            contentDescription = null,
+                            contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                            modifier = Modifier.fillMaxWidth().height(150.dp),
+                        )
+                    }
+                    Column(Modifier.padding(20.dp)) {
+                        Text(
+                            loc.t("push.detailTag").uppercase(),
+                            color = me.accent,
+                            fontWeight = FontWeight.Black,
+                            fontSize = 10.sp,
+                            letterSpacing = 1.2.sp,
+                        )
+                        Spacer(Modifier.height(6.dp))
+                        Text(notice.title, color = me.text, fontWeight = FontWeight.Black, fontSize = 18.sp)
+                        Spacer(Modifier.height(8.dp))
+                        Text(
+                            notice.body,
+                            color = me.muted,
+                            fontSize = 14.sp,
+                            lineHeight = 20.sp,
+                            modifier = Modifier
+                                .heightIn(max = 260.dp)
+                                .verticalScroll(rememberScrollState()),
+                        )
+                        Spacer(Modifier.height(16.dp))
+                        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                loc.t("push.close"),
+                                color = me.muted,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 14.sp,
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(12.dp))
+                                    .clickable { PushNavigator.clearNotice() }
+                                    .padding(horizontal = 14.dp, vertical = 10.dp),
+                            )
+                            Spacer(Modifier.weight(1f))
+                            Text(
+                                loc.t("push.open"),
+                                color = me.accentInk,
+                                fontWeight = FontWeight.Black,
+                                fontSize = 14.sp,
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(12.dp))
+                                    .background(me.accent)
+                                    .clickable {
+                                        tab = PushNavigator.tabFor(notice.url)
+                                        overlay = Overlay.NONE
+                                        PushNavigator.clearNotice()
+                                    }
+                                    .padding(horizontal = 18.dp, vertical = 10.dp),
+                            )
+                        }
+                    }
+                }
             }
         }
     }

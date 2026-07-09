@@ -34,6 +34,10 @@
   --danger: #ff5c70;
   --warning: #ffb454;
   --ok: #2dd4bf;
+  /* Flat status tokens for mall/ops workspaces (converged from previously
+     hardcoded #c4423b / #9a7400 / #1d7a3e — see PontoMall pages). */
+  --warn: #9a7400;
+  --success: #1d7a3e;
   --danger-ink: #ff9aa7;
   --warning-ink: #ffd39a;
   --ok-ink: #7de9db;

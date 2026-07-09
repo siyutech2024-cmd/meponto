@@ -32,6 +32,38 @@ export const MARKETPLACE_EVENTS = {
   orderRejected: "marketplace.order.rejected.v1",
 } as const;
 
+/** Versioned franchise-procurement event names (FPO state machine + ledgers). */
+export const PROCUREMENT_EVENTS = {
+  fpoCreated: "procurement.fpo.created.v1",
+  fpoApproved: "procurement.fpo.approved.v1",
+  fpoRejected: "procurement.fpo.rejected.v1",
+  fpoConfirmed: "procurement.fpo.confirmed.v1",
+  fpoShipped: "procurement.fpo.shipped.v1",
+  fpoArrived: "procurement.fpo.arrived.v1",
+  fpoReceived: "procurement.fpo.received.v1",
+  fpoCancelled: "procurement.fpo.cancelled.v1",
+  stockInbound: "station.stock.inbound.v1",
+  stockOutbound: "station.stock.outbound.v1",
+  stockReserved: "station.stock.reserved.v1",
+  stockReleased: "station.stock.released.v1",
+  stockAdjusted: "station.stock.adjusted.v1",
+  stockTransferred: "station.stock.transferred.v1",
+  depositDebited: "franchise.deposit.debited.v1",
+  depositRefunded: "franchise.deposit.refunded.v1",
+  depositToppedUp: "franchise.deposit.topped_up.v1",
+  /** Explicit procurement margin ledger accrual (buyout/consignment spread;
+   *  compensating reversals emit the same event with negative amounts). */
+  marginAccrued: "procurement.margin.accrued.v1",
+} as const;
+
+/** Versioned supplier-side event names (distribution consent flow). */
+export const SUPPLIER_EVENTS = {
+  /** Supplier opted in / withdrew / changed terms — resets HQ review to pending. */
+  procurementConsent: "supplier.procurement.consent.v1",
+  /** HQ decided a pending consent (payload.approve = true/false). */
+  procurementConsentApproved: "supplier.procurement.consent.approved.v1",
+} as const;
+
 /** Append a versioned domain event to the outbox (append-only, newest first). */
 export function appendEvent(type: string, payload: Record<string, unknown>, actor?: string): DomainEvent {
   const event: DomainEvent = {

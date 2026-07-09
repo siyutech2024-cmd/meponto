@@ -1,5 +1,5 @@
 import { getAvailablePartnerPoints, getAvailablePoints, type PointsAccountType } from "../../../lib/points";
-import { appendServerAudit, jsonResponse, makeServerId, memory } from "../../../lib/server/memory";
+import { appendInventoryLedger, appendServerAudit, jsonResponse, makeServerId, maybeAutoReplenishDraft, memory } from "../../../lib/server/memory";
 import { requirePermission } from "../../../lib/server/authz";
 import { isSupplierCategory } from "../../../lib/server/crm-categories";
 
@@ -98,6 +98,8 @@ export async function POST(request: Request) {
       ...memory.marketplaceProducts[productIndex],
       stock: memory.marketplaceProducts[productIndex].stock - 1,
     };
+    appendInventoryLedger({ productId: product.id, productName: product.name, type: "redeem", qty: -1, stockAfter: memory.marketplaceProducts[productIndex].stock, sourceId: order.id, createdBy: "Marketplace" });
+    maybeAutoReplenishDraft(product.id, "Marketplace"); // P1-2 low-stock draft PO
   }
   appendServerAudit({
     actor: "Marketplace",

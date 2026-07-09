@@ -26,7 +26,9 @@ function run(command, args, options = {}) {
 
 function startServer() {
   return spawn(npmCommand, ["run", "start", "--", "-p", port], {
-    env: { ...process.env, PORT: port },
+    // Hermetic smoke: in-memory demo data only — never hydrate from or
+    // write to the real Supabase database during checks.
+    env: { ...process.env, PORT: port, USE_SUPABASE: "false" },
     stdio: "inherit",
     shell: false,
   });
@@ -104,6 +106,9 @@ try {
     env: { ...process.env, PONTOSYS_BASE_URL: baseUrl },
   });
   await run(npmCommand, ["run", "workflow:smoke"], {
+    env: { ...process.env, PONTOSYS_BASE_URL: baseUrl },
+  });
+  await run(npmCommand, ["run", "procurement:smoke"], {
     env: { ...process.env, PONTOSYS_BASE_URL: baseUrl },
   });
 } finally {
