@@ -29,7 +29,9 @@ export type Permission =
   | "view_finance"
   | "view_analytics"
   | "view_audit"
-  | "reset_demo";
+  | "reset_demo"
+  /** Destructive station removal — granted to Super Admin ONLY. */
+  | "delete_pontos";
 
 export const roles: Role[] = [
   "Super Admin",
@@ -64,6 +66,7 @@ export const permissionLabels: Record<Permission, string> = {
   view_analytics: "View analytics",
   view_audit: "View audit",
   reset_demo: "Reset demo data",
+  delete_pontos: "Delete stations (Super Admin only)",
 };
 
 export const rolePermissions: Record<Role, Permission[]> = {
@@ -86,6 +89,7 @@ export const rolePermissions: Record<Role, Permission[]> = {
     "view_analytics",
     "view_audit",
     "reset_demo",
+    "delete_pontos",
   ],
   "Franchise Admin": [
     "view_dashboard",

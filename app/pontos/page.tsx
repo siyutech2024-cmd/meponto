@@ -290,6 +290,33 @@ export default function NetworkPage() {
                     >
                       {t("pnChangeParent")}
                     </button>
+                    {session?.role === "Super Admin" && (
+                      <button
+                        type="button"
+                        className="tag text-[var(--danger-ink)]"
+                        onClick={async () => {
+                          if (!(await dialog.confirm(t("pnDelStQ", { name: station.name }), { tone: "danger", confirmText: t("pnDel") }))) return;
+                          const response = await fetch("/api/network", { method: "POST", headers, body: JSON.stringify({ action: "deleteStation", stationId: station.id }) });
+                          const payload = await response.json().catch(() => ({}));
+                          if (response.ok) {
+                            setMessage({ tone: "ok", text: t("pnStDeleted", { name: station.name }) });
+                            void load();
+                            return;
+                          }
+                          // Riders still bound: offer force-delete (riders become unassigned).
+                          if (response.status === 409 && payload.canForce) {
+                            if (await dialog.confirm(t("pnForceDelStQ"), { message: t("pnForceDelStMsg", { err: payload.error }), tone: "danger", confirmText: t("pnForceDel") })) {
+                              const r2 = await post({ action: "deleteStation", stationId: station.id, force: true });
+                              if (r2) setMessage({ tone: "ok", text: t("pnStDeleted", { name: station.name }) });
+                            }
+                            return;
+                          }
+                          setMessage({ tone: "err", text: payload.error ?? t("pnDelFailed", { s: response.status }) });
+                        }}
+                      >
+                        {t("pnDel")}
+                      </button>
+                    )}
                   </div>
                 )}
               </div>

@@ -50,7 +50,8 @@ type Body =
   | { action: "addStation"; name: string; franchise: string; address?: string; mapUrl?: string; leader?: string; bairro?: string }
   | { action: "updateStation"; stationId: string; franchise?: string; address?: string; mapUrl?: string; leader?: string; name?: string }
   | { action: "approveStation"; stationId: string }
-  | { action: "rejectStation"; stationId: string };
+  | { action: "rejectStation"; stationId: string }
+  | { action: "deleteStation"; stationId: string; force?: boolean };
 
 async function handlePost(request: Request) {
   const forbidden = requirePermission(request, "manage_pontos");
@@ -172,6 +173,58 @@ async function handlePost(request: Request) {
       persistDeleteRecord("pontos", stationId ?? "");
       appendServerAudit({ actor, action: "STATION_REJECTED", entity: "Ponto", entityId: stationId ?? "", detail: station.name, risk: "Medium" });
       return jsonResponse({ data: { ok: true } });
+    }
+
+    case "deleteStation": {
+      // Destructive removal — Super Admin only (dedicated permission), HQ only.
+      const forbiddenDelete = requirePermission(request, "delete_pontos");
+      if (forbiddenDelete) return forbiddenDelete;
+      const scope = await scopeFromRequest(request);
+      if (scope.franchise || scope.station) return jsonResponse({ error: "仅总部超级管理员可删除站点" }, { status: 403 });
+      const { stationId, force = false } = body as { stationId?: string; force?: boolean };
+      const index = memory.pontos.findIndex((p) => p.id === stationId);
+      if (index === -1) return jsonResponse({ error: "站点不存在（可能已被删除，请刷新页面）" }, { status: 404 });
+      const station = memory.pontos[index];
+
+      // Hard block: in-flight mall orders picking up at this station — money/
+      // goods in motion, no force override. Finish or cancel them first.
+      await refreshCollectionsFromDatabase(["riders", "marketplaceOrders"]);
+      const openOrders = memory.marketplaceOrders.filter(
+        (o) => (o.station === station.name || o.pickupStoreName === station.name) && (o.status === "created" || o.status === "arrived"),
+      );
+      if (openOrders.length > 0) {
+        return jsonResponse(
+          { error: `「${station.name}」还有 ${openOrders.length} 笔在途/待取货的商城订单，须先完成或取消后才能删除。` },
+          { status: 409 },
+        );
+      }
+
+      // Soft block: riders still assigned — deletable only via explicit force,
+      // which unassigns them (they keep working, station becomes "Unassigned").
+      const boundRiders = memory.riders.filter((r) => r.ponto === station.name);
+      if (boundRiders.length > 0 && !force) {
+        return jsonResponse(
+          {
+            error: `「${station.name}」还有 ${boundRiders.length} 名骑手：${boundRiders.slice(0, 5).map((r) => r.name).join("、")}${boundRiders.length > 5 ? " …" : ""}`,
+            boundRiders: boundRiders.length,
+            canForce: true,
+          },
+          { status: 409 },
+        );
+      }
+      for (const rider of boundRiders) {
+        const riderIndex = memory.riders.findIndex((r) => r.id === rider.id);
+        if (riderIndex !== -1) memory.riders[riderIndex] = { ...memory.riders[riderIndex], ponto: "Unassigned" };
+      }
+      if (boundRiders.length > 0) {
+        appendServerAudit({ actor, action: "RIDERS_UNBOUND", entity: "Ponto", entityId: stationId ?? "", detail: `${boundRiders.length} riders unassigned from ${station.name}.`, risk: "Medium" });
+      }
+
+      memory.pontos.splice(index, 1);
+      // Without this delete record the station would resurrect from the DB.
+      persistDeleteRecord("pontos", stationId ?? "");
+      appendServerAudit({ actor, action: "STATION_DELETED", entity: "Ponto", entityId: stationId ?? "", detail: `${station.name} (${station.franchise || "unbound"})`, risk: "High" });
+      return jsonResponse({ data: { ok: true, unassignedRiders: boundRiders.length } });
     }
 
     case "updateStation": {
