@@ -112,7 +112,14 @@ fun MembershipCard(onOpenStatement: (() -> Unit)? = null) {
                     fontWeight = FontWeight.Bold,
                     fontSize = 11.sp,
                 )
-                Text(p.name, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 20.sp)
+                Text(
+                    p.name,
+                    color = Color.White,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = if (p.name.length > 22) 16.sp else 20.sp,
+                    lineHeight = if (p.name.length > 22) 20.sp else 24.sp,
+                    maxLines = 2,
+                )
             }
             Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(5.dp)) {
                 Text(

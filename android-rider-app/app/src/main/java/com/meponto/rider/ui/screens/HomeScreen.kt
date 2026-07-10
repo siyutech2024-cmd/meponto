@@ -119,7 +119,8 @@ fun HomeScreen(onScan: () -> Unit, onProfile: () -> Unit, onOpenMall: () -> Unit
             }
 
             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                val name = store.riderName.trim()
+                // First name only — full legal names (3-4 words) blow up the 32sp line.
+                val name = store.riderName.trim().split(" ").firstOrNull().orEmpty()
                 Text(
                     buildAnnotatedString {
                         withStyle(SpanStyle(color = me.text)) { append(loc.t("home.greeting")) }

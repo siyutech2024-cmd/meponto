@@ -233,7 +233,8 @@ type Body =
   | { action: "import"; raw: string; date: string }
   | { action: "importKpiRecords"; date: string; records: Array<Record<string, unknown>> }
   | { action: "importEarnings"; date: string; records: Array<Record<string, unknown>> }
-  | { action: "purgeDate"; date: string };
+  | { action: "purgeDate"; date: string }
+  | { action: "recreditPoints" };
 
 async function handlePost(request: Request) {
   const forbidden = requirePermission(request, "view_analytics");
@@ -242,6 +243,28 @@ async function handlePost(request: Request) {
   await refreshCollectionsFromDatabase(COLLECTIONS);
   const body = (await request.json().catch(() => ({}))) as Partial<Body>;
   const actor = roleFromRequest(request);
+
+  if (body.action === "recreditPoints") {
+    // Idempotent backfill: walk EVERY imported KPI day (oldest first, so the
+    // tier multiplier evolves in order) and (re)credit per-order points for
+    // riders linked in the roster. Fixed ledger ids (pts-ord-<date>-<riderId>)
+    // mean existing days are updated in place — never double-credited. Fixes
+    // riders whose KPI landed before their roster link / before auto-credit.
+    const rows = [...memory.riderDailyKpis].sort((a, b) => (a.date < b.date ? -1 : 1));
+    let credited = 0;
+    let skipped = 0;
+    for (const row of rows) {
+      const riderIndex = memory.riders.findIndex((rider) => rider.ninetyNineId === row.rider99Id);
+      if (riderIndex === -1 || (row.completedOrders ?? 0) <= 0) {
+        skipped += 1;
+        continue;
+      }
+      creditOrderPoints(memory.riders[riderIndex].id, row.rider99Id, row.date, row.completedOrders);
+      credited += 1;
+    }
+    appendServerAudit({ actor, action: "POINTS_RECREDIT", entity: "PointsLedger", entityId: new Date().toISOString().slice(0, 10), detail: `T+1 积分补账：${credited} 行入账 / ${skipped} 行跳过（未关联或 0 单）`, risk: "Medium" });
+    return jsonResponse({ data: { credited, skipped, ledgerSize: memory.pointsLedgerEntries.length } });
+  }
 
   if (body.action === "import") {
     const date = String(body.date ?? "");
