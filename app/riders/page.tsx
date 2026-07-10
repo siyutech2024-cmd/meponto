@@ -2,8 +2,9 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Filter, Plus, RefreshCcw, Search, UserPlus } from "lucide-react";
-import { AppShell, Badge, PageTitle } from "../components/ui";
+import { Plus, RefreshCcw, UserPlus } from "lucide-react";
+import { AppShell, PageTitle } from "../components/ui";
+import { Chip, DataTable, Drawer, Pager, SearchInput, Stat, StatusBadge, TodoCard, Toolbar, type BadgeTone, type DataColumn } from "../components/kit";
 import { downloadCsv } from "../lib/csv";
 import { useDialog } from "../components/dialog";
 import { useVentoStore } from "../lib/store";
@@ -32,6 +33,10 @@ type Network = { franchises: Array<{ id: string; name: string }>; stations: Arra
 
 const HEADERS = { "Content-Type": "application/json", "x-vento-role": "Super Admin" };
 const isUnassigned = (value?: string) => !value || value === "Unassigned";
+const STATUS_OPTIONS = ["Active", "Inactive", "Risk", "Night Shift"] as const;
+
+const statusTone = (status: string): BadgeTone =>
+  status === "Active" ? "success" : status === "Risk" ? "danger" : status === "Night Shift" ? "warn" : "neutral";
 
 export default function RidersPage() {
   const dialog = useDialog();
@@ -157,7 +162,97 @@ export default function RidersPage() {
     setPage(1);
   }, [query, stationFilter, franchiseFilter, statusFilter, onlyUnassigned]);
 
-  const input = "h-11 rounded-[8px] border border-[var(--line)] bg-[var(--surface-raised)] px-3 text-sm font-bold text-[var(--text)] outline-none focus:border-[var(--accent)]";
+  const input = "h-10 rounded-[8px] border border-[var(--line)] bg-[var(--surface-raised)] px-3 text-sm font-bold text-[var(--text)] outline-none focus:border-[var(--accent)]";
+
+  const columns: Array<DataColumn<RiderRow>> = [
+    {
+      key: "rider",
+      label: t("rdColRider"),
+      className: "max-w-[220px]",
+      render: (rider) => (
+        <div>
+          <div className="truncate font-black">{rider.name}</div>
+          {rider.source === "report" && <span className="text-[10px] font-black uppercase text-[var(--warning-ink)]">{t("rdReportNoProfile")}</span>}
+          {pending[rider.id] && <span className="text-[10px] font-black uppercase text-[var(--warning-ink)]">{t("rdToSave")}</span>}
+        </div>
+      ),
+    },
+    { key: "ninetyNineId", label: "99 ID", render: (rider) => <span className="font-bold text-[var(--muted-strong)]">{rider.ninetyNineId || "—"}</span> },
+    {
+      key: "franchise",
+      label: t("rdColFranchise"),
+      render: (rider) => {
+        const staged = pending[rider.id];
+        const effectiveFranchise = staged?.franchise ?? (isUnassigned(rider.franchise) ? "" : rider.franchise!);
+        return (
+          <select
+            disabled={saving}
+            value={effectiveFranchise}
+            onChange={(e) => stage(rider, { franchise: e.target.value })}
+            className={`h-9 max-w-[150px] rounded-[8px] border bg-[var(--surface-raised)] px-2 text-xs font-bold outline-none ${staged ? "border-[var(--warning)]" : isUnassigned(rider.franchise) ? "border-[var(--danger)] text-[var(--danger-ink)]" : "border-[var(--line)] text-[var(--text)]"}`}
+          >
+            <option value="">{t("rdUnassignedOpt")}</option>
+            {network.franchises.map((f) => <option key={f.id} value={f.name}>{f.name}</option>)}
+          </select>
+        );
+      },
+    },
+    {
+      key: "station",
+      label: t("rdColStation"),
+      render: (rider) => {
+        const staged = pending[rider.id];
+        const effectiveFranchise = staged?.franchise ?? (isUnassigned(rider.franchise) ? "" : rider.franchise!);
+        const effectivePonto = staged?.ponto ?? (isUnassigned(rider.ponto) ? "" : rider.ponto);
+        // Cascade: station options follow the (staged) franchise.
+        const stationOptions = effectiveFranchise ? network.stations.filter((s) => s.franchise === effectiveFranchise) : network.stations;
+        return (
+          <select
+            disabled={saving}
+            value={effectivePonto}
+            onChange={(e) => stage(rider, { ponto: e.target.value })}
+            className={`h-9 max-w-[170px] rounded-[8px] border bg-[var(--surface-raised)] px-2 text-xs font-bold outline-none ${staged ? "border-[var(--warning)]" : isUnassigned(rider.ponto) ? "border-[var(--danger)] text-[var(--danger-ink)]" : "border-[var(--line)] text-[var(--text)]"}`}
+          >
+            <option value="">{t("rdUnassignedOpt")}</option>
+            {stationOptions.map((s) => <option key={s.id} value={s.name}>{s.name}</option>)}
+          </select>
+        );
+      },
+    },
+    { key: "orders", label: t("rdColOrders"), align: "right", render: (rider) => <span className="font-black">{rider.totalOrders}</span> },
+    {
+      key: "ar",
+      label: "AR",
+      align: "right",
+      render: (rider) => {
+        const ar = rider.reportAr ?? rider.ar;
+        return <span className={`font-black ${ar !== null && ar < 95 ? "text-[var(--danger-ink)]" : ""}`}>{ar !== null ? `${ar}%` : "—"}</span>;
+      },
+    },
+    { key: "points", label: t("rdColPoints"), align: "right", render: (rider) => <span className="font-black text-[var(--accent)]">{rider.pointsBalance}</span> },
+    { key: "lastReport", label: t("rdColLastReport"), render: (rider) => <span className="text-xs font-bold text-[var(--muted)]">{rider.lastReportDate || "—"}</span> },
+    { key: "status", label: t("rdColStatus"), render: (rider) => <StatusBadge tone={statusTone(rider.status)} label={rider.status} /> },
+    {
+      key: "action",
+      label: t("rdColAction"),
+      align: "right",
+      render: (rider) => (
+        <div className="flex justify-end gap-1.5">
+          {rider.source === "profile" && <Link className="tag" href={`/riders/${rider.id}`}>{t("rdDetail")}</Link>}
+          {rider.source === "profile" && (
+            <button type="button" className="tag" disabled={busyId === rider.id} onClick={() => void assign(rider, { status: rider.status === "Inactive" ? "Active" : "Inactive" })}>
+              {rider.status === "Inactive" ? t("rdEnable") : t("rdDisable")}
+            </button>
+          )}
+          {rider.source === "report" && (
+            <button type="button" className="tag border-[var(--accent)] text-[var(--accent)]" disabled={busyId === rider.id} onClick={() => void assign(rider, {})}>
+              {t("rdCreateProfile")}
+            </button>
+          )}
+        </div>
+      ),
+    },
+  ];
 
   return (
     <AppShell>
@@ -174,7 +269,7 @@ export default function RidersPage() {
               {t("rdExport")}
             </button>
             <button type="button" className="tag inline-flex items-center gap-1" onClick={() => void load()}><RefreshCcw size={13} /> {t("rdRefresh")}</button>
-            <button type="button" onClick={() => setAddOpen(!addOpen)} className="inline-flex h-9 items-center gap-1 rounded-[8px] bg-[var(--accent)] px-4 text-xs font-black uppercase text-[var(--accent-ink)]">
+            <button type="button" onClick={() => setAddOpen(true)} className="inline-flex h-9 items-center gap-1 rounded-[8px] bg-[var(--accent)] px-4 text-xs font-black uppercase text-[var(--accent-ink)]">
               <Plus size={14} /> {t("rdAddRider")}
             </button>
           </div>
@@ -189,18 +284,57 @@ export default function RidersPage() {
 
       {/* Quick stats — unassigned is the call to action. */}
       <section className="grid gap-3 md:grid-cols-4">
-        <div className="panel p-4"><div className="text-[10px] font-black uppercase text-[var(--muted)]">{t("rdTotal")}</div><div className="mt-1 text-2xl font-black">{riders.length}</div></div>
-        <div className="panel p-4"><div className="text-[10px] font-black uppercase text-[var(--muted)]">{t("rdProfiled")}</div><div className="mt-1 text-2xl font-black text-[var(--ok-ink)]">{riders.length - reportOnlyCount}</div></div>
-        <button type="button" onClick={() => setOnlyUnassigned(!onlyUnassigned)} className={`panel p-4 text-left ${onlyUnassigned ? "border-[var(--danger)]" : unassignedCount > 0 ? "border-[var(--warning)]" : ""}`}>
-          <div className="text-[10px] font-black uppercase text-[var(--danger-ink)]">{t("rdUnassignedClick")}</div>
-          <div className="mt-1 text-2xl font-black text-[var(--danger-ink)]">{unassignedCount}</div>
-        </button>
-        <div className="panel p-4"><div className="text-[10px] font-black uppercase text-[var(--muted)]">{t("rdNewFaces")}</div><div className="mt-1 text-2xl font-black text-[var(--warning-ink)]">{reportOnlyCount}</div></div>
+        <Stat label={t("rdTotal")} value={String(riders.length)} />
+        <Stat label={t("rdProfiled")} value={String(riders.length - reportOnlyCount)} />
+        <TodoCard label={t("rdUnassignedClick")} value={unassignedCount} tone={unassignedCount > 0 ? "danger" : "neutral"} active={onlyUnassigned} onClick={() => setOnlyUnassigned(!onlyUnassigned)} />
+        <TodoCard label={t("rdNewFaces")} value={reportOnlyCount} tone={reportOnlyCount > 0 ? "warn" : "neutral"} />
       </section>
 
-      {/* Inline add form */}
-      {addOpen && (
-        <section className="panel mt-4 grid gap-2 p-4 md:grid-cols-3 xl:grid-cols-6">
+      {/* Toolbar: search + network selects + status chips */}
+      <div className="mt-4">
+        <Toolbar
+          right={
+            <select value={stationFilter} onChange={(e) => setStationFilter(e.target.value)} className={input}>
+              <option value="">{t("rdAllStation")}</option>
+              <option value="Unassigned">{t("rdUnassignedOpt")}</option>
+              {network.stations.map((s) => <option key={s.id} value={s.name}>{s.name}</option>)}
+            </select>
+          }
+        >
+          <SearchInput value={query} onChange={setQuery} placeholder={t("rdSearchPh")} />
+          <select value={franchiseFilter} onChange={(e) => setFranchiseFilter(e.target.value)} className={input}>
+            <option value="">{t("rdAllFranchise")}</option>
+            <option value="Unassigned">{t("rdUnassignedOpt")}</option>
+            {network.franchises.map((f) => <option key={f.id} value={f.name}>{f.name}</option>)}
+          </select>
+          <Chip active={statusFilter === ""} onClick={() => setStatusFilter("")}>{t("rdAllStatus")}</Chip>
+          {STATUS_OPTIONS.map((status) => (
+            <Chip key={status} active={statusFilter === status} onClick={() => setStatusFilter(statusFilter === status ? "" : status)}>{status}</Chip>
+          ))}
+        </Toolbar>
+      </div>
+
+      {/* Riders table */}
+      <div className="mt-4">
+        <DataTable<RiderRow>
+          columns={columns}
+          rows={pageRows}
+          rowKey={(rider) => rider.id}
+          minWidth={920}
+          empty={t("rdNoResults")}
+        />
+      </div>
+
+      {/* Pagination */}
+      {totalPages > 1 && (
+        <div className="mt-3 flex justify-end" data-i18n-skip>
+          <Pager page={safePage} pages={totalPages} total={filtered.length} onPage={setPage} />
+        </div>
+      )}
+
+      {/* New rider drawer */}
+      <Drawer open={addOpen} onClose={() => setAddOpen(false)} title={<div className="text-sm font-black uppercase">{t("rdAddRider")}</div>} ariaLabel={t("rdAddRider")}>
+        <div className="grid gap-2">
           <input className={input} placeholder={t("rdPhName")} value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
           <input className={input} placeholder="99 ID" value={form.ninetyNineId} onChange={(e) => setForm({ ...form, ninetyNineId: e.target.value.replace(/\D/g, "") })} />
           <input className={input} placeholder={t("rdPhPhone")} value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} />
@@ -228,141 +362,12 @@ export default function RidersPage() {
               setAddOpen(false);
               void load();
             }}
-            className="inline-flex h-11 items-center justify-center gap-1 rounded-[8px] bg-[var(--accent)] px-4 text-xs font-black uppercase text-[var(--accent-ink)] disabled:opacity-50 md:col-span-3 xl:col-span-6"
+            className="inline-flex h-11 items-center justify-center gap-1 rounded-[8px] bg-[var(--accent)] px-4 text-xs font-black uppercase text-[var(--accent-ink)] disabled:opacity-50"
           >
             <UserPlus size={14} /> {t("rdSaveRider")}
           </button>
-        </section>
-      )}
-
-      {/* Filters */}
-      <section className="panel mt-4 grid gap-2 p-3 md:grid-cols-[1fr_170px_170px_150px]">
-        <label className="relative">
-          <Search className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[var(--muted)]" size={16} />
-          <input value={query} onChange={(e) => setQuery(e.target.value)} className={`${input} w-full pl-9`} placeholder={t("rdSearchPh")} />
-        </label>
-        <label className="relative">
-          <Filter className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[var(--muted)]" size={14} />
-          <select value={franchiseFilter} onChange={(e) => setFranchiseFilter(e.target.value)} className={`${input} w-full pl-8`}>
-            <option value="">{t("rdAllFranchise")}</option>
-            <option value="Unassigned">{t("rdUnassignedOpt")}</option>
-            {network.franchises.map((f) => <option key={f.id} value={f.name}>{f.name}</option>)}
-          </select>
-        </label>
-        <select value={stationFilter} onChange={(e) => setStationFilter(e.target.value)} className={input}>
-          <option value="">{t("rdAllStation")}</option>
-          <option value="Unassigned">{t("rdUnassignedOpt")}</option>
-          {network.stations.map((s) => <option key={s.id} value={s.name}>{s.name}</option>)}
-        </select>
-        <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className={input}>
-          <option value="">{t("rdAllStatus")}</option>
-          <option>Active</option>
-          <option>Inactive</option>
-          <option>Risk</option>
-          <option>Night Shift</option>
-        </select>
-      </section>
-
-      {/* Riders table */}
-      <section className="panel mt-4 overflow-x-auto p-4">
-        <table className="w-full min-w-[920px] text-sm">
-          <thead>
-            <tr className="text-left text-[10px] font-black uppercase text-[var(--muted)]">
-              <th className="pb-2">{t("rdColRider")}</th>
-              <th className="pb-2">99 ID</th>
-              <th className="pb-2">{t("rdColFranchise")}</th>
-              <th className="pb-2">{t("rdColStation")}</th>
-              <th className="pb-2 text-right">{t("rdColOrders")}</th>
-              <th className="pb-2 text-right">AR</th>
-              <th className="pb-2 text-right">{t("rdColPoints")}</th>
-              <th className="pb-2">{t("rdColLastReport")}</th>
-              <th className="pb-2">{t("rdColStatus")}</th>
-              <th className="pb-2 text-right">{t("rdColAction")}</th>
-            </tr>
-          </thead>
-          <tbody>
-            {pageRows.map((rider) => {
-              const unassigned = isUnassigned(rider.ponto) || isUnassigned(rider.franchise);
-              const ar = rider.reportAr ?? rider.ar;
-              const staged = pending[rider.id];
-              const effectiveFranchise = staged?.franchise ?? (isUnassigned(rider.franchise) ? "" : rider.franchise!);
-              const effectivePonto = staged?.ponto ?? (isUnassigned(rider.ponto) ? "" : rider.ponto);
-              // Cascade: station options follow the (staged) franchise.
-              const stationOptions = effectiveFranchise ? network.stations.filter((s) => s.franchise === effectiveFranchise) : network.stations;
-              return (
-                <tr key={rider.id} className={`border-t border-[var(--line)] ${staged ? "bg-[var(--warning-bg)]" : unassigned ? "bg-[var(--danger-bg)]" : ""}`}>
-                  <td className="max-w-[220px] py-2 pr-2">
-                    <div className="truncate font-black">{rider.name}</div>
-                    {rider.source === "report" && <span className="text-[10px] font-black uppercase text-[var(--warning-ink)]">{t("rdReportNoProfile")}</span>}
-                    {staged && <span className="text-[10px] font-black uppercase text-[var(--warning-ink)]">{t("rdToSave")}</span>}
-                  </td>
-                  <td className="py-2 pr-2 font-bold text-[var(--muted-strong)]">{rider.ninetyNineId || "—"}</td>
-                  <td className="py-2 pr-2">
-                    <select
-                      disabled={saving}
-                      value={effectiveFranchise}
-                      onChange={(e) => stage(rider, { franchise: e.target.value })}
-                      className={`h-9 max-w-[150px] rounded-[8px] border bg-[var(--surface-raised)] px-2 text-xs font-bold outline-none ${staged ? "border-[var(--warning)]" : isUnassigned(rider.franchise) ? "border-[var(--danger)] text-[var(--danger-ink)]" : "border-[var(--line)] text-[var(--text)]"}`}
-                    >
-                      <option value="">{t("rdUnassignedOpt")}</option>
-                      {network.franchises.map((f) => <option key={f.id} value={f.name}>{f.name}</option>)}
-                    </select>
-                  </td>
-                  <td className="py-2 pr-2">
-                    <select
-                      disabled={saving}
-                      value={effectivePonto}
-                      onChange={(e) => stage(rider, { ponto: e.target.value })}
-                      className={`h-9 max-w-[170px] rounded-[8px] border bg-[var(--surface-raised)] px-2 text-xs font-bold outline-none ${staged ? "border-[var(--warning)]" : isUnassigned(rider.ponto) ? "border-[var(--danger)] text-[var(--danger-ink)]" : "border-[var(--line)] text-[var(--text)]"}`}
-                    >
-                      <option value="">{t("rdUnassignedOpt")}</option>
-                      {stationOptions.map((s) => <option key={s.id} value={s.name}>{s.name}</option>)}
-                    </select>
-                  </td>
-                  <td className="py-2 pr-2 text-right font-black">{rider.totalOrders}</td>
-                  <td className={`py-2 pr-2 text-right font-black ${ar !== null && ar < 95 ? "text-[var(--danger-ink)]" : ""}`}>{ar !== null ? `${ar}%` : "—"}</td>
-                  <td className="py-2 pr-2 text-right font-black text-[var(--accent)]">{rider.pointsBalance}</td>
-                  <td className="py-2 pr-2 text-xs font-bold text-[var(--muted)]">{rider.lastReportDate || "—"}</td>
-                  <td className="py-2 pr-2"><Badge value={rider.status} /></td>
-                  <td className="py-2 text-right">
-                    <div className="flex justify-end gap-1.5">
-                      {rider.source === "profile" && <Link className="tag" href={`/riders/${rider.id}`}>{t("rdDetail")}</Link>}
-                      {rider.source === "profile" && (
-                        <button type="button" className="tag" disabled={busyId === rider.id} onClick={() => void assign(rider, { status: rider.status === "Inactive" ? "Active" : "Inactive" })}>
-                          {rider.status === "Inactive" ? t("rdEnable") : t("rdDisable")}
-                        </button>
-                      )}
-                      {rider.source === "report" && (
-                        <button type="button" className="tag border-[var(--accent)] text-[var(--accent)]" disabled={busyId === rider.id} onClick={() => void assign(rider, {})}>
-                          {t("rdCreateProfile")}
-                        </button>
-                      )}
-                    </div>
-                  </td>
-                </tr>
-              );
-            })}
-            {filtered.length === 0 && (
-              <tr><td colSpan={10} className="py-8 text-center text-sm font-bold text-[var(--muted)]">{t("rdNoResults")}</td></tr>
-            )}
-          </tbody>
-        </table>
-
-        {/* Pagination */}
-        {totalPages > 1 && (
-          <div className="mt-3 flex items-center justify-between border-t border-[var(--line)] pt-3" data-i18n-skip>
-            <span className="text-xs font-bold text-[var(--muted)]">{(safePage - 1) * PAGE_SIZE + 1}–{Math.min(safePage * PAGE_SIZE, filtered.length)} / {filtered.length}</span>
-            <div className="flex gap-1.5">
-              <button type="button" disabled={safePage <= 1} onClick={() => setPage(safePage - 1)} className="tag disabled:opacity-40">←</button>
-              {Array.from({ length: totalPages }).slice(0, 8).map((_, index) => (
-                <button key={index} type="button" onClick={() => setPage(index + 1)} className={`tag ${safePage === index + 1 ? "border-[var(--accent)] text-[var(--accent)]" : ""}`}>{index + 1}</button>
-              ))}
-              {totalPages > 8 && <span className="text-xs font-bold text-[var(--muted)]">…{totalPages}</span>}
-              <button type="button" disabled={safePage >= totalPages} onClick={() => setPage(safePage + 1)} className="tag disabled:opacity-40">→</button>
-            </div>
-          </div>
-        )}
-      </section>
+        </div>
+      </Drawer>
 
       {/* Sticky confirm bar: nothing is written until the user confirms. */}
       {Object.keys(pending).length > 0 && (

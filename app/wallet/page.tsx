@@ -1,8 +1,9 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { Banknote, Building2, CheckCircle2, ChevronRight, RefreshCcw, Store, Wallet, XCircle } from "lucide-react";
-import { AppShell, Badge, PageTitle } from "../components/ui";
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import { Banknote, Building2, Info, RefreshCcw, Store, Wallet } from "lucide-react";
+import { AppShell, PageTitle } from "../components/ui";
+import { DataTable, Drawer, SectionCard, Stat, StatusBadge, Toolbar, type BadgeTone, type DataColumn } from "../components/kit";
 import { downloadCsv } from "../lib/csv";
 import { readSession } from "../lib/session";
 import { mallHubPortals } from "../lib/portals";
@@ -17,6 +18,30 @@ type Weekly = { week: { from: string; to: string }; franchises: WeeklyGroup[]; g
 
 const money = (v: number) => `R$ ${v.toFixed(2)}`;
 const md = (iso: string) => `${Number(iso.slice(5, 7))}.${Number(iso.slice(8, 10))}`;
+
+// Shared button vocabulary (mirrors mall back-office supply.tsx): at most one
+// solid accent button per view; row-level actions stay outline/ghost.
+const btnPrimary = "h-9 rounded-[8px] bg-[var(--accent)] px-3.5 text-xs font-black text-[var(--accent-ink)]";
+const btnOutline = "h-8 rounded-[8px] border border-[var(--accent)]/60 px-2.5 text-[11px] font-bold text-[var(--accent)] hover:bg-[var(--accent)]/10";
+const btnGhost = "h-8 rounded-[8px] border border-[var(--line)] px-2.5 text-[11px] font-bold text-[var(--muted)] hover:border-[var(--accent)]";
+const btnDanger = "h-8 rounded-[8px] border border-[var(--danger)]/40 px-2.5 text-[11px] font-bold text-[var(--danger)]";
+
+// green = normal flow / done, amber = waiting on someone, red = dispute, grey = terminal.
+const STMT_TONE: Record<"draft" | "confirmed" | "paid" | "disputed", BadgeTone> = {
+  draft: "warn",
+  confirmed: "warn",
+  paid: "success",
+  disputed: "danger",
+};
+
+function DetailRow({ label, value }: { label: ReactNode; value: ReactNode }) {
+  return (
+    <div className="flex items-center justify-between gap-3 border-b border-[var(--line)] py-2 text-sm font-bold last:border-b-0">
+      <span className="text-[11px] font-bold uppercase text-[var(--muted)]">{label}</span>
+      <span className="text-right">{value}</span>
+    </div>
+  );
+}
 
 function RiderPayrollWallet() {
   const dialog = useDialog();
@@ -34,8 +59,8 @@ function RiderPayrollWallet() {
   const [weekly, setWeekly] = useState<Weekly | null>(null);
   const [loading, setLoading] = useState(false);
   const [withdrawals, setWithdrawals] = useState<RiderWithdrawal[]>([]);
-  const [open, setOpen] = useState<Set<string>>(new Set());
   const [message, setMessage] = useState<{ tone: "ok" | "err"; text: string } | null>(null);
+  const [explainOpen, setExplainOpen] = useState(false);
   // Payment modal state.
   const [pay, setPay] = useState<{ target: "franchise" | "rider"; refName: string; franchise: string; suggested: number } | null>(null);
   const [payAmount, setPayAmount] = useState("");
@@ -45,8 +70,10 @@ function RiderPayrollWallet() {
   type RevEntry = { id: string; orderId: string; productName: string; pickupStoreName: string; franchise: string; month: string; franchiseNetBRL: number; stationShareBRL: number };
   const [revStatements, setRevStatements] = useState<RevStatement[]>([]);
   const [revEntries, setRevEntries] = useState<RevEntry[]>([]);
-  const [openStmt, setOpenStmt] = useState<Set<string>>(new Set());
   const [stationShare, setStationShare] = useState("");
+  // Drawers hold references, not snapshots, so a reload refreshes their content.
+  const [stmtDrawerId, setStmtDrawerId] = useState("");
+  const [riderRef, setRiderRef] = useState<{ franchise: string; rider99Id: string } | null>(null);
 
   const loadRevShare = useCallback(async () => {
     if (!scopeFranchise) return;
@@ -62,7 +89,6 @@ function RiderPayrollWallet() {
   // Order-level entries backing one monthly statement (so the franchise can
   // inspect what it is confirming instead of blind-signing).
   const entriesOf = (s: RevStatement) => revEntries.filter((e) => e.month === s.month && e.franchise === s.franchise);
-  const toggleStmt = (id: string) => setOpenStmt((prev) => { const next = new Set(prev); next.has(id) ? next.delete(id) : next.add(id); return next; });
 
   function exportRevDetailCsv(s: RevStatement) {
     const rows = entriesOf(s);
@@ -103,6 +129,7 @@ function RiderPayrollWallet() {
     // Clear stale numbers immediately so the prior week's totals don't linger
     // on screen while the new week loads.
     setWeekly(null);
+    setRiderRef(null);
     setLoading(true);
     setAnchor(d.toISOString().slice(0, 10));
   };
@@ -146,6 +173,21 @@ function RiderPayrollWallet() {
     }
     setMessage({ tone: "ok", text: action === "confirmPayment" ? t("wlConfirmedPay") : t("wlRejected") });
     void load();
+  }
+
+  async function confirmStmt(s: RevStatement) {
+    const res = await fetch("/api/mall/ops", { method: "POST", headers, body: JSON.stringify({ action: "confirmRevShareStatement", statementId: s.id }) });
+    if (res.ok) { setMessage({ tone: "ok", text: t("wlStmtConfirmed") }); void loadRevShare(); }
+  }
+
+  async function disputeStmt(s: RevStatement) {
+    const note = await dialog.prompt(t("wlDisputeTitle"), { message: t("wlDisputeMsg") });
+    if (note === null || !note.trim()) return;
+    const res = await fetch("/api/mall/ops", { method: "POST", headers, body: JSON.stringify({ action: "disputeRevShareStatement", statementId: s.id, note: note.trim() }) });
+    const payload = await res.json().catch(() => ({}));
+    if (!res.ok) { setMessage({ tone: "err", text: payload.error ?? t("wlOpFailed", { s: res.status }) }); return; }
+    setMessage({ tone: "ok", text: t("wlDisputeSent") });
+    void loadRevShare();
   }
 
   // Fetch enriched statement rows for the current week (full rider fields).
@@ -194,7 +236,85 @@ function RiderPayrollWallet() {
   }
 
   const pendingWithdrawals = withdrawals.filter((w) => w.status === "requested");
-  const toggle = (name: string) => setOpen((prev) => { const next = new Set(prev); next.has(name) ? next.delete(name) : next.add(name); return next; });
+  const groups = weekly?.franchises ?? [];
+  const paidTotal = groups.reduce((a, g) => a + g.franchisePaid, 0);
+  const pendingTotal = groups.reduce((a, g) => a + Math.max(0, g.settle - g.franchisePaid), 0);
+  const overpaidTotal = groups.reduce((a, g) => a + Math.max(0, g.franchisePaid - g.settle), 0);
+  const revDraftCount = revStatements.filter((s) => s.status === "draft").length;
+  const riderPending = (r: WeeklyRider) => Math.max(0, Math.round((r.settle - r.paid) * 100) / 100);
+
+  const drawerStmt = stmtDrawerId ? revStatements.find((s) => s.id === stmtDrawerId) : undefined;
+  const drawerGroup = riderRef ? groups.find((g) => g.franchise === riderRef.franchise) : undefined;
+  const drawerRider = riderRef ? drawerGroup?.riders.find((r) => r.rider99Id === riderRef.rider99Id) : undefined;
+  const drawerRiderPending = drawerRider ? riderPending(drawerRider) : 0;
+
+  const stmtBadge = (status: RevStatement["status"]) => (
+    <StatusBadge tone={STMT_TONE[status]} label={{ draft: t("wlRsDraft"), confirmed: t("wlRsConfirmed"), paid: t("wlRsPaid"), disputed: t("wlRsDisputed") }[status] ?? status} />
+  );
+
+  const stmtActions = (s: RevStatement) => (
+    <span className="inline-flex gap-1.5">
+      {s.status === "draft" && (
+        <button type="button" className={btnOutline} onClick={(e) => { e.stopPropagation(); void confirmStmt(s); }}>{t("wlConfirmStmt")}</button>
+      )}
+      {(s.status === "draft" || s.status === "confirmed") && (
+        <button type="button" className={btnDanger} onClick={(e) => { e.stopPropagation(); void disputeStmt(s); }}>{t("wlDisputeBtn")}</button>
+      )}
+    </span>
+  );
+
+  const stmtColumns: Array<DataColumn<RevStatement>> = [
+    { key: "month", label: t("wlColMonth"), render: (s) => <span className="font-black">{s.month}</span> },
+    {
+      key: "status", label: t("wlColStatus"), render: (s) => (
+        <span>
+          {stmtBadge(s.status)}
+          {s.status === "disputed" && s.disputeNote && <span className="mt-0.5 block text-[11px] font-bold text-[var(--warn)]">{t("wlDisputeNote", { x: s.disputeNote })}</span>}
+        </span>
+      ),
+    },
+    { key: "orders", label: t("wlColOrders"), align: "right", render: (s) => s.orders },
+    { key: "net", label: t("wlColFrNet"), align: "right", render: (s) => money(s.franchiseNetTotal) },
+    { key: "station", label: t("wlColStShare"), align: "right", render: (s) => money(s.stationShareTotal) },
+    { key: "total", label: t("wlColTotal"), align: "right", render: (s) => <b>{money(s.total)}</b> },
+    { key: "ops", label: t("wlColAction"), align: "right", render: (s) => stmtActions(s) },
+  ];
+
+  const riderColumns = (g: WeeklyGroup): Array<DataColumn<WeeklyRider>> => [
+    { key: "name", label: t("wlColRider"), render: (r) => <span className="font-black">{r.name}</span> },
+    { key: "station", label: t("wlColStation"), render: (r) => <StatusBadge tone="neutral" label={r.station} /> },
+    { key: "orders", label: t("wlColOrders"), align: "right", render: (r) => r.orders },
+    { key: "days", label: t("wlColDays"), align: "right", render: (r) => r.days },
+    { key: "settle", label: t("wlColSettle"), align: "right", render: (r) => <b>{money(r.settle)}</b> },
+    { key: "paid", label: <span title={t("wlPaidRiderTitle")}>{t("wlColPaidRider")}</span>, align: "right", render: (r) => <span className="text-[var(--success)]">{money(r.paid)}</span> },
+    {
+      key: "status", label: t("wlColStatus"), render: (r) => {
+        const p = riderPending(r);
+        return p > 0 ? <StatusBadge tone="warn" label={`${t("wlPending")} ${money(p)}`} /> : <StatusBadge tone="success" label={t("wlSettled")} />;
+      },
+    },
+    {
+      key: "ops", label: t("wlColAction"), align: "right", render: (r) => (
+        <button type="button" className={btnOutline} onClick={(e) => { e.stopPropagation(); openPay("rider", r.name, g.franchise, riderPending(r)); }}>{t("wlMarkPaid")}</button>
+      ),
+    },
+  ];
+
+  const withdrawColumns: Array<DataColumn<RiderWithdrawal>> = [
+    { key: "rider", label: t("wlColRider"), render: (w) => <span className="font-black">{w.riderName}</span> },
+    { key: "amount", label: t("wlColAmount"), align: "right", render: (w) => <b>{money(w.amount)}</b> },
+    { key: "pix", label: "PIX", render: (w) => <span className="text-xs text-[var(--muted)]">{w.pix}</span> },
+    { key: "station", label: t("wlColStation"), render: (w) => <span className="text-xs">{w.station}（{w.franchise}）</span> },
+    { key: "time", label: t("wlColTime"), render: (w) => <span className="text-xs text-[var(--muted)]">{w.requestedAt}</span> },
+    {
+      key: "ops", label: t("wlColAction"), align: "right", render: (w) => (
+        <span className="inline-flex gap-1.5">
+          <button type="button" className={btnOutline} onClick={() => void act("confirmPayment", w.id)}>{t("wlPaidBtn")}</button>
+          <button type="button" className={btnDanger} onClick={() => void act("rejectWithdrawal", w.id)}>{t("wlRejectBtn")}</button>
+        </span>
+      ),
+    },
+  ];
 
   return (
     <AppShell>
@@ -210,184 +330,188 @@ function RiderPayrollWallet() {
         </div>
       )}
 
-      {/* Week selector */}
-      <div className="panel mb-4 flex flex-wrap items-center justify-between gap-3 p-3" data-i18n-skip>
-        <button type="button" className="tag" onClick={() => shiftWeek(-7)}>{t("wlPrevWeek")}</button>
-        <div className="text-sm font-black">
-          {weekly ? `${md(weekly.week.from)} – ${md(weekly.week.to)}` : loading ? "加载中…" : "—"}
-          <span className="ml-2 text-[11px] font-bold text-[var(--muted)]">{t("wlNatWeek")}</span>
-        </div>
-        <button type="button" className="tag" onClick={() => shiftWeek(7)}>{t("wlNextWeek")}</button>
-        <div className="ml-auto text-sm font-black text-[var(--accent)]">{t("wlWeekTotal", { money: weekly ? money(weekly.grandTotal) : loading ? "…" : "—" })}</div>
+      {/* Stat row */}
+      <div className="mb-4 grid grid-cols-2 gap-3 lg:grid-cols-4">
+        <Stat label={t("wlStatPayable")} value={weekly ? money(weekly.grandTotal) : loading ? "…" : "—"} hint={weekly ? `${md(weekly.week.from)} – ${md(weekly.week.to)} · ${t("wlNatWeek")}` : t("wlNatWeek")} />
+        <Stat label={t("wlStatPaid")} value={weekly ? money(paidTotal) : "—"} hint={t("wlPaidHqFrTitle")} />
+        <Stat label={t("wlPending")} value={weekly ? money(pendingTotal) : "—"} hint={overpaidTotal > 0 ? `${t("wlOverpaid")} +${money(overpaidTotal)}` : undefined} />
+        {scopeFranchise
+          ? <Stat label={t("wlStatRevDraft")} value={String(revDraftCount)} hint={t("wlRsDraft")} />
+          : <Stat label={t("wlStatWithdraw")} value={String(pendingWithdrawals.length)} hint="PIX" />}
       </div>
 
-      <p className="mb-4 -mt-2 px-1 text-[11px] font-bold text-[var(--muted)]">{t("wlExplain")}</p>
+      {/* Week switcher — compact toolbar; settlement-scope explainer folds away. */}
+      <div className="mb-4">
+        <Toolbar
+          right={
+            <button type="button" onClick={() => setExplainOpen((v) => !v)} className={`${btnGhost} inline-flex items-center gap-1 ${explainOpen ? "!border-[var(--accent)] !text-[var(--accent)]" : ""}`} aria-expanded={explainOpen}>
+              <Info size={13} /> {t("wlExplainToggle")}
+            </button>
+          }
+        >
+          <button type="button" className={btnGhost} onClick={() => shiftWeek(-7)}>{t("wlPrevWeek")}</button>
+          <span className="px-1 text-sm font-black" data-i18n-skip>{weekly ? `${md(weekly.week.from)} – ${md(weekly.week.to)}` : loading ? "…" : "—"}</span>
+          <button type="button" className={btnGhost} onClick={() => shiftWeek(7)}>{t("wlNextWeek")}</button>
+          <span className="text-[11px] font-bold text-[var(--muted)]">{t("wlNatWeek")}</span>
+          <span className="text-sm font-black text-[var(--accent)]">{t("wlWeekTotal", { money: weekly ? money(weekly.grandTotal) : loading ? "…" : "—" })}</span>
+        </Toolbar>
+        {explainOpen && <div className="panel mt-2 p-3 text-xs font-bold leading-relaxed text-[var(--muted)]">{t("wlExplain")}</div>}
+      </div>
 
+      {/* Revenue-share statements (franchise scope) */}
       {scopeFranchise && (
-        <div className="panel mb-4 p-4">
-          <div className="mb-2 flex flex-wrap items-center gap-2">
-            <span className="text-xs font-black uppercase text-[var(--muted)]">{t("wlRevShare", { f: scopeFranchise })}</span>
-            <input value={stationShare} onChange={(e) => setStationShare(e.target.value.replace(/[^\d.]/g, ""))} placeholder={t("wlStationSharePh")} className="ml-auto h-9 w-32 rounded-[8px] border border-[var(--line)] bg-[var(--surface-raised)] px-2 text-sm font-bold outline-none" />
-            <button type="button" onClick={async () => { const res = await fetch("/api/mall/ops", { method: "POST", headers, body: JSON.stringify({ action: "setStationShare", stationShareBRL: Number(stationShare) || 0 }) }); setMessage(res.ok ? { tone: "ok", text: t("wlStationShareSet", { x: Number(stationShare) || 0 }) } : { tone: "err", text: t("wlSetFailed") }); }} className="h-9 rounded-[8px] bg-[var(--accent)] px-3 text-xs font-black text-[var(--accent-ink)]">{t("wlSetStationShare")}</button>
-          </div>
-          <div className="space-y-2">
-            {revStatements.map((s) => {
-              const expanded = openStmt.has(s.id);
-              const details = expanded ? entriesOf(s) : [];
-              return (
-                <div key={s.id} className="rounded-[8px] border border-[var(--line)] bg-[var(--surface-raised)] px-3 py-2 text-sm">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className="font-black">{s.month}</span>
-                    <Badge value={{ draft: t("wlRsDraft"), confirmed: t("wlRsConfirmed"), paid: t("wlRsPaid"), disputed: t("wlRsDisputed") }[s.status] ?? s.status} />
-                    <span className="text-xs font-bold text-[var(--muted)]">{t("wlRsLine", { orders: s.orders, net: `R$ ${s.franchiseNetTotal.toFixed(2)}`, station: `R$ ${s.stationShareTotal.toFixed(2)}`, total: `R$ ${s.total.toFixed(2)}` })}</span>
-                    <button type="button" className="tag ml-auto" onClick={() => toggleStmt(s.id)}>{expanded ? t("wlHideDetail") : t("wlViewDetail")}</button>
-                    {s.status === "draft" && (
-                      <button type="button" onClick={async () => { const res = await fetch("/api/mall/ops", { method: "POST", headers, body: JSON.stringify({ action: "confirmRevShareStatement", statementId: s.id }) }); if (res.ok) { setMessage({ tone: "ok", text: t("wlStmtConfirmed") }); void loadRevShare(); } }} className="h-8 rounded-[8px] bg-[var(--accent)] px-3 text-xs font-black text-[var(--accent-ink)]">{t("wlConfirmStmt")}</button>
-                    )}
-                    {(s.status === "draft" || s.status === "confirmed") && (
-                      <button
-                        type="button"
-                        onClick={async () => {
-                          const note = await dialog.prompt(t("wlDisputeTitle"), { message: t("wlDisputeMsg") });
-                          if (note === null || !note.trim()) return;
-                          const res = await fetch("/api/mall/ops", { method: "POST", headers, body: JSON.stringify({ action: "disputeRevShareStatement", statementId: s.id, note: note.trim() }) });
-                          const payload = await res.json().catch(() => ({}));
-                          if (!res.ok) { setMessage({ tone: "err", text: payload.error ?? t("wlOpFailed", { s: res.status }) }); return; }
-                          setMessage({ tone: "ok", text: t("wlDisputeSent") });
-                          void loadRevShare();
-                        }}
-                        className="h-8 rounded-[8px] border border-[var(--danger)]/40 px-3 text-xs font-black text-[var(--danger-ink)]"
-                      >{t("wlDisputeBtn")}</button>
-                    )}
-                  </div>
-                  {s.status === "disputed" && s.disputeNote && <div className="mt-1 text-xs font-bold text-[var(--warning-ink)]">{t("wlDisputeNote", { x: s.disputeNote })}</div>}
-                  {expanded && (
-                    <div className="mt-2 border-t border-[var(--line)] pt-2">
-                      {details.length === 0 ? (
-                        <div className="py-2 text-center text-xs font-bold text-[var(--muted)]">{t("wlDetailEmpty")}</div>
-                      ) : (
-                        <>
-                          <div className="max-h-64 overflow-auto pr-1">
-                            <table className="w-full text-xs">
-                              <thead>
-                                <tr className="text-left text-[10px] font-black uppercase text-[var(--muted)]">
-                                  <th className="pb-1.5">{t("wlColOrderId")}</th>
-                                  <th className="pb-1.5">{t("wlColProduct")}</th>
-                                  <th className="pb-1.5">{t("wlColPickupStore")}</th>
-                                  <th className="pb-1.5 text-right">{t("wlColFrNet")}</th>
-                                  <th className="pb-1.5 text-right">{t("wlColStShare")}</th>
-                                </tr>
-                              </thead>
-                              <tbody>
-                                {details.map((e) => (
-                                  <tr key={e.id} className="border-t border-[var(--line)]">
-                                    <td className="py-1.5 font-bold">{e.orderId}</td>
-                                    <td className="py-1.5">{e.productName}</td>
-                                    <td className="py-1.5">{e.pickupStoreName}</td>
-                                    <td className="py-1.5 text-right font-black">{money(e.franchiseNetBRL)}</td>
-                                    <td className="py-1.5 text-right">{money(e.stationShareBRL)}</td>
-                                  </tr>
-                                ))}
-                              </tbody>
-                            </table>
-                          </div>
-                          <div className="mt-2 flex justify-end">
-                            <button type="button" className="tag" onClick={() => exportRevDetailCsv(s)}>CSV</button>
-                          </div>
-                        </>
-                      )}
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-            {revStatements.length === 0 && <div className="py-2 text-center text-xs font-bold text-[var(--muted)]">{t("wlNoRevStmt")}</div>}
-          </div>
-        </div>
+        <SectionCard
+          title={<span className="inline-flex items-center gap-1.5"><Store size={13} className="text-[var(--accent)]" /> {t("wlRevShare", { f: scopeFranchise })}</span>}
+          className="!p-4 mb-4"
+          right={
+            <>
+              <input value={stationShare} onChange={(e) => setStationShare(e.target.value.replace(/[^\d.]/g, ""))} placeholder={t("wlStationSharePh")} className="h-9 w-32 rounded-[8px] border border-[var(--line)] bg-[var(--surface-raised)] px-2 text-sm font-bold outline-none focus:border-[var(--accent)]" />
+              <button type="button" onClick={async () => { const res = await fetch("/api/mall/ops", { method: "POST", headers, body: JSON.stringify({ action: "setStationShare", stationShareBRL: Number(stationShare) || 0 }) }); setMessage(res.ok ? { tone: "ok", text: t("wlStationShareSet", { x: Number(stationShare) || 0 }) } : { tone: "err", text: t("wlSetFailed") }); }} className={`${btnOutline} !h-9`}>{t("wlSetStationShare")}</button>
+            </>
+          }
+        >
+          <DataTable columns={stmtColumns} rows={revStatements} rowKey={(s) => s.id} onRowClick={(s) => setStmtDrawerId(s.id)} minWidth={760} empty={t("wlNoRevStmt")} />
+        </SectionCard>
       )}
 
-      {/* Franchise → rider fold */}
-      <div className="space-y-2">
-        {(weekly?.franchises ?? []).length === 0 && <div className="panel p-6 text-center text-sm font-bold text-[var(--muted)]">{t("wlNoWeekData")}</div>}
-        {weekly?.franchises.map((g) => {
+      {/* Weekly settlement — one compact rider table per franchise; row → drawer. */}
+      <div className="space-y-4">
+        {groups.length === 0 && <div className="panel p-6 text-center text-sm font-bold text-[var(--muted)]">{loading ? "…" : t("wlNoWeekData")}</div>}
+        {groups.map((g) => {
           const net = Math.round((g.settle - g.franchisePaid) * 100) / 100;
           const pendingAmt = Math.max(0, net);
           const overpaid = net < 0 ? -net : 0;
-          const expanded = open.has(g.franchise);
           return (
-            <div key={g.franchise} className="panel overflow-hidden p-0">
-              <div className="flex flex-wrap items-center gap-3 p-4">
-                <button type="button" onClick={() => toggle(g.franchise)} className="flex min-w-0 flex-1 items-center gap-2 text-left">
-                  <ChevronRight size={16} className={`shrink-0 text-[var(--muted)] transition-transform ${expanded ? "rotate-90" : ""}`} />
-                  <Building2 size={15} className="shrink-0 text-[var(--accent)]" />
-                  <span className="truncate text-sm font-black">{g.franchise}</span>
-                  <span className="text-[11px] font-bold text-[var(--muted)]">{t("wlRidersCount", { n: g.riders.length })}</span>
-                </button>
-                <div className="flex items-center gap-4 text-sm">
-                  <div className="text-right"><div className="text-[10px] font-black uppercase text-[var(--muted)]">{t("wlSettle")}</div><div className="font-black">{money(g.settle)}</div></div>
-                  <div className="text-right"><div className="text-[10px] font-black uppercase text-[var(--muted)]" title={t("wlPaidHqFrTitle")}>{t("wlPaidHqFr")}</div><div className="font-black text-[var(--ok-ink)]">{money(g.franchisePaid)}</div></div>
-                  <div className="text-right"><div className="text-[10px] font-black uppercase text-[var(--muted)]">{overpaid > 0 ? t("wlOverpaid") : t("wlPending")}</div><div className={`font-black ${overpaid > 0 ? "text-[var(--danger-ink)]" : pendingAmt > 0 ? "text-[var(--warning-ink)]" : "text-[var(--muted)]"}`}>{overpaid > 0 ? `+${money(overpaid)}` : money(pendingAmt)}</div></div>
-                </div>
-                <div className="flex gap-1.5">
-                  {!scopeFranchise && <button type="button" className="inline-flex h-9 items-center rounded-[8px] bg-[var(--accent)] px-3 text-xs font-black uppercase text-[var(--accent-ink)]" onClick={() => openPay("franchise", g.franchise, g.franchise, pendingAmt)}>{t("wlPayFranchiseBtn")}</button>}
-                  <button type="button" className="tag" onClick={() => void exportCsv(g.franchise)}>CSV</button>
-                  <button type="button" className="tag" onClick={() => void exportPdf(g.franchise)}>PDF</button>
-                </div>
-              </div>
-              {expanded && (
-                <div className="border-t border-[var(--line)] bg-[var(--surface-raised)] p-3">
-                  <table className="w-full text-sm">
-                    <thead>
-                      <tr className="text-left text-[10px] font-black uppercase text-[var(--muted)]">
-                        <th className="pb-2">{t("wlColRider")}</th><th className="pb-2">{t("wlColStation")}</th><th className="pb-2 text-right">{t("wlColOrders")}</th><th className="pb-2 text-right">{t("wlColDays")}</th><th className="pb-2 text-right">{t("wlColSettle")}</th><th className="pb-2 text-right" title={t("wlPaidRiderTitle")}>{t("wlColPaidRider")}</th><th className="pb-2 text-right">{t("wlColAction")}</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {g.riders.map((r) => {
-                        const ridPending = Math.max(0, Math.round((r.settle - r.paid) * 100) / 100);
-                        return (
-                          <tr key={r.rider99Id} className="border-t border-[var(--line)]">
-                            <td className="py-2 font-black">{r.name}</td>
-                            <td className="py-2"><span className="tag">{r.station}</span></td>
-                            <td className="py-2 text-right">{r.orders}</td>
-                            <td className="py-2 text-right">{r.days}</td>
-                            <td className="py-2 text-right font-black">{money(r.settle)}</td>
-                            <td className="py-2 text-right text-[var(--ok-ink)]">{money(r.paid)}</td>
-                            <td className="py-2 text-right">
-                              <button type="button" className="tag" onClick={() => openPay("rider", r.name, g.franchise, ridPending)}>{t("wlMarkPaid")}</button>
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </div>
+            <SectionCard
+              key={g.franchise}
+              className="!p-4"
+              title={<span className="inline-flex items-center gap-1.5"><Building2 size={13} className="text-[var(--accent)]" /> {g.franchise} <span className="font-bold normal-case text-[var(--muted)]">· {t("wlRidersCount", { n: g.riders.length })}</span></span>}
+              desc={
+                <span data-i18n-skip>
+                  {t("wlSettle")} <b className="text-[var(--text)]">{money(g.settle)}</b>
+                  {" · "}
+                  <span title={t("wlPaidHqFrTitle")}>{t("wlPaidHqFr")} <b className="text-[var(--success)]">{money(g.franchisePaid)}</b></span>
+                  {" · "}
+                  {overpaid > 0
+                    ? <>{t("wlOverpaid")} <b className="text-[var(--danger)]">+{money(overpaid)}</b></>
+                    : <>{t("wlPending")} <b className={pendingAmt > 0 ? "text-[var(--warn)]" : "text-[var(--muted)]"}>{money(pendingAmt)}</b></>}
+                </span>
+              }
+              right={
+                <>
+                  {!scopeFranchise && <button type="button" className={`${btnOutline} !h-9`} onClick={() => openPay("franchise", g.franchise, g.franchise, pendingAmt)}>{t("wlPayFranchiseBtn")}</button>}
+                  <button type="button" className={`${btnGhost} !h-9`} onClick={() => void exportCsv(g.franchise)}>CSV</button>
+                  <button type="button" className={`${btnGhost} !h-9`} onClick={() => void exportPdf(g.franchise)}>PDF</button>
+                </>
+              }
+            >
+              <DataTable columns={riderColumns(g)} rows={g.riders} rowKey={(r) => r.rider99Id} onRowClick={(r) => setRiderRef({ franchise: g.franchise, rider99Id: r.rider99Id })} minWidth={760} empty={t("wlNoWeekData")} />
+            </SectionCard>
           );
         })}
       </div>
 
       {/* Rider PIX withdrawals queue */}
       {pendingWithdrawals.length > 0 && (
-        <div className="panel mt-4 p-4">
-          <div className="mb-3 flex items-center gap-2 text-xs font-black uppercase text-[var(--accent)]"><Banknote size={14} /> {t("wlWithdrawQueue", { n: pendingWithdrawals.length })}</div>
-          <div className="space-y-2">
-            {pendingWithdrawals.map((w) => (
-              <div key={w.id} className="flex flex-wrap items-center justify-between gap-2 rounded-[8px] border border-[var(--line)] bg-[var(--surface-raised)] p-3">
-                <div>
-                  <div className="text-sm font-black">{w.riderName} · {money(w.amount)}</div>
-                  <div className="text-[11px] font-bold text-[var(--muted)]">PIX {w.pix} ｜ {w.station}（{w.franchise}）｜ {w.requestedAt}</div>
-                </div>
-                <div className="flex gap-2">
-                  <button type="button" onClick={() => void act("confirmPayment", w.id)} className="inline-flex h-9 items-center gap-1 rounded-[8px] bg-[var(--accent)] px-3 text-xs font-black uppercase text-[var(--accent-ink)]"><CheckCircle2 size={13} /> {t("wlPaidBtn")}</button>
-                  <button type="button" onClick={() => void act("rejectWithdrawal", w.id)} className="inline-flex h-9 items-center gap-1 rounded-[8px] border border-[var(--line)] px-3 text-xs font-black uppercase text-[var(--danger-ink)]"><XCircle size={13} /> {t("wlRejectBtn")}</button>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
+        <SectionCard
+          title={<span className="inline-flex items-center gap-1.5"><Banknote size={13} className="text-[var(--accent)]" /> {t("wlWithdrawQueue", { n: pendingWithdrawals.length })}</span>}
+          className="!p-4 mt-4"
+        >
+          <DataTable columns={withdrawColumns} rows={pendingWithdrawals} rowKey={(w) => w.id} minWidth={720} />
+        </SectionCard>
       )}
+
+      {/* Rider settlement drawer */}
+      <Drawer
+        open={Boolean(drawerRider)}
+        onClose={() => setRiderRef(null)}
+        width={400}
+        ariaLabel={t("wlRiderDetail")}
+        title={drawerRider ? (
+          <div className="min-w-0">
+            <div className="truncate text-sm font-black">{drawerRider.name}</div>
+            <div className="text-[11px] font-bold text-[var(--muted)]">{t("wlRiderDetail")} · {riderRef?.franchise}</div>
+          </div>
+        ) : null}
+      >
+        {drawerRider && (
+          <div className="space-y-5">
+            <div className="flex flex-wrap items-center gap-2">
+              {drawerRiderPending > 0
+                ? <StatusBadge tone="warn" label={`${t("wlPending")} ${money(drawerRiderPending)}`} />
+                : <StatusBadge tone="success" label={t("wlSettled")} />}
+              <span className="text-xs font-bold text-[var(--muted)]" data-i18n-skip>{weekly ? `${md(weekly.week.from)} – ${md(weekly.week.to)}` : ""}</span>
+            </div>
+            <div className="rounded-[10px] border border-[var(--line)] px-3">
+              <DetailRow label={t("wlColStation")} value={drawerRider.station} />
+              <DetailRow label="99ID" value={drawerRider.rider99Id || "—"} />
+              <DetailRow label={t("wlColOrders")} value={drawerRider.orders} />
+              <DetailRow label={t("wlColDays")} value={drawerRider.days} />
+              <DetailRow label={t("wlColSettle")} value={<b>{money(drawerRider.settle)}</b>} />
+              <DetailRow label={<span title={t("wlPaidRiderTitle")}>{t("wlColPaidRider")}</span>} value={<span className="text-[var(--success)]">{money(drawerRider.paid)}</span>} />
+              <DetailRow label={t("wlPending")} value={<b className={drawerRiderPending > 0 ? "text-[var(--warn)]" : ""}>{money(drawerRiderPending)}</b>} />
+            </div>
+            <div className="flex flex-wrap gap-2 border-t border-[var(--line)] pt-3">
+              <button type="button" className={btnPrimary} onClick={() => openPay("rider", drawerRider.name, riderRef?.franchise ?? "", drawerRiderPending)}>{t("wlMarkPaid")}</button>
+            </div>
+          </div>
+        )}
+      </Drawer>
+
+      {/* Revenue-share statement detail drawer */}
+      <Drawer
+        open={Boolean(drawerStmt)}
+        onClose={() => setStmtDrawerId("")}
+        width={480}
+        ariaLabel={t("wlStmtDetail")}
+        title={drawerStmt ? (
+          <div className="min-w-0">
+            <div className="truncate text-sm font-black">{drawerStmt.month} · {t("wlStmtDetail")}</div>
+            <div className="text-[11px] font-bold text-[var(--muted)]">{drawerStmt.franchise}</div>
+          </div>
+        ) : null}
+      >
+        {drawerStmt && (
+          <div className="space-y-5">
+            <div className="rounded-[10px] border border-[var(--line)] px-3">
+              <DetailRow label={t("wlColStatus")} value={stmtBadge(drawerStmt.status)} />
+              <DetailRow label={t("wlColOrders")} value={drawerStmt.orders} />
+              <DetailRow label={t("wlColFrNet")} value={money(drawerStmt.franchiseNetTotal)} />
+              <DetailRow label={t("wlColStShare")} value={money(drawerStmt.stationShareTotal)} />
+              <DetailRow label={t("wlColTotal")} value={<b>{money(drawerStmt.total)}</b>} />
+            </div>
+            {drawerStmt.status === "disputed" && drawerStmt.disputeNote && (
+              <div className="rounded-[10px] border border-[var(--warn)]/50 bg-[var(--warn-bg)] px-3 py-2 text-xs font-bold text-[var(--warn)]">{t("wlDisputeNote", { x: drawerStmt.disputeNote })}</div>
+            )}
+            <div>
+              <div className="mb-1.5 flex items-center gap-2">
+                <span className="text-[11px] font-black uppercase text-[var(--muted)]">{t("wlDetailLines", { n: entriesOf(drawerStmt).length })}</span>
+                <button type="button" className={`ml-auto ${btnGhost}`} onClick={() => exportRevDetailCsv(drawerStmt)}>CSV</button>
+              </div>
+              <div className="max-h-72 overflow-auto rounded-[10px] border border-[var(--line)]">
+                {entriesOf(drawerStmt).map((e) => (
+                  <div key={e.id} className="flex items-center gap-2 border-b border-[var(--line)] px-3 py-2 text-xs font-bold last:border-b-0">
+                    <span className="text-[var(--muted)]">{e.orderId}</span>
+                    <span className="min-w-0 flex-1 truncate">{e.productName}</span>
+                    <span className="truncate text-[var(--muted)]">{e.pickupStoreName}</span>
+                    <span className="w-16 shrink-0 text-right font-black">{money(e.franchiseNetBRL)}</span>
+                    <span className="w-14 shrink-0 text-right text-[var(--muted)]">{money(e.stationShareBRL)}</span>
+                  </div>
+                ))}
+                {entriesOf(drawerStmt).length === 0 && <div className="px-3 py-4 text-center text-xs font-bold text-[var(--muted)]">{t("wlDetailEmpty")}</div>}
+              </div>
+            </div>
+            <div className="flex flex-wrap gap-2 border-t border-[var(--line)] pt-3">
+              {drawerStmt.status === "draft" && (
+                <button type="button" className={btnPrimary} onClick={() => void confirmStmt(drawerStmt)}>{t("wlConfirmStmt")}</button>
+              )}
+              {(drawerStmt.status === "draft" || drawerStmt.status === "confirmed") && (
+                <button type="button" className={btnDanger} onClick={() => void disputeStmt(drawerStmt)}>{t("wlDisputeBtn")}</button>
+              )}
+            </div>
+          </div>
+        )}
+      </Drawer>
 
       {/* Payment modal */}
       {pay && (
@@ -438,6 +562,7 @@ function RiderPayrollWallet() {
 // of the rider-payroll settlement above — mall scope only: GMV/收款, sales
 // revenue-share statements, supplier statements, hybrid-payment & top-up
 // review. No rider payroll here (that lives in the HQ/franchise portals).
+// Copy is hardcoded Chinese by design (internal HQ workspace, same as kit).
 // ---------------------------------------------------------------------------
 
 type FinanceSummary = { orders: number; pointsGmv: number; cashGmv: number; gmvBRL: number; pointsToBrlRate: number; pendingPayments: number };
@@ -481,17 +606,93 @@ function MallFinanceWallet() {
   const supplierStmts = data?.statements ?? [];
   const revStmts = data?.revShareStatements ?? [];
   const pendingPayments = (data?.payments ?? []).filter((p) => p.status === "submitted");
-  const pendingTopUps = (data?.topUps ?? []).filter((t) => t.status === "submitted");
+  const pendingTopUps = (data?.topUps ?? []).filter((row) => row.status === "submitted");
   const supplierPayable = supplierStmts.filter((s) => s.status === "confirmed").reduce((a, b) => a + b.total, 0);
   const revPayable = revStmts.filter((s) => s.status === "confirmed").reduce((a, b) => a + b.total, 0);
 
-  const Stat = ({ label, value, hint }: { label: string; value: string; hint: string }) => (
-    <div className="panel p-4">
-      <div className="text-[10px] font-black uppercase text-[var(--muted)]">{label}</div>
-      <div className="mt-1 text-2xl font-black">{value}</div>
-      <div className="mt-0.5 text-[11px] font-bold text-[var(--muted)]">{hint}</div>
-    </div>
+  const hqStmtBadge = (status: "draft" | "confirmed" | "paid" | "disputed", who: string) => (
+    <StatusBadge tone={STMT_TONE[status]} label={stmtStatusLabel(status, who, t)} />
   );
+
+  const revColumns: Array<DataColumn<RevShareStmt>> = [
+    { key: "franchise", label: "加盟商", render: (s) => <span className="font-black">{s.franchise}</span> },
+    { key: "month", label: "月份", render: (s) => s.month },
+    {
+      key: "status", label: "状态", render: (s) => (
+        <span>
+          {hqStmtBadge(s.status, t("dynWhoFranchise"))}
+          {s.status === "disputed" && s.disputeNote && <span className="mt-0.5 block text-[11px] font-bold text-[var(--warn)]">异议：{s.disputeNote} · 在商城后台「供应链」处理</span>}
+        </span>
+      ),
+    },
+    { key: "orders", label: "单数", align: "right", render: (s) => s.orders },
+    { key: "net", label: "加盟商净", align: "right", render: (s) => money(s.franchiseNetTotal) },
+    { key: "station", label: "站点分成", align: "right", render: (s) => money(s.stationShareTotal) },
+    { key: "total", label: "合计", align: "right", render: (s) => <b>{money(s.total)}</b> },
+    {
+      key: "ops", label: "操作", align: "right", render: (s) => (
+        s.status === "confirmed"
+          ? <button type="button" className={btnOutline} onClick={() => void post({ action: "payRevShareStatement", statementId: s.id }, "已标记付款")}>标记已付款</button>
+          : s.status === "paid"
+            ? <span className="text-[11px] font-bold text-[var(--success)]">已付 {s.paidAt ?? ""}</span>
+            : <span className="text-[11px] font-bold text-[var(--muted)]">—</span>
+      ),
+    },
+  ];
+
+  const supplierColumns: Array<DataColumn<SupplierStmt>> = [
+    { key: "supplier", label: "供应商", render: (s) => <span className="font-black">{s.supplierName}</span> },
+    { key: "month", label: "月份", render: (s) => s.month },
+    {
+      key: "status", label: "状态", render: (s) => (
+        <span>
+          {hqStmtBadge(s.status, t("dynWhoSupplier"))}
+          {s.status === "disputed" && s.disputeNote && <span className="mt-0.5 block text-[11px] font-bold text-[var(--warn)]">异议：{s.disputeNote} · 在商城后台「供应链」处理</span>}
+        </span>
+      ),
+    },
+    { key: "total", label: "应付", align: "right", render: (s) => <b>{money(s.total)}</b> },
+    {
+      key: "ops", label: "操作", align: "right", render: (s) => (
+        s.status === "confirmed"
+          ? <button type="button" className={btnOutline} onClick={() => void post({ action: "payStatement", statementId: s.id }, "已标记付款")}>标记已付款</button>
+          : s.status === "paid"
+            ? <span className="text-[11px] font-bold text-[var(--success)]">已付 {s.paidAt ?? ""}</span>
+            : <span className="text-[11px] font-bold text-[var(--muted)]">—</span>
+      ),
+    },
+  ];
+
+  const paymentColumns: Array<DataColumn<HybridPayment>> = [
+    { key: "rider", label: "骑手", render: (p) => <span className="font-black">{p.riderName}</span> },
+    { key: "product", label: "商品", render: (p) => p.productName },
+    { key: "amount", label: "金额", align: "right", render: (p) => <b>{money(p.amountBRL)}</b> },
+    { key: "ref", label: "凭证", render: (p) => <span className="text-xs text-[var(--muted)]">{p.reference ?? "—"}</span> },
+    { key: "time", label: "时间", render: (p) => <span className="text-xs text-[var(--muted)]">{p.createdAt ?? ""}</span> },
+    {
+      key: "ops", label: "操作", align: "right", render: (p) => (
+        <span className="inline-flex gap-1.5">
+          <button type="button" className={btnOutline} onClick={() => void post({ action: "confirmPayment", paymentId: p.id }, "已核销该付款")}>确认</button>
+          <button type="button" className={btnDanger} onClick={() => void post({ action: "rejectPayment", paymentId: p.id }, "已驳回该付款")}>驳回</button>
+        </span>
+      ),
+    },
+  ];
+
+  const topUpColumns: Array<DataColumn<TopUpRow>> = [
+    { key: "rider", label: "骑手", render: (row) => <span className="font-black">{row.riderName}</span> },
+    { key: "amount", label: "金额", align: "right", render: (row) => <b>{money(row.amountBRL)}</b> },
+    { key: "ref", label: "凭证", render: (row) => <span className="text-xs text-[var(--muted)]">{row.reference ?? "—"}</span> },
+    { key: "time", label: "时间", render: (row) => <span className="text-xs text-[var(--muted)]">{row.createdAt}</span> },
+    {
+      key: "ops", label: "操作", align: "right", render: (row) => (
+        <span className="inline-flex gap-1.5">
+          <button type="button" className={btnOutline} onClick={() => void post({ action: "confirmTopUp", topUpId: row.id }, "已确认到账,余额已入账")}>确认到账</button>
+          <button type="button" className={btnDanger} onClick={() => void post({ action: "rejectTopUp", topUpId: row.id }, "已驳回")}>驳回</button>
+        </span>
+      ),
+    },
+  ];
 
   return (
     <AppShell>
@@ -515,102 +716,49 @@ function MallFinanceWallet() {
       </div>
 
       {/* Month picker (shared by both generate actions) */}
-      <div className="panel mb-4 flex flex-wrap items-center gap-3 p-3">
-        <span className="text-xs font-black uppercase text-[var(--muted)]">对账月份</span>
-        <input type="month" value={month} onChange={(e) => setMonth(e.target.value)} className="h-9 rounded-[8px] border border-[var(--line)] bg-[var(--surface-raised)] px-2 text-sm font-bold outline-none" />
-        <span className="ml-auto text-[11px] font-bold text-[var(--muted)]">对账单按月生成；加盟商 / 供应商在各自后台确认后,这里标记付款。</span>
+      <div className="mb-4">
+        <Toolbar right={<span className="text-[11px] font-bold text-[var(--muted)]">对账单按月生成；加盟商 / 供应商在各自后台确认后,这里标记付款。</span>}>
+          <span className="text-xs font-black uppercase text-[var(--muted)]">对账月份</span>
+          <input type="month" value={month} onChange={(e) => setMonth(e.target.value)} className="h-9 rounded-[8px] border border-[var(--line)] bg-[var(--surface-raised)] px-2 text-sm font-bold outline-none" />
+        </Toolbar>
       </div>
 
       {/* Sales revenue-share statements (加盟商) */}
-      <div className="panel mb-4 p-4">
-        <div className="mb-3 flex flex-wrap items-center gap-2">
-          <Store size={14} className="text-[var(--accent)]" />
-          <span className="text-xs font-black uppercase text-[var(--muted)]">销售分成 · 月度对账（加盟商 / 站点)</span>
-          <button type="button" onClick={() => void post({ action: "generateRevShareStatement", month }, t("dynShareStatementGen", { m: month }))} className="ml-auto h-9 rounded-[8px] bg-[var(--accent)] px-3.5 text-xs font-black text-[var(--accent-ink)]">生成分成对账单</button>
-        </div>
-        <div className="space-y-2">
-          {revStmts.map((s) => (
-            <div key={s.id} className="flex flex-wrap items-center gap-2 rounded-[8px] border border-[var(--line)] bg-[var(--surface-raised)] px-3 py-2 text-sm">
-              <span className="font-black">{s.franchise}</span>
-              <span className="text-[11px] font-bold text-[var(--muted)]">{s.month}</span>
-              <Badge value={stmtStatusLabel(s.status, t("dynWhoFranchise"), t)} />
-              <span className="text-xs font-bold text-[var(--muted)]">{s.orders} 单 · 净 {money(s.franchiseNetTotal)} · 站点 {money(s.stationShareTotal)} · 合计 <b>{money(s.total)}</b></span>
-              {s.status === "confirmed" && (
-                <button type="button" onClick={() => void post({ action: "payRevShareStatement", statementId: s.id }, "已标记付款")} className="ml-auto h-8 rounded-[8px] bg-[var(--accent)] px-3 text-xs font-black text-[var(--accent-ink)]">标记已付款</button>
-              )}
-              {s.status === "paid" && <span className="ml-auto text-[11px] font-bold text-[var(--ok-ink)]">已付 {s.paidAt ?? ""}</span>}
-              {s.status === "disputed" && s.disputeNote && <span className="ml-auto text-[11px] font-bold text-[var(--warning-ink)]">异议：{s.disputeNote} · 在商城后台「供应链」处理</span>}
-            </div>
-          ))}
-          {revStmts.length === 0 && <div className="py-4 text-center text-xs font-bold text-[var(--muted)]">暂无分成对账单。选择月份后点「生成分成对账单」:按「已取货订单 × 产品加盟商分成」自动汇总。</div>}
-        </div>
-      </div>
+      <SectionCard
+        title={<span className="inline-flex items-center gap-1.5"><Store size={13} className="text-[var(--accent)]" /> 销售分成 · 月度对账（加盟商 / 站点）</span>}
+        className="!p-4 mb-4"
+        right={<button type="button" onClick={() => void post({ action: "generateRevShareStatement", month }, t("dynShareStatementGen", { m: month }))} className={btnPrimary}>生成分成对账单</button>}
+      >
+        <DataTable columns={revColumns} rows={revStmts} rowKey={(s) => s.id} minWidth={860} empty="暂无分成对账单。选择月份后点「生成分成对账单」:按「已取货订单 × 产品加盟商分成」自动汇总。" />
+      </SectionCard>
 
       {/* Supplier monthly statements */}
-      <div className="panel mb-4 p-4">
-        <div className="mb-3 flex flex-wrap items-center gap-2">
-          <Building2 size={14} className="text-[var(--accent)]" />
-          <span className="text-xs font-black uppercase text-[var(--muted)]">供应商 · 月度对账</span>
-          <button type="button" onClick={() => void post({ action: "generateStatement", month }, t("dynSupplierStatementGen", { m: month }))} className="ml-auto h-9 rounded-[8px] bg-[var(--accent)] px-3.5 text-xs font-black text-[var(--accent-ink)]">生成对账单</button>
-        </div>
-        <div className="space-y-2">
-          {supplierStmts.map((s) => (
-            <div key={s.id} className="flex flex-wrap items-center gap-2 rounded-[8px] border border-[var(--line)] bg-[var(--surface-raised)] px-3 py-2 text-sm">
-              <span className="font-black">{s.supplierName}</span>
-              <span className="text-[11px] font-bold text-[var(--muted)]">{s.month}</span>
-              <Badge value={stmtStatusLabel(s.status, t("dynWhoSupplier"), t)} />
-              <span className="text-xs font-bold text-[var(--muted)]">应付 <b>{money(s.total)}</b></span>
-              {s.status === "confirmed" && (
-                <button type="button" onClick={() => void post({ action: "payStatement", statementId: s.id }, "已标记付款")} className="ml-auto h-8 rounded-[8px] bg-[var(--accent)] px-3 text-xs font-black text-[var(--accent-ink)]">标记已付款</button>
-              )}
-              {s.status === "paid" && <span className="ml-auto text-[11px] font-bold text-[var(--ok-ink)]">已付 {s.paidAt ?? ""}</span>}
-              {s.status === "disputed" && s.disputeNote && <span className="ml-auto text-[11px] font-bold text-[var(--warning-ink)]">异议：{s.disputeNote} · 在商城后台「供应链」处理</span>}
-            </div>
-          ))}
-          {supplierStmts.length === 0 && <div className="py-4 text-center text-xs font-bold text-[var(--muted)]">暂无供应商对账单。按「履约订单 × 供货价」自动汇总每个供应商。</div>}
-        </div>
-      </div>
+      <SectionCard
+        title={<span className="inline-flex items-center gap-1.5"><Building2 size={13} className="text-[var(--accent)]" /> 供应商 · 月度对账</span>}
+        className="!p-4 mb-4"
+        right={<button type="button" onClick={() => void post({ action: "generateStatement", month }, t("dynSupplierStatementGen", { m: month }))} className={`${btnOutline} !h-9`}>生成对账单</button>}
+      >
+        <DataTable columns={supplierColumns} rows={supplierStmts} rowKey={(s) => s.id} minWidth={720} empty="暂无供应商对账单。按「履约订单 × 供货价」自动汇总每个供应商。" />
+      </SectionCard>
 
       {/* Hybrid-payment review queue */}
       {pendingPayments.length > 0 && (
-        <div className="panel mb-4 p-4">
-          <div className="mb-3 flex items-center gap-2 text-xs font-black uppercase text-[var(--accent)]"><Banknote size={14} /> 混合付款待核销（{pendingPayments.length}）</div>
-          <div className="space-y-2">
-            {pendingPayments.map((p) => (
-              <div key={p.id} className="flex flex-wrap items-center justify-between gap-2 rounded-[8px] border border-[var(--line)] bg-[var(--surface-raised)] p-3">
-                <div>
-                  <div className="text-sm font-black">{p.riderName} · {p.productName} · {money(p.amountBRL)}</div>
-                  <div className="text-[11px] font-bold text-[var(--muted)]">凭证 {p.reference ?? "—"} ｜ {p.createdAt ?? ""}</div>
-                </div>
-                <div className="flex gap-2">
-                  <button type="button" onClick={() => void post({ action: "confirmPayment", paymentId: p.id }, "已核销该付款")} className="inline-flex h-9 items-center gap-1 rounded-[8px] bg-[var(--accent)] px-3 text-xs font-black uppercase text-[var(--accent-ink)]"><CheckCircle2 size={13} /> 确认</button>
-                  <button type="button" onClick={() => void post({ action: "rejectPayment", paymentId: p.id }, "已驳回该付款")} className="inline-flex h-9 items-center gap-1 rounded-[8px] border border-[var(--line)] px-3 text-xs font-black uppercase text-[var(--danger-ink)]"><XCircle size={13} /> 驳回</button>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
+        <SectionCard
+          title={<span className="inline-flex items-center gap-1.5"><Banknote size={13} className="text-[var(--accent)]" /> 混合付款待核销（{pendingPayments.length}）</span>}
+          className="!p-4 mb-4"
+        >
+          <DataTable columns={paymentColumns} rows={pendingPayments} rowKey={(p) => p.id} minWidth={760} />
+        </SectionCard>
       )}
 
       {/* Cash top-up review queue */}
       {pendingTopUps.length > 0 && (
-        <div className="panel mb-4 p-4">
-          <div className="mb-3 flex items-center gap-2 text-xs font-black uppercase text-[var(--accent)]"><Wallet size={14} /> 余额充值待核销（{pendingTopUps.length}）</div>
-          <div className="space-y-2">
-            {pendingTopUps.map((t) => (
-              <div key={t.id} className="flex flex-wrap items-center justify-between gap-2 rounded-[8px] border border-[var(--line)] bg-[var(--surface-raised)] p-3">
-                <div>
-                  <div className="text-sm font-black">{t.riderName} · {money(t.amountBRL)}</div>
-                  <div className="text-[11px] font-bold text-[var(--muted)]">凭证 {t.reference ?? "—"} ｜ {t.createdAt}</div>
-                </div>
-                <div className="flex gap-2">
-                  <button type="button" onClick={() => void post({ action: "confirmTopUp", topUpId: t.id }, "已确认到账,余额已入账")} className="inline-flex h-9 items-center gap-1 rounded-[8px] bg-[var(--accent)] px-3 text-xs font-black uppercase text-[var(--accent-ink)]"><CheckCircle2 size={13} /> 确认到账</button>
-                  <button type="button" onClick={() => void post({ action: "rejectTopUp", topUpId: t.id }, "已驳回")} className="inline-flex h-9 items-center gap-1 rounded-[8px] border border-[var(--line)] px-3 text-xs font-black uppercase text-[var(--danger-ink)]"><XCircle size={13} /> 驳回</button>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
+        <SectionCard
+          title={<span className="inline-flex items-center gap-1.5"><Wallet size={13} className="text-[var(--accent)]" /> 余额充值待核销（{pendingTopUps.length}）</span>}
+          className="!p-4 mb-4"
+        >
+          <DataTable columns={topUpColumns} rows={pendingTopUps} rowKey={(row) => row.id} minWidth={680} />
+        </SectionCard>
       )}
     </AppShell>
   );

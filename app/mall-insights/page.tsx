@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { ExternalLink, RefreshCcw } from "lucide-react";
 import { AppShell, PageTitle } from "../components/ui";
+import { DataTable, SectionCard, Stat, Toolbar, type DataColumn } from "../components/kit";
 import type { MarketplaceProduct } from "../lib/points";
 import type { MallPayment, SupplierStatement } from "../lib/mall-ops";
 import { useVentoStore } from "../lib/store";
@@ -32,16 +33,7 @@ type PointsLiability = {
   supplierPayableBRL: number;
 };
 
-
-function Stat({ label, value, hint }: { label: string; value: string; hint?: string }) {
-  return (
-    <div className="panel p-4">
-      <div className="text-[11px] font-black uppercase text-[var(--muted)]">{label}</div>
-      <div className="mt-1 text-2xl font-black">{value}</div>
-      {hint && <div className="mt-0.5 text-[11px] font-bold text-[var(--muted)]">{hint}</div>}
-    </div>
-  );
-}
+type SettlementRow = { supplier: string; qty: number; payable: number };
 
 export default function MallInsightsPage() {
   const language = useVentoStore((s) => s.language);
@@ -52,7 +44,7 @@ export default function MallInsightsPage() {
   };
   const headers = useMemo(() => ({ "Content-Type": "application/json" }), []);
   const [products, setProducts] = useState<MarketplaceProduct[]>([]);
-  const [settlement, setSettlement] = useState<Array<{ supplier: string; qty: number; payable: number }>>([]);
+  const [settlement, setSettlement] = useState<SettlementRow[]>([]);
   const [liability, setLiability] = useState<PointsLiability | null>(null);
   const [events, setEvents] = useState<Array<{ id: string; type: string; occurredAt: string; payload: Record<string, unknown> }>>([]);
   const [ops, setOps] = useState<OpsPayload | null>(null);
@@ -80,22 +72,16 @@ export default function MallInsightsPage() {
   const payablePending = (ops?.statements ?? []).filter((statement) => statement.status === "confirmed").reduce((sum, statement) => sum + statement.total, 0);
   const maxDaily = Math.max(1, ...(summary?.daily ?? []).map((day) => day.count));
 
+  const settlementCols: Array<DataColumn<SettlementRow>> = [
+    { key: "supplier", label: "供应商", render: (row) => row.supplier },
+    { key: "qty", label: "履约件数", align: "right", render: (row) => row.qty },
+    { key: "payable", label: "应付金额", align: "right", render: (row) => `R$ ${row.payable.toFixed(2)}` },
+  ];
+
   return (
     <AppShell>
       <PageTitle title="商城关键数据" eyebrow="PontoMall" />
       <p className="-mt-3 mb-5 text-sm font-bold text-[var(--muted)]">只读视图 —— 商品、订单、收款与结算的全部操作在独立商城后台完成。</p>
-
-      <div className="mb-4 flex flex-wrap items-center gap-2">
-        <a href="https://mall.meponto.com/admin" target="_blank" rel="noreferrer" className="inline-flex h-10 items-center gap-2 rounded-[10px] bg-[var(--accent)] px-4 text-[13px] font-black text-[var(--accent-ink)]">
-          <ExternalLink size={15} /> 打开商城后台
-        </a>
-        <a href="https://mall.meponto.com" target="_blank" rel="noreferrer" className="inline-flex h-10 items-center gap-2 rounded-[10px] border border-[var(--line)] px-4 text-[13px] font-black text-[var(--muted)] hover:border-[var(--accent)]">
-          查看商城门面
-        </a>
-        <button type="button" onClick={() => void load()} className="ml-auto inline-flex h-10 items-center gap-2 rounded-[10px] border border-[var(--line)] px-4 text-[13px] font-black text-[var(--muted)] hover:border-[var(--accent)]">
-          <RefreshCcw size={14} /> 刷新
-        </button>
-      </div>
 
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
         <Stat label="GMV 折算（R$）" value={`R$ ${(summary?.gmvBRL ?? 0).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}`} hint={t("dynUnifiedBasis", { r: summary?.pointsToBrlRate ?? 10 })} />
@@ -116,9 +102,25 @@ export default function MallInsightsPage() {
         <Stat label="近 30 天兑换" value={String((summary?.daily ?? []).reduce((sum, day) => sum + day.count, 0))} hint="最近 30 天合计" />
       </div>
 
+      <div className="mt-5">
+        <Toolbar
+          right={
+            <button type="button" onClick={() => void load()} className="inline-flex h-10 items-center gap-2 rounded-[10px] border border-[var(--line)] px-4 text-[13px] font-black text-[var(--muted)] hover:border-[var(--accent)]">
+              <RefreshCcw size={14} /> 刷新
+            </button>
+          }
+        >
+          <a href="https://mall.meponto.com/admin" target="_blank" rel="noreferrer" className="inline-flex h-10 items-center gap-2 rounded-[10px] bg-[var(--accent)] px-4 text-[13px] font-black text-[var(--accent-ink)]">
+            <ExternalLink size={15} /> 打开商城后台
+          </a>
+          <a href="https://mall.meponto.com" target="_blank" rel="noreferrer" className="inline-flex h-10 items-center gap-2 rounded-[10px] border border-[var(--line)] px-4 text-[13px] font-black text-[var(--muted)] hover:border-[var(--accent)]">
+            查看商城门面
+          </a>
+        </Toolbar>
+      </div>
+
       {(summary?.topProducts ?? []).length > 0 && (
-        <div className="panel mt-5 p-5">
-          <div className="mb-3 text-xs font-black uppercase text-[var(--muted)]">热销商品 Top 5（兑换次数）</div>
+        <SectionCard title="热销商品 Top 5（兑换次数）" className="mt-5">
           <div className="space-y-2">
             {(summary?.topProducts ?? []).map((row, i) => (
               <div key={row.name} className="flex items-center gap-3">
@@ -128,22 +130,23 @@ export default function MallInsightsPage() {
               </div>
             ))}
           </div>
-        </div>
+        </SectionCard>
       )}
 
-      <div className="panel mt-5 p-5">
-        <div className="mb-3 text-xs font-black uppercase text-[var(--muted)]">近 30 天兑换量</div>
+      <SectionCard title="近 30 天兑换量" className="mt-5">
         <div className="flex h-24 items-end gap-[3px]">
           {(summary?.daily ?? []).map((day) => (
             <div key={day.date} title={`${day.date} · ${day.count}`} className="flex-1 rounded-t-[3px] bg-[var(--accent)]" style={{ height: `${Math.max(3, (day.count / maxDaily) * 100)}%`, opacity: day.count > 0 ? 0.9 : 0.18 }} />
           ))}
         </div>
-      </div>
+      </SectionCard>
 
       {liability && (
-        <div className="panel mt-5 p-5">
-          <div className="mb-1 text-xs font-black uppercase text-[var(--muted)]">积分负债与兑付对账</div>
-          <p className="mb-3 text-[11px] font-bold text-[var(--muted)]">积分为营销成本型负债;{liability.rate} 分 ≈ R$ 1(定价参考,非现金承诺)。过期回收与兑付现金共同收敛负债。</p>
+        <SectionCard
+          title="积分负债与兑付对账"
+          desc={`积分为营销成本型负债;${liability.rate} 分 ≈ R$ 1(定价参考,非现金承诺)。过期回收与兑付现金共同收敛负债。`}
+          className="mt-5"
+        >
           <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
             <Stat label="未兑付积分负债" value={`R$ ${liability.liabilityBRL.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}`} hint={t("dynLiabilityBreakdown", { total: liability.totalOutstanding.toLocaleString(), r: liability.riderOutstanding.toLocaleString(), p: liability.partnerOutstanding.toLocaleString() })} />
             <Stat label="本月新增赚取" value={`${liability.earnedThisMonth.toLocaleString()} ${t("dynPts")}`} hint="负债增加项" />
@@ -154,13 +157,15 @@ export default function MallInsightsPage() {
             <span>兑付现金支出(供应商应付):<b className="text-[var(--text)]">R$ {liability.supplierPayableBRL.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</b></span>
             <span>口径:负债(分/{liability.rate})↔ 过期回收 ↔ 现金兑付,需 Finance 月度复核。</span>
           </div>
-        </div>
+        </SectionCard>
       )}
 
       {events.length > 0 && (
-        <div className="panel mt-5 p-5">
-          <div className="mb-1 text-xs font-black uppercase text-[var(--muted)]">商城事件流（版本化事件 outbox）</div>
-          <p className="mb-3 text-[11px] font-bold text-[var(--muted)]">每次兑换/到货/取货/取消/驳回都追加版本化领域事件,供下游(对账、风控、通知)消费。</p>
+        <SectionCard
+          title="商城事件流（版本化事件 outbox）"
+          desc="每次兑换/到货/取货/取消/驳回都追加版本化领域事件,供下游(对账、风控、通知)消费。"
+          className="mt-5"
+        >
           <div className="max-h-60 space-y-1.5 overflow-y-auto">
             {events.slice(0, 30).map((event) => (
               <div key={event.id} className="flex items-center gap-3 text-xs font-bold">
@@ -170,20 +175,12 @@ export default function MallInsightsPage() {
               </div>
             ))}
           </div>
-        </div>
+        </SectionCard>
       )}
 
-      <div className="panel mt-5 p-5">
-        <div className="mb-3 text-xs font-black uppercase text-[var(--muted)]">供应商应付（履约口径）</div>
-        <table className="w-full text-sm">
-          <thead><tr className="text-left text-[11px] font-black uppercase text-[var(--muted)]"><th className="py-2">供应商</th><th>履约件数</th><th>应付金额</th></tr></thead>
-          <tbody>
-            {settlement.map((row) => (
-              <tr key={row.supplier} className="border-t border-[var(--line)] font-bold"><td className="py-2.5">{row.supplier}</td><td>{row.qty}</td><td>R$ {row.payable.toFixed(2)}</td></tr>
-            ))}
-            {settlement.length === 0 && <tr><td colSpan={3} className="py-6 text-center font-bold text-[var(--muted)]">暂无履约订单。</td></tr>}
-          </tbody>
-        </table>
+      <div className="mt-5">
+        <div className="mb-2 text-xs font-black uppercase text-[var(--muted)]">供应商应付（履约口径）</div>
+        <DataTable columns={settlementCols} rows={settlement} rowKey={(row) => row.supplier} minWidth={480} empty="暂无履约订单。" />
       </div>
     </AppShell>
   );

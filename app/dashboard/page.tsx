@@ -1,9 +1,11 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { AlertTriangle, Banknote, Bike, Building2, CalendarDays, Gift, Headset, RefreshCcw, Store, TrendingUp, Users } from "lucide-react";
+import { Banknote, Bike, Building2, CalendarDays, Gift, Headset, RefreshCcw, Store, TrendingUp, Users } from "lucide-react";
 import { AppShell, PageTitle } from "../components/ui";
+import { SectionCard, Stat, TodoCard } from "../components/kit";
 import { readSession } from "../lib/session";
 import { useVentoStore } from "../lib/store";
 import { translate, type TranslationKey } from "../lib/i18n";
@@ -18,17 +20,17 @@ type Overview = {
   mall: { inTransit: number; awaitingPickup: number };
 };
 
-function Stat({ label, value, accent, href, alert }: { label: string; value: string | number; accent?: boolean; href?: string; alert?: boolean }) {
-  const card = (
-    <div className={`panel h-full p-4 transition-transform hover:-translate-y-0.5 ${alert ? "border-[var(--warning)] bg-[var(--warning-bg)]" : ""}`}>
-      <div className={`text-2xl font-black ${alert ? "text-[var(--warning-ink)]" : accent ? "text-[var(--accent)]" : ""}`}>{value}</div>
-      <div className="mt-1 text-[11px] font-bold text-[var(--muted)]">{label}</div>
-    </div>
+/** Kit `Stat` wrapped in a Link so every metric card jumps to its module. */
+function StatLink({ href, label, value, hint }: { href: string; label: string; value: string; hint?: string }) {
+  return (
+    <Link href={href} className="block h-full transition-transform hover:-translate-y-0.5">
+      <Stat label={label} value={value} hint={hint} />
+    </Link>
   );
-  return href ? <Link href={href}>{card}</Link> : card;
 }
 
 export default function DashboardPage() {
+  const router = useRouter();
   const language = useVentoStore((s) => s.language);
   const t = (k: TranslationKey, vars?: Record<string, string | number | undefined>) => {
     let s = translate(language, k);
@@ -64,48 +66,70 @@ export default function DashboardPage() {
         <div className="panel p-6 text-sm font-bold text-[var(--muted)]">加载中...</div>
       ) : (
         <div className="space-y-4">
+          {/* ---- 今天要处理什么：待处理数字置顶，点击直达模块 ---- */}
           <div>
-            <div className="mb-2 flex items-center gap-2 text-xs font-black uppercase text-[var(--accent)]"><Building2 size={14} /> 网络规模</div>
-            <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-              <Stat label="加盟商" value={d.network.franchises} href="/pontos" />
-              <Stat label="站点" value={d.network.stations} href="/pontos" />
-              <Stat label="注册骑手" value={d.network.riders} accent href="/riders" />
-              <Stat label="系统账号" value={d.network.accounts} href="/users" />
+            <div className="mb-2 text-xs font-black uppercase text-[var(--muted)]">今天要处理什么</div>
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+              <TodoCard size="sm" label="待审核报名" value={d.dispatch.pendingSignups} tone={d.dispatch.pendingSignups > 0 ? "warn" : "neutral"} hint="排班报名等待审核" onClick={() => router.push("/dispatch")} />
+              <TodoCard size="sm" label="待付提现" value={d.finance.pendingWithdrawals} tone={d.finance.pendingWithdrawals > 0 ? "danger" : "neutral"} hint={t("dynPendingWithdraw", { x: d.finance.pendingAmount.toFixed(2) })} onClick={() => router.push("/wallet")} />
+              <TodoCard size="sm" label="待处理工单" value={d.support.openTickets} tone={d.support.openTickets > 0 ? "warn" : "neutral"} hint="客服工单等待回复" onClick={() => router.push("/support")} />
+              <TodoCard size="sm" label="商城待取" value={d.mall.awaitingPickup} tone={d.mall.awaitingPickup > 0 ? "info" : "neutral"} hint={`在途 ${d.mall.inTransit} 件`} onClick={() => router.push("/mall")} />
+              <TodoCard size="sm" label="AR<95% 骑手" value={d.kpi.lowAr} tone={d.kpi.lowAr > 0 ? "danger" : "neutral"} hint="达成率低于考核线" onClick={() => router.push("/performance")} />
             </div>
           </div>
 
-          <div>
-            <div className="mb-2 flex items-center gap-2 text-xs font-black uppercase text-[var(--accent)]"><CalendarDays size={14} /> 排班调度</div>
+          {/* ---- 关键指标分组 ---- */}
+          <SectionCard title={<span className="inline-flex items-center gap-2"><Building2 size={14} /> 网络规模</span>}>
             <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-              <Stat label="未来班次" value={d.dispatch.upcomingShifts} href="/dispatch" />
-              <Stat label="计划名额" value={d.dispatch.planned} href="/dispatch" />
-              <Stat label="待审核报名" value={d.dispatch.pendingSignups} alert={d.dispatch.pendingSignups > 0} href="/dispatch" />
-              <Stat label="已通过报名" value={d.dispatch.approvedSignups} accent href="/dispatch" />
+              <StatLink href="/pontos" label="加盟商" value={String(d.network.franchises)} />
+              <StatLink href="/pontos" label="站点" value={String(d.network.stations)} />
+              <StatLink href="/riders" label="注册骑手" value={String(d.network.riders)} />
+              <StatLink href="/users" label="系统账号" value={String(d.network.accounts)} />
             </div>
+          </SectionCard>
+
+          <SectionCard title={<span className="inline-flex items-center gap-2"><CalendarDays size={14} /> 排班调度</span>}>
+            <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+              <StatLink href="/dispatch" label="未来班次" value={String(d.dispatch.upcomingShifts)} />
+              <StatLink href="/dispatch" label="计划名额" value={String(d.dispatch.planned)} />
+              <StatLink href="/dispatch" label="待审核报名" value={String(d.dispatch.pendingSignups)} />
+              <StatLink href="/dispatch" label="已通过报名" value={String(d.dispatch.approvedSignups)} />
+            </div>
+          </SectionCard>
+
+          <SectionCard title={<span className="inline-flex items-center gap-2"><TrendingUp size={14} /> 最近 T+1（{d.kpi.date ?? "—"}）</span>}>
+            <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+              <StatLink href="/performance" label="活跃骑手" value={String(d.kpi.riders)} />
+              <StatLink href="/performance" label="完单总数" value={String(d.kpi.completedOrders)} />
+              <StatLink href="/performance" label="结算总额" value={`R$ ${d.kpi.settleTotal.toFixed(2)}`} />
+              <StatLink href="/performance" label="AR<95% 骑手" value={String(d.kpi.lowAr)} />
+            </div>
+          </SectionCard>
+
+          <div className="grid gap-4 lg:grid-cols-3">
+            <SectionCard title={<span className="inline-flex items-center gap-2"><Banknote size={14} /> 财务</span>}>
+              <div className="grid grid-cols-2 gap-3">
+                <StatLink href="/wallet" label={t("dynPendingWithdraw", { x: d.finance.pendingAmount.toFixed(2) })} value={String(d.finance.pendingWithdrawals)} />
+                <StatLink href="/wallet" label="累计已付提现" value={`R$ ${d.finance.paidTotal.toFixed(2)}`} />
+              </div>
+            </SectionCard>
+
+            <SectionCard title={<span className="inline-flex items-center gap-2"><Headset size={14} /> 客服工单</span>}>
+              <div className="grid gap-3">
+                <StatLink href="/support" label="待处理工单" value={String(d.support.openTickets)} hint="工单中心" />
+              </div>
+            </SectionCard>
+
+            <SectionCard title={<span className="inline-flex items-center gap-2"><Gift size={14} /> 商城</span>}>
+              <div className="grid grid-cols-2 gap-3">
+                <StatLink href="/mall" label="在途" value={String(d.mall.inTransit)} />
+                <StatLink href="/mall" label="待取" value={String(d.mall.awaitingPickup)} />
+              </div>
+            </SectionCard>
           </div>
 
-          <div>
-            <div className="mb-2 flex items-center gap-2 text-xs font-black uppercase text-[var(--accent)]"><TrendingUp size={14} /> 最近 T+1（{d.kpi.date ?? "—"}）</div>
-            <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-              <Stat label="活跃骑手" value={d.kpi.riders} href="/performance" />
-              <Stat label="完单总数" value={d.kpi.completedOrders} accent href="/performance" />
-              <Stat label="结算总额" value={`R$ ${d.kpi.settleTotal.toFixed(2)}`} accent href="/performance" />
-              <Stat label="AR<95% 骑手" value={d.kpi.lowAr} alert={d.kpi.lowAr > 0} href="/performance" />
-            </div>
-          </div>
-
-          <div>
-            <div className="mb-2 flex items-center gap-2 text-xs font-black uppercase text-[var(--accent)]"><Banknote size={14} /> 财务 · 客服 · 商城</div>
-            <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-              <Stat label={t("dynPendingWithdraw", { x: d.finance.pendingAmount.toFixed(2) })} value={d.finance.pendingWithdrawals} alert={d.finance.pendingWithdrawals > 0} href="/wallet" />
-              <Stat label="累计已付提现 R$" value={d.finance.paidTotal.toFixed(2)} href="/wallet" />
-              <Stat label="待处理工单" value={d.support.openTickets} alert={d.support.openTickets > 0} href="/support" />
-              <Stat label="商城在途 / 待取" value={`${d.mall.inTransit} / ${d.mall.awaitingPickup}`} href="/mall" />
-            </div>
-          </div>
-
-          <div className="panel p-4">
-            <div className="mb-2 text-xs font-black uppercase text-[var(--muted)]">快捷入口</div>
+          {/* ---- 快捷入口 ---- */}
+          <SectionCard title="快捷入口">
             <div className="flex flex-wrap gap-2">
               <Link href="/dispatch" className="tag inline-flex items-center gap-1"><CalendarDays size={13} /> 运力调度</Link>
               <Link href="/performance" className="tag inline-flex items-center gap-1"><TrendingUp size={13} /> KPI 考核</Link>
@@ -116,19 +140,7 @@ export default function DashboardPage() {
               <Link href="/support" className="tag inline-flex items-center gap-1"><Headset size={13} /> 工单中心</Link>
               <Link href="/users" className="tag inline-flex items-center gap-1"><Users size={13} /> 用户权限</Link>
             </div>
-          </div>
-
-          {(d.dispatch.pendingSignups > 0 || d.finance.pendingWithdrawals > 0 || d.support.openTickets > 0 || d.kpi.lowAr > 0) && (
-            <div className="panel border-[var(--warning)] bg-[var(--warning-bg)] p-4">
-              <div className="flex items-center gap-2 text-xs font-black uppercase text-[var(--warning-ink)]"><AlertTriangle size={14} /> 今日待办</div>
-              <ul className="mt-2 space-y-1 text-sm font-bold text-[var(--warning-ink)]">
-                {d.dispatch.pendingSignups > 0 && <li>· {d.dispatch.pendingSignups} 条排班报名待审核 → <Link href="/dispatch" className="underline">去处理</Link></li>}
-                {d.finance.pendingWithdrawals > 0 && <li>· {d.finance.pendingWithdrawals} 笔提现待付款（R$ {d.finance.pendingAmount.toFixed(2)}）→ <Link href="/wallet" className="underline">去处理</Link></li>}
-                {d.support.openTickets > 0 && <li>· {d.support.openTickets} 条工单待回复 → <Link href="/support" className="underline">去处理</Link></li>}
-                {d.kpi.lowAr > 0 && <li>· {d.kpi.lowAr} 名骑手 AR 低于 95% → <Link href="/performance" className="underline">查看</Link></li>}
-              </ul>
-            </div>
-          )}
+          </SectionCard>
         </div>
       )}
     </AppShell>
