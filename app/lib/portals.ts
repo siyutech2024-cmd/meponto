@@ -107,7 +107,7 @@ export const portalConfigs: Record<PortalId, PortalConfig> = {
     futureDomain: "franchise.meponto.com",
     modules: [
       { href: "/dispatch/franchise", label: "排班配额与审核", description: "接收总部配额、拆分给站点并审核骑手报名。", permission: "manage_slots" },
-      { href: "/mall/franchise", label: "订货备货", description: "为站点选货订货（代销/买断）、跟单收货与预存充值。", permission: "manage_procurement" },
+      { href: "/mall/franchise", label: "商城与订货", description: "查看本加盟商商城订单与在售商品，开通后可为站点订货备货。", permission: "manage_procurement" },
       { href: "/dispatch", label: "运力排班", description: "排班工作台：配额拆分与骑手提报。", permission: "manage_slots" },
       { href: "/performance", label: "KPI 考核", description: "查看本加盟商站点与骑手的 T+1 KPI。", permission: "view_analytics" },
       { href: "/wallet", label: "结算与提现", description: "骑手余额台账、提现付款确认（PIX）。", permission: "view_finance" },

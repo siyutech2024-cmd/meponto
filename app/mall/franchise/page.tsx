@@ -1,18 +1,25 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { PackagePlus, RefreshCcw, ShoppingCart, Wallet } from "lucide-react";
+import { PackagePlus, RefreshCcw, ShoppingBag, ShoppingCart, Store, Wallet } from "lucide-react";
 import { AppShell, PageTitle } from "../../components/ui";
 import { readSession } from "../../lib/session";
 import { useVentoStore } from "../../lib/store";
 import { translate, type TranslationKey } from "../../lib/i18n";
+import type { MarketplaceOrder, MarketplaceProduct } from "../../lib/points";
 import type { FranchisePurchaseOrder, ProcurementDiscrepancy, StationStockBucket } from "../../lib/procurement";
-import { DataTable, Drawer, SectionCard, StatusBadge, type BadgeTone, type DataColumn } from "../kit";
+import { Chip, DataTable, Drawer, Pager, SearchInput, SectionCard, Stat, StatusBadge, Toolbar, type BadgeTone, type DataColumn } from "../kit";
 
-/** Franchise procurement portal — 选货 → 订货 → 跟单 (docs/franchise-procurement-full-chain-plan.md).
- *  Rebuilt on the shared mall kit: deposit SectionCard on top, catalog as a card
- *  grid with a cart bar pinned to the section bottom, orders as a DataTable with
- *  a row-click detail drawer (PIX guidance lives there). */
+/** Franchise mall portal — mall basics (always on) + direct procurement (flagged).
+ *
+ *  Mall basics — visible regardless of the procurementEnabled flag: overview
+ *  stats (in-transit / arrived / delivered today / month revenue share), this
+ *  franchise's redemption orders (read-only; fulfillment happens at the station
+ *  desk) and the active catalog, both from GET /api/mall?franchise=<name>.
+ *
+ *  Direct procurement — 选货 → 订货 → 跟单 (docs/franchise-procurement-full-chain-plan.md),
+ *  gated behind config.procurementEnabled: deposit SectionCard, catalog card
+ *  grid with a cart bar, FPOs as a DataTable with a row-click detail drawer. */
 
 type CatalogRow = {
   id: string; name: string; category?: string; supplierName: string;
@@ -46,6 +53,20 @@ const topUpMeta: Record<string, { key: TranslationKey; tone: BadgeTone }> = {
   confirmed: { key: "fpTuConfirmed", tone: "success" },
   rejected: { key: "fpTuRejected", tone: "danger" },
 };
+/** Mall redemption order lifecycle (same semantics as the station desk). */
+const mallStatusMeta: Record<string, { key: TranslationKey; tone: BadgeTone }> = {
+  created: { key: "msStCreated", tone: "success" },
+  arrived: { key: "msStArrived", tone: "warn" },
+  fulfilled: { key: "msStFulfilled", tone: "neutral" },
+  cancelled: { key: "msStCancelled", tone: "neutral" },
+};
+/** Hybrid checkout reconciliation state (cash part of points+cash orders). */
+const payStatusMeta: Record<string, { key: TranslationKey; tone: BadgeTone }> = {
+  pending: { key: "fmPayPending", tone: "warn" },
+  submitted: { key: "fmPaySubmitted", tone: "info" },
+  paid: { key: "fmPayPaid", tone: "success" },
+};
+const ORDER_PAGE_SIZE = 20;
 
 const inputCls = "rounded-[8px] border border-[var(--line)] bg-[var(--surface-raised)] px-2 text-sm font-bold outline-none focus:border-[var(--accent)]";
 const selectCls = "h-9 rounded-[8px] border border-[var(--line)] bg-[var(--surface-raised)] px-2 text-sm font-bold outline-none focus:border-[var(--accent)]";
@@ -73,6 +94,17 @@ export default function MallFranchisePage() {
   /** FPO opened in the detail drawer (row click). */
   const [activeFpoId, setActiveFpoId] = useState<string | null>(null);
 
+  // ---- Mall basics (always on, flag-independent) ---------------------------
+  const [mallOrders, setMallOrders] = useState<MarketplaceOrder[]>([]);
+  const [mallProducts, setMallProducts] = useState<MarketplaceProduct[]>([]);
+  const [monthShare, setMonthShare] = useState(0);
+  const [orderQuery, setOrderQuery] = useState("");
+  const [orderStatus, setOrderStatus] = useState<"all" | "created" | "arrived" | "fulfilled" | "cancelled">("all");
+  const [orderPage, setOrderPage] = useState(1);
+  const [productQuery, setProductQuery] = useState("");
+  /** Mall order opened in the read-only detail drawer (row click). */
+  const [activeOrderId, setActiveOrderId] = useState<string | null>(null);
+
   const load = useCallback(async () => {
     const response = await fetch("/api/mall/procurement", { headers, cache: "no-store" });
     const payload = await response.json().catch(() => ({}));
@@ -83,6 +115,45 @@ export default function MallFranchisePage() {
   }, [headers, stationId]);
 
   useEffect(() => { void load(); }, [load]);
+
+  /** Mall basics: this franchise's redemption orders + the active catalog from
+   *  the same /api/mall response (mirrors /mall/station's ?station= usage; the
+   *  API strips supplier economics for non-HQ sessions — use the payload
+   *  as-is, no extra requests). */
+  const loadMall = useCallback(async () => {
+    if (!franchise) return;
+    const response = await fetch(`/api/mall?franchise=${encodeURIComponent(franchise)}`, { headers, cache: "no-store" });
+    const payload = await response.json().catch(() => ({}));
+    if (response.ok) {
+      setMallOrders((payload.data?.orders ?? []) as MarketplaceOrder[]);
+      setMallProducts((payload.data?.products ?? []) as MarketplaceProduct[]);
+    }
+  }, [headers, franchise]);
+
+  useEffect(() => { void loadMall(); }, [loadMall]);
+
+  // Month revenue share — same pattern as useMallShareSummary in
+  // app/franchise/page.tsx: franchise-scoped /api/mall/ops revShareEntries
+  // summed for the current month; 403 / no scope degrades silently to 0.
+  useEffect(() => {
+    if (!session) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const response = await fetch("/api/mall/ops", { headers: { "x-vento-role": session.role ?? "" }, cache: "no-store" });
+        if (!response.ok) return; // 403 / not logged in → keep the stat at 0.
+        const payload = (await response.json())?.data;
+        if (!payload || payload.scope !== "franchise") return;
+        const month = new Date().toISOString().slice(0, 7);
+        const entries = (payload.revShareEntries ?? []) as Array<{ month?: string; franchiseShareBRL?: number }>;
+        const total = entries.filter((entry) => entry.month === month).reduce((sum, entry) => sum + (entry.franchiseShareBRL ?? 0), 0);
+        if (!cancelled) setMonthShare(Math.round(total * 100) / 100);
+      } catch {
+        // Network failure → keep the page working with a zero share stat.
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [session]);
 
   async function post(body: Record<string, unknown>, okText: string) {
     const response = await fetch("/api/mall/procurement", { method: "POST", headers, body: JSON.stringify(body) });
@@ -101,6 +172,89 @@ export default function MallFranchisePage() {
   const cartLines = catalog.filter((row) => (cart[row.id] ?? 0) > 0);
   const cartTotal = cartLines.reduce((sum, row) => sum + (cart[row.id] ?? 0) * (mode === "buyout" ? row.franchiseBuyoutPrice : row.supplyPrice), 0);
   const activeFpo = (data?.fpos ?? []).find((fpo) => fpo.id === activeFpoId) ?? null;
+  const procurementOn = data?.config.procurementEnabled === true;
+
+  // ---- Mall basics derived data ---------------------------------------------
+  const activeOrder = mallOrders.find((order) => order.id === activeOrderId) ?? null;
+
+  // Overview stats (unfiltered).
+  const today = new Date().toISOString().slice(0, 10);
+  const statTransit = mallOrders.filter((order) => order.status === "created").length;
+  const statArrived = mallOrders.filter((order) => order.status === "arrived").length;
+  const statDoneToday = mallOrders.filter((order) => order.status === "fulfilled" && (order.pickedUpAt ?? "").startsWith(today)).length;
+
+  // Orders list: status chip + text search (product / rider / station), 20/page.
+  const oq = orderQuery.trim().toLowerCase();
+  const filteredOrders = mallOrders.filter((order) =>
+    (orderStatus === "all" || order.status === orderStatus) &&
+    (!oq ||
+      (order.productName ?? order.productId).toLowerCase().includes(oq) ||
+      (order.riderName ?? "").toLowerCase().includes(oq) ||
+      (order.pickupStoreName ?? order.station ?? "").toLowerCase().includes(oq)));
+  const orderPages = Math.max(1, Math.ceil(filteredOrders.length / ORDER_PAGE_SIZE));
+  const orderPageSafe = Math.min(orderPage, orderPages);
+  const pagedOrders = filteredOrders.slice((orderPageSafe - 1) * ORDER_PAGE_SIZE, orderPageSafe * ORDER_PAGE_SIZE);
+
+  // Active catalog (read-only; supplier economics already stripped for non-HQ).
+  const pq = productQuery.trim().toLowerCase();
+  const activeProducts = mallProducts.filter((product) =>
+    product.status === "active" &&
+    (!pq ||
+      product.name.toLowerCase().includes(pq) ||
+      (product.supplierName ?? "").toLowerCase().includes(pq) ||
+      (product.category ?? "").toLowerCase().includes(pq)));
+
+  const mallBadge = (order: MarketplaceOrder) =>
+    order.reviewStatus === "pending"
+      ? <StatusBadge tone="warn" label={t("dpPendingHq")} />
+      : mallStatusMeta[order.status]
+        ? <StatusBadge tone={mallStatusMeta[order.status].tone} label={t(mallStatusMeta[order.status].key)} />
+        : <StatusBadge tone="neutral" label={order.status} />;
+
+  const mallOrderCols: Array<DataColumn<MarketplaceOrder>> = [
+    {
+      key: "product", label: t("mkColProduct"), render: (order) => (
+        <span className="block min-w-0">
+          <span className="block truncate font-black">{order.productName ?? order.productId}</span>
+          <span className="font-mono text-[11px] text-[var(--muted)]">{order.id}</span>
+        </span>
+      ),
+    },
+    { key: "rider", label: t("mkColRider"), render: (order) => order.riderName ?? "—" },
+    { key: "pickup", label: t("fmColPickup"), render: (order) => <span className="text-[var(--muted)]">{order.pickupStoreName ?? order.station ?? "—"}</span> },
+    {
+      key: "paid", label: t("fmColPaid"), align: "right", render: (order) => (
+        <>{order.pointsSpent} {t("dynPts")}{(order.cashDue ?? 0) > 0 ? ` + R$ ${(order.cashDue ?? 0).toFixed(2)}` : ""}</>
+      ),
+    },
+    { key: "status", label: t("mkColStatus"), render: (order) => mallBadge(order) },
+    { key: "date", label: t("mkColDate"), render: (order) => <span className="text-[var(--muted)]">{order.createdAt}</span> },
+  ];
+
+  const productCols: Array<DataColumn<MarketplaceProduct>> = [
+    {
+      key: "product", label: t("mkColProduct"), render: (product) => (
+        <span className="flex min-w-0 items-center gap-2.5">
+          {product.imageUrl
+            ? <img src={product.imageUrl} alt={product.name} className="h-9 w-9 shrink-0 rounded-[8px] border border-[var(--line)] object-cover" />
+            : <span className="grid h-9 w-9 shrink-0 place-items-center rounded-[8px] border border-[var(--line)] bg-[var(--surface-raised)] text-base">🎁</span>}
+          <span className="min-w-0">
+            <span className="block truncate font-black">{product.name}</span>
+            {product.category ? <span className="text-[11px] font-bold text-[var(--muted)]">{product.category}</span> : null}
+          </span>
+        </span>
+      ),
+    },
+    { key: "supplier", label: t("fpSupplier"), render: (product) => <span className="text-[var(--muted)]">{product.supplierName || "HQ"}</span> },
+    {
+      key: "points", label: t("fmColPoints"), align: "right", render: (product) => (
+        <>{product.pointsPrice} {t("dynPts")}{(product.cashPriceBRL ?? 0) > 0 ? ` + R$ ${(product.cashPriceBRL ?? 0).toFixed(2)}` : ""}</>
+      ),
+    },
+    { key: "stock", label: t("fmColStock"), align: "right", render: (product) => product.stock },
+    { key: "share", label: t("fmColShare"), align: "right", render: (product) => ((product.franchiseShareBRL ?? 0) > 0 ? `R$ ${(product.franchiseShareBRL ?? 0).toFixed(2)}` : <span className="text-[var(--muted)]">—</span>) },
+    { key: "status", label: t("mkColStatus"), render: () => <StatusBadge tone="success" label={t("fmPdActive")} /> },
+  ];
 
   async function submitOrder() {
     const ok = await post({
@@ -160,21 +314,12 @@ export default function MallFranchisePage() {
     { key: "resolution", label: t("fpReason"), render: (d) => <span className="text-xs text-[var(--muted)]">{d.kind} → {d.resolution}{d.refundBRL ? ` (R$ ${d.refundBRL.toFixed(2)})` : ""}</span> },
   ];
 
-  if (data && data.config.procurementEnabled !== true) {
-    return (
-      <AppShell>
-        <PageTitle title={t("fpTitle")} eyebrow={t("fpEyebrow", { x: franchise })} />
-        <div className="panel p-6 text-sm font-bold text-[var(--muted)]">{t("fpFlagOff")}</div>
-      </AppShell>
-    );
-  }
-
   return (
     <AppShell>
       <PageTitle
         title={t("fpTitle")}
         eyebrow={t("fpEyebrow", { x: franchise })}
-        action={<button type="button" onClick={() => void load()} className="tag inline-flex items-center gap-1"><RefreshCcw size={13} /> {t("pfRefresh")}</button>}
+        action={<button type="button" onClick={() => { void load(); void loadMall(); }} className="tag inline-flex items-center gap-1"><RefreshCcw size={13} /> {t("pfRefresh")}</button>}
       />
 
       {message && (
@@ -183,7 +328,121 @@ export default function MallFranchisePage() {
         </div>
       )}
 
-      {/* Order detail drawer — PIX guidance for pending rows lives here. */}
+      {/* Mall order detail drawer — read-only timeline / payment / pickup store. */}
+      <Drawer
+        open={activeOrder !== null}
+        onClose={() => setActiveOrderId(null)}
+        width={420}
+        ariaLabel={t("fmOrderDetail")}
+        title={activeOrder ? (
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="font-mono text-sm font-black">{activeOrder.id}</span>
+            {mallBadge(activeOrder)}
+          </div>
+        ) : null}
+      >
+        {activeOrder && (
+          <div className="space-y-4">
+            <div className="rounded-[10px] border border-[var(--line)] bg-[var(--surface-raised)] p-3">
+              <div className="text-[10px] font-black uppercase text-[var(--muted)]">{t("mkColProduct")}</div>
+              <div className="mt-0.5 text-sm font-black">{activeOrder.productName ?? activeOrder.productId}</div>
+              <div className="mt-0.5 text-[11px] font-bold text-[var(--muted)]">{t("mkColRider")}: {activeOrder.riderName ?? "—"}</div>
+            </div>
+
+            {/* Timeline: redeemed → arrived → picked up */}
+            <div className="overflow-hidden rounded-[8px] border border-[var(--line)]">
+              <table className="w-full text-xs">
+                <tbody>
+                  {([
+                    [t("fmTlCreated"), activeOrder.createdAt],
+                    [t("fmTlArrived"), activeOrder.arrivedAt],
+                    [t("fmTlPicked"), activeOrder.pickedUpAt],
+                  ] as const).map(([label, value], index) => (
+                    <tr key={label} className={`font-bold ${index > 0 ? "border-t border-[var(--line)]" : ""}`}>
+                      <td className="px-3 py-2 text-[11px] font-black uppercase text-[var(--muted)]">{label}</td>
+                      <td className="px-3 py-2 text-right">{value ?? <span className="text-[var(--muted)]">—</span>}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Payment info */}
+            <div className="rounded-[10px] border border-[var(--line)] bg-[var(--surface-raised)] p-3">
+              <div className="text-[10px] font-black uppercase text-[var(--muted)]">{t("fmPayInfo")}</div>
+              <div className="mt-1 flex flex-wrap items-center gap-2 text-sm font-black">
+                <span>{activeOrder.pointsSpent} {t("dynPts")}</span>
+                {(activeOrder.cashDue ?? 0) > 0 ? (
+                  <>
+                    <span>+ R$ {(activeOrder.cashDue ?? 0).toFixed(2)}</span>
+                    {activeOrder.paymentStatus && payStatusMeta[activeOrder.paymentStatus]
+                      ? <StatusBadge tone={payStatusMeta[activeOrder.paymentStatus].tone} label={t(payStatusMeta[activeOrder.paymentStatus].key)} />
+                      : null}
+                  </>
+                ) : (
+                  <StatusBadge tone="neutral" label={t("fmPayPointsOnly")} />
+                )}
+              </div>
+            </div>
+
+            {/* Pickup store */}
+            <div className="rounded-[10px] border border-[var(--line)] bg-[var(--surface-raised)] p-3">
+              <div className="text-[10px] font-black uppercase text-[var(--muted)]">{t("fmPickupStore")}</div>
+              <div className="mt-0.5 text-sm font-black">{activeOrder.pickupStoreName ?? activeOrder.station ?? "—"}</div>
+            </div>
+          </div>
+        )}
+      </Drawer>
+
+      {/* 商城概览统计 — 无论直采 flag 开关,加盟商都能看到商城基本盘 */}
+      <div className="mb-4 grid grid-cols-2 gap-3 xl:grid-cols-4">
+        <Stat label={t("fmStatTransit")} value={String(statTransit)} />
+        <Stat label={t("fmStatArrived")} value={String(statArrived)} />
+        <Stat label={t("fmStatDoneToday")} value={String(statDoneToday)} />
+        <Stat label={t("fmStatShare")} value={`R$ ${monthShare.toFixed(2)}`} />
+      </div>
+
+      {/* 商城订单(本加盟商) — 只读;履约操作在站点端 */}
+      <SectionCard
+        title={<span className="inline-flex items-center gap-2"><Store size={14} /> {t("fmOrders")}（{filteredOrders.length}）</span>}
+        desc={t("fmOrdersDesc")}
+        className="mb-4"
+      >
+        <div className="mb-3">
+          <Toolbar right={<Pager page={orderPageSafe} pages={orderPages} total={filteredOrders.length} onPage={setOrderPage} />}>
+            <SearchInput value={orderQuery} onChange={(value) => { setOrderQuery(value); setOrderPage(1); }} placeholder={t("fmSearchPh")} />
+            {([
+              ["all", t("fmChipAll")],
+              ["created", t("msStCreated")],
+              ["arrived", t("msStArrived")],
+              ["fulfilled", t("msStFulfilled")],
+              ["cancelled", t("msStCancelled")],
+            ] as const).map(([key, label]) => (
+              <Chip key={key} active={orderStatus === key} onClick={() => { setOrderStatus(key); setOrderPage(1); }}>{label}</Chip>
+            ))}
+          </Toolbar>
+        </div>
+        <DataTable
+          columns={mallOrderCols}
+          rows={pagedOrders}
+          rowKey={(order) => order.id}
+          onRowClick={(order) => setActiveOrderId(order.id)}
+          minWidth={820}
+          empty={t("fpNoData")}
+        />
+      </SectionCard>
+
+      {/* 在售商品目录 — 只读(非 HQ 会话服务端已剥离供货价等敏感字段) */}
+      <SectionCard
+        title={<span className="inline-flex items-center gap-2"><ShoppingBag size={14} /> {t("fmCatalog")}（{activeProducts.length}）</span>}
+        desc={t("fmCatalogDesc")}
+        className="mb-4"
+        right={<SearchInput value={productQuery} onChange={setProductQuery} placeholder={t("fmSearchProdPh")} />}
+      >
+        <DataTable columns={productCols} rows={activeProducts} rowKey={(product) => product.id} minWidth={820} empty={t("fpNoData")} />
+      </SectionCard>
+
+      {/* FPO detail drawer — PIX guidance for pending rows lives here. */}
       <Drawer
         open={activeFpo !== null}
         onClose={() => setActiveFpoId(null)}
@@ -254,7 +513,12 @@ export default function MallFranchisePage() {
         )}
       </Drawer>
 
-      {/* 押金余额 + 充值 — 顶部 SectionCard */}
+      {/* 直采区 — 保持现状 flag 门控;flag 关闭时整体隐藏,只留一行淡色说明 */}
+      {data && !procurementOn && (
+        <div className="panel p-4 text-sm font-bold text-[var(--muted)]">{t("fmProcClosed")}</div>
+      )}
+      {procurementOn && (<>
+      {/* 押金余额 + 充值 — 直采区顶部 SectionCard */}
       <SectionCard title={<span className="inline-flex items-center gap-2"><Wallet size={14} /> {t("fpDeposit")}</span>} className="mb-4">
         <div className="grid gap-5 lg:grid-cols-[minmax(240px,320px)_1fr]">
           <div>
@@ -393,6 +657,7 @@ export default function MallFranchisePage() {
           <DataTable columns={discrepancyCols} rows={data?.discrepancies ?? []} rowKey={(d) => d.id} minWidth={520} empty={t("fpNoData")} />
         </div>
       </div>
+      </>)}
     </AppShell>
   );
 }
