@@ -12,9 +12,13 @@ data class StatCard(
 
 data class Performance(
     val orders: Int,
-    val tshHours: Double,
-    val acceptanceRate: Int,
-    val cancelledOrders: Int,
+    val tshHours: Double,          // real online HOURS (latest imported day)
+    val acceptanceRate: Int,       // AR %
+    val cancelledOrders: Int,      // CAA % (cancel rate)
+    val date: String = "",         // which T+1 day this describes
+    val tshPercent: Double? = null,
+    val weekOrders: Int? = null,
+    val weekOnlineHours: Double? = null,
 )
 
 data class Mission(

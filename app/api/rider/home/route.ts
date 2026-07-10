@@ -72,12 +72,23 @@ export async function GET(request: Request) {
   // Every KPI block reads the LATEST imported day (T+1 = yesterday): orders,
   // TSH hours, acceptance rate and cancellations all describe the same day,
   // matching what the rider remembers doing.
+  // Complete latest-day KPI. NOTE: tsh/ar/caa are PERCENTAGES in the T+1
+  // report; onlineHours is the actual hours figure. (tshHours used to carry
+  // the tsh percent — v1.3 displayed it as hours. It now carries real hours
+  // so older clients render correctly; tshPercent is the explicit new field.)
+  const week = kpis.filter((k) => k.date > new Date(Date.now() - 8 * 864e5).toISOString().slice(0, 10));
   const performance = latest
     ? {
+        date: latest.date,
         orders: latest.completedOrders ?? 0,
-        tshHours: latest.tsh ?? 0,
+        tshHours: latest.onlineHours ?? 0,
+        onlineHours: latest.onlineHours ?? 0,
+        tshPercent: latest.tsh,
         acceptanceRate: Math.round(latest.ar ?? 0),
         cancelledOrders: latest.caa ?? 0,
+        caaPercent: latest.caa,
+        weekOrders: week.reduce((s2, k) => s2 + (k.completedOrders ?? 0), 0),
+        weekOnlineHours: Math.round(week.reduce((s2, k) => s2 + (k.onlineHours ?? 0), 0) * 10) / 10,
       }
     : null;
   const onlineHoursWeek = kpis.slice(0, 7).reduce((s, k) => s + (k.onlineHours ?? 0), 0);

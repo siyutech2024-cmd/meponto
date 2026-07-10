@@ -187,20 +187,32 @@ fun HomeScreen(onScan: () -> Unit, onProfile: () -> Unit, onOpenMall: () -> Unit
             // pink tinted tiles, one hero number each.
             store.performance?.let { perf ->
                 Panel {
-                    SectionHeader(loc.t("home.performance"))
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        SectionHeader(loc.t("home.performance"))
+                        Spacer(Modifier.weight(1f))
+                        if (perf.date.isNotBlank()) {
+                            Text(perf.date, color = me.muted, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        }
+                    }
                     Spacer(Modifier.size(12.dp))
                     Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                         KpiTile(loc.t("home.orders"), "${perf.orders}", me.accent, me.accentInk, Modifier.weight(1f))
-                        KpiTile(loc.t("home.tsh"), String.format("%.1f", perf.tshHours), me.tertiary, androidx.compose.ui.graphics.Color.White, Modifier.weight(1f))
+                        KpiTile(loc.t("home.hours"), String.format("%.1f", perf.tshHours), me.tertiary, androidx.compose.ui.graphics.Color.White, Modifier.weight(1f))
                         KpiTile(loc.t("home.ar"), "${perf.acceptanceRate}%", me.secondary, me.secondaryInk, Modifier.weight(1f))
                     }
-                    if (perf.cancelledOrders > 0) {
-                        Spacer(Modifier.size(10.dp))
+                    Spacer(Modifier.size(10.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        perf.tshPercent?.let { KpiTile(loc.t("home.tshPct"), String.format("%.0f%%", it), me.surfaceRaised, me.text, Modifier.weight(1f)) }
+                        KpiTile(loc.t("home.caa"), String.format("%.1f%%", perf.cancelledOrders.toDouble()), me.surfaceRaised, me.text, Modifier.weight(1f))
+                        perf.weekOrders?.let { KpiTile(loc.t("home.week"), "$it", me.surfaceRaised, me.text, Modifier.weight(1f)) }
+                    }
+                    perf.weekOnlineHours?.let { wh ->
+                        Spacer(Modifier.size(8.dp))
                         Text(
-                            "${loc.t("home.caa")}: ${perf.cancelledOrders}",
-                            color = me.danger,
-                            fontWeight = FontWeight.SemiBold,
+                            "${loc.t("home.weekSummary")}: ${perf.weekOrders ?: 0} ${loc.t("home.ordersUnit")} · ${String.format("%.1f", wh)} h",
+                            color = me.muted,
                             fontSize = 12.sp,
+                            fontWeight = FontWeight.SemiBold,
                         )
                     }
                 }

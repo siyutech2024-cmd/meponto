@@ -414,8 +414,11 @@ private fun ProductImage(product: MallProduct, modifier: Modifier = Modifier) {
             AsyncImage(
                 model = product.imageUrl,
                 contentDescription = product.name,
-                contentScale = ContentScale.Crop,
-                modifier = Modifier.fillMaxSize(),
+                // Fit, not Crop: product shots must be shown WHOLE — cropping
+                // cut labels/edges off ("图显示不全"). The raised surface behind
+                // fills any letterbox space.
+                contentScale = ContentScale.Fit,
+                modifier = Modifier.fillMaxSize().padding(4.dp),
             )
         } else {
             Icon(product.icon, contentDescription = null, tint = me.accent, modifier = Modifier.size(30.dp))

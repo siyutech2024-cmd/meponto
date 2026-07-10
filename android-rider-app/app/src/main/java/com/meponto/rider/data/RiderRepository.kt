@@ -353,9 +353,13 @@ class RiderRepository(context: Context) {
     // ----- Home aggregate mappers (GET /rider/home) -----
     private fun PerformanceDto.toDomain() = Performance(
         orders = orders ?: 0,
-        tshHours = tshHours ?: 0.0,
+        tshHours = onlineHours ?: tshHours ?: 0.0,
         acceptanceRate = acceptanceRate ?: 0,
         cancelledOrders = cancelledOrders ?: 0,
+        date = date ?: "",
+        tshPercent = tshPercent,
+        weekOrders = weekOrders,
+        weekOnlineHours = weekOnlineHours,
     )
 
     private fun LedgerDto.toDomain() = LedgerEntry(

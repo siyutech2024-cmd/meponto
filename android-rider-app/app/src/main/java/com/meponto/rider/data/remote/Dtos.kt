@@ -309,8 +309,14 @@ data class PartnerBenefitDto(
 data class PerformanceDto(
     val orders: Int? = null,
     val tshHours: Double? = null,
+    val onlineHours: Double? = null,
+    val tshPercent: Double? = null,
     val acceptanceRate: Int? = null,
     val cancelledOrders: Int? = null,
+    val caaPercent: Double? = null,
+    val date: String? = null,
+    val weekOrders: Int? = null,
+    val weekOnlineHours: Double? = null,
 )
 
 data class LedgerDto(

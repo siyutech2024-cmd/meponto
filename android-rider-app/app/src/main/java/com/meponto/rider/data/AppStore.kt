@@ -158,12 +158,11 @@ class AppStore {
     // by the session, so the local filter is only a safety net: match loosely
     // (trim + case-insensitive) and show everything when the profile has no
     // ponto yet — a name-format mismatch must not blank the whole screen.
+    // GET /slots is scoped server-side by the session (and real dispatch
+    // shifts are HOTZONE-based, not ponto-named), so the old zone==ponto
+    // client filter only hid valid shifts. Trust the server.
     val riderShifts: List<Shift>
-        get() {
-            val myPonto = profile.ponto.trim()
-            if (myPonto.isEmpty()) return shifts
-            return shifts.filter { it.zone.trim().equals(myPonto, ignoreCase = true) }
-        }
+        get() = shifts
 
     fun shiftsOn(dateKey: String): List<Shift> = riderShifts.filter { it.dateKey == dateKey }
 

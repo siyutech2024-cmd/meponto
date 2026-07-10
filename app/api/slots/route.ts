@@ -1,5 +1,6 @@
 import { getSlotSummary, riderSlots, slotEnrollments, slotFeatureFlag, slotWorkflowSteps, type RiderSlot, type SlotEnrollment, type SlotApprovalStatus } from "../../lib/slots";
-import { appendServerAudit, jsonResponse, memory } from "../../lib/server/memory";
+import { appendServerAudit, jsonResponse, makeServerId, memory } from "../../lib/server/memory";
+import { flushPendingToDatabase, refreshCollectionsFromDatabase } from "../../lib/server/persistence";
 import { getSupabaseServerClient } from "../../lib/supabase/server";
 import { sessionFromRequest, type AuthSession } from "../../lib/auth-session";
 
@@ -38,6 +39,61 @@ export async function GET(request: Request) {
         "Content-Type": "text/csv; charset=utf-8",
       },
     });
+  }
+
+  // BRIDGE — Central de Despacho: operations imports/plans REAL shifts in the
+  // dispatch module (hotzone-based, 99 plan). Riders must see and join them
+  // from the app, so scheduling dispatch shifts are merged into the rider
+  // slot feed (hotzone shown as the ponto column) and the rider's own
+  // dispatch signups ride along as enrollments.
+  if (session.portal === "rider" || session.role === "Rider") {
+    await refreshCollectionsFromDatabase(["dispatchShifts", "shiftSignups"]);
+    const today = new Date(Date.now() - 864e5).toISOString().slice(0, 10);
+    const WD_PT = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"];
+    const DK = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"];
+    const mySignups = memory.shiftSignups.filter((g) => g.riderName === session.name);
+    for (const shift of memory.dispatchShifts) {
+      if (shift.status !== "scheduling" || shift.date < today) continue;
+      const [startTime = "", endTime = ""] = String(shift.timeRange ?? "").split("~");
+      const active = memory.shiftSignups.filter((g) => g.shiftId === shift.id && g.status !== "rejected" && g.status !== "cancelled").length;
+      const dow = new Date(`${shift.date}T12:00:00Z`).getUTCDay();
+      state.slots.push({
+        id: shift.id,
+        dayKey: DK[dow],
+        date: shift.date,
+        weekday: WD_PT[dow],
+        startTime: startTime.trim(),
+        endTime: endTime.trim(),
+        capacity: shift.plannedCount ?? 0,
+        enrolled: (shift.filled99Count ?? 0) + active,
+        status: "open",
+        priority: !!shift.isCritical,
+        pontoId: "",
+        pontoName: shift.hotzone || shift.planName || "99",
+        franchiseId: "",
+        franchiseName: shift.planName ?? "",
+        quotaNote: shift.planName ? `Plano ${shift.planName}` : "",
+      } as RiderSlot);
+    }
+    const STATUS_MAP: Record<string, SlotEnrollment["status"]> = {
+      submitted: "submitted",
+      approved: "franchise_confirmed",
+      reported: "hq_reviewed",
+      rejected: "rejected",
+      cancelled: "cancelled",
+    };
+    for (const g of mySignups) {
+      state.enrollments.push({
+        id: g.id,
+        slotId: g.shiftId,
+        riderId: g.riderId || g.rider99Id || session.name,
+        riderName: g.riderName,
+        riderTier: 2,
+        status: STATUS_MAP[g.status] ?? "submitted",
+        submittedAt: g.createdAt ?? "",
+        note: g.note ?? "",
+      } as SlotEnrollment);
+    }
   }
 
   return jsonResponse({
@@ -81,11 +137,66 @@ export async function POST(request: Request) {
 
   // Rider self-cancel of an own (still-pending) enrollment → frees the seat.
   if (body?.action === "cancelEnrollment") {
+    // Dispatch signups (sgn-…) cancel in the dispatch collection.
+    if (body.enrollmentId) {
+      await refreshCollectionsFromDatabase(["shiftSignups"]);
+      const index = memory.shiftSignups.findIndex((g) => g.id === body.enrollmentId && g.riderName === session.name);
+      if (index !== -1) {
+        if (memory.shiftSignups[index].status !== "submitted") {
+          return jsonResponse({ error: "Inscrição já confirmada — fale com o suporte para cancelar." }, { status: 409 });
+        }
+        memory.shiftSignups[index] = { ...memory.shiftSignups[index], status: "cancelled", updatedAt: new Date().toISOString().slice(0, 16).replace("T", " ") };
+        await flushPendingToDatabase();
+        return jsonResponse({ data: { id: body.enrollmentId, status: "cancelled" } });
+      }
+    }
     return cancelRiderEnrollment(session, body.enrollmentId);
   }
 
   if (!body?.slotId) {
     return jsonResponse({ error: "slotId is required." }, { status: 400 });
+  }
+
+  // BRIDGE — signup for a Central de Despacho shift (real 99 plan shifts).
+  {
+    await refreshCollectionsFromDatabase(["dispatchShifts", "shiftSignups"]);
+    const dispatchShift = memory.dispatchShifts.find((item) => item.id === body.slotId);
+    if (dispatchShift) {
+      if (dispatchShift.status !== "scheduling") {
+        return jsonResponse({ error: "Este turno não está mais aberto para inscrições." }, { status: 409 });
+      }
+      const rider = memory.riders.find((item) => item.name === session.name);
+      if (!rider?.ninetyNineId) {
+        return jsonResponse({ error: "Complete seu cadastro (99 ID) com seu líder antes de se inscrever." }, { status: 409 });
+      }
+      const duplicate = memory.shiftSignups.some(
+        (item) => item.shiftId === dispatchShift.id && item.rider99Id === rider.ninetyNineId && item.status !== "rejected" && item.status !== "cancelled",
+      );
+      if (duplicate) return jsonResponse({ error: "Você já se inscreveu neste turno." }, { status: 409 });
+      const active = memory.shiftSignups.filter((g) => g.shiftId === dispatchShift.id && g.status !== "rejected" && g.status !== "cancelled").length;
+      if ((dispatchShift.filled99Count ?? 0) + active >= (dispatchShift.plannedCount ?? 0)) {
+        return jsonResponse({ error: "Turno lotado." }, { status: 409 });
+      }
+      const createdAt = new Date().toISOString().slice(0, 16).replace("T", " ");
+      const record = {
+        id: makeServerId("sgn", memory.shiftSignups.length + 1),
+        shiftId: dispatchShift.id,
+        franchise: rider.franchise ?? "",
+        station: rider.ponto ?? "",
+        riderId: rider.id,
+        riderName: rider.name,
+        rider99Id: rider.ninetyNineId,
+        riderCpf: rider.cpf ?? "",
+        status: "submitted" as const,
+        note: "Inscrição pelo app.",
+        createdAt,
+        updatedAt: createdAt,
+      };
+      memory.shiftSignups.unshift(record);
+      appendServerAudit({ actor: session.name, action: "SHIFT_SIGNUP", entity: "ShiftSignup", entityId: record.id, detail: `${rider.name} → ${dispatchShift.hotzone ?? ""} ${dispatchShift.date} ${dispatchShift.timeRange ?? ""} (app)`, risk: "Low" });
+      await flushPendingToDatabase();
+      return jsonResponse({ data: { id: record.id, status: record.status } }, { status: 201 });
+    }
   }
 
   const targetWeekStart = await weekStartForSlot(body.slotId);
