@@ -1,4 +1,4 @@
-import { appendServerAudit, jsonResponse, memory } from "../../lib/server/memory";
+import { appendServerAudit, jsonResponse, makeServerId, memory } from "../../lib/server/memory";
 import { flushPendingToDatabase, persistDeleteRecord, refreshCollectionsFromDatabase } from "../../lib/server/persistence";
 import { requirePermission, roleFromRequest, scopeFromRequest } from "../../lib/server/authz";
 import {
@@ -21,7 +21,7 @@ const BADGE_MILESTONES: Array<{ at: number; label: string }> = [
   { at: 600, label: "600 pedidos 👑" },
 ];
 
-const COLLECTIONS = ["riderDailyKpis", "riderDailyEarnings", "riders", "mallConfigs", "pointsLedgerEntries"];
+const COLLECTIONS = ["riderDailyKpis", "riderDailyEarnings", "riders", "mallConfigs", "pointsLedgerEntries", "dispatchShifts", "shiftSignups", "memberMessages"];
 
 type Located = { franchise: string; station: string; riderId: string | null };
 type Enriched = RiderDailyKpi & Located;
@@ -229,6 +229,82 @@ export async function GET(request: Request) {
   });
 }
 
+/**
+ * No-show discipline (骑手爽约惩罚): a rider who SIGNED UP for a dispatch shift
+ * on [date] but has NO KPI row that day missed the shift. The first
+ * NO_SHOW_FREE_ALLOWANCE misses only warn; each miss beyond that deducts
+ * noShowPenaltyPoints (ledger `expire`, idempotent per shift, capped at the
+ * available balance). The rider is told via in-app message + push.
+ */
+const NO_SHOW_FREE_ALLOWANCE = 2;
+function evaluateNoShows(date: string) {
+  const config = memory.mallConfigs.find((c) => c.id === "mall-config") ?? defaultMallConfig;
+  const penalty = config.noShowPenaltyPoints ?? 50;
+  const shiftsByDateId = new Map(memory.dispatchShifts.map((sh) => [sh.id, sh] as const));
+  const hasData = (r99: string, d: string) => memory.riderDailyKpis.some((k) => k.rider99Id === r99 && k.date === d);
+  const active = (g: { status: string }) => g.status === "submitted" || g.status === "approved" || g.status === "reported";
+
+  // Today's no-shows, grouped per rider.
+  const todays = memory.shiftSignups.filter((g) => {
+    const sh = shiftsByDateId.get(g.shiftId);
+    return !!sh && sh.date === date && active(g) && !!g.rider99Id && !hasData(g.rider99Id, date);
+  });
+  const byRider = new Map<string, typeof todays>();
+  for (const g of todays) byRider.set(g.rider99Id, [...(byRider.get(g.rider99Id) ?? []), g]);
+
+  const notices: Array<{ riderName: string; title: string; body: string }> = [];
+  for (const [r99, misses] of byRider) {
+    const rider = memory.riders.find((r) => r.ninetyNineId === r99);
+    if (!rider) continue;
+    // Deterministic lifetime no-show count (all signed shifts up to [date]).
+    const totalNoShows = memory.shiftSignups.filter((g) => {
+      const sh = shiftsByDateId.get(g.shiftId);
+      return !!sh && sh.date <= date && active(g) && g.rider99Id === r99 && !hasData(r99, sh.date);
+    }).length;
+    let countedSoFar = totalNoShows - misses.length;
+    for (const g of misses) {
+      countedSoFar += 1;
+      const overAllowance = countedSoFar > NO_SHOW_FREE_ALLOWANCE;
+      const entryId = `pts-noshow-${g.shiftId}-${rider.id}`;
+      if (overAllowance && penalty > 0 && !memory.pointsLedgerEntries.some((e) => e.id === entryId)) {
+        const available = getAvailablePoints(memory.pointsLedgerEntries, rider.id);
+        const delta = Math.min(available, penalty);
+        if (delta > 0) {
+          memory.pointsLedgerEntries.unshift({
+            id: entryId,
+            riderId: rider.id,
+            accountId: `pts-${rider.id}`,
+            type: "expire",
+            points: delta,
+            status: "approved",
+            sourceType: "expiry",
+            sourceId: entryId,
+            balanceAfter: available - delta,
+            reasonCode: "NO_SHOW_PENALTY",
+            note: `Ausência no turno ${date} (${countedSoFar}ª falta)`,
+            createdBy: "T+1 Import",
+            createdAt: new Date().toISOString().slice(0, 16).replace("T", " "),
+          });
+        }
+      }
+      const sh = shiftsByDateId.get(g.shiftId);
+      const when = `${date} ${sh?.timeRange ?? ""}`.trim();
+      const title = overAllowance ? "Falta no turno — pontos descontados" : "Aviso de falta no turno";
+      const body = overAllowance
+        ? `Você se inscreveu no turno de ${when} e não registrou atividade. Desconto de ${penalty} pts aplicado (${countedSoFar}ª falta). Cancele com antecedência quando não puder comparecer.`
+        : `Você se inscreveu no turno de ${when} e não registrou atividade (${countedSoFar}/${NO_SHOW_FREE_ALLOWANCE} sem desconto). A partir da próxima falta haverá desconto de ${penalty} pts.`;
+      const msgId = `msg-noshow-${g.shiftId}-${rider.id}`;
+      if (!memory.memberMessages.some((m) => m.id === msgId)) {
+        memory.memberMessages.unshift({ id: msgId, riderName: rider.name, riderId: rider.id, title, body, href: "/rider-app/agenda", createdAt: new Date().toISOString() });
+        notices.push({ riderName: rider.name, title, body });
+      }
+    }
+  }
+  // Push best-effort AFTER state writes (never blocks the import).
+  for (const n of notices) void sendPushToRider(n.riderName, n.title, n.body, "/rider-app/agenda");
+  return notices.length;
+}
+
 type Body =
   | { action: "import"; raw: string; date: string }
   | { action: "importKpiRecords"; date: string; records: Array<Record<string, unknown>> }
@@ -322,6 +398,7 @@ async function handlePost(request: Request) {
     let updated = 0;
 
     const achievements: Array<{ riderName: string; label: string }> = [];
+    let noShowNotices = 0;
     if (body.action === "importKpiRecords") {
       for (const raw of records) {
         const rider99Id = String(raw.rider99Id ?? "").trim();
@@ -450,6 +527,11 @@ async function handlePost(request: Request) {
       risk: "Low",
     });
 
+    // Signed-up-but-absent riders: warn / deduct (idempotent per shift).
+    if (body.action === "importKpiRecords") {
+      noShowNotices = evaluateNoShows(date);
+    }
+
     // Best-effort achievement pushes (deduped per rider+milestone this import).
     const seen = new Set<string>();
     for (const a of achievements) {
@@ -459,7 +541,7 @@ async function handlePost(request: Request) {
       await sendPushToRider(a.riderName, "Conquista desbloqueada! 🏆", `Você alcançou: ${a.label}. Confira seus selos na MePonto.`, "/mall");
     }
 
-    return jsonResponse({ data: { created, updated, parsed: created + updated, achievements: achievements.length } }, { status: 201 });
+    return jsonResponse({ data: { created, updated, parsed: created + updated, achievements: achievements.length, noShowNotices } }, { status: 201 });
   }
 
   // Remove ONE business day's imported rows (both T+1 tables) — for fixing

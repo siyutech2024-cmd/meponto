@@ -46,6 +46,8 @@ export type MallConfig = {
    */
   dailyRedeemCount?: number;
   dailyRedeemPoints?: number;
+  /** Points deducted per shift no-show beyond the free allowance (0 = off). */
+  noShowPenaltyPoints?: number;
   monthlyRedeemPoints?: number;
   highValueReviewPoints?: number;
   newAccountWindowDays?: number;
@@ -87,6 +89,7 @@ export const defaultMallConfig: MallConfig = {
   tierDiamanteEarned: 15000,
   dailyRedeemCount: 20,
   dailyRedeemPoints: 0,
+  noShowPenaltyPoints: 50,
   monthlyRedeemPoints: 0,
   highValueReviewPoints: 8000,
   newAccountWindowDays: 7,

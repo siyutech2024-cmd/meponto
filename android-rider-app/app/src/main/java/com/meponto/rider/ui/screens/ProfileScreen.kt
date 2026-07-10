@@ -20,6 +20,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Badge
+import androidx.compose.material.icons.filled.Style
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Person
@@ -68,12 +69,17 @@ fun ProfileScreen(onClose: () -> Unit) {
     val logout = LocalLogout.current
     var showSupport by remember { mutableStateOf(false) }
     var showPersonalInfo by remember { mutableStateOf(false) }
+    var showMemberCard by remember { mutableStateOf(false) }
 
     if (showSupport) {
         Column(Modifier.fillMaxSize().appBackground(me)) {
             OverlayTopBar(title = loc.t("support.title"), onClose = { showSupport = false })
             SupportScreen()
         }
+        return
+    }
+    if (showMemberCard) {
+        MemberCardScreen(onClose = { showMemberCard = false })
         return
     }
     if (showPersonalInfo) {
@@ -150,6 +156,26 @@ fun ProfileScreen(onClose: () -> Unit) {
                     if (!store.profile.isComplete) {
                         Box(Modifier.size(8.dp).clip(CircleShape).background(me.warning))
                         Spacer(Modifier.width(8.dp))
+                    }
+                    Icon(Icons.Filled.ChevronRight, contentDescription = null, tint = me.muted)
+                }
+
+                // Virtual member card / pass (photo avatar + tier art + QR).
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(MeRadius.card))
+                        .background(me.surface)
+                        .border(1.dp, me.line, RoundedCornerShape(MeRadius.card))
+                        .clickable { showMemberCard = true }
+                        .padding(16.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Icon(Icons.Filled.Style, contentDescription = null, tint = me.accent)
+                    Spacer(Modifier.width(12.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text(loc.t("card.title"), color = me.text, fontWeight = FontWeight.SemiBold)
+                        Text(loc.t("card.subtitle"), color = me.muted, fontSize = 11.sp)
                     }
                     Icon(Icons.Filled.ChevronRight, contentDescription = null, tint = me.muted)
                 }
