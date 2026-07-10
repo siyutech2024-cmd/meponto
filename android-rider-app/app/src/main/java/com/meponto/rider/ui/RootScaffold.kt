@@ -18,7 +18,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.AccountBalanceWallet
 import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Map
@@ -49,7 +48,6 @@ import com.meponto.rider.ui.screens.MapScreen
 import com.meponto.rider.ui.screens.ProfileScreen
 import com.meponto.rider.ui.screens.ScanScreen
 import com.meponto.rider.ui.screens.ShiftsScreen
-import com.meponto.rider.ui.screens.WalletScreen
 import com.meponto.rider.ui.theme.LocalMe
 import com.meponto.rider.ui.theme.appBackground
 
@@ -77,7 +75,8 @@ fun RootScaffold() {
 
     val tabs = listOf(
         TabSpec("tab.home", Icons.Filled.Home),
-        TabSpec("tab.wallet", Icons.Filled.AccountBalanceWallet),
+        // Wallet tab temporarily removed (product decision): payouts move
+        // through the ops flow; WalletScreen stays for when it returns.
         TabSpec("tab.shifts", Icons.Filled.CalendarMonth),
         TabSpec("tab.mall", Icons.Filled.ShoppingBag),
         TabSpec("tab.map", Icons.Filled.Map),
@@ -151,11 +150,10 @@ fun RootScaffold() {
                     0 -> HomeScreen(
                         onScan = { overlay = Overlay.SCAN },
                         onProfile = { overlay = Overlay.PROFILE },
-                        onOpenMall = { tab = 3 }, // points statement lives on the Mall tab
+                        onOpenMall = { tab = 2 }, // points statement lives on the Mall tab
                     )
-                    1 -> WalletScreen()
-                    2 -> ShiftsScreen()
-                    3 -> MallScreen()
+                    1 -> ShiftsScreen()
+                    2 -> MallScreen()
                     else -> MapScreen()
                 }
             }

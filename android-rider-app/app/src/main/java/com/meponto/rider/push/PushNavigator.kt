@@ -49,10 +49,10 @@ object PushNavigator {
     fun tabFor(url: String): Int {
         val u = url.lowercase()
         return when {
-            "wallet" in u || "saque" in u -> 1
-            "agenda" in u || "shift" in u || "turno" in u -> 2
-            "mall" in u || "store" in u || "loja" in u || "mensagem" in u -> 3
-            "map" in u || "mapa" in u -> 4
+            "agenda" in u || "shift" in u || "turno" in u -> 1
+            "mall" in u || "store" in u || "loja" in u || "mensagem" in u -> 2
+            "map" in u || "mapa" in u -> 3
+            // wallet removed from the bar — those links land on Home.
             else -> 0
         }
     }

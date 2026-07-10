@@ -74,6 +74,7 @@ data class RiderSnapshot(
     val unreadMessages: Int? = null,
     val coupons: List<MallCoupon>? = null,
     val badges: List<RiderBadge>? = null,
+    val pointCashRateBRL: Double? = null,
 )
 
 /**
@@ -238,6 +239,7 @@ class RiderRepository(context: Context) {
                 val lb = b.label ?: return@mapNotNull null
                 RiderBadge(b.at ?: 0, b.icon ?: "", lb, b.achieved == true)
             },
+            pointCashRateBRL = home?.pointCashRateBRL,
         )
     }
 

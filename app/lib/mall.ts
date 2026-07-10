@@ -46,6 +46,8 @@ export type MallConfig = {
    */
   dailyRedeemCount?: number;
   dailyRedeemPoints?: number;
+  /** R$ per point when a redemption's points shortfall converts to cash (0 = disabled). */
+  pointCashRateBRL?: number;
   monthlyRedeemPoints?: number;
   highValueReviewPoints?: number;
   newAccountWindowDays?: number;
@@ -87,6 +89,7 @@ export const defaultMallConfig: MallConfig = {
   tierDiamanteEarned: 15000,
   dailyRedeemCount: 20,
   dailyRedeemPoints: 0,
+  pointCashRateBRL: 0.05,
   monthlyRedeemPoints: 0,
   highValueReviewPoints: 8000,
   newAccountWindowDays: 7,

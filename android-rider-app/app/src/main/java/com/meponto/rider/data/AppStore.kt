@@ -117,6 +117,9 @@ class AppStore {
         private set
     var badges by mutableStateOf<List<RiderBadge>>(emptyList())
         private set
+    // R$ per point when a redemption's shortfall converts to cash (0 = off).
+    var pointCashRateBRL by mutableStateOf(0.0)
+        private set
 
     // One-shot user-facing notice (why a write was refused). Screens toast it.
     var notice by mutableStateOf<String?>(null)
@@ -308,6 +311,7 @@ class AppStore {
         snapshot.unreadMessages?.let { unreadMessages = it }
         snapshot.coupons?.let { coupons = it }
         snapshot.badges?.let { badges = it }
+        snapshot.pointCashRateBRL?.let { pointCashRateBRL = it }
     }
 
     /** Claim a completed mission's reward (server awards ledger points). */

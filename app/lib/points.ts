@@ -168,6 +168,9 @@ export type MarketplaceOrder = {
   voucherCode?: string;
   /** Hybrid checkout: cash amount due via PIX (undefined = points only). */
   cashDue?: number;
+  /** Points shortfall converted to cash at redeem time (included in cashDue). */
+  pointsShortfall?: number;
+  pointsTopUpBRL?: number;
   /** Hybrid checkout reconciliation state. */
   paymentStatus?: "pending" | "submitted" | "paid";
   /** High-value redemptions are held for manual review before completing. */

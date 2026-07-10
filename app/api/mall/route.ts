@@ -545,7 +545,7 @@ async function handlePost(request: Request) {
   switch (body.action) {
     case "setConfig": {
       const config = { ...getConfig() };
-      const fields = ["perOrderPoints", "referralPoints", "partnerServicePoints", "partnerServiceCount", "pointsPerBrl", "birthdayBasePoints", "checkinPoints", "tierWindowDays", "decayGraceDays", "decayPointsPerDay", "tierPrataEarned", "tierOuroEarned", "tierDiamanteEarned", "dailyRedeemCount", "dailyRedeemPoints", "monthlyRedeemPoints", "highValueReviewPoints", "newAccountWindowDays", "newAccountRedeemCap"] as const;
+      const fields = ["perOrderPoints", "referralPoints", "partnerServicePoints", "partnerServiceCount", "pointsPerBrl", "birthdayBasePoints", "checkinPoints", "tierWindowDays", "decayGraceDays", "decayPointsPerDay", "tierPrataEarned", "tierOuroEarned", "tierDiamanteEarned", "dailyRedeemCount", "dailyRedeemPoints", "pointCashRateBRL", "monthlyRedeemPoints", "highValueReviewPoints", "newAccountWindowDays", "newAccountRedeemCap"] as const;
       for (const field of fields) {
         const value = Number(body[field]);
         if (Number.isFinite(value) && value >= 0) config[field] = value;
@@ -866,22 +866,29 @@ async function handlePost(request: Request) {
       const couponDiscount = couponPick?.discount ?? 0;
       const price = Math.max(0, basePrice - couponDiscount);
       const available = getAvailablePoints(memory.pointsLedgerEntries, rider.id);
-      if (available < price) {
+      // Points shortfall auto-converts to cash (config rate, R$/pt): the rider
+      // spends every point they have and pays the difference in money. With a
+      // zero/disabled rate the old hard rejection stays.
+      const pointCashRate = limits.pointCashRateBRL ?? 0;
+      const shortfall = Math.max(0, price - available);
+      if (shortfall > 0 && pointCashRate <= 0) {
         return jsonResponse({ error: `积分不足：需要 ${price} 分，当前 ${available} 分`, available, required: price }, { status: 409 });
       }
+      const pointsTopUpBRL = shortfall > 0 ? Math.round(shortfall * pointCashRate * 100) / 100 : 0;
+      const pointsToSpend = price - shortfall;
 
       // Configurable points-based caps (0 = unlimited). Daily and monthly
       // windows count non-cancelled spend; new accounts are capped for an
       // initial window so referral/promo points cannot be drained immediately.
       const dailyPointsCap = limits.dailyRedeemPoints ?? 0;
-      if (dailyPointsCap > 0 && todayOrders.reduce((sum, o) => sum + o.pointsSpent, 0) + price > dailyPointsCap) {
+      if (dailyPointsCap > 0 && todayOrders.reduce((sum, o) => sum + o.pointsSpent, 0) + pointsToSpend > dailyPointsCap) {
         return jsonResponse({ error: `Limite diário de pontos atingido (${dailyPointsCap} pts/dia).` }, { status: 429 });
       }
       const monthlyPointsCap = limits.monthlyRedeemPoints ?? 0;
       if (monthlyPointsCap > 0) {
         const monthKey = nowStamp().slice(0, 7);
         const spentMonth = memory.marketplaceOrders.filter((o) => o.riderId === rider.id && o.status !== "cancelled" && o.createdAt.startsWith(monthKey)).reduce((sum, o) => sum + o.pointsSpent, 0);
-        if (spentMonth + price > monthlyPointsCap) {
+        if (spentMonth + pointsToSpend > monthlyPointsCap) {
           return jsonResponse({ error: `Limite mensal de pontos atingido (${monthlyPointsCap} pts/mês).` }, { status: 429 });
         }
       }
@@ -891,7 +898,7 @@ async function handlePost(request: Request) {
         const ageDays = (Date.now() - new Date(rider.joinDate).getTime()) / 86_400_000;
         if (ageDays >= 0 && ageDays <= windowDays) {
           const spentAllTime = memory.marketplaceOrders.filter((o) => o.riderId === rider.id && o.status !== "cancelled").reduce((sum, o) => sum + o.pointsSpent, 0);
-          if (spentAllTime + price > newAccountCap) {
+          if (spentAllTime + pointsToSpend > newAccountCap) {
             return jsonResponse({ error: `Conta nova: limite de ${newAccountCap} pts nos primeiros ${windowDays} dias.` }, { status: 429 });
           }
         }
@@ -913,7 +920,7 @@ async function handlePost(request: Request) {
       const voucherCode = issueNow
         ? `MP-${Date.now().toString(36).toUpperCase()}-${Math.random().toString(36).slice(2, 6).toUpperCase()}`
         : undefined;
-      const cashDue = Math.round((product.cashPriceBRL ?? 0) * 100) / 100;
+      const cashDue = Math.round(((product.cashPriceBRL ?? 0) + pointsTopUpBRL) * 100) / 100;
       // Hybrid checkout: cash part is paid from the rider's prepaid balance
       // (topped up via PIX and confirmed by the mall office). No balance, no order.
       if (cashDue > 0) {
@@ -970,7 +977,7 @@ async function handlePost(request: Request) {
         accountType: "rider",
         riderId: rider.id,
         productId: product.id,
-        pointsSpent: price,
+        pointsSpent: pointsToSpend,
         status: issueNow ? "fulfilled" : "created",
         createdAt,
         productName: product.name,
@@ -984,6 +991,7 @@ async function handlePost(request: Request) {
         ...(heldForReview ? { reviewStatus: "pending" as const } : {}),
         ...(couponDiscount > 0 && couponPick ? { couponId: couponPick.coupon.id, couponDiscount } : {}),
         ...(cashDue > 0 ? { cashDue, paymentStatus: "paid" as const } : {}),
+        ...(pointsTopUpBRL > 0 ? { pointsShortfall: shortfall, pointsTopUpBRL } : {}),
       };
       memory.marketplaceOrders.unshift(order);
 
@@ -1015,18 +1023,18 @@ async function handlePost(request: Request) {
         riderId: rider.id,
         accountId: `pts-${rider.id}`,
         type: heldForReview ? "hold" : "spend",
-        points: price,
+        points: pointsToSpend,
         status: "approved",
         sourceType: heldForReview ? "marketplace_order_hold" : "marketplace_order",
         sourceId: order.id,
         marketplaceOrderId: order.id,
-        balanceAfter: available - price,
+        balanceAfter: available - pointsToSpend,
         reasonCode: heldForReview ? "MALL_REDEMPTION_HOLD" : "MALL_REDEMPTION",
         note: `${product.name}（${tier.label}${tier.redeemDiscount < 1 ? ` ${Math.round(tier.redeemDiscount * 100)}折` : ""}${couponDiscount > 0 ? ` · cupom -${couponDiscount}` : ""}）`,
         createdBy: "PontoMall",
         createdAt,
       };
-      memory.pointsLedgerEntries.unshift(entry);
+      if (pointsToSpend > 0) memory.pointsLedgerEntries.unshift(entry);
 
       if (!enforceStationStock) {
         const productIndex = memory.marketplaceProducts.findIndex((item) => item.id === product.id);
@@ -1037,9 +1045,9 @@ async function handlePost(request: Request) {
         }
       }
 
-      appendServerAudit({ actor, action: heldForReview ? "MALL_REDEEM_HELD_REVIEW" : "MALL_REDEEMED", entity: "MarketplaceOrder", entityId: order.id, detail: `${rider.name} redeemed ${product.name} for ${price} pts${heldForReview ? " — HELD for review" : `, pickup at ${order.station}, ETA ${order.etaDate}`}.`, risk: heldForReview ? "High" : "Low" });
-      appendEvent(MARKETPLACE_EVENTS.orderCreated, { orderId: order.id, accountType: "rider", riderId: rider.id, productId: product.id, productName: product.name, pointsSpent: price, station: order.station, cashDue: order.cashDue ?? 0, reviewStatus: heldForReview ? "pending" : "none" }, actor);
-      return jsonResponse({ data: { order, balance: available - price, cashBalance: cashBalanceOf(rider.id), held: heldForReview, couponDiscount } }, { status: 201 });
+      appendServerAudit({ actor, action: heldForReview ? "MALL_REDEEM_HELD_REVIEW" : "MALL_REDEEMED", entity: "MarketplaceOrder", entityId: order.id, detail: `${rider.name} redeemed ${product.name} for ${pointsToSpend} pts${pointsTopUpBRL > 0 ? ` + R$ ${pointsTopUpBRL.toFixed(2)} (conversão de ${shortfall} pts)` : ""}${heldForReview ? " — HELD for review" : `, pickup at ${order.station}, ETA ${order.etaDate}`}.`, risk: heldForReview ? "High" : "Low" });
+      appendEvent(MARKETPLACE_EVENTS.orderCreated, { orderId: order.id, accountType: "rider", riderId: rider.id, productId: product.id, productName: product.name, pointsSpent: pointsToSpend, station: order.station, cashDue: order.cashDue ?? 0, reviewStatus: heldForReview ? "pending" : "none" }, actor);
+      return jsonResponse({ data: { order, balance: available - pointsToSpend, cashBalance: cashBalanceOf(rider.id), held: heldForReview, couponDiscount, pointsTopUpBRL } }, { status: 201 });
     }
 
     case "cancelOrder": {

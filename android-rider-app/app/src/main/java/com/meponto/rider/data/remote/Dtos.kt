@@ -202,6 +202,7 @@ data class RiderHomeDto(
     val unreadMessages: Int? = null,
     val coupons: List<CouponDto>? = null,
     val badges: List<BadgeDto>? = null,
+    val pointCashRateBRL: Double? = null,
 )
 
 // Achievement badge (lifetime completed orders milestones).

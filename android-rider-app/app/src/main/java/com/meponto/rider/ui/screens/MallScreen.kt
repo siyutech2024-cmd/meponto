@@ -302,7 +302,10 @@ fun MallScreen() {
 
         // Product detail sheet: image, description, stock, redeem.
         detail?.let { product ->
-            val affordable = store.pointsBalance >= product.points && product.stock > 0
+            // Shortfall converts to cash at checkout (server-authoritative), so the
+    // button only needs stock (rate 0 = conversion off -> old behaviour).
+    val shortOk = store.pointCashRateBRL > 0
+    val affordable = (shortOk || store.pointsBalance >= product.points) && product.stock > 0
             // Physical goods for riders WITHOUT a locked home station need an
             // explicit pickup Ponto; virtual goods and home-station riders skip it.
             val needsPickup = !product.isVirtual &&
@@ -341,6 +344,20 @@ fun MallScreen() {
                     }
                     if (product.cashPriceBRL > 0) {
                         Text(loc.t("mall.cashPart"), color = me.muted, fontSize = 12.sp)
+                    }
+                    // Points shortfall → auto cash conversion preview (server
+                    // recomputes authoritatively at checkout).
+                    val shortfall = (product.points - store.pointsBalance).coerceAtLeast(0)
+                    if (shortfall > 0 && store.pointCashRateBRL > 0) {
+                        val topUp = shortfall * store.pointCashRateBRL
+                        Text(
+                            loc.t("mall.shortfallNote")
+                                .replace("{pts}", "$shortfall")
+                                .replace("{brl}", String.format("%.2f", topUp).replace('.', ',')),
+                            color = me.warning,
+                            fontWeight = FontWeight.SemiBold,
+                            fontSize = 12.sp,
+                        )
                     }
                     if (needsPickup) {
                         Text(loc.t("mall.pickupChoose"), color = me.text, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
@@ -458,7 +475,10 @@ private fun ProductCard(
     val me = LocalMe.current
     val loc = LocalLoc.current
     val store = LocalStore.current
-    val affordable = store.pointsBalance >= product.points && product.stock > 0
+    // Shortfall converts to cash at checkout (server-authoritative), so the
+    // button only needs stock (rate 0 = conversion off -> old behaviour).
+    val shortOk = store.pointCashRateBRL > 0
+    val affordable = (shortOk || store.pointsBalance >= product.points) && product.stock > 0
 
     Column(
         modifier = modifier

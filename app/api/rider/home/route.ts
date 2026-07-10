@@ -233,6 +233,7 @@ export async function GET(request: Request) {
   return jsonResponse({
     data: {
       performance,
+      pointCashRateBRL: mallConfig.pointCashRateBRL ?? 0,
       weeklyGoalProgress,
       cashLedger,
       partners,
