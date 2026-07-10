@@ -248,6 +248,12 @@ export default function NetworkPage() {
                     </button>
                   </div>
                 )}
+                <a
+                  href={`/pontos/${station.id}`}
+                  className="inline-flex w-fit items-center gap-1.5 rounded-[8px] border border-[var(--accent)] px-2.5 py-1 text-[11px] font-black text-[var(--accent)] hover:bg-[var(--accent)] hover:text-[var(--accent-ink)]"
+                >
+                  签到二维码 · QR de check-in
+                </a>
                 {station.address && (
                   <a
                     href={station.mapUrl?.trim() || `https://maps.google.com/maps?q=${encodeURIComponent(station.address)}`}

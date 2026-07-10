@@ -38,6 +38,19 @@ async function handlePost(request: Request) {
   if (raw && !matched) {
     return jsonResponse({ error: "QR inválido: este código não é de um Ponto MePonto.", code: "invalid_code" }, { status: 404 });
   }
+  // Ownership: a rider only checks in at their OWN station or another station
+  // of the SAME franchise. Riders without a home base yet may use any Ponto
+  // (first visit binds nothing — assignment stays an ops decision).
+  if (matched && (rider.ponto || rider.franchise)) {
+    const sameStation = !!rider.ponto && (matched.name === rider.ponto || matched.id === rider.ponto);
+    const sameFranchise = !!rider.franchise && !!matched.franchise && matched.franchise === rider.franchise;
+    if (!sameStation && !sameFranchise) {
+      return jsonResponse(
+        { error: `Este QR é do ponto ${matched.name} — faça check-in no seu ponto (${rider.ponto || rider.franchise}).`, code: "wrong_station" },
+        { status: 403 },
+      );
+    }
+  }
   const ponto =
     matched ??
     (rider.ponto ? memory.pontos.find((p) => p.name === rider.ponto || p.id === rider.ponto) : undefined);
