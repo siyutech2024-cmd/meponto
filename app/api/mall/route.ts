@@ -545,7 +545,7 @@ async function handlePost(request: Request) {
   switch (body.action) {
     case "setConfig": {
       const config = { ...getConfig() };
-      const fields = ["perOrderPoints", "referralPoints", "partnerServicePoints", "partnerServiceCount", "pointsPerBrl", "birthdayBasePoints", "checkinPoints", "tierWindowDays", "decayGraceDays", "decayPointsPerDay", "tierPrataEarned", "tierOuroEarned", "tierDiamanteEarned", "dailyRedeemCount", "dailyRedeemPoints", "pointCashRateBRL", "monthlyRedeemPoints", "highValueReviewPoints", "newAccountWindowDays", "newAccountRedeemCap"] as const;
+      const fields = ["perOrderPoints", "referralPoints", "partnerServicePoints", "partnerServiceCount", "pointsPerBrl", "birthdayBasePoints", "checkinPoints", "tierWindowDays", "decayGraceDays", "decayPointsPerDay", "tierPrataEarned", "tierOuroEarned", "tierDiamanteEarned", "dailyRedeemCount", "dailyRedeemPoints", "monthlyRedeemPoints", "highValueReviewPoints", "newAccountWindowDays", "newAccountRedeemCap"] as const;
       for (const field of fields) {
         const value = Number(body[field]);
         if (Number.isFinite(value) && value >= 0) config[field] = value;
@@ -866,10 +866,12 @@ async function handlePost(request: Request) {
       const couponDiscount = couponPick?.discount ?? 0;
       const price = Math.max(0, basePrice - couponDiscount);
       const available = getAvailablePoints(memory.pointsLedgerEntries, rider.id);
-      // Points shortfall auto-converts to cash (config rate, R$/pt): the rider
-      // spends every point they have and pays the difference in money. With a
-      // zero/disabled rate the old hard rejection stays.
-      const pointCashRate = limits.pointCashRateBRL ?? 0;
+      // Points shortfall auto-converts to cash using the EXISTING back-office
+      // money-equivalence setting (points-economy: R$1 = pointsPerBrl pts),
+      // i.e. 1 pt = R$ 1/pointsPerBrl. No second knob. pointsPerBrl 0/unset
+      // keeps the old hard rejection.
+      const ppb = limits.pointsPerBrl ?? 0;
+      const pointCashRate = ppb > 0 ? 1 / ppb : 0;
       const shortfall = Math.max(0, price - available);
       if (shortfall > 0 && pointCashRate <= 0) {
         return jsonResponse({ error: `积分不足：需要 ${price} 分，当前 ${available} 分`, available, required: price }, { status: 409 });

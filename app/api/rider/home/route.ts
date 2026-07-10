@@ -233,7 +233,8 @@ export async function GET(request: Request) {
   return jsonResponse({
     data: {
       performance,
-      pointCashRateBRL: mallConfig.pointCashRateBRL ?? 0,
+      // Derived from the points-economy money equivalence (R$1 = pointsPerBrl pts).
+      pointCashRateBRL: (mallConfig.pointsPerBrl ?? 0) > 0 ? 1 / (mallConfig.pointsPerBrl as number) : 0,
       weeklyGoalProgress,
       cashLedger,
       partners,
