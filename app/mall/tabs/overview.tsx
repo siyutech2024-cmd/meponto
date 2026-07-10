@@ -27,13 +27,13 @@ export default function OverviewTab() {
       {/* ---- 待办区：点击直达对应 Tab 并预筛 ---- */}
       <div>
         <div className="mb-2 text-xs font-black uppercase text-[var(--muted)]">今天要处理什么</div>
-        <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
-          <TodoCard label="待定价" value={pendingPricing} tone={pendingPricing > 0 ? "warn" : "neutral"} hint={withAging("供应商已报价待上架", aging?.pricingOver48h)} onClick={() => navigate("products", "pending_pricing")} />
-          <TodoCard label="高价值待审" value={reviewPending} tone={reviewPending > 0 ? "danger" : "neutral"} hint="订单资格审核放行" onClick={() => navigate("orders", "review")} />
-          <TodoCard label="待核销凭证" value={pendingTopUps} tone={pendingTopUps > 0 ? "warn" : "neutral"} hint={withAging("骑手已提交充值凭证", aging?.topUpsOver48h)} onClick={() => navigate("payments")} />
-          <TodoCard label="调价待批" value={priceChangePending} tone={priceChangePending > 0 ? "warn" : "neutral"} hint={withAging("供货价调整审批", aging?.priceChangesOver48h)} onClick={() => navigate("supply")} />
-          <TodoCard label="低库存" value={lowStock} tone={lowStock > 0 ? "danger" : "neutral"} hint="在售且库存 ≤ 补货阈值" onClick={() => navigate("products", "lowstock")} />
-          <TodoCard label="待付对账单" value={`R$ ${payablePending.toFixed(2)}`} tone={payablePending > 0 ? "info" : "neutral"} hint="供应商已确认待付款" onClick={() => navigate("supply")} />
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+          <TodoCard size="sm" label="待定价" value={pendingPricing} tone={pendingPricing > 0 ? "warn" : "neutral"} hint={withAging("供应商已报价待上架", aging?.pricingOver48h)} onClick={() => navigate("products", "pending_pricing")} />
+          <TodoCard size="sm" label="高价值待审" value={reviewPending} tone={reviewPending > 0 ? "danger" : "neutral"} hint="订单资格审核放行" onClick={() => navigate("orders", "review")} />
+          <TodoCard size="sm" label="待核销凭证" value={pendingTopUps} tone={pendingTopUps > 0 ? "warn" : "neutral"} hint={withAging("骑手已提交充值凭证", aging?.topUpsOver48h)} onClick={() => navigate("payments")} />
+          <TodoCard size="sm" label="调价待批" value={priceChangePending} tone={priceChangePending > 0 ? "warn" : "neutral"} hint={withAging("供货价调整审批", aging?.priceChangesOver48h)} onClick={() => navigate("supply")} />
+          <TodoCard size="sm" label="低库存" value={lowStock} tone={lowStock > 0 ? "danger" : "neutral"} hint="在售且库存 ≤ 补货阈值" onClick={() => navigate("products", "lowstock")} />
+          <TodoCard size="sm" label="待付对账单" value={`R$ ${payablePending.toFixed(2)}`} tone={payablePending > 0 ? "info" : "neutral"} hint="供应商已确认待付款" onClick={() => navigate("supply")} />
         </div>
       </div>
 

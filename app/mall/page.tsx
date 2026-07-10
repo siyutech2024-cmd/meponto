@@ -1,8 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState, type ComponentType } from "react";
-import { Banknote, BarChart3, Boxes, LayoutGrid, Package, RefreshCcw, Settings2, ShoppingBag, Truck } from "lucide-react";
-import { AppShell, PageTitle } from "../components/ui";
+import { Banknote, BarChart3, Boxes, Building2, LayoutGrid, LineChart, Package, Settings2, ShoppingBag, Store, Truck, Users, Warehouse } from "lucide-react";
+import { MallShell, type MallNavGroup } from "./shell";
 import type { MarketplaceOrder } from "../lib/points";
 import type { CashTopUp } from "../lib/mall-ops";
 import { useVentoStore } from "../lib/store";
@@ -19,10 +19,10 @@ import SettingsTab from "./tabs/settings";
 
 /**
  * PontoMall back office (mall.meponto.com/admin → /mall) — the independent
- * mall workspace. This file is only the shell: payload loading (/api/mall,
- * /api/mall/ops, /api/mall/procurement), the grouped sidebar navigation
- * (URL-addressable via ?tab=), and the message bar. Each business surface
- * lives in app/mall/tabs/*.
+ * mall workspace. This file wires the data plumbing (/api/mall, /api/mall/ops,
+ * /api/mall/procurement) into the standalone MallShell (./shell.tsx): grouped
+ * sidebar navigation (URL-addressable via ?tab=), pending-work badges and the
+ * message bar. Each business surface lives in app/mall/tabs/*.
  */
 
 const TAB_IDS: TabId[] = ["overview", "products", "merch", "orders", "payments", "supply", "procurement", "settings"];
@@ -44,6 +44,25 @@ const NAV_GROUPS: NavGroup[] = [
     { id: "settings", label: "设置", icon: Settings2 },
   ] },
 ];
+
+/** 洞察 — analytics pages that live outside the mall workspace (normal links). */
+const INSIGHT_GROUP: MallNavGroup = {
+  label: "洞察",
+  items: [
+    { id: "link-mall-insights", label: "数据洞察", icon: LineChart, href: "/mall-insights" },
+    { id: "link-members", label: "会员", icon: Users, href: "/members" },
+  ],
+};
+
+/** 门户 — the three counterpart consoles of the mall flow (open in a new window). */
+const PORTAL_GROUP: MallNavGroup = {
+  label: "门户",
+  items: [
+    { id: "portal-supplier", label: "供应商门户", icon: Building2, href: "/mall/supplier", external: true },
+    { id: "portal-station", label: "站点门户", icon: Warehouse, href: "/mall/station", external: true },
+    { id: "portal-franchise", label: "加盟商直采", icon: Store, href: "/mall/franchise", external: true },
+  ],
+};
 
 const TAB_COMPONENTS: Record<TabId, ComponentType> = {
   overview: OverviewTab,
@@ -185,62 +204,35 @@ export default function MallAdminPage() {
 
   const ActiveTab = TAB_COMPONENTS[tab];
 
-  return (
-    <AppShell>
-      <PageTitle title="PontoMall 商城后台" eyebrow="PontoMall" />
-      <p className="-mt-3 mb-5 text-sm font-bold text-[var(--muted)]">商品、运营、履约、收款与供应链——商城业务的独立工作台。</p>
+  // Sidebar model for MallShell: workspace tab groups (with pending-work
+  // badges) + 洞察 links + 门户 entrances (new window).
+  const shellNav: MallNavGroup[] = [
+    ...NAV_GROUPS.map((group) => ({
+      label: group.label,
+      items: group.items.map(({ id, label, icon }) => ({ id, label, icon, badge: navBadges[id] ?? 0 })),
+    })),
+    INSIGHT_GROUP,
+    PORTAL_GROUP,
+  ];
+  const activeLabel = NAV_GROUPS.flatMap((group) => group.items).find((item) => item.id === tab)?.label ?? "总览";
 
+  return (
+    <MallShell
+      title={activeLabel}
+      nav={shellNav}
+      activeId={tab}
+      onSelect={(id) => navigate(id as TabId)}
+      onRefresh={() => void load()}
+    >
       {message && (
         <div className={`mb-4 rounded-[10px] border px-4 py-3 text-sm font-bold ${message.tone === "ok" ? "border-[var(--success)]/40 bg-[var(--success-bg)] text-[var(--success)]" : "border-[var(--danger)]/40 bg-[var(--danger-bg)] text-[var(--danger)]"}`}>
           {message.text}
         </div>
       )}
 
-      <div className="flex items-start gap-5">
-        {/* ---- 分组侧栏（sticky；窄屏折叠成图标） ---- */}
-        <aside className="sticky top-4 w-12 shrink-0 space-y-4 lg:w-48">
-          {NAV_GROUPS.map((group, gi) => (
-            <div key={group.label ?? `group-${gi}`}>
-              {group.label && <div className="mb-1.5 hidden px-2 text-[10px] font-black uppercase tracking-[0.14em] text-[var(--muted)] lg:block">{group.label}</div>}
-              <div className="space-y-1">
-                {group.items.map(({ id, label, icon: Icon }) => {
-                  const active = tab === id;
-                  const badge = navBadges[id] ?? 0;
-                  return (
-                    <button
-                      key={id}
-                      type="button"
-                      title={label}
-                      onClick={() => navigate(id)}
-                      className={`relative flex h-9 w-full items-center gap-2.5 rounded-[8px] border px-0 text-[13px] font-bold transition-colors lg:px-3 ${active ? "border-[var(--accent)] bg-[var(--accent)] text-[var(--accent-ink)]" : "border-transparent text-[var(--muted)] hover:bg-[var(--surface-hover)] hover:text-[var(--text)]"}`}
-                    >
-                      <span className="grid w-12 shrink-0 place-items-center lg:w-auto"><Icon size={15} /></span>
-                      <span className="hidden truncate lg:inline">{label}</span>
-                      {badge > 0 && (
-                        <>
-                          <span className={`ml-auto hidden min-w-5 rounded-full px-1.5 py-0.5 text-center text-[10px] font-black lg:inline-block ${active ? "bg-[var(--accent-ink)]/15 text-[var(--accent-ink)]" : "bg-[var(--danger)] text-white"}`}>{badge}</span>
-                          <span className="absolute right-1 top-1 h-2 w-2 rounded-full bg-[var(--danger)] lg:hidden" />
-                        </>
-                      )}
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-          ))}
-          <button type="button" onClick={() => void load()} className="flex h-9 w-full items-center gap-2.5 rounded-[8px] border border-[var(--line)] px-0 text-[13px] font-bold text-[var(--muted)] transition-colors hover:border-[var(--accent)] lg:px-3">
-            <span className="grid w-12 shrink-0 place-items-center lg:w-auto"><RefreshCcw size={14} /></span>
-            <span className="hidden lg:inline">刷新</span>
-          </button>
-        </aside>
-
-        {/* ---- 工作区 ---- */}
-        <div className="min-w-0 flex-1">
-          <MallAdminContext.Provider value={context}>
-            <ActiveTab />
-          </MallAdminContext.Provider>
-        </div>
-      </div>
-    </AppShell>
+      <MallAdminContext.Provider value={context}>
+        <ActiveTab />
+      </MallAdminContext.Provider>
+    </MallShell>
   );
 }

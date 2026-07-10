@@ -44,25 +44,28 @@ const TODO_TONE_COLOR: Record<BadgeTone, string> = {
   neutral: "var(--muted)",
 };
 
-export function TodoCard({ label, value, tone = "neutral", hint, onClick, active }: {
+export function TodoCard({ label, value, tone = "neutral", hint, onClick, active, size = "md" }: {
   label: string;
   value: string | number;
   tone?: BadgeTone;
   hint?: string;
   onClick?: () => void;
   active?: boolean;
+  /** "sm" — compact overview variant (~72px tall, 20px number, one-line hint). */
+  size?: "md" | "sm";
 }) {
   const idle = tone === "neutral";
+  const sm = size === "sm";
   return (
     <button
       type="button"
       onClick={onClick}
       disabled={!onClick}
-      className={`panel p-4 text-left transition-colors ${onClick ? "hover:border-[var(--accent)]" : "cursor-default"} ${idle ? "opacity-60" : ""} ${active ? "border-[var(--accent)]" : ""}`}
+      className={`panel min-w-0 text-left transition-colors ${sm ? "p-3" : "p-4"} ${onClick ? "hover:border-[var(--accent)]" : "cursor-default"} ${idle ? "opacity-60" : ""} ${active ? "border-[var(--accent)]" : ""}`}
     >
-      <div className="text-[11px] font-bold uppercase text-[var(--muted)]">{label}</div>
-      <div className="mt-1 text-2xl font-black" style={{ color: TODO_TONE_COLOR[tone] ?? "var(--text)" }}>{value}</div>
-      {hint && <div className="mt-0.5 text-[11px] font-bold text-[var(--muted)]">{hint}</div>}
+      <div className={`truncate font-bold uppercase text-[var(--muted)] ${sm ? "text-[10px]" : "text-[11px]"}`}>{label}</div>
+      <div className={`font-black ${sm ? "mt-0.5 text-xl leading-6" : "mt-1 text-2xl"}`} style={{ color: TODO_TONE_COLOR[tone] ?? "var(--text)" }}>{value}</div>
+      {hint && <div className={`mt-0.5 font-bold text-[var(--muted)] ${sm ? "truncate text-[10px]" : "text-[11px]"}`} title={sm ? hint : undefined}>{hint}</div>}
     </button>
   );
 }
