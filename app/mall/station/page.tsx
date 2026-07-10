@@ -1,21 +1,39 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { CheckCircle2, Inbox, PackageCheck, RefreshCcw, Search, Truck, UserRound, Warehouse } from "lucide-react";
-import { AppShell, Badge, PageTitle } from "../../components/ui";
+import { CheckCircle2, Inbox, PackageCheck, RefreshCcw, Truck, UserRound, Warehouse } from "lucide-react";
+import { AppShell, PageTitle } from "../../components/ui";
 import { readSession } from "../../lib/session";
 import type { MarketplaceOrder } from "../../lib/points";
 import { useVentoStore } from "../../lib/store";
 import { translate, type TranslationKey } from "../../lib/i18n";
 import type { FranchisePurchaseOrder, StationStockBucket } from "../../lib/procurement";
+import { DataTable, SearchInput, SectionCard, Stat, StatusBadge, Toolbar, type BadgeTone, type DataColumn } from "../kit";
 
-const statusKey: Record<string, TranslationKey> = { created: "msStCreated", arrived: "msStArrived", fulfilled: "msStFulfilled", cancelled: "msStCancelled" };
-const fpoStatusKey: Record<string, TranslationKey> = {
-  submitted: "fpStSubmitted", approved: "fpStApproved", confirmed: "fpStConfirmed", shipped: "fpStShipped",
-  arrived: "fpStArrived", received: "fpStReceived", rejected: "fpStRejected", cancelled: "fpStCancelled",
+/** Station fulfillment desk — rebuilt on the shared mall kit (Stat / DataTable /
+ *  StatusBadge / Toolbar). Badge semantics: green = flowing, amber = waiting on
+ *  a human at this desk, red = exception, gray = terminal. */
+
+const statusMeta: Record<string, { key: TranslationKey; tone: BadgeTone }> = {
+  created: { key: "msStCreated", tone: "success" },
+  arrived: { key: "msStArrived", tone: "warn" },
+  fulfilled: { key: "msStFulfilled", tone: "neutral" },
+  cancelled: { key: "msStCancelled", tone: "neutral" },
+};
+const fpoStatusMeta: Record<string, { key: TranslationKey; tone: BadgeTone }> = {
+  submitted: { key: "fpStSubmitted", tone: "warn" },
+  approved: { key: "fpStApproved", tone: "warn" },
+  confirmed: { key: "fpStConfirmed", tone: "success" },
+  shipped: { key: "fpStShipped", tone: "success" },
+  arrived: { key: "fpStArrived", tone: "warn" },
+  received: { key: "fpStReceived", tone: "neutral" },
+  rejected: { key: "fpStRejected", tone: "danger" },
+  cancelled: { key: "fpStCancelled", tone: "neutral" },
 };
 
 const inputCls = "rounded-[8px] border border-[var(--line)] bg-[var(--surface-raised)] px-2 text-sm font-bold outline-none focus:border-[var(--accent)]";
+/** Row-level desk action — outlined accent (at most one solid yellow primary per view). */
+const btnAction = "inline-flex items-center gap-1 rounded-[8px] border border-[var(--accent)]/50 text-xs font-black text-[var(--accent)] hover:bg-[var(--accent)]/10";
 
 export default function MallStationPage() {
   const language = useVentoStore((s) => s.language);
@@ -109,22 +127,56 @@ export default function MallStationPage() {
 
   const emptyLabel = (hadAny: boolean) => (q && hadAny ? t("msNoMatch") : t("msNoOrders"));
 
-  const reviewBadge = (order: MarketplaceOrder) => (
-    <Badge value={order.reviewStatus === "pending" ? t("dpPendingHq") : (statusKey[order.status] ? t(statusKey[order.status]) : order.status)} />
-  );
+  const reviewBadge = (order: MarketplaceOrder) =>
+    order.reviewStatus === "pending"
+      ? <StatusBadge tone="warn" label={t("dpPendingHq")} />
+      : statusMeta[order.status]
+        ? <StatusBadge tone={statusMeta[order.status].tone} label={t(statusMeta[order.status].key)} />
+        : <StatusBadge tone="neutral" label={order.status} />;
 
   const actionButton = (order: MarketplaceOrder, action: "markArrived" | "markPickedUp", label: string, okText: string) =>
     order.reviewStatus === "pending" ? (
-      <div className="mt-2 text-[11px] font-black text-[var(--warn)]">{t("msHighValue")}</div>
+      <span className="text-[11px] font-black text-[var(--warn)]">{t("msHighValue")}</span>
     ) : (
-      <button
-        type="button"
-        onClick={() => void act(action, order.id, okText)}
-        className="mt-2 inline-flex h-9 items-center gap-1 rounded-[8px] bg-[var(--accent)] px-4 text-xs font-black uppercase text-[var(--accent-ink)]"
-      >
+      <button type="button" onClick={() => void act(action, order.id, okText)} className={`h-8 px-3 ${btnAction}`}>
         <CheckCircle2 size={13} /> {label}
       </button>
     );
+
+  // ---- DataTable columns ---------------------------------------------------
+
+  const transitCols: Array<DataColumn<MarketplaceOrder>> = [
+    { key: "product", label: t("mkColProduct"), render: (order) => <span className="font-black">{order.productName ?? order.productId}</span> },
+    { key: "id", label: t("mkColOrder"), render: (order) => <span className="font-mono text-xs text-[var(--muted)]">{order.id}</span> },
+    { key: "rider", label: t("mkColRider"), render: (order) => order.riderName },
+    { key: "points", label: t("mkColPoints"), align: "right", render: (order) => order.pointsSpent },
+    { key: "eta", label: t("mkColEta"), render: (order) => <span className="text-[var(--muted)]">{order.etaDate ?? "—"}</span> },
+    { key: "status", label: t("mkColStatus"), render: (order) => reviewBadge(order) },
+    { key: "actions", label: t("mkColActions"), align: "right", render: (order) => actionButton(order, "markArrived", t("msBtnArrived"), t("msOkArrived")) },
+  ];
+
+  const doneCols: Array<DataColumn<MarketplaceOrder>> = [
+    { key: "product", label: t("mkColProduct"), render: (order) => <span className="font-black">{order.productName ?? order.productId}</span> },
+    { key: "id", label: t("mkColOrder"), render: (order) => <span className="font-mono text-xs text-[var(--muted)]">{order.id}</span> },
+    { key: "rider", label: t("mkColRider"), render: (order) => order.riderName },
+    { key: "points", label: t("mkColPoints"), align: "right", render: (order) => order.pointsSpent },
+    { key: "picked", label: t("mkColPickedAt"), render: (order) => <span className="text-[var(--muted)]">{order.pickedUpAt ?? "—"}</span> },
+    { key: "status", label: t("mkColStatus"), render: (order) => reviewBadge(order) },
+  ];
+
+  const historyCols: Array<DataColumn<FranchisePurchaseOrder>> = [
+    { key: "id", label: t("mkColOrder"), render: (fpo) => <span className="font-mono text-xs">{fpo.id}</span> },
+    { key: "items", label: t("mkColItems"), className: "max-w-[340px]", render: (fpo) => <span className="block truncate text-xs">{fpo.items.map((item) => `${item.name} ×${Math.min(item.qty, item.receivedQty ?? item.qty)}`).join("、")}</span> },
+    { key: "supplier", label: t("fpSupplier"), render: (fpo) => <span className="text-[var(--muted)]">{fpo.supplierName}</span> },
+    { key: "received", label: t("mkColReceivedAt"), render: (fpo) => <span className="text-[var(--muted)]">{fpo.receivedAt ?? "—"}</span> },
+  ];
+
+  const stockCols: Array<DataColumn<StationStockBucket>> = [
+    { key: "product", label: t("mkColProduct"), render: (bucket) => <span className="font-black">{bucket.productName}</span> },
+    { key: "mode", label: t("fpoModeCol"), render: (bucket) => <StatusBadge tone={bucket.mode === "buyout" ? "info" : "neutral"} label={t(bucket.mode === "buyout" ? "fpModeBuyout" : "fpModeConsignment")} /> },
+    { key: "qty", label: t("fpOnHand"), align: "right", render: (bucket) => bucket.qty },
+    { key: "reserved", label: t("fpReserved"), align: "right", render: (bucket) => (bucket.reserved > 0 ? bucket.reserved : <span className="text-[var(--muted)]">—</span>) },
+  ];
 
   return (
     <AppShell>
@@ -153,195 +205,122 @@ export default function MallStationPage() {
       </div>
 
       {tab === "redemption" && (
-        <>
+        <div className="space-y-4">
           {/* Top stats */}
-          <div className="mb-4 grid grid-cols-3 gap-3">
-            {([
-              [t("msStatArrivedToday"), statArrived],
-              [t("msStatTransit"), statTransit],
-              [t("msStatDoneToday"), statDoneToday],
-            ] as const).map(([label, value]) => (
-              <div key={label} className="panel p-4">
-                <div className="text-[10px] font-black uppercase text-[var(--muted)]">{label}</div>
-                <div className="mt-1 text-2xl font-black">{value}</div>
-              </div>
-            ))}
+          <div className="grid grid-cols-3 gap-3">
+            <Stat label={t("msStatArrivedToday")} value={String(statArrived)} />
+            <Stat label={t("msStatTransit")} value={String(statTransit)} />
+            <Stat label={t("msStatDoneToday")} value={String(statDoneToday)} />
           </div>
 
           {/* Rider / order search */}
-          <div className="panel mb-4 flex items-center gap-2 p-3">
-            <Search size={14} className="shrink-0 text-[var(--muted)]" />
-            <input
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder={t("msSearchPh")}
-              className="h-9 w-full max-w-md rounded-[8px] border border-[var(--line)] bg-[var(--surface-raised)] px-3 text-sm font-bold outline-none focus:border-[var(--accent)]"
-            />
-          </div>
+          <Toolbar>
+            <SearchInput value={query} onChange={setQuery} placeholder={t("msSearchPh")} className="w-full max-w-md" />
+          </Toolbar>
 
-          <div className="grid gap-4 lg:grid-cols-3">
-            {/* Today's pickup queue, grouped by rider */}
-            <div className="panel p-4 lg:col-span-2">
-              <div className="mb-3 flex items-center gap-2 text-xs font-black uppercase text-[var(--accent)]"><PackageCheck size={14} /> {t("msSecPickup")}（{arrived.length}）</div>
-              {arrived.length === 0 ? (
-                <div className="text-sm font-bold text-[var(--muted)]">{emptyLabel(statArrived > 0)}</div>
-              ) : (
-                <div className="max-h-[560px] space-y-3 overflow-auto pr-1">
-                  {pickupByRider.map(([rider, list]) => (
-                    <div key={rider} className="rounded-[8px] border border-[var(--line)] bg-[var(--surface-raised)] p-3">
-                      <div className="mb-2 flex items-center gap-2">
-                        <UserRound size={14} className="text-[var(--accent)]" />
-                        <span className="text-sm font-black">{rider}</span>
-                        <span className="tag">{t("msGroupOrders", { n: list.length })}</span>
-                      </div>
-                      <div className="space-y-2">
-                        {list.map((order) => (
-                          <div key={order.id} className="rounded-[8px] border border-[var(--line)] bg-[var(--surface)] p-3">
-                            <div className="flex items-center justify-between gap-2 text-sm font-black">
-                              {order.productName ?? order.productId}
-                              {reviewBadge(order)}
-                            </div>
-                            <div className="mt-1 text-[11px] font-bold text-[var(--muted)]">
-                              {order.id} ｜ {t("msOrderLine", { rider: order.riderName, points: order.pointsSpent, date: order.createdAt })}
-                              {order.arrivedAt && t("msArrivedAt", { x: order.arrivedAt })}
-                            </div>
-                            {actionButton(order, "markPickedUp", t("msBtnPicked"), t("msOkPicked"))}
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            <div className="space-y-4">
-              {/* In transit (ETA) */}
-              <div className="panel p-4">
-                <div className="mb-3 flex items-center gap-2 text-xs font-black uppercase text-[var(--accent)]"><Truck size={14} /> {t("msColTransit")}（{inTransit.length}）</div>
-                {inTransit.length === 0 ? (
-                  <div className="text-sm font-bold text-[var(--muted)]">{emptyLabel(statTransit > 0)}</div>
-                ) : (
-                  <div className="max-h-[320px] space-y-2 overflow-auto pr-1">
-                    {inTransit.map((order) => (
-                      <div key={order.id} className="rounded-[8px] border border-[var(--line)] bg-[var(--surface-raised)] p-3">
-                        <div className="flex items-center justify-between gap-2 text-sm font-black">
-                          {order.productName ?? order.productId}
-                          {reviewBadge(order)}
-                        </div>
-                        <div className="mt-1 text-[11px] font-bold text-[var(--muted)]">
-                          {order.id} ｜ {t("msOrderLine", { rider: order.riderName, points: order.pointsSpent, date: order.createdAt })}
-                          {order.etaDate && t("msEta", { x: order.etaDate })}
-                        </div>
-                        {actionButton(order, "markArrived", t("msBtnArrived"), t("msOkArrived"))}
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-
-              {/* Delivered today (read-only) */}
-              <div className="panel p-4">
-                <div className="mb-3 flex items-center gap-2 text-xs font-black uppercase text-[var(--accent)]"><CheckCircle2 size={14} /> {t("msStatDoneToday")}（{doneToday.length}）</div>
-                {doneToday.length === 0 ? (
-                  <div className="text-sm font-bold text-[var(--muted)]">{emptyLabel(statDoneToday > 0)}</div>
-                ) : (
-                  <div className="max-h-[280px] space-y-2 overflow-auto pr-1">
-                    {doneToday.map((order) => (
-                      <div key={order.id} className="rounded-[8px] border border-[var(--line)] bg-[var(--surface-raised)] p-3">
-                        <div className="flex items-center justify-between gap-2 text-sm font-black">
-                          {order.productName ?? order.productId}
-                          {reviewBadge(order)}
-                        </div>
-                        <div className="mt-1 text-[11px] font-bold text-[var(--muted)]">
-                          {order.id} ｜ {t("msOrderLine", { rider: order.riderName, points: order.pointsSpent, date: order.createdAt })}
-                          {order.pickedUpAt && t("msPickedAt", { x: order.pickedUpAt })}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
-        </>
-      )}
-
-      {tab === "receiving" && (
-        <div className="grid gap-4 lg:grid-cols-2">
-          <div className="panel p-4">
-            <div className="mb-3 text-xs font-black uppercase text-[var(--accent)]"><Inbox size={14} className="mr-1 inline" />{t("ssIncoming")}（{incoming.length}）</div>
-            {incoming.length === 0 ? (
-              <div className="py-4 text-center text-sm font-bold text-[var(--muted)]">{t("ssNoIncoming")}</div>
+          {/* Today's pickup queue — grouped by rider (kept as card groups for desk clarity) */}
+          <SectionCard title={<span className="inline-flex items-center gap-2 text-[var(--accent)]"><PackageCheck size={14} /> {t("msSecPickup")}（{arrived.length}）</span>}>
+            {arrived.length === 0 ? (
+              <div className="py-4 text-center text-sm font-bold text-[var(--muted)]">{emptyLabel(statArrived > 0)}</div>
             ) : (
-              <div className="max-h-[460px] space-y-2 overflow-auto pr-1">
-                {incoming.map((fpo) => (
-                  <div key={fpo.id} className="rounded-[8px] border border-[var(--line)] bg-[var(--surface-raised)] p-3">
-                    <div className="flex items-center justify-between gap-2 text-sm font-black">
-                      <span>{fpo.id} · {fpo.supplierName}</span>
-                      <span className="flex gap-2">
-                        <Badge value={t(fpo.mode === "buyout" ? "fpModeBuyout" : "fpModeConsignment")} />
-                        <Badge value={fpoStatusKey[fpo.status] ? t(fpoStatusKey[fpo.status]) : fpo.status} />
-                      </span>
+              <div className="max-h-[560px] space-y-3 overflow-auto pr-1">
+                {pickupByRider.map(([rider, list]) => (
+                  <div key={rider} className="rounded-[10px] border border-[var(--line)] bg-[var(--surface-raised)] p-3">
+                    <div className="mb-2 flex items-center gap-2">
+                      <UserRound size={14} className="text-[var(--accent)]" />
+                      <span className="text-sm font-black">{rider}</span>
+                      <span className="tag">{t("msGroupOrders", { n: list.length })}</span>
                     </div>
-                    <div className="mt-2 space-y-1">
-                      {fpo.items.map((item) => (
-                        <div key={item.productId} className="flex items-center justify-between gap-2 text-[11px] font-bold">
-                          <span>{item.name} ｜ {t("fpQty")} {item.qty}</span>
-                          <label className="flex items-center gap-1">
-                            {t("ssReceivedQty")}
-                            <input
-                              type="number" min={0}
-                              placeholder={String(item.qty)}
-                              value={receivedDraft[fpo.id]?.[item.productId] ?? ""}
-                              onChange={(e) => setReceivedDraft((prev) => ({ ...prev, [fpo.id]: { ...(prev[fpo.id] ?? {}), [item.productId]: e.target.value } }))}
-                              className={`h-8 w-16 text-center ${inputCls}`}
-                            />
-                          </label>
+                    <div className="space-y-1.5">
+                      {list.map((order) => (
+                        <div key={order.id} className="flex flex-wrap items-center gap-2 rounded-[8px] border border-[var(--line)] bg-[var(--surface)] px-3 py-2">
+                          <span className="min-w-0 flex-1 truncate text-sm font-black">{order.productName ?? order.productId}</span>
+                          <span className="font-mono text-[11px] font-bold text-[var(--muted)]">{order.id}</span>
+                          <span className="text-[11px] font-bold text-[var(--muted)]">{order.pointsSpent} {t("dynPts")}</span>
+                          {reviewBadge(order)}
+                          {actionButton(order, "markPickedUp", t("msBtnPicked"), t("msOkPicked"))}
                         </div>
                       ))}
                     </div>
-                    <button type="button" onClick={() => void receiveFpo(fpo)} className="mt-2 inline-flex h-9 items-center gap-1 rounded-[8px] bg-[var(--accent)] px-4 text-xs font-black uppercase text-[var(--accent-ink)]">
-                      <CheckCircle2 size={13} /> {t("ssReceive")}
-                    </button>
                   </div>
                 ))}
               </div>
             )}
+          </SectionCard>
+
+          {/* In transit (confirm arrival) */}
+          <div>
+            <div className="mb-2 flex items-center gap-2 text-xs font-black uppercase text-[var(--muted)]"><Truck size={14} /> {t("msColTransit")}（{inTransit.length}）</div>
+            <DataTable columns={transitCols} rows={inTransit} rowKey={(order) => order.id} minWidth={780} empty={emptyLabel(statTransit > 0)} />
           </div>
-          <div className="panel p-4">
-            <div className="mb-3 text-xs font-black uppercase text-[var(--accent)]">{t("fpMyOrders")}</div>
-            {fpoHistory.length === 0 ? (
-              <div className="py-4 text-center text-sm font-bold text-[var(--muted)]">{t("fpNoData")}</div>
-            ) : (
-              <div className="max-h-[460px] space-y-1 overflow-auto pr-1 text-xs font-bold">
-                {fpoHistory.map((fpo) => (
-                  <div key={fpo.id} className="flex justify-between rounded-[6px] border border-[var(--line)] px-2 py-1">
-                    <span>{fpo.id} · {fpo.items.map((item) => `${item.name} ×${Math.min(item.qty, item.receivedQty ?? item.qty)}`).join("、")}</span>
-                    <span>{fpo.receivedAt}</span>
-                  </div>
-                ))}
-              </div>
-            )}
+
+          {/* Delivered today (read-only) */}
+          <div>
+            <div className="mb-2 flex items-center gap-2 text-xs font-black uppercase text-[var(--muted)]"><CheckCircle2 size={14} /> {t("msStatDoneToday")}（{doneToday.length}）</div>
+            <DataTable columns={doneCols} rows={doneToday} rowKey={(order) => order.id} minWidth={780} empty={emptyLabel(statDoneToday > 0)} />
+          </div>
+        </div>
+      )}
+
+      {tab === "receiving" && (
+        <div className="space-y-4">
+          {/* Incoming FPOs — roomy counting form (one card per order) */}
+          {incoming.length === 0 ? (
+            <div className="panel p-6 text-center text-sm font-bold text-[var(--muted)]">{t("ssNoIncoming")}</div>
+          ) : (
+            incoming.map((fpo) => (
+              <SectionCard
+                key={fpo.id}
+                title={<span className="inline-flex items-center gap-2"><Inbox size={14} /> {fpo.id} · {fpo.supplierName}</span>}
+                desc={t("ssCountHint")}
+                right={
+                  <>
+                    <StatusBadge tone="info" label={t(fpo.mode === "buyout" ? "fpModeBuyout" : "fpModeConsignment")} />
+                    {fpoStatusMeta[fpo.status]
+                      ? <StatusBadge tone={fpoStatusMeta[fpo.status].tone} label={t(fpoStatusMeta[fpo.status].key)} />
+                      : <StatusBadge tone="neutral" label={fpo.status} />}
+                  </>
+                }
+              >
+                <div className="grid gap-3 md:grid-cols-2">
+                  {fpo.items.map((item) => (
+                    <div key={item.productId} className="flex items-center justify-between gap-3 rounded-[10px] border border-[var(--line)] bg-[var(--surface-raised)] px-4 py-3">
+                      <div className="min-w-0">
+                        <div className="truncate text-sm font-black">{item.name}</div>
+                        <div className="text-[11px] font-bold text-[var(--muted)]">{t("fpQty")} {item.qty}</div>
+                      </div>
+                      <label className="flex shrink-0 items-center gap-2 text-[11px] font-black text-[var(--muted)]">
+                        {t("ssReceivedQty")}
+                        <input
+                          type="number" min={0}
+                          placeholder={String(item.qty)}
+                          value={receivedDraft[fpo.id]?.[item.productId] ?? ""}
+                          onChange={(e) => setReceivedDraft((prev) => ({ ...prev, [fpo.id]: { ...(prev[fpo.id] ?? {}), [item.productId]: e.target.value } }))}
+                          className={`h-10 w-24 text-center ${inputCls}`}
+                        />
+                      </label>
+                    </div>
+                  ))}
+                </div>
+                <button type="button" onClick={() => void receiveFpo(fpo)} className={`mt-4 h-10 px-4 uppercase ${btnAction}`}>
+                  <CheckCircle2 size={13} /> {t("ssReceive")}
+                </button>
+              </SectionCard>
+            ))
+          )}
+
+          {/* Receiving history */}
+          <div>
+            <div className="mb-2 text-xs font-black uppercase text-[var(--muted)]">{t("ssHistory")}</div>
+            <DataTable columns={historyCols} rows={fpoHistory} rowKey={(fpo) => fpo.id} minWidth={640} empty={t("fpNoData")} />
           </div>
         </div>
       )}
 
       {tab === "stock" && (
-        <div className="panel p-4">
-          <div className="mb-3 text-xs font-black uppercase text-[var(--accent)]"><Warehouse size={14} className="mr-1 inline" />{t("ssTabStock")}</div>
-          {stock.length === 0 ? (
-            <div className="py-4 text-center text-sm font-bold text-[var(--muted)]">{t("fpNoData")}</div>
-          ) : (
-            <div className="max-h-[480px] space-y-1 overflow-auto pr-1 text-xs font-bold">
-              {stock.map((bucket) => (
-                <div key={`${bucket.productId}-${bucket.mode}`} className="flex justify-between rounded-[6px] border border-[var(--line)] px-2 py-1">
-                  <span>{bucket.productName}</span>
-                  <span>{t(bucket.mode === "buyout" ? "fpModeBuyout" : "fpModeConsignment")} ｜ {t("fpOnHand")} {bucket.qty}{bucket.reserved > 0 ? ` ｜ ${t("fpReserved")} ${bucket.reserved}` : ""}</span>
-                </div>
-              ))}
-            </div>
-          )}
+        <div>
+          <div className="mb-2 flex items-center gap-2 text-xs font-black uppercase text-[var(--muted)]"><Warehouse size={14} /> {t("ssTabStock")}</div>
+          <DataTable columns={stockCols} rows={stock} rowKey={(bucket) => `${bucket.productId}-${bucket.mode}`} minWidth={560} empty={t("fpNoData")} />
         </div>
       )}
     </AppShell>

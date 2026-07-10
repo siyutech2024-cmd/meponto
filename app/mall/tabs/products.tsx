@@ -4,10 +4,10 @@ import { useEffect, useMemo, useState } from "react";
 import { useDialog } from "../../components/dialog";
 import { downloadCsv } from "../../lib/csv";
 import type { MarketplaceProduct } from "../../lib/points";
-import { Chip, Drawer, Pager, SearchInput, TodoCard, Toolbar } from "../kit";
+import { Chip, DataTable, Drawer, Pager, SearchInput, SectionCard, TodoCard, Toolbar, type DataColumn, type SortState } from "../kit";
 import { isLowStock, productMargin, productStatusLabel, PROCUREMENT_MODE_LABEL, statusBadge, useMallAdmin, type ApiPath, type MallMessage, type ProcureProduct } from "./context";
 
-/** 商品与定价 — mechanical move from app/mall/page.tsx (wave 1); table + config drawer workbench. */
+/** 商品与定价 — 待办卡 + Toolbar + DataTable + 配置抽屉（kit 组件）工作台。 */
 
 const PRODUCT_PAGE_SIZE = 20;
 
@@ -16,7 +16,7 @@ export default function ProductsTab() {
   const dialog = useDialog();
 
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
-  const [productSort, setProductSort] = useState<{ key: "name" | "stock" | "points" | "margin"; dir: 1 | -1 } | null>(null);
+  const [productSort, setProductSort] = useState<SortState>(null);
   const [productQuickFilter, setProductQuickFilter] = useState<"" | "consent" | "lowstock">("");
   const [drawerId, setDrawerId] = useState("");
   const [bulkBusy, setBulkBusy] = useState(false);
@@ -117,6 +117,88 @@ export default function ProductsTab() {
     );
   }
 
+  // ---- DataTable 列定义（勾选 / 商品 / 状态 / 库存 / 积分价 / 毛利率 / 分成 / 操作） ----
+  const allPageSelected = pagedProducts.length > 0 && pagedProducts.every((product) => selectedIds.has(product.id));
+  const productColumns: Array<DataColumn<MarketplaceProduct>> = [
+    {
+      key: "select",
+      className: "w-10",
+      label: (
+        <input
+          type="checkbox"
+          aria-label="全选本页"
+          checked={allPageSelected}
+          onChange={() => {
+            setSelectedIds((prev) => {
+              const next = new Set(prev);
+              for (const product of pagedProducts) { if (allPageSelected) next.delete(product.id); else next.add(product.id); }
+              return next;
+            });
+          }}
+          className="h-4 w-4 accent-[var(--accent)]"
+        />
+      ),
+      render: (product) => (
+        <span className="inline-flex" onClick={(e) => e.stopPropagation()}>
+          <input type="checkbox" aria-label={`选择 ${product.name}`} checked={selectedIds.has(product.id)} onChange={() => toggleSelect(product.id)} className="h-4 w-4 accent-[var(--accent)]" />
+        </span>
+      ),
+    },
+    {
+      key: "product",
+      label: "商品",
+      sortKey: "name",
+      render: (product) => (
+        <div className="flex items-center gap-2.5">
+          <div className="h-10 w-10 shrink-0 overflow-hidden rounded-[8px] border border-[var(--line)] bg-[var(--surface-raised)]">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            {product.imageUrl ? <img src={product.imageUrl} alt="" className="h-full w-full object-cover" /> : <div className="grid h-full w-full place-items-center text-base">🎁</div>}
+          </div>
+          <div className="min-w-0">
+            <div className="max-w-[260px] truncate text-sm font-black">{product.name}{product.isVirtual ? <span className="ml-1.5 text-[10px] font-bold text-[var(--muted)]">虚拟</span> : null}</div>
+            <div className="max-w-[260px] truncate text-[11px] font-bold text-[var(--muted)]">{product.supplierName ?? "自营"}{product.category ? ` · ${product.category}` : ""}</div>
+          </div>
+        </div>
+      ),
+    },
+    { key: "status", label: "状态", render: (product) => statusBadge(product.status, productStatusLabel[product.status] ?? product.status) },
+    {
+      key: "stock",
+      label: "库存",
+      sortKey: "stock",
+      render: (product) => {
+        const low = isLowStock(product);
+        return <span className={`font-black ${low ? "text-[var(--danger)]" : ""}`}>{product.stock}{low ? <span className="ml-1 text-[10px] font-bold">低</span> : null}</span>;
+      },
+    },
+    {
+      key: "points",
+      label: "积分价",
+      sortKey: "points",
+      render: (product) => <span className="font-black">{product.pointsPrice > 0 ? product.pointsPrice.toLocaleString() : "—"}{(product.cashPriceBRL ?? 0) > 0 ? <span className="text-[11px] font-bold text-[var(--muted)]"> +R${(product.cashPriceBRL ?? 0).toFixed(2)}</span> : null}</span>,
+    },
+    {
+      key: "margin",
+      label: "毛利率",
+      sortKey: "margin",
+      render: (product) => {
+        const m = productMargin(product, pointsPerBrlRate);
+        return <span className={`font-black ${m.margin < 0 ? "text-[var(--danger)]" : ""}`}>{product.status === "pending_pricing" ? "—" : `${m.pct.toFixed(1)}%`}</span>;
+      },
+    },
+    { key: "share", label: "加盟分成", render: (product) => ((product.franchiseShareBRL ?? 0) > 0 ? `R$ ${(product.franchiseShareBRL ?? 0).toFixed(2)}` : "—") },
+    {
+      key: "actions",
+      label: "操作",
+      align: "right",
+      render: (product) => (
+        <span className="inline-flex" onClick={(e) => e.stopPropagation()}>
+          <button type="button" onClick={() => setDrawerId(product.id)} className="h-8 rounded-[8px] border border-[var(--line)] px-3 text-xs font-bold text-[var(--muted)] hover:border-[var(--accent)]">配置</button>
+        </span>
+      ),
+    },
+  ];
+
   return (
     <div className="space-y-3">
       {/* ---- 待办卡：点击即过滤 / 跳转 ---- */}
@@ -153,86 +235,20 @@ export default function ProductsTab() {
         </div>
       )}
 
-      {products.length === 0 && <div className="panel p-10 text-center text-sm font-bold text-[var(--muted)]">还没有商品——等供应商在供应链后台提报。</div>}
-      {products.length > 0 && filteredProducts.length === 0 && <div className="panel p-10 text-center text-sm font-bold text-[var(--muted)]">没有匹配的商品——换个关键字或状态试试。</div>}
-
-      {/* ---- 商品表格 ---- */}
-      {filteredProducts.length > 0 && (
-        <div className="panel overflow-x-auto p-0">
-          <table className="w-full min-w-[900px] text-sm">
-            <thead>
-              <tr className="text-left text-[11px] font-bold uppercase text-[var(--muted)]">
-                <th className="w-10 px-3 py-2.5">
-                  <input
-                    type="checkbox"
-                    aria-label="全选本页"
-                    checked={pagedProducts.length > 0 && pagedProducts.every((product) => selectedIds.has(product.id))}
-                    onChange={() => {
-                      const allSelected = pagedProducts.every((product) => selectedIds.has(product.id));
-                      setSelectedIds((prev) => {
-                        const next = new Set(prev);
-                        for (const product of pagedProducts) { if (allSelected) next.delete(product.id); else next.add(product.id); }
-                        return next;
-                      });
-                    }}
-                    className="h-4 w-4 accent-[var(--accent)]"
-                  />
-                </th>
-                {([
-                  { key: "name" as const, label: "商品" },
-                  { key: null, label: "状态" },
-                  { key: "stock" as const, label: "库存" },
-                  { key: "points" as const, label: "积分价" },
-                  { key: "margin" as const, label: "毛利率" },
-                  { key: null, label: "加盟分成" },
-                ]).map((col, i) => (
-                  <th key={col.label} className={`py-2.5 ${i === 0 ? "" : "pr-2"}`}>
-                    {col.key ? (
-                      <button type="button" onClick={() => setProductSort((prev) => (prev?.key === col.key ? { key: col.key!, dir: prev.dir === 1 ? -1 : 1 } : { key: col.key!, dir: 1 }))} className="inline-flex items-center gap-1 uppercase hover:text-[var(--text)]">
-                        {col.label}
-                        <span className="text-[9px]">{productSort?.key === col.key ? (productSort.dir === 1 ? "▲" : "▼") : ""}</span>
-                      </button>
-                    ) : col.label}
-                  </th>
-                ))}
-                <th className="pr-3 text-right">操作</th>
-              </tr>
-            </thead>
-            <tbody>
-              {pagedProducts.map((product) => {
-                const m = productMargin(product, pointsPerBrlRate);
-                const low = isLowStock(product);
-                return (
-                  <tr key={product.id} onClick={() => setDrawerId(product.id)} className="cursor-pointer border-t border-[var(--line)] transition-colors hover:bg-[var(--surface-hover)]">
-                    <td className="px-3 py-1" onClick={(e) => e.stopPropagation()}>
-                      <input type="checkbox" aria-label={`选择 ${product.name}`} checked={selectedIds.has(product.id)} onChange={() => toggleSelect(product.id)} className="h-4 w-4 accent-[var(--accent)]" />
-                    </td>
-                    <td className="py-1 pr-2">
-                      <div className="flex items-center gap-2.5">
-                        <div className="h-12 w-12 shrink-0 overflow-hidden rounded-[8px] border border-[var(--line)] bg-[var(--surface-raised)]">
-                          {/* eslint-disable-next-line @next/next/no-img-element */}
-                          {product.imageUrl ? <img src={product.imageUrl} alt="" className="h-full w-full object-cover" /> : <div className="grid h-full w-full place-items-center text-lg">🎁</div>}
-                        </div>
-                        <div className="min-w-0">
-                          <div className="max-w-[260px] truncate text-sm font-black">{product.name}{product.isVirtual ? <span className="ml-1.5 text-[10px] font-bold text-[var(--muted)]">虚拟</span> : null}</div>
-                          <div className="max-w-[260px] truncate text-[11px] font-bold text-[var(--muted)]">{product.supplierName ?? "自营"}{product.category ? ` · ${product.category}` : ""}</div>
-                        </div>
-                      </div>
-                    </td>
-                    <td className="pr-2">{statusBadge(product.status, productStatusLabel[product.status] ?? product.status)}</td>
-                    <td className={`pr-2 font-black ${low ? "text-[var(--danger)]" : ""}`}>{product.stock}{low ? <span className="ml-1 text-[10px] font-bold">低</span> : null}</td>
-                    <td className="pr-2 font-black">{product.pointsPrice > 0 ? product.pointsPrice.toLocaleString() : "—"}{(product.cashPriceBRL ?? 0) > 0 ? <span className="text-[11px] font-bold text-[var(--muted)]"> +R${(product.cashPriceBRL ?? 0).toFixed(2)}</span> : null}</td>
-                    <td className={`pr-2 font-black ${m.margin < 0 ? "text-[var(--danger)]" : ""}`}>{product.status === "pending_pricing" ? "—" : `${m.pct.toFixed(1)}%`}</td>
-                    <td className="pr-2 font-bold">{(product.franchiseShareBRL ?? 0) > 0 ? `R$ ${(product.franchiseShareBRL ?? 0).toFixed(2)}` : "—"}</td>
-                    <td className="pr-3 text-right" onClick={(e) => e.stopPropagation()}>
-                      <button type="button" onClick={() => setDrawerId(product.id)} className="h-8 rounded-[8px] border border-[var(--line)] px-3 text-xs font-bold text-[var(--muted)] hover:border-[var(--accent)]">配置</button>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
+      {/* ---- 商品表格（kit DataTable；排序 / 行点击开抽屉） ---- */}
+      {products.length === 0 ? (
+        <div className="panel p-10 text-center text-sm font-bold text-[var(--muted)]">还没有商品——等供应商在供应链后台提报。</div>
+      ) : (
+        <DataTable
+          columns={productColumns}
+          rows={pagedProducts}
+          rowKey={(product) => product.id}
+          onRowClick={(product) => setDrawerId(product.id)}
+          sort={productSort}
+          onSort={(key) => setProductSort((prev) => (prev?.key === key ? { key, dir: prev.dir === 1 ? -1 : 1 } : { key, dir: 1 }))}
+          minWidth={900}
+          empty="没有匹配的商品——换个关键字或状态试试。"
+        />
       )}
 
       {/* ---- 配置抽屉 ---- */}
@@ -367,8 +383,7 @@ function ProductDrawer({ product, proc, showProcurement, rate, note, onClose, po
         )}
 
         {/* ---- 1. 基本信息 → updateProduct ---- */}
-        <section className="rounded-[10px] border border-[var(--line)] bg-[var(--surface-raised)] p-4">
-          <div className="mb-3 text-xs font-black uppercase text-[var(--muted)]">基本信息</div>
+        <SectionCard title="基本信息">
           <div className="space-y-2.5">
             <label className={labelCls}>名称
               <input value={basic.name} onChange={(e) => setBasic((prev) => ({ ...prev, name: e.target.value }))} className={inputCls} />
@@ -390,11 +405,10 @@ function ProductDrawer({ product, proc, showProcurement, rate, note, onClose, po
             </label>
           </div>
           <button type="button" onClick={() => void saveBasic()} className={`mt-3 ${outlineBtn}`}>保存基本信息</button>
-        </section>
+        </SectionCard>
 
         {/* ---- 2. 定价 → priceProduct（唯一主按钮） ---- */}
-        <section className="rounded-[10px] border border-[var(--line)] bg-[var(--surface-raised)] p-4">
-          <div className="mb-3 text-xs font-black uppercase text-[var(--muted)]">定价</div>
+        <SectionCard title="定价">
           <div className="grid grid-cols-3 gap-2">
             <label className={labelCls}>积分价
               <input value={price.points} onChange={(e) => setPrice((prev) => ({ ...prev, points: e.target.value }))} inputMode="numeric" className={inputCls} />
@@ -410,11 +424,10 @@ function ProductDrawer({ product, proc, showProcurement, rate, note, onClose, po
             积分折合 R$ {m.pointsAsBrl.toFixed(2)}（{rate} 分 = R$1）· 收入 R$ {m.revenue.toFixed(2)} · 成本 R$ {m.cost.toFixed(2)}（供货 {(product.supplyPrice ?? 0).toFixed(2)} + 分成 {draftShare.toFixed(2)}）· 毛利 <b className="font-black">R$ {m.margin.toFixed(2)}（{m.pct.toFixed(1)}%）</b>{m.margin < 0 ? " ⚠ 负毛利" : ""}
           </div>
           <button type="button" onClick={() => void savePricing()} className="mt-3 h-9 rounded-[8px] bg-[var(--accent)] px-4 text-xs font-bold text-[var(--accent-ink)]">定价上架</button>
-        </section>
+        </SectionCard>
 
         {/* ---- 3. 库存 → updateProduct（改库存必填原因，入库存台账） ---- */}
-        <section className="rounded-[10px] border border-[var(--line)] bg-[var(--surface-raised)] p-4">
-          <div className="mb-3 text-xs font-black uppercase text-[var(--muted)]">库存</div>
+        <SectionCard title="库存">
           <div className="grid grid-cols-3 gap-2">
             <label className={labelCls}>当前库存
               <input value={stockDraft.stock} onChange={(e) => setStockDraft((prev) => ({ ...prev, stock: e.target.value }))} inputMode="numeric" className={inputCls} />
@@ -428,15 +441,14 @@ function ProductDrawer({ product, proc, showProcurement, rate, note, onClose, po
           </div>
           <div className="mt-2 text-[11px] font-bold text-[var(--muted)]">修改库存需填写原因，将随库存台账（不可篡改）记录。</div>
           <button type="button" onClick={() => void saveStock()} className={`mt-3 ${outlineBtn}`}>保存库存配置</button>
-        </section>
+        </SectionCard>
 
         {/* ---- 4. 加盟商直采 → setProductProcurement / reviewProcurementConsent（flag 关或 403 时整区隐藏） ---- */}
         {showProcurement && proc && (
-          <section className="rounded-[10px] border border-[var(--line)] bg-[var(--surface-raised)] p-4">
-            <div className="mb-3 flex items-center gap-2">
-              <span className="text-xs font-black uppercase text-[var(--muted)]">加盟商直采</span>
-              {proc.procurementConsent === "approved" ? statusBadge("approved", "供应商已同意") : proc.procurementConsent === "pending" ? statusBadge("pending", "供应商同意待审") : statusBadge("none", "供应商未开放")}
-            </div>
+          <SectionCard
+            title="加盟商直采"
+            right={proc.procurementConsent === "approved" ? statusBadge("approved", "供应商已同意") : proc.procurementConsent === "pending" ? statusBadge("pending", "供应商同意待审") : statusBadge("none", "供应商未开放")}
+          >
             {proc.procurementConsent === "pending" && (
               <div className="mb-3 flex items-center gap-2 rounded-[8px] border border-[var(--warn)]/40 bg-[var(--warn-bg)] px-3 py-2">
                 <span className="flex-1 text-[11px] font-bold text-[var(--warn)]">供应商申请开放直采{proc.suggestedBuyoutPrice > 0 ? `，建议买断价 R$ ${proc.suggestedBuyoutPrice.toFixed(2)}` : ""}</span>
@@ -460,17 +472,16 @@ function ProductDrawer({ product, proc, showProcurement, rate, note, onClose, po
             </div>
             {proc.procurementConsent !== "approved" && <div className="mt-2 text-[11px] font-bold text-[var(--muted)]">供应商商品需先获供应商同意并经总部批准，才能开放直采模式。</div>}
             <button type="button" onClick={() => void saveProcurement()} className={`mt-3 ${outlineBtn}`}>保存直采配置</button>
-          </section>
+          </SectionCard>
         )}
 
         {/* ---- 5. 危险区 ---- */}
-        <section className="rounded-[10px] border border-[var(--danger)]/40 p-4">
-          <div className="mb-3 text-xs font-black uppercase text-[var(--danger)]">危险区</div>
+        <SectionCard title={<span className="text-[var(--danger)]">危险区</span>} className="border-[var(--danger)]/40">
           <div className="flex flex-wrap gap-2">
             {product.status === "active" && <button type="button" onClick={() => void pauseProduct()} className={dangerBtn}>下架商品</button>}
             <button type="button" onClick={() => void removeProduct()} className={dangerBtn}>删除商品</button>
           </div>
-        </section>
+        </SectionCard>
       </div>
     </Drawer>
   );

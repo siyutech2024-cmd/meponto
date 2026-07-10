@@ -1,16 +1,16 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Boxes, Building2, ChevronRight, CircleDollarSign, ClipboardList, Download, LayoutDashboard, PackagePlus, RefreshCcw, Tags, Truck, UserPlus, Users } from "lucide-react";
-import { AppShell, Badge, FormDialog } from "../../components/ui";
+import { Boxes, Building2, CircleDollarSign, ClipboardList, Download, LayoutDashboard, PackagePlus, RefreshCcw, Tags, Truck, UserPlus, Users } from "lucide-react";
+import { AppShell, FormDialog } from "../../components/ui";
 import { useDialog } from "../../components/dialog";
 import { downloadCsv } from "../../lib/csv";
 import type { MarketplaceProduct } from "../../lib/points";
 import type { PriceChangeRequest, PurchaseOrder, SupplierStatement } from "../../lib/mall-ops";
-import { poStatusLabel, statementStatusLabel } from "../../lib/mall-ops";
 import type { FranchisePurchaseOrder } from "../../lib/procurement";
 import { useVentoStore } from "../../lib/store";
 import { translate, type TranslationKey } from "../../lib/i18n";
+import { Chip, DataTable, Drawer, SearchInput, SectionCard, Stat, StatusBadge, TodoCard, Toolbar, type BadgeTone, type DataColumn } from "../kit";
 
 type SupplierProfileT = { id: string; companyName: string; brand: string; cnpj: string; contactName: string; contactEmail: string; contactPhone: string; address: string; pixKey: string; logoUrl: string; about: string; updatedAt?: string };
 type TeamMember = { id: string; name: string; identifier: string; phone: string; role: string; status: string; organization?: string; createdAt: string; lastLoginAt?: string };
@@ -21,9 +21,8 @@ type SupplierData = { profile: SupplierProfileT; team: TeamMember[]; orders: Sup
  * Supplier supply-chain workspace (supplier.meponto.com): catalog + quotes,
  * price-change requests, purchase orders, monthly statements and a
  * performance dashboard — scoped to the logged-in supplier organization.
+ * Rebuilt on the shared mall kit (Stat/TodoCard/DataTable/Drawer/SectionCard).
  */
-
-const statusLabel: Record<string, string> = { active: "已上架", paused: "已下架", pending_pricing: "待商城定价" };
 
 type OpsPayload = {
   priceChanges: PriceChangeRequest[];
@@ -43,21 +42,52 @@ const TABS = [
   { id: "team", label: "团队账户", icon: Users },
 ] as const;
 
-const orderStatusLabel: Record<string, string> = { created: "待履约", arrived: "已到站", fulfilled: "已完成", held: "审核中" };
+/** StatusBadge semantics — green = flowing, amber = waiting on a human, red = exception, gray = terminal. */
+const productStatusMeta: Record<string, { key: TranslationKey; tone: BadgeTone }> = {
+  active: { key: "swPStActive", tone: "success" },
+  paused: { key: "swPStPaused", tone: "neutral" },
+  pending_pricing: { key: "swPStPending", tone: "warn" },
+};
+const orderStatusMeta: Record<string, { key: TranslationKey; tone: BadgeTone }> = {
+  created: { key: "swOStCreated", tone: "success" },
+  arrived: { key: "swOStArrived", tone: "success" },
+  fulfilled: { key: "swOStFulfilled", tone: "neutral" },
+  held: { key: "swOStHeld", tone: "warn" },
+};
+const poStatusMeta: Record<string, { key: TranslationKey; tone: BadgeTone }> = {
+  draft: { key: "swPoStDraft", tone: "neutral" },
+  ordered: { key: "swPoStOrdered", tone: "warn" },
+  confirmed: { key: "swPoStConfirmed", tone: "success" },
+  shipped: { key: "swPoStShipped", tone: "success" },
+  received: { key: "swPoStReceived", tone: "neutral" },
+  cancelled: { key: "swPoStCancelled", tone: "neutral" },
+};
+const fpoStatusMeta: Record<string, { key: TranslationKey; tone: BadgeTone }> = {
+  submitted: { key: "fpStSubmitted", tone: "warn" },
+  approved: { key: "fpStApproved", tone: "warn" },
+  confirmed: { key: "fpStConfirmed", tone: "success" },
+  shipped: { key: "fpStShipped", tone: "success" },
+  arrived: { key: "fpStArrived", tone: "success" },
+  received: { key: "fpStReceived", tone: "neutral" },
+  rejected: { key: "fpStRejected", tone: "danger" },
+  cancelled: { key: "fpStCancelled", tone: "neutral" },
+};
+const stmtStatusMeta: Record<string, { key: TranslationKey; tone: BadgeTone }> = {
+  draft: { key: "swStmtDraft", tone: "warn" },
+  confirmed: { key: "swStmtConfirmed", tone: "success" },
+  disputed: { key: "swStmtDisputed", tone: "danger" },
+  paid: { key: "swStmtPaid", tone: "neutral" },
+};
+const priceChangeMeta: Record<string, { key: TranslationKey; tone: BadgeTone }> = {
+  pending: { key: "swPcPending", tone: "warn" },
+  approved: { key: "swPcApproved", tone: "success" },
+  rejected: { key: "swPcRejected", tone: "danger" },
+};
 
-
-function Stat({ label, value, hint, onClick }: { label: string; value: string; hint?: string; onClick?: () => void }) {
-  return (
-    <div className={`panel p-4${onClick ? " cursor-pointer transition-colors hover:border-[var(--accent)]" : ""}`} onClick={onClick} role={onClick ? "button" : undefined}>
-      <div className="text-[11px] font-black uppercase text-[var(--muted)]">{label}</div>
-      <div className="mt-1 text-2xl font-black">{value}</div>
-      {hint && <div className="mt-0.5 text-[11px] font-bold text-[var(--muted)]">{hint}</div>}
-    </div>
-  );
-}
-
-/** Page-local fallback while the ops backend rolls out the "disputed" state. */
-const extraStatementLabel: Record<string, string> = { disputed: "有异议·待总部处理" };
+/** Unified secondary button (per design: at most one solid yellow primary per view). */
+const btnGhost = "h-8 rounded-[8px] border border-[var(--line)] px-3 text-xs font-black text-[var(--muted)] hover:border-[var(--accent)] hover:text-[var(--text)] disabled:opacity-50";
+const btnDanger = "h-8 rounded-[8px] border border-[var(--danger)]/40 px-3 text-xs font-black text-[var(--danger)]";
+const inputCls = "rounded-[8px] border border-[var(--line)] bg-[var(--surface-raised)] text-sm font-bold outline-none focus:border-[var(--accent)]";
 
 export default function SupplierWorkspacePage() {
   const dialog = useDialog();
@@ -75,7 +105,7 @@ export default function SupplierWorkspacePage() {
   const [profileForm, setProfileForm] = useState<SupplierProfileT>(emptyProfile);
   const [member, setMember] = useState({ name: "", identifier: "", phone: "" });
   const [newCred, setNewCred] = useState<{ identifier: string; tempPassword: string } | null>(null);
-  const [openStmt, setOpenStmt] = useState<Set<string>>(new Set());
+  const [activeStmtId, setActiveStmtId] = useState<string | null>(null);
   const [products, setProducts] = useState<MarketplaceProduct[]>([]);
   const [ops, setOps] = useState<OpsPayload | null>(null);
   const [fpos, setFpos] = useState<FranchisePurchaseOrder[]>([]);
@@ -89,6 +119,8 @@ export default function SupplierWorkspacePage() {
   const [suggestDraft, setSuggestDraft] = useState<Record<string, string>>({});
   const [pixDraft, setPixDraft] = useState("");
   const [orderFilter, setOrderFilter] = useState("");
+  const [orderQuery, setOrderQuery] = useState("");
+  const [productQuery, setProductQuery] = useState("");
   /** PO currently being shipped via the structured ship dialog (tracking no + note). */
   const [shipTarget, setShipTarget] = useState<PurchaseOrder | null>(null);
 
@@ -243,10 +275,10 @@ export default function SupplierWorkspacePage() {
   function consentOf(product: MarketplaceProduct): "none" | "pending" | "approved" {
     return product.procurementConsent ?? ((product.procurementMode ?? "off") !== "off" ? "approved" : "none");
   }
-  const consentLabelKey: Record<"none" | "pending" | "approved", TranslationKey> = {
-    none: "fpoConsentNone",
-    pending: "fpoConsentPending",
-    approved: "fpoConsentApproved",
+  const consentMeta: Record<"none" | "pending" | "approved", { key: TranslationKey; tone: BadgeTone }> = {
+    none: { key: "fpoConsentNone", tone: "neutral" },
+    pending: { key: "fpoConsentPending", tone: "warn" },
+    approved: { key: "fpoConsentApproved", tone: "success" },
   };
 
   async function supplierPost(body: Record<string, unknown>, okText?: string) {
@@ -260,8 +292,8 @@ export default function SupplierWorkspacePage() {
 
   function exportStatement(statement: SupplierStatement) {
     const rows = statement.lines.map((l) => [l.date, l.orderId, l.productName, l.supplyPrice.toFixed(2)]);
-    rows.push(["合计", "", "", statement.total.toFixed(2)]);
-    downloadCsv(`extrato-${supplierName}-${statement.month}`, ["日期", "订单", "商品", "供货价"], rows);
+    rows.push([t("fpTotal"), "", "", statement.total.toFixed(2)]);
+    downloadCsv(`extrato-${supplierName}-${statement.month}`, [t("mkColDate"), t("mkColOrder"), t("mkColProduct"), t("swColSupply")], rows);
   }
 
   const payableTotal = (ops?.statements ?? []).filter((statement) => statement.status !== "paid").reduce((sum, statement) => sum + statement.total, 0);
@@ -270,7 +302,133 @@ export default function SupplierWorkspacePage() {
   const monthKey = new Date().toISOString().slice(0, 7);
   const monthExpected = (sup?.orders ?? []).filter((o) => o.createdAt.slice(0, 7) === monthKey && (o.status === "fulfilled" || o.status === "arrived")).reduce((sum, o) => sum + o.supplyPrice, 0);
   const draftStatementCount = (ops?.statements ?? []).filter((statement) => statement.status === "draft").length;
-  const filteredOrders = (sup?.orders ?? []).filter((o) => !orderFilter || o.status === orderFilter);
+  const oq = orderQuery.trim().toLowerCase();
+  const filteredOrders = (sup?.orders ?? []).filter((o) =>
+    (!orderFilter || o.status === orderFilter) &&
+    (!oq || o.id.toLowerCase().includes(oq) || o.productName.toLowerCase().includes(oq) || (o.station ?? "").toLowerCase().includes(oq)));
+  const pq = productQuery.trim().toLowerCase();
+  const myProducts = products.filter((product) => product.supplierName === supplierName);
+  const visibleProducts = myProducts.filter((product) => !pq || product.name.toLowerCase().includes(pq) || (product.category ?? "").toLowerCase().includes(pq));
+  const activeStmt = (ops?.statements ?? []).find((statement) => statement.id === activeStmtId) ?? null;
+
+  const badgeOf = (meta: { key: TranslationKey; tone: BadgeTone } | undefined, raw: string) =>
+    meta ? <StatusBadge tone={meta.tone} label={t(meta.key)} /> : <StatusBadge tone="neutral" label={raw} />;
+
+  // ---- DataTable column defs ----------------------------------------------
+
+  const productCols: Array<DataColumn<MarketplaceProduct>> = [
+    {
+      key: "product", label: t("mkColProduct"), render: (product) => (
+        <span className="flex min-w-0 items-center gap-2.5">
+          <span className="h-9 w-9 shrink-0 overflow-hidden rounded-[8px] border border-[var(--line)] bg-[var(--surface-raised)]">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            {product.imageUrl ? <img src={product.imageUrl} alt="" className="h-full w-full object-cover" /> : <span className="grid h-full w-full place-items-center text-sm">🎁</span>}
+          </span>
+          <span className="min-w-0">
+            <span className="block truncate font-black">{product.name}</span>
+            {product.category && <span className="block truncate text-[11px] text-[var(--muted)]">{product.category}</span>}
+          </span>
+        </span>
+      ),
+    },
+    { key: "status", label: t("mkColStatus"), render: (product) => badgeOf(productStatusMeta[product.status], product.status) },
+    { key: "supply", label: t("swColSupply"), align: "right", render: (product) => <>R$ {(product.supplyPrice ?? 0).toFixed(2)}</> },
+    { key: "stock", label: t("swColStock"), align: "right", render: (product) => <>{product.stock}</> },
+    { key: "cycle", label: t("swColCycle"), render: (product) => t("swDays", { n: product.deliveryCycleDays ?? 7 }) },
+    {
+      key: "mall", label: t("swColMallPrice"), render: (product) =>
+        product.pointsPrice ? <>{product.pointsPrice} {t("dynPts")}{product.cashPriceBRL ? ` + R$${product.cashPriceBRL.toFixed(2)}` : ""}</> : <span className="text-[var(--muted)]">—</span>,
+    },
+    {
+      key: "actions", label: t("mkColActions"), align: "right", render: (product) => (
+        <span className="inline-flex items-center justify-end gap-1.5">
+          {product.status === "pending_pricing" ? (
+            <>
+              <button type="button" onClick={() => startEdit(product)} className={btnGhost}>{t("swEdit")}</button>
+              <button type="button" onClick={async () => { if (await dialog.confirm(t("swDelTitle"), { message: t("dynDelUnpriced", { n: product.name }), confirmText: t("swDelBtn"), tone: "danger" })) void post("/api/mall", { action: "supplierDeleteProduct", productId: product.id }, t("swOkDeleted")); }} className={btnDanger}>{t("swDelBtn")}</button>
+            </>
+          ) : (
+            <>
+              <input value={priceDraft[product.id] ?? ""} onChange={(e) => setPriceDraft((prev) => ({ ...prev, [product.id]: e.target.value }))} placeholder={t("swNewPricePh")} className={`h-8 w-24 px-2 ${inputCls}`} />
+              <button type="button" disabled={!(Number(priceDraft[product.id]) > 0)} onClick={() => void post("/api/mall/ops", { action: "requestPriceChange", productId: product.id, newPrice: Number(priceDraft[product.id]) }, t("swOkPriceReq")).then(() => setPriceDraft((prev) => ({ ...prev, [product.id]: "" })))} className={btnGhost}>{t("swAskPrice")}</button>
+            </>
+          )}
+        </span>
+      ),
+    },
+  ];
+
+  const orderCols: Array<DataColumn<SupplierOrder>> = [
+    { key: "id", label: t("mkColOrder"), render: (o) => <span className="font-mono text-xs text-[var(--muted)]">{o.id}</span> },
+    { key: "product", label: t("mkColProduct"), render: (o) => o.productName },
+    { key: "date", label: t("mkColDate"), render: (o) => <span className="text-[var(--muted)]">{o.createdAt.slice(0, 10)}</span> },
+    { key: "type", label: "类型", render: (o) => <span className="tag">{o.accountType === "partner" ? "Partner" : t("swAudRider")}</span> },
+    { key: "status", label: t("mkColStatus"), render: (o) => badgeOf(orderStatusMeta[o.status], o.status) },
+    { key: "price", label: t("swColSupply"), align: "right", render: (o) => <>R$ {o.supplyPrice.toFixed(2)}</> },
+  ];
+
+  const poCols: Array<DataColumn<PurchaseOrder>> = [
+    { key: "id", label: t("mkColOrder"), render: (po) => <span className="font-mono text-xs">{po.id}</span> },
+    { key: "status", label: t("mkColStatus"), render: (po) => badgeOf(poStatusMeta[po.status], po.status) },
+    { key: "qty", label: t("fpQty"), align: "right", render: (po) => <>{po.items.reduce((sum, item) => sum + item.qty, 0)}</> },
+    { key: "cost", label: t("swColCost"), align: "right", render: (po) => <>R$ {po.totalCost.toFixed(2)}</> },
+    {
+      key: "items", label: t("mkColItems"), className: "max-w-[280px]", render: (po) => (
+        <span className="block truncate text-xs text-[var(--muted)]">
+          {po.items.map((item) => `${item.name}×${item.qty}`).join("、")}{po.note ? t("dynNote", { x: po.note }) : ""}{po.shipNote ? t("dynLogistics", { x: po.shipNote }) : ""}
+        </span>
+      ),
+    },
+    { key: "date", label: t("mkColDate"), render: (po) => <span className="text-[var(--muted)]">{po.createdAt.slice(0, 10)}</span> },
+    {
+      key: "actions", label: t("mkColActions"), align: "right", render: (po) => (
+        <span className="inline-flex justify-end gap-1.5">
+          {po.status === "ordered" && <button type="button" onClick={() => void post("/api/mall/ops", { action: "confirmPO", poId: po.id }, t("swOkPoConfirmed"))} className={btnGhost}>{t("swConfirmPo")}</button>}
+          {po.status === "confirmed" && <button type="button" onClick={() => setShipTarget(po)} className={btnGhost}>{t("swShipPo")}</button>}
+          {po.status !== "ordered" && po.status !== "confirmed" && <span className="text-[var(--muted)]">—</span>}
+        </span>
+      ),
+    },
+  ];
+
+  const fpoCols: Array<DataColumn<FranchisePurchaseOrder>> = [
+    { key: "id", label: t("mkColOrder"), render: (fpo) => <span className="font-mono text-xs">{fpo.id}</span> },
+    { key: "mode", label: t("fpoModeCol"), render: (fpo) => <StatusBadge tone="info" label={t(fpo.mode === "buyout" ? "fpModeBuyout" : "fpModeConsignment")} /> },
+    { key: "status", label: t("mkColStatus"), render: (fpo) => badgeOf(fpoStatusMeta[fpo.status], fpo.status) },
+    { key: "route", label: `${t("fpoMarginFranchise")} → ${t("fpStation")}`, render: (fpo) => <span className="text-xs">{fpo.franchise} → {fpo.stationName}</span> },
+    { key: "qty", label: t("fpQty"), align: "right", render: (fpo) => <>{fpo.items.reduce((sum, item) => sum + item.qty, 0)}</> },
+    {
+      key: "items", label: t("mkColItems"), className: "max-w-[240px]", render: (fpo) => (
+        <span className="block truncate text-xs text-[var(--muted)]">{fpo.items.map((item) => `${item.name}×${item.qty}`).join("、")}{fpo.shipNote ? t("dynLogistics", { x: fpo.shipNote }) : ""}</span>
+      ),
+    },
+    { key: "date", label: t("mkColDate"), render: (fpo) => <span className="text-[var(--muted)]">{fpo.createdAt.slice(0, 10)}</span> },
+    {
+      key: "actions", label: t("mkColActions"), align: "right", render: (fpo) => (
+        <span className="inline-flex justify-end gap-1.5">
+          {fpo.status === "approved" && <button type="button" onClick={() => void fpoPost({ action: "confirmFPO", fpoId: fpo.id }, t("swOkFpoConfirmed"))} className={btnGhost}>{t("swConfirmPo")}</button>}
+          {fpo.status === "confirmed" && <button type="button" onClick={() => { const note = prompt(t("spShipNote")) ?? ""; void fpoPost({ action: "shipFPO", fpoId: fpo.id, shipNote: note }, t("swOkShipped")); }} className={btnGhost}>{t("swShipPo")}</button>}
+          {fpo.status === "shipped" && <button type="button" onClick={() => void fpoPost({ action: "arriveFPO", fpoId: fpo.id }, t("swOkFpoArrived"))} className={btnGhost}>{t("fpoArriveBtn")}</button>}
+          {!["approved", "confirmed", "shipped"].includes(fpo.status) && <span className="text-[var(--muted)]">—</span>}
+        </span>
+      ),
+    },
+  ];
+
+  const stmtCols: Array<DataColumn<SupplierStatement>> = [
+    { key: "month", label: t("fpoMarginMonth"), render: (statement) => <span className="font-black">{statement.month}</span> },
+    { key: "status", label: t("mkColStatus"), render: (statement) => badgeOf(stmtStatusMeta[statement.status], statement.status) },
+    { key: "lines", label: t("swColLines"), align: "right", render: (statement) => <>{statement.lines.length}</> },
+    { key: "total", label: t("mkColAmount"), align: "right", render: (statement) => <>R$ {statement.total.toFixed(2)}</> },
+    {
+      key: "note", label: "", className: "max-w-[300px]", render: (statement) => (
+        <span className="block truncate text-xs text-[var(--muted)]">
+          {statement.status === "disputed" && (statement as SupplierStatement & { disputeNote?: string }).disputeNote ? t("swDisputeNote", { x: (statement as SupplierStatement & { disputeNote?: string }).disputeNote }) : statement.paidAt ? t("swPaidLine", { x: statement.paidAt }) : ""}
+        </span>
+      ),
+    },
+    { key: "view", label: t("mkColActions"), align: "right", render: () => <span className="text-xs font-black text-[var(--muted)]">{t("mkView")} ›</span> },
+  ];
 
   return (
     <AppShell>
@@ -283,22 +441,90 @@ export default function SupplierWorkspacePage() {
       {/* Structured ship dialog: tracking number + note → merged shipNote text. */}
       <FormDialog
         open={shipTarget !== null}
-        title="标记发货"
-        body={shipTarget ? `补货单 ${shipTarget.id} · ${shipTarget.items.reduce((sum, item) => sum + item.qty, 0)} 件。填写物流信息后通知商城收货。` : undefined}
+        title={t("swShipPo")}
+        body={shipTarget ? t("swShipBody", { id: shipTarget.id, n: shipTarget.items.reduce((sum, item) => sum + item.qty, 0) }) : undefined}
         fields={[
-          { key: "trackingNo", label: "物流单号", placeholder: "如 BR123456789" },
-          { key: "note", label: "备注（可空）", placeholder: "承运商 / 预计送达等" },
+          { key: "trackingNo", label: t("swShipTrack"), placeholder: t("swShipTrackPh") },
+          { key: "note", label: t("swShipNoteL"), placeholder: t("swShipNotePh") },
         ]}
-        confirmText="确认发货"
+        confirmText={t("swShipConfirm")}
         onClose={() => setShipTarget(null)}
         onConfirm={(values) => {
           if (!shipTarget) return;
-          const parts = [values.trackingNo.trim() ? `单号: ${values.trackingNo.trim()}` : "", values.note.trim()].filter(Boolean);
+          const parts = [values.trackingNo.trim() ? `${t("swShipTrack")}: ${values.trackingNo.trim()}` : "", values.note.trim()].filter(Boolean);
           const poId = shipTarget.id;
           setShipTarget(null);
-          void post("/api/mall/ops", { action: "shipPO", poId, shipNote: parts.join(" · ") }, "已标记发货");
+          void post("/api/mall/ops", { action: "shipPO", poId, shipNote: parts.join(" · ") }, t("swOkShipped"));
         }}
       />
+
+      {/* Statement detail drawer (was an inline expander). */}
+      <Drawer
+        open={activeStmt !== null}
+        onClose={() => setActiveStmtId(null)}
+        width={520}
+        ariaLabel={t("swStTitle")}
+        title={activeStmt ? (
+          <div className="flex items-center gap-2">
+            <span className="text-base font-black">{activeStmt.month}</span>
+            {badgeOf(stmtStatusMeta[activeStmt.status], activeStmt.status)}
+            <span className="text-xs font-bold text-[var(--muted)]">{t("swLinesCount", { n: activeStmt.lines.length })}</span>
+          </div>
+        ) : null}
+      >
+        {activeStmt && (
+          <div className="space-y-4">
+            <div className="flex items-end justify-between rounded-[10px] border border-[var(--line)] bg-[var(--surface-raised)] p-4">
+              <div>
+                <div className="text-[11px] font-black uppercase text-[var(--muted)]">{t("fpTotal")}</div>
+                <div className="mt-1 text-2xl font-black">R$ {activeStmt.total.toFixed(2)}</div>
+              </div>
+              <button type="button" onClick={() => exportStatement(activeStmt)} className={`inline-flex items-center gap-1 ${btnGhost}`}><Download size={12} /> CSV</button>
+            </div>
+
+            {(activeStmt.status as string) === "disputed" && (activeStmt as SupplierStatement & { disputeNote?: string }).disputeNote && (
+              <div className="rounded-[8px] border border-[var(--warn)]/40 bg-[var(--warn-bg)] px-3 py-2 text-xs font-bold text-[var(--warn)]">{t("swDisputeNote", { x: (activeStmt as SupplierStatement & { disputeNote?: string }).disputeNote })}</div>
+            )}
+            {activeStmt.paidAt && (
+              <div className="rounded-[8px] border border-[var(--success)]/40 bg-[var(--success-bg)] px-3 py-2 text-xs font-bold text-[var(--success)]">{t("swPaidLine", { x: activeStmt.paidAt })}{activeStmt.receiptNote ? ` · ${activeStmt.receiptNote}` : ""}</div>
+            )}
+
+            {activeStmt.status === "draft" && (
+              <div className="space-y-2 rounded-[10px] border border-[var(--line)] p-4">
+                <label className="block text-[11px] font-black text-[var(--muted)]">{t("swPixPh")}
+                  <input value={pixDraft} onChange={(e) => setPixDraft(e.target.value)} placeholder={t("swPixPh")} className={`mt-1 h-10 w-full px-3 font-mono ${inputCls}`} />
+                </label>
+                <button type="button" onClick={() => { const statementId = activeStmt.id; setActiveStmtId(null); void post("/api/mall/ops", { action: "confirmStatement", statementId, pixKey: pixDraft }, t("swOkStmtConfirmed")); }} className="h-10 w-full rounded-[8px] bg-[var(--accent)] px-4 text-sm font-black text-[var(--accent-ink)]">{t("swConfirmStmt")}</button>
+              </div>
+            )}
+            {(activeStmt.status === "draft" || activeStmt.status === "confirmed") && (
+              <button
+                type="button"
+                onClick={async () => {
+                  const note = await dialog.prompt(t("swDisputeTitle"), { message: t("swDisputeMsg", { m: activeStmt.month, n: activeStmt.lines.length, v: activeStmt.total.toFixed(2) }), placeholder: t("swDisputePh") });
+                  if (note === null) return;
+                  if (!note.trim()) { setMessage({ tone: "err", text: t("swDisputeNeedReason") }); return; }
+                  const statementId = activeStmt.id;
+                  setActiveStmtId(null);
+                  void post("/api/mall/ops", { action: "disputeStatement", statementId, note: note.trim() }, t("swOkDisputed"));
+                }}
+                className="h-10 w-full rounded-[8px] border border-[var(--danger)]/40 px-3 text-xs font-black text-[var(--danger)]"
+              >{t("swDispute")}</button>
+            )}
+
+            <div className="overflow-hidden rounded-[8px] border border-[var(--line)]">
+              <table className="w-full text-xs">
+                <thead><tr className="bg-[var(--surface-raised)] text-left font-black uppercase text-[var(--muted)]"><th className="px-3 py-1.5">{t("mkColDate")}</th><th className="px-3 py-1.5">{t("mkColProduct")}</th><th className="px-3 py-1.5">{t("mkColOrder")}</th><th className="px-3 py-1.5 text-right">{t("swColSupply")}</th></tr></thead>
+                <tbody>
+                  {activeStmt.lines.map((l, i) => (
+                    <tr key={`${l.orderId}-${i}`} className="border-t border-[var(--line)] font-bold"><td className="px-3 py-1.5">{l.date}</td><td className="px-3 py-1.5">{l.productName}</td><td className="px-3 py-1.5 font-mono text-[var(--muted)]">{l.orderId}</td><td className="px-3 py-1.5 text-right">R$ {l.supplyPrice.toFixed(2)}</td></tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+      </Drawer>
 
       <div className="lg:grid lg:grid-cols-[220px_1fr] lg:items-start lg:gap-6">
         {/* Left rail — company card + vertical section nav */}
@@ -334,135 +560,196 @@ export default function SupplierWorkspacePage() {
 
         <div className="min-w-0 space-y-5">
 
+      {/* ============ 概览 ============ */}
+      {tab === "overview" && (
+        <div className="space-y-5">
+          <div className="grid grid-cols-2 gap-3 md:grid-cols-3">
+            <Stat label={t("swStatSold")} value={String(ops?.summary.orders ?? 0)} hint={t("swStatSoldHint")} />
+            <Stat label={t("swStatActive")} value={String(myProducts.filter((product) => product.status === "active").length)} hint={t("dynSkuCount", { n: myProducts.length })} />
+            <Stat label={t("swStatPayable")} value={`R$ ${payableTotal.toFixed(2)}`} hint={t("swStatPayableHint")} />
+            <Stat label={t("swStatPaid")} value={`R$ ${paidTotal.toFixed(2)}`} hint={t("swStatPaidHint")} />
+            <Stat label={t("swStatMonth")} value={`R$ ${monthExpected.toFixed(2)}`} hint={t("swStatMonthHint")} />
+            <TodoCard label={t("swTodoStatements")} value={draftStatementCount} tone={draftStatementCount > 0 ? "warn" : "neutral"} hint={t("swTodoStatementsHint")} onClick={() => setTab("statements")} />
+          </div>
+          <SectionCard title={t("swTrend30")}>
+            <div className="flex h-28 items-end gap-[3px]">
+              {(ops?.summary.daily ?? []).map((day) => (
+                <div key={day.date} className="group relative flex-1 rounded-t-[3px] bg-[var(--accent)]" style={{ height: `${Math.max(3, (day.count / maxDaily) * 100)}%`, opacity: day.count > 0 ? 0.9 : 0.18 }}>
+                  <span className="pointer-events-none absolute -top-7 left-1/2 hidden -translate-x-1/2 whitespace-nowrap rounded bg-black/80 px-1.5 py-0.5 text-[10px] font-bold text-white group-hover:block">{day.date.slice(5)} · {day.count}</span>
+                </div>
+              ))}
+            </div>
+          </SectionCard>
+        </div>
+      )}
+
       {/* ============ 商品与报价 ============ */}
       {tab === "catalog" && (
         <div className="space-y-5">
-          <div className="panel p-5">
-            <div className="mb-3 flex items-center gap-2 text-xs font-black uppercase text-[var(--muted)]"><PackagePlus size={14} /> {editingId ? "编辑商品（仅未定价商品）" : "提报新商品（商城定价后上架）"}</div>
-            <div className="grid gap-2 md:grid-cols-3">
-              {[
-                { key: "name", label: "商品名称 *" },
-                { key: "supplyPrice", label: "供货价 R$ *" },
-                { key: "deliveryCycleDays", label: "供货周期（天）" },
-                { key: "stock", label: "首批库存" },
-                { key: "category", label: "分类（如 Equipamento）" },
-              ].map((field) => (
+          {/* 提报/编辑表单 — 两列宽松 */}
+          <SectionCard title={<span className="inline-flex items-center gap-2"><PackagePlus size={14} /> {editingId ? t("swFormEdit") : t("swFormNew")}</span>}>
+            <div className="grid gap-4 md:grid-cols-2">
+              {([
+                { key: "name", label: t("swFieldName") },
+                { key: "supplyPrice", label: t("swFieldSupplyPrice") },
+                { key: "deliveryCycleDays", label: t("swFieldCycle") },
+                { key: "stock", label: t("swFieldStock") },
+                { key: "category", label: t("swFieldCategory") },
+              ] as const).map((field) => (
                 <label key={field.key} className="text-[11px] font-black text-[var(--muted)]">{field.label}
-                  <input value={(form as Record<string, unknown>)[field.key] as string} onChange={(e) => setForm((prev) => ({ ...prev, [field.key]: e.target.value }))} className="mt-1 h-10 w-full rounded-[8px] border border-[var(--line)] bg-[var(--surface-raised)] px-3 text-sm font-bold outline-none focus:border-[var(--accent)]" />
+                  <input value={(form as Record<string, unknown>)[field.key] as string} onChange={(e) => setForm((prev) => ({ ...prev, [field.key]: e.target.value }))} className={`mt-1.5 h-10 w-full px-3 ${inputCls}`} />
                 </label>
               ))}
-              <label className="text-[11px] font-black text-[var(--muted)]">面向对象
-                <select value={form.audience} onChange={(e) => setForm((prev) => ({ ...prev, audience: e.target.value }))} className="mt-1 h-10 w-full rounded-[8px] border border-[var(--line)] bg-[var(--surface-raised)] px-2 text-sm font-bold outline-none focus:border-[var(--accent)]">
-                  <option value="rider">骑手</option>
-                  <option value="partner">合作方 Partner</option>
-                  <option value="both">两者皆可</option>
+              <label className="text-[11px] font-black text-[var(--muted)]">{t("swFieldAudience")}
+                <select value={form.audience} onChange={(e) => setForm((prev) => ({ ...prev, audience: e.target.value }))} className={`mt-1.5 h-10 w-full px-2 ${inputCls}`}>
+                  <option value="rider">{t("swAudRider")}</option>
+                  <option value="partner">{t("swAudPartner")}</option>
+                  <option value="both">{t("swAudBoth")}</option>
                 </select>
               </label>
-              <label className="text-[11px] font-black text-[var(--muted)]">类型
-                <select value={form.type} onChange={(e) => setForm((prev) => ({ ...prev, type: e.target.value }))} className="mt-1 h-10 w-full rounded-[8px] border border-[var(--line)] bg-[var(--surface-raised)] px-2 text-sm font-bold outline-none focus:border-[var(--accent)]">
-                  <option value="equipment">装备</option>
-                  <option value="safety_item">安全用品</option>
-                  <option value="fuel_coupon">加油券</option>
-                  <option value="maintenance_coupon">维修券</option>
-                  <option value="phone_data">话费/流量</option>
-                  <option value="partner_voucher">合作方券</option>
+              <label className="text-[11px] font-black text-[var(--muted)]">{t("swFieldType")}
+                <select value={form.type} onChange={(e) => setForm((prev) => ({ ...prev, type: e.target.value }))} className={`mt-1.5 h-10 w-full px-2 ${inputCls}`}>
+                  <option value="equipment">{t("swTypeEquipment")}</option>
+                  <option value="safety_item">{t("swTypeSafety")}</option>
+                  <option value="fuel_coupon">{t("swTypeFuel")}</option>
+                  <option value="maintenance_coupon">{t("swTypeMaintenance")}</option>
+                  <option value="phone_data">{t("swTypePhone")}</option>
+                  <option value="partner_voucher">{t("swTypeVoucher")}</option>
                 </select>
               </label>
-              <label className="text-[11px] font-black text-[var(--muted)] md:col-span-3">描述
-                <input value={form.description} onChange={(e) => setForm((prev) => ({ ...prev, description: e.target.value }))} className="mt-1 h-10 w-full rounded-[8px] border border-[var(--line)] bg-[var(--surface-raised)] px-3 text-sm font-bold outline-none focus:border-[var(--accent)]" />
+              <label className="text-[11px] font-black text-[var(--muted)]">{t("swFieldDesc")}
+                <input value={form.description} onChange={(e) => setForm((prev) => ({ ...prev, description: e.target.value }))} className={`mt-1.5 h-10 w-full px-3 ${inputCls}`} />
               </label>
-              <div className="md:col-span-3">
-                <div className="text-[11px] font-black text-[var(--muted)]">商品图片（上传文件或粘贴 URL）</div>
-                <div className="mt-1 flex flex-wrap items-center gap-3">
+              <div className="md:col-span-2">
+                <div className="text-[11px] font-black text-[var(--muted)]">{t("swFieldImage")}</div>
+                <div className="mt-1.5 flex flex-wrap items-center gap-3">
                   <div className="h-16 w-16 shrink-0 overflow-hidden rounded-[10px] border border-[var(--line)] bg-[var(--surface-raised)]">
                     {/* eslint-disable-next-line @next/next/no-img-element */}
                     {form.imageUrl ? <img src={form.imageUrl} alt="" className="h-full w-full object-cover" /> : <div className="grid h-full w-full place-items-center text-lg text-[var(--muted)]">🖼️</div>}
                   </div>
                   <label className="cursor-pointer rounded-[8px] border border-[var(--line)] px-3 py-2 text-xs font-black text-[var(--muted)] hover:border-[var(--accent)]">
-                    {uploading ? "处理中…" : "上传图片"}
+                    {uploading ? t("swUploading") : t("swUpload")}
                     <input type="file" accept="image/*" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) void onPickImage(f); e.target.value = ""; }} />
                   </label>
-                  <input value={form.imageUrl.startsWith("data:") ? "" : form.imageUrl} onChange={(e) => setForm((prev) => ({ ...prev, imageUrl: e.target.value }))} placeholder="或粘贴图片 URL" className="h-9 min-w-0 flex-1 rounded-[8px] border border-[var(--line)] bg-[var(--surface-raised)] px-3 text-sm font-bold outline-none focus:border-[var(--accent)]" />
-                  {form.imageUrl && <button type="button" onClick={() => setForm((prev) => ({ ...prev, imageUrl: "" }))} className="text-xs font-black text-[var(--danger)]">清除</button>}
+                  <input value={form.imageUrl.startsWith("data:") ? "" : form.imageUrl} onChange={(e) => setForm((prev) => ({ ...prev, imageUrl: e.target.value }))} placeholder={t("swPasteUrl")} className={`h-9 min-w-0 flex-1 px-3 ${inputCls}`} />
+                  {form.imageUrl && <button type="button" onClick={() => setForm((prev) => ({ ...prev, imageUrl: "" }))} className="text-xs font-black text-[var(--danger)]">{t("swClear")}</button>}
                 </div>
               </div>
-              <div className="flex flex-wrap items-center gap-3 md:col-span-3">
+              <div className="flex flex-wrap items-center gap-4 md:col-span-2">
                 <label className="flex h-10 cursor-pointer items-center gap-2 text-xs font-black text-[var(--muted)]">
-                  <input type="checkbox" checked={form.isVirtual} onChange={(e) => setForm((prev) => ({ ...prev, isVirtual: e.target.checked }))} className="h-4 w-4 accent-[var(--accent)]" /> 虚拟商品（即时发码）
+                  <input type="checkbox" checked={form.isVirtual} onChange={(e) => setForm((prev) => ({ ...prev, isVirtual: e.target.checked }))} className="h-4 w-4 accent-[var(--accent)]" /> {t("swVirtual")}
                 </label>
+                {/* 本视图唯一主按钮 */}
                 <button
                   type="button"
                   disabled={uploading || !form.name.trim() || !(Number(form.supplyPrice) > 0)}
                   onClick={() => {
                     const fields = { name: form.name.trim(), supplyPrice: Number(form.supplyPrice), deliveryCycleDays: Number(form.deliveryCycleDays) || 7, stock: Number(form.stock) || 0, description: form.description, imageUrl: form.imageUrl, category: form.category, isVirtual: form.isVirtual, audience: form.audience, type: form.type };
                     const payload = editingId ? { action: "supplierUpdateProduct", productId: editingId, ...fields } : { action: "supplierAddProduct", supplierName, ...fields };
-                    void post("/api/mall", payload, editingId ? "已保存修改" : "已提报，等待商城定价上架").then(() => { setForm(emptyForm); setEditingId(null); });
+                    void post("/api/mall", payload, editingId ? t("swOkSaved") : t("swOkSubmitted")).then(() => { setForm(emptyForm); setEditingId(null); });
                   }}
                   className="h-10 rounded-[8px] bg-[var(--accent)] px-5 text-xs font-black text-[var(--accent-ink)] disabled:opacity-50"
-                >{editingId ? "保存修改" : "提报商品"}</button>
-                {editingId && <button type="button" onClick={() => { setForm(emptyForm); setEditingId(null); }} className="text-xs font-black text-[var(--muted)] underline">取消编辑</button>}
+                >{editingId ? t("swBtnSave") : t("swBtnSubmit")}</button>
+                {editingId && <button type="button" onClick={() => { setForm(emptyForm); setEditingId(null); }} className="text-xs font-black text-[var(--muted)] underline">{t("swCancelEdit")}</button>}
               </div>
             </div>
+          </SectionCard>
+
+          {/* 商品列表 */}
+          <Toolbar right={<span className="text-xs font-bold text-[var(--muted)]">{t("dynSkuCount", { n: myProducts.length })}</span>}>
+            <span className="text-xs font-black uppercase text-[var(--muted)]">{t("swMyProducts")}</span>
+            <SearchInput value={productQuery} onChange={setProductQuery} placeholder={t("swSearchProductsPh")} />
+          </Toolbar>
+          <DataTable columns={productCols} rows={visibleProducts} rowKey={(product) => product.id} minWidth={860} empty={t("swNoProducts")} />
+
+          {/* 分销（开放直采）— 供应商 opt-in；总部审批后加盟商方可买断/代销 */}
+          <SectionCard title={t("spConsentTitle")} desc={t("spConsentHint")}>
+            <div className="space-y-2.5">
+              {visibleProducts.filter((product) => product.isVirtual !== true).map((product) => (
+                <div key={product.id} className="flex flex-wrap items-center gap-3 rounded-[10px] border border-[var(--line)] bg-[var(--surface-raised)] px-3.5 py-3">
+                  <span className="min-w-0 flex-1 truncate text-sm font-black">{product.name}</span>
+                  {badgeOf(consentMeta[consentOf(product)], consentOf(product))}
+                  <input
+                    value={suggestDraft[product.id] ?? (product.suggestedBuyoutPrice ? String(product.suggestedBuyoutPrice) : "")}
+                    onChange={(e) => setSuggestDraft((prev) => ({ ...prev, [product.id]: e.target.value }))}
+                    placeholder={t("spConsentSuggestedPrice")}
+                    className={`h-9 w-52 px-2 text-xs ${inputCls}`}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const raw = (suggestDraft[product.id] ?? "").trim();
+                      const body: Record<string, unknown> = { action: "setProcurementConsent", productId: product.id, consent: true };
+                      if (raw !== "" && Number(raw) >= 0) body.suggestedPrice = Number(raw);
+                      void fpoPost(body, t("spConsentPendingHint"));
+                    }}
+                    className={btnGhost}
+                  >{t("spConsentOn")}</button>
+                  {consentOf(product) !== "none" && (
+                    <button type="button" onClick={() => void fpoPost({ action: "setProcurementConsent", productId: product.id, consent: false }, t("fpoDecideOk"))} className={btnDanger}>{t("spConsentOff")}</button>
+                  )}
+                  {consentOf(product) === "pending" && <span className="basis-full text-[11px] font-bold text-[var(--muted)]">{t("spConsentPendingHint")}</span>}
+                </div>
+              ))}
+              {visibleProducts.filter((product) => product.isVirtual !== true).length === 0 && <div className="py-4 text-center text-xs font-bold text-[var(--muted)]">{t("fpNoData")}</div>}
+            </div>
+          </SectionCard>
+        </div>
+      )}
+
+      {/* ============ 订单 ============ */}
+      {tab === "orders" && (
+        <div className="space-y-4">
+          <Toolbar
+            right={
+              <button type="button" onClick={() => downloadCsv(`supplier-orders-${supplierName || "meponto"}`, [t("mkColOrder"), t("mkColProduct"), t("fpStation"), t("fpoMarginFranchise"), t("mkColStatus"), t("swColSupply"), t("mkColDate")], filteredOrders.map((o) => [o.id, o.productName, o.station, o.franchise, orderStatusMeta[o.status] ? t(orderStatusMeta[o.status].key) : o.status, o.supplyPrice.toFixed(2), o.createdAt]))} className={`inline-flex items-center gap-1 ${btnGhost}`}><Download size={12} /> {t("swExportCsv")}</button>
+            }
+          >
+            <span className="text-xs font-black uppercase text-[var(--muted)]">{t("swOrdersTitle")}</span>
+            <span className="mx-1 h-5 w-px bg-[var(--line)]" />
+            {["", "created", "arrived", "fulfilled"].map((status) => (
+              <Chip key={status || "all"} active={orderFilter === status} onClick={() => setOrderFilter(status)}>
+                {status === "" ? t("swAll") : t(orderStatusMeta[status].key)}
+              </Chip>
+            ))}
+            <SearchInput value={orderQuery} onChange={setOrderQuery} placeholder={t("swSearchOrdersPh")} className="w-56" />
+          </Toolbar>
+          <DataTable columns={orderCols} rows={filteredOrders} rowKey={(o) => o.id} minWidth={820} empty={t("swNoOrders")} />
+        </div>
+      )}
+
+      {/* ============ 物流·补货 ============ */}
+      {tab === "pos" && (
+        <div className="space-y-5">
+          <div>
+            <div className="mb-1 text-xs font-black uppercase text-[var(--muted)]">{t("swPoTitle")}</div>
+            <p className="mb-3 text-[11px] font-bold text-[var(--muted)]">{t("swPoDesc")}</p>
+            <DataTable columns={poCols} rows={ops?.purchaseOrders ?? []} rowKey={(po) => po.id} minWidth={920} empty={t("swNoPos")} />
           </div>
 
-          <div className="space-y-2">
-            {products.filter((product) => product.supplierName === supplierName).map((product) => (
-              <div key={product.id} className="panel flex flex-wrap items-center gap-3 p-4">
-                <div className="h-12 w-12 shrink-0 overflow-hidden rounded-[10px] border border-[var(--line)] bg-[var(--surface-raised)]">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  {product.imageUrl ? <img src={product.imageUrl} alt="" className="h-full w-full object-cover" /> : <div className="grid h-full w-full place-items-center text-lg">🎁</div>}
-                </div>
-                <div className="min-w-0 flex-1">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className="text-sm font-black">{product.name}</span>
-                    <Badge value={statusLabel[product.status] ?? product.status} />
-                  </div>
-                  <div className="text-xs font-bold text-[var(--muted)]">供货价 R$ {(product.supplyPrice ?? 0).toFixed(2)} · 库存 {product.stock} · 周期 {product.deliveryCycleDays ?? 7} 天{product.pointsPrice ? ` · 商城售价 ${product.pointsPrice} 分${product.cashPriceBRL ? ` + R$${product.cashPriceBRL.toFixed(2)}` : ""}` : ""}</div>
-                </div>
-                <div className="flex items-center gap-2">
-                  {product.supplierName === supplierName && product.status === "pending_pricing" ? (
-                    <>
-                      <button type="button" onClick={() => startEdit(product)} className="h-9 rounded-[8px] border border-[var(--line)] px-3 text-xs font-black text-[var(--muted)] hover:border-[var(--accent)]">编辑</button>
-                      <button type="button" onClick={async () => { if (await dialog.confirm("删除商品", { message: t("dynDelUnpriced", { n: product.name }), confirmText: "删除", tone: "danger" })) void post("/api/mall", { action: "supplierDeleteProduct", productId: product.id }, "已删除"); }} className="h-9 rounded-[8px] border border-[var(--danger)]/40 px-3 text-xs font-black text-[var(--danger)]">删除</button>
-                    </>
-                  ) : (
-                    <>
-                      <input value={priceDraft[product.id] ?? ""} onChange={(e) => setPriceDraft((prev) => ({ ...prev, [product.id]: e.target.value }))} placeholder="新供货价" className="h-9 w-24 rounded-[8px] border border-[var(--line)] bg-[var(--surface-raised)] px-2 text-sm font-bold outline-none focus:border-[var(--accent)]" />
-                      <button type="button" disabled={!(Number(priceDraft[product.id]) > 0)} onClick={() => void post("/api/mall/ops", { action: "requestPriceChange", productId: product.id, newPrice: Number(priceDraft[product.id]) }, "调价申请已提交，等待商城审批").then(() => setPriceDraft((prev) => ({ ...prev, [product.id]: "" })))} className="h-9 rounded-[8px] border border-[var(--line)] px-3 text-xs font-black text-[var(--muted)] hover:border-[var(--accent)] disabled:opacity-50">申请调价</button>
-                    </>
-                  )}
-                </div>
-                {/* 开放直采（供应商 opt-in;总部审批后加盟商方可买断/代销） */}
-                {product.isVirtual !== true && (
-                  <div className="mt-1 flex w-full flex-wrap items-center gap-2 border-t border-[var(--line)] pt-2 text-xs font-bold">
-                    <span className="font-black">{t("spConsentTitle")}</span>
-                    <Badge value={t(consentLabelKey[consentOf(product)])} />
-                    <input
-                      value={suggestDraft[product.id] ?? (product.suggestedBuyoutPrice ? String(product.suggestedBuyoutPrice) : "")}
-                      onChange={(e) => setSuggestDraft((prev) => ({ ...prev, [product.id]: e.target.value }))}
-                      placeholder={t("spConsentSuggestedPrice")}
-                      className="h-8 w-48 rounded-[8px] border border-[var(--line)] bg-[var(--surface-raised)] px-2 text-xs font-bold outline-none focus:border-[var(--accent)]"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => {
-                        const raw = (suggestDraft[product.id] ?? "").trim();
-                        const body: Record<string, unknown> = { action: "setProcurementConsent", productId: product.id, consent: true };
-                        if (raw !== "" && Number(raw) >= 0) body.suggestedPrice = Number(raw);
-                        void fpoPost(body, t("spConsentPendingHint"));
-                      }}
-                      className="h-8 rounded-[8px] bg-[var(--accent)] px-3 text-xs font-black text-[var(--accent-ink)]"
-                    >{t("spConsentOn")}</button>
-                    {consentOf(product) !== "none" && (
-                      <button type="button" onClick={() => void fpoPost({ action: "setProcurementConsent", productId: product.id, consent: false }, t("fpoDecideOk"))} className="h-8 rounded-[8px] border border-[var(--danger)]/40 px-3 text-xs font-black text-[var(--danger)]">{t("spConsentOff")}</button>
-                    )}
-                    <span className="basis-full text-[11px] font-bold text-[var(--muted)]">{consentOf(product) === "pending" ? t("spConsentPendingHint") : t("spConsentHint")}</span>
-                  </div>
-                )}
-              </div>
-            ))}
-            {products.filter((product) => product.supplierName === supplierName).length === 0 && <div className="panel p-10 text-center text-sm font-bold text-[var(--muted)]">还没有你的商品，先在上方提报。</div>}
+          {/* 加盟商直发订货单（FPO）：确认 → 发货 → 站点收货入库 */}
+          <div>
+            <div className="mb-3 text-xs font-black uppercase text-[var(--muted)]">{t("spFpoTitle")}</div>
+            <DataTable columns={fpoCols} rows={fpos} rowKey={(fpo) => fpo.id} minWidth={960} empty={t("spFpoNone")} />
           </div>
+        </div>
+      )}
+
+      {/* ============ 账单·对账 ============ */}
+      {tab === "statements" && (
+        <div className="space-y-4">
+          <div>
+            <div className="text-xs font-black uppercase text-[var(--muted)]">{t("swStTitle")}</div>
+            <div className="mt-0.5 text-[11px] font-bold text-[var(--muted)]">{t("swStDesc")}</div>
+          </div>
+          <DataTable
+            columns={stmtCols}
+            rows={ops?.statements ?? []}
+            rowKey={(statement) => statement.id}
+            onRowClick={(statement) => setActiveStmtId(statement.id)}
+            minWidth={760}
+            empty={t("swNoStatements")}
+          />
         </div>
       )}
 
@@ -477,176 +764,10 @@ export default function SupplierWorkspacePage() {
                   <div className="text-sm font-black">{row.productName}</div>
                   <div className="text-xs font-bold text-[var(--muted)]">R$ {row.oldPrice.toFixed(2)} → R$ {row.newPrice.toFixed(2)} · 提交于 {row.createdAt}{row.decidedAt ? ` · 处理于 ${row.decidedAt}` : ""}</div>
                 </div>
-                <Badge value={row.status === "pending" ? "待审批" : row.status === "approved" ? "已批准" : "已拒绝"} />
+                {badgeOf(priceChangeMeta[row.status], row.status)}
               </div>
             ))}
             {(ops?.priceChanges ?? []).length === 0 && <div className="py-6 text-center text-xs font-bold text-[var(--muted)]">暂无调价记录——在「商品与报价」里对单个商品发起调价。</div>}
-          </div>
-        </div>
-      )}
-
-      {/* ============ 补货单 ============ */}
-      {tab === "pos" && (
-        <div className="panel p-5">
-          <div className="mb-1 text-xs font-black uppercase text-[var(--muted)]">商城下达的补货单 · 确认 → 发货 → 商城入库</div>
-          <p className="mb-3 text-[11px] font-bold text-[var(--muted)]">代销模式:补货单仅为备货/调拨流转,<b>不产生货款</b>。结算以月度对账(履约订单 × 供货价)为准,下方金额仅为备货参考成本。</p>
-          <div className="space-y-2">
-            {(ops?.purchaseOrders ?? []).map((po) => (
-              <div key={po.id} className="rounded-[10px] border border-[var(--line)] bg-[var(--surface-raised)] px-3.5 py-2.5">
-                <div className="flex flex-wrap items-center gap-2">
-                  <Boxes size={15} className="text-[var(--muted)]" />
-                  <span className="text-sm font-black">{po.id}</span>
-                  <Badge value={poStatusLabel[po.status]} />
-                  <span className="text-xs font-bold text-[var(--muted)]">{po.items.reduce((sum, item) => sum + item.qty, 0)} 件 · 备货参考成本 R$ {po.totalCost.toFixed(2)} · {po.createdAt}</span>
-                  <span className="ml-auto flex gap-1.5">
-                    {po.status === "ordered" && <button type="button" onClick={() => void post("/api/mall/ops", { action: "confirmPO", poId: po.id }, "已确认，请按周期发货")} className="h-8 rounded-[8px] bg-[var(--accent)] px-3 text-xs font-black text-[var(--accent-ink)]">确认接单</button>}
-                    {po.status === "confirmed" && <button type="button" onClick={() => setShipTarget(po)} className="h-8 rounded-[8px] bg-[var(--accent)] px-3 text-xs font-black text-[var(--accent-ink)]">标记发货</button>}
-                  </span>
-                </div>
-                <div className="mt-1 text-xs font-bold text-[var(--muted)]">{po.items.map((item) => `${item.name}×${item.qty}`).join("、")}{po.note ? t("dynNote", { x: po.note }) : ""}{po.shipNote ? t("dynLogistics", { x: po.shipNote }) : ""}</div>
-              </div>
-            ))}
-            {(ops?.purchaseOrders ?? []).length === 0 && <div className="py-6 text-center text-xs font-bold text-[var(--muted)]">暂无补货单。</div>}
-          </div>
-
-          {/* 加盟商直发订货单（FPO）:确认 → 发货 → 站点收货入库 */}
-          <div className="mt-5 border-t border-[var(--line)] pt-4">
-            <div className="mb-2 text-xs font-black uppercase text-[var(--muted)]">{t("spFpoTitle")}</div>
-            <div className="space-y-2">
-              {fpos.map((fpo) => (
-                <div key={fpo.id} className="rounded-[10px] border border-[var(--line)] bg-[var(--surface-raised)] px-3.5 py-2.5">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <Boxes size={15} className="text-[var(--muted)]" />
-                    <span className="text-sm font-black">{fpo.id}</span>
-                    <Badge value={fpo.mode === "buyout" ? t("fpModeBuyout") : t("fpModeConsignment")} />
-                    <Badge value={fpo.status} />
-                    <span className="text-xs font-bold text-[var(--muted)]">{fpo.franchise} → {fpo.stationName} · {fpo.items.reduce((sum, item) => sum + item.qty, 0)} 件 · {fpo.createdAt}</span>
-                    <span className="ml-auto flex gap-1.5">
-                      {fpo.status === "approved" && <button type="button" onClick={() => void fpoPost({ action: "confirmFPO", fpoId: fpo.id }, "已确认备货")} className="h-8 rounded-[8px] bg-[var(--accent)] px-3 text-xs font-black text-[var(--accent-ink)]">确认接单</button>}
-                      {fpo.status === "confirmed" && <button type="button" onClick={() => { const note = prompt(t("spShipNote")) ?? ""; void fpoPost({ action: "shipFPO", fpoId: fpo.id, shipNote: note }, "已标记发货"); }} className="h-8 rounded-[8px] bg-[var(--accent)] px-3 text-xs font-black text-[var(--accent-ink)]">标记发货</button>}
-                      {fpo.status === "shipped" && <button type="button" onClick={() => void fpoPost({ action: "arriveFPO", fpoId: fpo.id }, "已登记到站")} className="h-8 rounded-[8px] border border-[var(--line)] px-3 text-xs font-black">到站登记</button>}
-                    </span>
-                  </div>
-                  <div className="mt-1 text-xs font-bold text-[var(--muted)]">{fpo.items.map((item) => `${item.name}×${item.qty}`).join("、")}{fpo.shipNote ? t("dynLogistics", { x: fpo.shipNote }) : ""}</div>
-                </div>
-              ))}
-              {fpos.length === 0 && <div className="py-4 text-center text-xs font-bold text-[var(--muted)]">{t("spFpoNone")}</div>}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ============ 对账单 ============ */}
-      {tab === "statements" && (
-        <div className="panel p-5">
-          <div className="mb-3 text-xs font-black uppercase text-[var(--muted)]">月度对账单 · 确认后商城付款</div>
-          <div className="space-y-2">
-            {(ops?.statements ?? []).map((statement) => (
-              <div key={statement.id} className="rounded-[10px] border border-[var(--line)] bg-[var(--surface-raised)] px-3.5 py-2.5">
-                <div className="flex flex-wrap items-center gap-2">
-                  <CircleDollarSign size={15} className="text-[var(--muted)]" />
-                  <span className="text-sm font-black">{statement.month}</span>
-                  <Badge value={(statementStatusLabel as Record<string, string>)[statement.status] ?? extraStatementLabel[statement.status] ?? statement.status} />
-                  <button type="button" onClick={() => setOpenStmt((prev) => { const n = new Set(prev); n.has(statement.id) ? n.delete(statement.id) : n.add(statement.id); return n; })} className="inline-flex items-center gap-1 text-xs font-bold text-[var(--muted)] hover:text-[var(--accent)]">
-                    <ChevronRight size={13} className={`transition-transform ${openStmt.has(statement.id) ? "rotate-90" : ""}`} />{statement.lines.length} 笔 · <b className="text-[var(--text)]">R$ {statement.total.toFixed(2)}</b>
-                  </button>
-                  <span className="ml-auto flex items-center gap-1.5">
-                    <button type="button" onClick={() => exportStatement(statement)} className="inline-flex h-8 items-center gap-1 rounded-[8px] border border-[var(--line)] px-2.5 text-xs font-black text-[var(--muted)] hover:border-[var(--accent)]"><Download size={12} /> CSV</button>
-                    {statement.status === "draft" && (
-                      <>
-                        <input value={pixDraft} onChange={(e) => setPixDraft(e.target.value)} placeholder="收款 PIX Key" className="h-8 w-44 rounded-[8px] border border-[var(--line)] bg-[var(--surface)] px-2 font-mono text-xs font-bold outline-none focus:border-[var(--accent)]" />
-                        <button type="button" onClick={() => void post("/api/mall/ops", { action: "confirmStatement", statementId: statement.id, pixKey: pixDraft }, "已确认对账单，等待商城付款")} className="h-8 rounded-[8px] bg-[var(--accent)] px-3 text-xs font-black text-[var(--accent-ink)]">确认无误</button>
-                      </>
-                    )}
-                    {(statement.status === "draft" || statement.status === "confirmed") && (
-                      <button
-                        type="button"
-                        onClick={async () => {
-                          const note = await dialog.prompt("对账单异议", { message: `对「${statement.month}」对账单（${statement.lines.length} 笔 · R$ ${statement.total.toFixed(2)}）提出异议，说明与实际不符之处（必填，总部会复核后重新打开）。`, placeholder: "如：缺少订单 xxx / 供货价不符…" });
-                          if (note === null) return;
-                          if (!note.trim()) { setMessage({ tone: "err", text: "请填写异议原因" }); return; }
-                          void post("/api/mall/ops", { action: "disputeStatement", statementId: statement.id, note: note.trim() }, "异议已提交，等待总部处理");
-                        }}
-                        className="h-8 rounded-[8px] border border-[var(--danger)]/40 px-3 text-xs font-black text-[var(--danger)]"
-                      >有异议</button>
-                    )}
-                  </span>
-                </div>
-                {openStmt.has(statement.id) && (
-                  <div className="mt-2 overflow-hidden rounded-[8px] border border-[var(--line)]">
-                    <table className="w-full text-xs">
-                      <thead><tr className="bg-[var(--surface)] text-left font-black uppercase text-[var(--muted)]"><th className="px-3 py-1.5">日期</th><th className="px-3 py-1.5">商品</th><th className="px-3 py-1.5">订单号</th><th className="px-3 py-1.5 text-right">供货价</th></tr></thead>
-                      <tbody>
-                        {statement.lines.map((l, i) => (
-                          <tr key={`${l.orderId}-${i}`} className="border-t border-[var(--line)] font-bold"><td className="px-3 py-1.5">{l.date}</td><td className="px-3 py-1.5">{l.productName}</td><td className="px-3 py-1.5 font-mono text-[var(--muted)]">{l.orderId}</td><td className="px-3 py-1.5 text-right">R$ {l.supplyPrice.toFixed(2)}</td></tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
-                {(statement.status as string) === "disputed" && (statement as SupplierStatement & { disputeNote?: string }).disputeNote && (
-                  <div className="mt-1 text-xs font-bold" style={{ color: "var(--warn)" }}>异议原因：{(statement as SupplierStatement & { disputeNote?: string }).disputeNote} · 等待总部复核后重新打开</div>
-                )}
-                {statement.paidAt && <div className="mt-1 text-xs font-bold" style={{ color: "var(--success)" }}>已付款 · {statement.paidAt}{statement.receiptNote ? ` · ${statement.receiptNote}` : ""}</div>}
-              </div>
-            ))}
-            {(ops?.statements ?? []).length === 0 && <div className="py-6 text-center text-xs font-bold text-[var(--muted)]">商城生成对账单后会出现在这里（自然月：履约订单 × 供货价）。</div>}
-          </div>
-        </div>
-      )}
-
-      {/* ============ 概览 ============ */}
-      {tab === "overview" && (
-        <div className="space-y-5">
-          <div className="grid grid-cols-2 gap-3 md:grid-cols-3">
-            <Stat label="累计售出（件）" value={String(ops?.summary.orders ?? 0)} hint="兑换订单数" />
-            <Stat label="在售商品" value={String(products.filter((product) => product.status === "active").length)} hint={t("dynSkuCount", { n: products.length })} />
-            <Stat label="待收货款" value={`R$ ${payableTotal.toFixed(2)}`} hint="未付对账单合计" />
-            <Stat label="已结货款" value={`R$ ${paidTotal.toFixed(2)}`} hint="历史已付合计" />
-            <Stat label="本月预计回款" value={`R$ ${monthExpected.toFixed(2)}`} hint="实时口径，以月度对账单为准" />
-            <Stat label="待确认对账单" value={String(draftStatementCount)} hint="点击前往账单确认" onClick={() => setTab("statements")} />
-          </div>
-          <div className="panel p-5">
-            <div className="mb-3 text-xs font-black uppercase text-[var(--muted)]">近 30 天售出趋势</div>
-            <div className="flex h-28 items-end gap-[3px]">
-              {(ops?.summary.daily ?? []).map((day) => (
-                <div key={day.date} className="group relative flex-1 rounded-t-[3px] bg-[var(--accent)]" style={{ height: `${Math.max(3, (day.count / maxDaily) * 100)}%`, opacity: day.count > 0 ? 0.9 : 0.18 }}>
-                  <span className="pointer-events-none absolute -top-7 left-1/2 hidden -translate-x-1/2 whitespace-nowrap rounded bg-black/80 px-1.5 py-0.5 text-[10px] font-bold text-white group-hover:block">{day.date.slice(5)} · {day.count}</span>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-      )}
-      {/* ============ 订单 ============ */}
-      {tab === "orders" && (
-        <div className="panel p-5">
-          <div className="mb-3 text-xs font-black uppercase text-[var(--muted)]">本供应商履约订单 · 计入月度对账</div>
-          <div className="mb-3 flex flex-wrap items-center gap-2">
-            {["", "created", "arrived", "fulfilled"].map((status) => (
-              <button key={status || "all"} type="button" onClick={() => setOrderFilter(status)} className={`rounded-full border px-3.5 py-1.5 text-xs font-black ${orderFilter === status ? "border-[var(--accent)] bg-[var(--accent)] text-[var(--accent-ink)]" : "border-[var(--line)] text-[var(--muted)]"}`}>
-                {status === "" ? "全部" : orderStatusLabel[status]}
-              </button>
-            ))}
-            <button type="button" onClick={() => downloadCsv(`supplier-orders-${supplierName || "meponto"}`, ["订单", "商品", "站点", "加盟商", "状态", "供货价", "时间"], filteredOrders.map((o) => [o.id, o.productName, o.station, o.franchise, orderStatusLabel[o.status] ?? o.status, o.supplyPrice.toFixed(2), o.createdAt]))} className="ml-auto inline-flex h-9 items-center gap-1 rounded-[8px] border border-[var(--line)] px-3 text-xs font-black text-[var(--muted)] hover:border-[var(--accent)]"><Download size={12} /> 导出 CSV</button>
-          </div>
-          <div className="overflow-x-auto rounded-[8px] border border-[var(--line)]">
-            <table className="w-full text-sm">
-              <thead><tr className="bg-[var(--surface-raised)] text-left text-[11px] font-black uppercase text-[var(--muted)]"><th className="px-3 py-2">订单号</th><th className="px-3 py-2">商品</th><th className="px-3 py-2">日期</th><th className="px-3 py-2">类型</th><th className="px-3 py-2">状态</th><th className="px-3 py-2 text-right">供货价</th></tr></thead>
-              <tbody>
-                {filteredOrders.map((o) => (
-                  <tr key={o.id} className="border-t border-[var(--line)] font-bold">
-                    <td className="px-3 py-2 font-mono text-xs text-[var(--muted)]">{o.id}</td>
-                    <td className="px-3 py-2">{o.productName}</td>
-                    <td className="px-3 py-2 text-[var(--muted)]">{o.createdAt.slice(0, 10)}</td>
-                    <td className="px-3 py-2"><span className="tag">{o.accountType === "partner" ? "Partner" : "骑手"}</span></td>
-                    <td className="px-3 py-2"><Badge value={orderStatusLabel[o.status] ?? o.status} /></td>
-                    <td className="px-3 py-2 text-right">R$ {o.supplyPrice.toFixed(2)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-            {filteredOrders.length === 0 && <div className="py-8 text-center text-xs font-bold text-[var(--muted)]">暂无履约订单。骑手/合作方兑换你的商品并完成后,会计入对账并出现在这里。</div>}
           </div>
         </div>
       )}
@@ -667,11 +788,11 @@ export default function SupplierWorkspacePage() {
               <p className="mt-0.5 text-[11px] font-bold text-[var(--muted)]">上传方形图片（自动压缩）。会显示在供应商门户与对账单上。</p>
               <div className="mt-2 flex flex-wrap items-center gap-3">
                 <label className="cursor-pointer rounded-[8px] border border-[var(--line)] px-3 py-2 text-xs font-black text-[var(--muted)] hover:border-[var(--accent)]">
-                  {uploading ? "处理中…" : "上传 Logo"}
+                  {uploading ? t("swUploading") : "上传 Logo"}
                   <input type="file" accept="image/*" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) void onPickLogo(f); e.target.value = ""; }} />
                 </label>
-                <input value={profileForm.logoUrl.startsWith("data:") ? "" : profileForm.logoUrl} onChange={(e) => setProfileForm((p) => ({ ...p, logoUrl: e.target.value }))} placeholder="或粘贴 Logo URL" className="h-9 min-w-0 flex-1 rounded-[8px] border border-[var(--line)] bg-[var(--surface)] px-3 text-sm font-bold outline-none focus:border-[var(--accent)]" />
-                {profileForm.logoUrl && <button type="button" onClick={() => setProfileForm((p) => ({ ...p, logoUrl: "" }))} className="text-xs font-black text-[var(--danger)]">清除</button>}
+                <input value={profileForm.logoUrl.startsWith("data:") ? "" : profileForm.logoUrl} onChange={(e) => setProfileForm((p) => ({ ...p, logoUrl: e.target.value }))} placeholder="或粘贴 Logo URL" className={`h-9 min-w-0 flex-1 px-3 ${inputCls}`} />
+                {profileForm.logoUrl && <button type="button" onClick={() => setProfileForm((p) => ({ ...p, logoUrl: "" }))} className="text-xs font-black text-[var(--danger)]">{t("swClear")}</button>}
               </div>
             </div>
           </div>
@@ -679,17 +800,18 @@ export default function SupplierWorkspacePage() {
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
             {[{ k: "companyName", l: "公司名称" }, { k: "brand", l: "品牌名" }, { k: "cnpj", l: "CNPJ" }, { k: "contactName", l: "联系人" }, { k: "contactEmail", l: "联系邮箱" }, { k: "contactPhone", l: "联系电话" }, { k: "pixKey", l: "收款 PIX Key" }].map((f) => (
               <label key={f.k} className="text-[11px] font-black text-[var(--muted)]">{f.l}
-                <input value={(profileForm as unknown as Record<string, string>)[f.k] ?? ""} onChange={(e) => setProfileForm((p) => ({ ...p, [f.k]: e.target.value }))} className="mt-1 h-10 w-full rounded-[8px] border border-[var(--line)] bg-[var(--surface-raised)] px-3 text-sm font-bold outline-none focus:border-[var(--accent)]" />
+                <input value={(profileForm as unknown as Record<string, string>)[f.k] ?? ""} onChange={(e) => setProfileForm((p) => ({ ...p, [f.k]: e.target.value }))} className={`mt-1 h-10 w-full px-3 ${inputCls}`} />
               </label>
             ))}
             <label className="text-[11px] font-black text-[var(--muted)] sm:col-span-2 lg:col-span-2">地址
-              <input value={profileForm.address} onChange={(e) => setProfileForm((p) => ({ ...p, address: e.target.value }))} className="mt-1 h-10 w-full rounded-[8px] border border-[var(--line)] bg-[var(--surface-raised)] px-3 text-sm font-bold outline-none focus:border-[var(--accent)]" />
+              <input value={profileForm.address} onChange={(e) => setProfileForm((p) => ({ ...p, address: e.target.value }))} className={`mt-1 h-10 w-full px-3 ${inputCls}`} />
             </label>
             <label className="text-[11px] font-black text-[var(--muted)] sm:col-span-2 lg:col-span-2">公司简介
-              <textarea value={profileForm.about} onChange={(e) => setProfileForm((p) => ({ ...p, about: e.target.value }))} className="mt-1 h-10 min-h-10 w-full rounded-[8px] border border-[var(--line)] bg-[var(--surface-raised)] p-2.5 text-sm font-bold outline-none focus:border-[var(--accent)]" />
+              <textarea value={profileForm.about} onChange={(e) => setProfileForm((p) => ({ ...p, about: e.target.value }))} className={`mt-1 h-10 min-h-10 w-full p-2.5 ${inputCls}`} />
             </label>
           </div>
           <div className="mt-4 flex items-center gap-3">
+            {/* 本视图唯一主按钮 */}
             <button type="button" onClick={async () => { const saved = await supplierPost({ action: "saveProfile", ...profileForm }, "公司资料已保存"); if (saved) setSup((prev) => (prev ? { ...prev, profile: saved as SupplierProfileT } : prev)); }} className="h-10 rounded-[8px] bg-[var(--accent)] px-5 text-sm font-black text-[var(--accent-ink)]">保存资料</button>
             {sup?.profile.updatedAt && <span className="text-[11px] font-bold text-[var(--muted)]">上次更新 {sup.profile.updatedAt}</span>}
           </div>
@@ -706,12 +828,13 @@ export default function SupplierWorkspacePage() {
           <div className="panel p-5">
             <div className="mb-3 flex items-center gap-2 text-xs font-black uppercase text-[var(--muted)]"><UserPlus size={14} /> 新增团队成员（同公司多人协作)</div>
             <div className="grid gap-2 md:grid-cols-[1.2fr_1.4fr_1fr_auto]">
-              <input value={member.name} onChange={(e) => setMember({ ...member, name: e.target.value })} placeholder="姓名" className="h-10 rounded-[8px] border border-[var(--line)] bg-[var(--surface-raised)] px-3 text-sm font-bold outline-none focus:border-[var(--accent)]" />
-              <input value={member.identifier} onChange={(e) => setMember({ ...member, identifier: e.target.value })} placeholder="登录邮箱 / 手机" className="h-10 rounded-[8px] border border-[var(--line)] bg-[var(--surface-raised)] px-3 text-sm font-bold outline-none focus:border-[var(--accent)]" />
-              <input value={member.phone} onChange={(e) => setMember({ ...member, phone: e.target.value })} placeholder="电话(可空)" className="h-10 rounded-[8px] border border-[var(--line)] bg-[var(--surface-raised)] px-3 text-sm font-bold outline-none focus:border-[var(--accent)]" />
+              <input value={member.name} onChange={(e) => setMember({ ...member, name: e.target.value })} placeholder="姓名" className={`h-10 px-3 ${inputCls}`} />
+              <input value={member.identifier} onChange={(e) => setMember({ ...member, identifier: e.target.value })} placeholder="登录邮箱 / 手机" className={`h-10 px-3 ${inputCls}`} />
+              <input value={member.phone} onChange={(e) => setMember({ ...member, phone: e.target.value })} placeholder="电话(可空)" className={`h-10 px-3 ${inputCls}`} />
+              {/* 本视图唯一主按钮 */}
               <button type="button" disabled={!member.name.trim() || !member.identifier.trim()} onClick={async () => { const d = await supplierPost({ action: "createMember", ...member }, "已创建账号"); if (d) { setNewCred({ identifier: d.identifier, tempPassword: d.tempPassword }); setMember({ name: "", identifier: "", phone: "" }); } }} className="h-10 rounded-[8px] bg-[var(--accent)] px-4 text-sm font-black text-[var(--accent-ink)] disabled:opacity-50">创建账号</button>
             </div>
-            {newCred && <div className="mt-3 rounded-[8px] border p-3 text-sm font-bold" style={{ borderColor: "var(--accent)", background: "rgba(245,179,1,.1)" }}>新账号已建:<b>{newCred.identifier}</b> · 一次性临时密码 <span className="font-mono text-[var(--accent)]">{newCred.tempPassword}</span> —— 请转交本人,首次登录后让其修改。</div>}
+            {newCred && <div className="mt-3 rounded-[8px] border border-[var(--accent)] bg-[var(--accent)]/10 p-3 text-sm font-bold">新账号已建:<b>{newCred.identifier}</b> · 一次性临时密码 <span className="font-mono text-[var(--accent)]">{newCred.tempPassword}</span> —— 请转交本人,首次登录后让其修改。</div>}
           </div>
           <div className="panel p-5">
             <div className="mb-3 text-xs font-black uppercase text-[var(--muted)]">团队成员</div>
@@ -721,8 +844,8 @@ export default function SupplierWorkspacePage() {
                   <span className="font-black">{m.name}</span>
                   <span className="font-mono text-xs text-[var(--muted)]">{m.identifier}</span>
                   {m.organization && <span className="tag text-[10px]">🏢 {m.organization}</span>}
-                  <Badge value={m.status === "active" ? "启用中" : "已停用"} />
-                  <button type="button" onClick={() => void supplierPost({ action: "toggleMember", userId: m.id }, m.status === "active" ? "已停用" : "已启用")} className="ml-auto h-8 rounded-[8px] border border-[var(--line)] px-3 text-xs font-black text-[var(--muted)] hover:border-[var(--accent)]">{m.status === "active" ? "停用" : "启用"}</button>
+                  <StatusBadge tone={m.status === "active" ? "success" : "neutral"} label={m.status === "active" ? "启用中" : "已停用"} />
+                  <button type="button" onClick={() => void supplierPost({ action: "toggleMember", userId: m.id }, m.status === "active" ? "已停用" : "已启用")} className={`ml-auto ${btnGhost}`}>{m.status === "active" ? "停用" : "启用"}</button>
                 </div>
               ))}
               {(sup?.team ?? []).length === 0 && <div className="py-6 text-center text-xs font-bold text-[var(--muted)]">还没有团队成员——上面创建账号,公司就能多人一起用这个后台。</div>}
