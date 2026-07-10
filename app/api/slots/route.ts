@@ -173,10 +173,8 @@ export async function POST(request: Request) {
         (item) => item.shiftId === dispatchShift.id && item.rider99Id === rider.ninetyNineId && item.status !== "rejected" && item.status !== "cancelled",
       );
       if (duplicate) return jsonResponse({ error: "Você já se inscreveu neste turno." }, { status: 409 });
-      const active = memory.shiftSignups.filter((g) => g.shiftId === dispatchShift.id && g.status !== "rejected" && g.status !== "cancelled").length;
-      if ((dispatchShift.filled99Count ?? 0) + active >= (dispatchShift.plannedCount ?? 0)) {
-        return jsonResponse({ error: "Turno lotado." }, { status: 409 });
-      }
+      // Overbooking allowed by design: every self-signup lands in the main
+      // back office (Central de Despacho) where ops approves/rejects.
       const createdAt = new Date().toISOString().slice(0, 16).replace("T", " ");
       const record = {
         id: makeServerId("sgn", memory.shiftSignups.length + 1),

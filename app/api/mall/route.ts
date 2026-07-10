@@ -923,17 +923,11 @@ async function handlePost(request: Request) {
         ? `MP-${Date.now().toString(36).toUpperCase()}-${Math.random().toString(36).slice(2, 6).toUpperCase()}`
         : undefined;
       const cashDue = Math.round(((product.cashPriceBRL ?? 0) + pointsTopUpBRL) * 100) / 100;
-      // Hybrid checkout: cash part is paid from the rider's prepaid balance
-      // (topped up via PIX and confirmed by the mall office). No balance, no order.
-      if (cashDue > 0) {
-        const cashAvailable = cashBalanceOf(rider.id);
-        if (cashAvailable < cashDue) {
-          return jsonResponse(
-            { error: `Saldo insuficiente: precisa de R$ ${cashDue.toFixed(2)}, você tem R$ ${cashAvailable.toFixed(2)}. Recarregue via PIX.`, cashDue, cashAvailable, needTopUp: true },
-            { status: 409 },
-          );
-        }
-      }
+      // Hybrid checkout: the cash part settles from the prepaid balance when
+      // it covers the amount; otherwise the order is created as PENDING and
+      // the rider pays IN CASH AT PICKUP — the mall office confirms receipt
+      // (existing payment flow) before the station can hand the item over.
+      const paidFromBalance = cashDue > 0 && cashBalanceOf(rider.id) >= cashDue;
       // Resolve pickup store (always a Ponto). Locked for riders with a home
       // station; otherwise chosen from the allowed set (本商站点 / 公开用户任一).
       const riderCandidates = pickupCandidatesForRider(rider);
@@ -992,13 +986,15 @@ async function handlePost(request: Request) {
         ...(issueNow ? { pickedUpAt: createdAt, voucherCode } : {}),
         ...(heldForReview ? { reviewStatus: "pending" as const } : {}),
         ...(couponDiscount > 0 && couponPick ? { couponId: couponPick.coupon.id, couponDiscount } : {}),
-        ...(cashDue > 0 ? { cashDue, paymentStatus: "paid" as const } : {}),
+        ...(cashDue > 0 ? { cashDue, paymentStatus: (paidFromBalance ? "paid" : "pending") as "paid" | "pending" } : {}),
         ...(pointsTopUpBRL > 0 ? { pointsShortfall: shortfall, pointsTopUpBRL } : {}),
       };
       memory.marketplaceOrders.unshift(order);
 
       // Deduct the cash part from the prepaid balance — immutable ledger record.
-      if (cashDue > 0) {
+      // (Cash-on-pickup orders write nothing here; money changes hands at the
+      // station and the office marks the payment received.)
+      if (cashDue > 0 && paidFromBalance) {
         const cashAvailable = cashBalanceOf(rider.id);
         const ledgerEntry: CashLedgerEntry = {
           id: makeServerId("mcl", memory.cashLedgerEntries.length + 1),
@@ -1049,7 +1045,7 @@ async function handlePost(request: Request) {
 
       appendServerAudit({ actor, action: heldForReview ? "MALL_REDEEM_HELD_REVIEW" : "MALL_REDEEMED", entity: "MarketplaceOrder", entityId: order.id, detail: `${rider.name} redeemed ${product.name} for ${pointsToSpend} pts${pointsTopUpBRL > 0 ? ` + R$ ${pointsTopUpBRL.toFixed(2)} (conversão de ${shortfall} pts)` : ""}${heldForReview ? " — HELD for review" : `, pickup at ${order.station}, ETA ${order.etaDate}`}.`, risk: heldForReview ? "High" : "Low" });
       appendEvent(MARKETPLACE_EVENTS.orderCreated, { orderId: order.id, accountType: "rider", riderId: rider.id, productId: product.id, productName: product.name, pointsSpent: pointsToSpend, station: order.station, cashDue: order.cashDue ?? 0, reviewStatus: heldForReview ? "pending" : "none" }, actor);
-      return jsonResponse({ data: { order, balance: available - pointsToSpend, cashBalance: cashBalanceOf(rider.id), held: heldForReview, couponDiscount, pointsTopUpBRL } }, { status: 201 });
+      return jsonResponse({ data: { order, balance: available - pointsToSpend, cashBalance: cashBalanceOf(rider.id), held: heldForReview, couponDiscount, pointsTopUpBRL, cashOnPickup: cashDue > 0 && !paidFromBalance } }, { status: 201 });
     }
 
     case "cancelOrder": {

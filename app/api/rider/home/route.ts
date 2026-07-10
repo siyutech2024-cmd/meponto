@@ -233,6 +233,16 @@ export async function GET(request: Request) {
   return jsonResponse({
     data: {
       performance,
+      // Second performance source (both shown in the app): the rider-status
+      // scraper aggregate stored on the roster record.
+      statusTotals: (rider.totalOrders ?? 0) > 0 || (rider.onlineHours ?? 0) > 0
+        ? {
+            totalOrders: rider.totalOrders ?? 0,
+            onlineHours: rider.onlineHours ?? 0,
+            ar: rider.reportAr ?? rider.ar ?? 0,
+            lastReportDate: rider.lastReportDate ?? "",
+          }
+        : null,
       // Derived from the points-economy money equivalence (R$1 = pointsPerBrl pts).
       pointCashRateBRL: (mallConfig.pointsPerBrl ?? 0) > 0 ? 1 / (mallConfig.pointsPerBrl as number) : 0,
       weeklyGoalProgress,

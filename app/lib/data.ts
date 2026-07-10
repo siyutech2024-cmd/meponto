@@ -20,6 +20,10 @@ export type Rider = {
   rentalStatus: string;
   isMottu: boolean;
   onlineHours: number;
+  /** Rider-status scraper aggregates (second performance source). */
+  totalOrders?: number;
+  reportAr?: number;
+  lastReportDate?: string;
   nightShiftCount: number;
   incidentCount: number;
   joinDate: string;

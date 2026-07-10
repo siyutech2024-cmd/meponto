@@ -203,6 +203,16 @@ data class RiderHomeDto(
     val coupons: List<CouponDto>? = null,
     val badges: List<BadgeDto>? = null,
     val pointCashRateBRL: Double? = null,
+    val statusTotals: StatusTotalsDto? = null,
+)
+
+// Rider-status scraper aggregate — the SECOND performance source (lifetime
+// orders/hours snapshot), shown alongside the T+1 daily KPI.
+data class StatusTotalsDto(
+    val totalOrders: Int? = null,
+    val onlineHours: Double? = null,
+    val ar: Double? = null,
+    val lastReportDate: String? = null,
 )
 
 // Achievement badge (lifetime completed orders milestones).

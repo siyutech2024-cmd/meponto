@@ -21,6 +21,13 @@ data class Performance(
     val weekOnlineHours: Double? = null,
 )
 
+data class StatusTotals(
+    val totalOrders: Int,
+    val onlineHours: Double,
+    val ar: Double,
+    val lastReportDate: String,
+)
+
 data class Mission(
     val title: String,
     val reward: String,

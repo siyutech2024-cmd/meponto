@@ -215,6 +215,18 @@ fun HomeScreen(onScan: () -> Unit, onProfile: () -> Unit, onOpenMall: () -> Unit
                             fontWeight = FontWeight.SemiBold,
                         )
                     }
+                    // SECOND source — rider-status aggregate (lifetime), shown
+                    // alongside the T+1 daily KPI so both systems stay visible.
+                    store.statusTotals?.let { st ->
+                        Spacer(Modifier.size(4.dp))
+                        Text(
+                            "${loc.t("home.lifetime")}: ${st.totalOrders} ${loc.t("home.ordersUnit")} · ${String.format("%.1f", st.onlineHours)} h · AR ${String.format("%.0f", st.ar)}%" +
+                                (if (st.lastReportDate.isNotBlank()) " · ${st.lastReportDate}" else ""),
+                            color = me.muted,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.SemiBold,
+                        )
+                    }
                 }
             }
 

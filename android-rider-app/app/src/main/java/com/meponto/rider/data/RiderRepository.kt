@@ -75,6 +75,7 @@ data class RiderSnapshot(
     val coupons: List<MallCoupon>? = null,
     val badges: List<RiderBadge>? = null,
     val pointCashRateBRL: Double? = null,
+    val statusTotals: StatusTotals? = null,
 )
 
 /**
@@ -240,6 +241,9 @@ class RiderRepository(context: Context) {
                 RiderBadge(b.at ?: 0, b.icon ?: "", lb, b.achieved == true)
             },
             pointCashRateBRL = home?.pointCashRateBRL,
+            statusTotals = home?.statusTotals?.let { t ->
+                StatusTotals(t.totalOrders ?: 0, t.onlineHours ?: 0.0, t.ar ?: 0.0, t.lastReportDate ?: "")
+            },
         )
     }
 
