@@ -16,6 +16,13 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 
 const TABLE = "app_state_records";
 const FLUSH_DELAY_MS = 0; // flush immediately — serverless instances may freeze after response
+/**
+ * Read-through refresh TTL: a collection refreshed from the database within
+ * this window is NOT re-fetched. Local mutations invalidate the window
+ * immediately (see the proxy traps), so an instance always reads its own
+ * writes; cross-instance staleness is bounded by this TTL.
+ */
+const REFRESH_TTL_MS = Number(process.env.PERSISTENCE_REFRESH_TTL_MS ?? 5000);
 
 type AnyRecord = { id: string } & Record<string, unknown>;
 
@@ -35,6 +42,10 @@ type PersistenceState = {
   localNew: Map<string, Set<string>>;
   /** Set while refresh/hydrate rewrite collections so the proxy traps stay quiet. */
   suspendTracking: boolean;
+  /** Per-collection timestamp of the last successful read-through refresh. */
+  lastRefreshedAt: Map<string, number>;
+  /** In-flight refresh promises so concurrent requests share one fetch. */
+  refreshInFlight: Map<string, Promise<void>>;
   flushTimer: ReturnType<typeof setTimeout> | null;
   warned: boolean;
   client: SupabaseClient | null;
@@ -56,6 +67,8 @@ const state: PersistenceState =
     pendingPurges: new Set(),
     localNew: new Map(),
     suspendTracking: false,
+    lastRefreshedAt: new Map(),
+    refreshInFlight: new Map(),
     flushTimer: null,
     warned: false,
     client: null,
@@ -68,6 +81,8 @@ state.pendingDeletes ??= new Map();
 state.pendingPurges ??= new Set();
 state.localNew ??= new Map();
 state.suspendTracking ??= false;
+state.lastRefreshedAt ??= new Map();
+state.refreshInFlight ??= new Map();
 
 function markLocalNew(name: string, value: unknown) {
   const id = (value as AnyRecord | null)?.id;
@@ -217,6 +232,7 @@ export function persistDeleteRecord(collectionName: string, recordId: string) {
   set.add(recordId);
   state.pendingDeletes.set(collectionName, set);
   state.dirty.add(collectionName);
+  state.lastRefreshedAt.delete(collectionName);
   scheduleFlush();
 }
 
@@ -225,6 +241,7 @@ export function persistPurgeCollections(collectionNames: string[]) {
   for (const name of collectionNames) {
     state.pendingPurges.add(name);
     state.dirty.add(name);
+    state.lastRefreshedAt.delete(name);
   }
   scheduleFlush();
 }
@@ -243,59 +260,101 @@ export async function refreshCollectionsFromDatabase(collectionNames: string[]):
   const supabase = await getClient();
   if (!supabase) return;
 
-  for (const name of collectionNames) {
-    const collection = state.tracked.get(name);
-    if (!collection) continue;
+  // TTL guard: skip collections refreshed recently. Local mutations clear the
+  // timestamp (proxy traps), so this never hides this instance's own writes.
+  const now = Date.now();
+  const due = collectionNames.filter((name) => {
+    if (!state.tracked.has(name)) return false;
+    const last = state.lastRefreshedAt.get(name);
+    return last === undefined || now - last >= REFRESH_TTL_MS;
+  });
+  if (due.length === 0) return;
 
-    try {
-      const { data, error } = await supabase
+  // Parallel fetch (was serial: N collections × RTT). Concurrent requests for
+  // the same collection share one in-flight promise instead of re-fetching.
+  await Promise.all(
+    due.map((name) => {
+      const inFlight = state.refreshInFlight.get(name);
+      if (inFlight) return inFlight;
+      const task = refreshOneCollection(supabase, name).finally(() => {
+        state.refreshInFlight.delete(name);
+      });
+      state.refreshInFlight.set(name, task);
+      return task;
+    }),
+  );
+}
+
+async function refreshOneCollection(supabase: SupabaseClient, name: string): Promise<void> {
+  const collection = state.tracked.get(name);
+  if (!collection) return;
+
+  try {
+    // NOTE: keep the updated_at ordering — routes rely on collections being
+    // newest-first (e.g. `.slice(0, 20)` for "recent" views). The composite
+    // index (collection, updated_at DESC) makes this cheap.
+    // Page through the whole collection — PostgREST caps un-ranged selects at
+    // 1000 rows, which silently truncated collections past that size (e.g.
+    // riderDailyKpis): older records vanished from memory on refresh, so
+    // lifetime aggregates and backfills missed them.
+    const pageSize = 1000;
+    let from = 0;
+    const data: Array<{ data: AnyRecord }> = [];
+    for (;;) {
+      const { data: page, error } = await supabase
         .from(TABLE)
         .select("record_id, data")
         .eq("collection", name)
-        .order("updated_at", { ascending: false });
+        .order("updated_at", { ascending: false })
+        .range(from, from + pageSize - 1);
       if (error) throw new Error(error.message);
-
-      const dbRows = ((data ?? []) as Array<{ data: AnyRecord }>)
-        .map((row) => row.data)
-        .filter((row) => row && typeof row.id === "string");
-      const dbIds = new Set(dbRows.map((row) => row.id));
-      const pendingDeletes = state.pendingDeletes.get(name) ?? new Set<string>();
-      // Write wins here too: a queued delete for an id that is present in the
-      // local collection again means the record was re-created — unqueue it.
-      if (pendingDeletes.size > 0) {
-        const present = new Set(collection.map((record) => record?.id));
-        for (const id of Array.from(pendingDeletes)) {
-          if (present.has(id)) pendingDeletes.delete(id);
-        }
-      }
-      const localNewSet = state.localNew.get(name) ?? new Set<string>();
-      // Keep a record that's absent from the database ONLY if this instance
-      // created it (not flushed yet). Anything else absent from the database
-      // was deleted by a sibling instance and must not be resurrected.
-      const localOnly = collection.filter(
-        (record) =>
-          record &&
-          typeof record.id === "string" &&
-          !dbIds.has(record.id) &&
-          !pendingDeletes.has(record.id) &&
-          localNewSet.has(record.id),
-      );
-
-      state.suspendTracking = true;
-      try {
-        collection.splice(0, collection.length, ...localOnly, ...dbRows.filter((row) => !pendingDeletes.has(row.id)));
-      } finally {
-        state.suspendTracking = false;
-      }
-      // Ids now present in the database no longer count as local-only.
-      for (const id of dbIds) localNewSet.delete(id);
-      if (localOnly.length > 0) {
-        state.dirty.add(name);
-        scheduleFlush();
-      }
-    } catch (error) {
-      warnOnce((error as Error).message);
+      if (!page || page.length === 0) break;
+      data.push(...(page as Array<{ data: AnyRecord }>));
+      if (page.length < pageSize) break;
+      from += pageSize;
     }
+
+    const dbRows = ((data ?? []) as Array<{ data: AnyRecord }>)
+      .map((row) => row.data)
+      .filter((row) => row && typeof row.id === "string");
+    const dbIds = new Set(dbRows.map((row) => row.id));
+    const pendingDeletes = state.pendingDeletes.get(name) ?? new Set<string>();
+    // Write wins here too: a queued delete for an id that is present in the
+    // local collection again means the record was re-created — unqueue it.
+    if (pendingDeletes.size > 0) {
+      const present = new Set(collection.map((record) => record?.id));
+      for (const id of Array.from(pendingDeletes)) {
+        if (present.has(id)) pendingDeletes.delete(id);
+      }
+    }
+    const localNewSet = state.localNew.get(name) ?? new Set<string>();
+    // Keep a record that's absent from the database ONLY if this instance
+    // created it (not flushed yet). Anything else absent from the database
+    // was deleted by a sibling instance and must not be resurrected.
+    const localOnly = collection.filter(
+      (record) =>
+        record &&
+        typeof record.id === "string" &&
+        !dbIds.has(record.id) &&
+        !pendingDeletes.has(record.id) &&
+        localNewSet.has(record.id),
+    );
+
+    state.suspendTracking = true;
+    try {
+      collection.splice(0, collection.length, ...localOnly, ...dbRows.filter((row) => !pendingDeletes.has(row.id)));
+    } finally {
+      state.suspendTracking = false;
+    }
+    // Ids now present in the database no longer count as local-only.
+    for (const id of dbIds) localNewSet.delete(id);
+    if (localOnly.length > 0) {
+      state.dirty.add(name);
+      scheduleFlush();
+    }
+    state.lastRefreshedAt.set(name, Date.now());
+  } catch (error) {
+    warnOnce((error as Error).message);
   }
 }
 
@@ -335,6 +394,7 @@ export function trackCollection<T extends { id: string }>(name: string, array: T
       if (!state.suspendTracking) {
         state.dirty.add(name);
         markLocalNew(name, value);
+        state.lastRefreshedAt.delete(name); // read-your-writes: bust the TTL
         scheduleFlush();
       }
       return result;
@@ -343,6 +403,7 @@ export function trackCollection<T extends { id: string }>(name: string, array: T
       const result = Reflect.deleteProperty(target, property);
       if (!state.suspendTracking) {
         state.dirty.add(name);
+        state.lastRefreshedAt.delete(name);
         scheduleFlush();
       }
       return result;
@@ -422,6 +483,9 @@ export function hydrateFromDatabase(): Promise<void> {
               state.suspendTracking = false;
             }
             state.dirty.delete(name);
+            // Fresh from the database — start the read-through TTL window so
+            // the first request after boot doesn't immediately re-fetch.
+            state.lastRefreshedAt.set(name, Date.now());
           }
         } else {
           // Nothing in the DB yet: push the seeds so the DB mirrors the app.
