@@ -35,6 +35,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -319,7 +320,7 @@ fun MallScreen() {
                     ProductImage(product, Modifier.fillMaxWidth().height(180.dp))
                     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                         Text(product.name, color = me.text, fontWeight = FontWeight.Bold, fontSize = 20.sp)
-                        Text(product.category, color = me.muted, fontSize = 13.sp)
+                        Text(loc.categoryLabel(product.category), color = me.muted, fontSize = 13.sp)
                     }
                     if (product.description.isNotBlank()) {
                         Text(product.description, color = me.textSoft, fontSize = 14.sp)
@@ -410,9 +411,30 @@ private fun ProductImage(product: MallProduct, modifier: Modifier = Modifier) {
             .background(me.surfaceRaised),
         contentAlignment = Alignment.Center,
     ) {
-        if (product.imageUrl != null) {
+        val url = product.imageUrl
+        if (url != null && url.startsWith("data:image/")) {
+            // Inline base64 image (supplier upload fallback) — Coil has no
+            // data: fetcher, so decode it ourselves instead of showing blank.
+            val bmp = remember(url) {
+                runCatching {
+                    val b64 = url.substringAfter("base64,", "")
+                    val bytes = android.util.Base64.decode(b64, android.util.Base64.DEFAULT)
+                    android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+                }.getOrNull()
+            }
+            if (bmp != null) {
+                androidx.compose.foundation.Image(
+                    bitmap = bmp.asImageBitmap(),
+                    contentDescription = product.name,
+                    contentScale = ContentScale.Fit,
+                    modifier = Modifier.fillMaxSize().padding(4.dp),
+                )
+            } else {
+                Icon(product.icon, contentDescription = null, tint = me.accent, modifier = Modifier.size(30.dp))
+            }
+        } else if (url != null) {
             AsyncImage(
-                model = product.imageUrl,
+                model = url,
                 contentDescription = product.name,
                 // Fit, not Crop: product shots must be shown WHOLE — cropping
                 // cut labels/edges off ("图显示不全"). The raised surface behind
@@ -449,7 +471,7 @@ private fun ProductCard(
     ) {
         ProductImage(product, Modifier.fillMaxWidth().height(96.dp))
         Text(product.name, color = me.text, fontWeight = FontWeight.SemiBold, fontSize = 14.sp, maxLines = 2)
-        Text(product.category, color = me.muted, fontSize = 11.sp, maxLines = 1)
+        Text(loc.categoryLabel(product.category), color = me.muted, fontSize = 11.sp, maxLines = 1)
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text("${product.points} pts", color = me.accent, fontWeight = FontWeight.Bold, fontSize = 14.sp)
             Spacer(Modifier.weight(1f))

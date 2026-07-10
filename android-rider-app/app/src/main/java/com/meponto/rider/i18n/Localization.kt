@@ -47,6 +47,28 @@ class LocalizationManager(context: Context) {
 
     fun t(key: String): String =
         L10n.table[language]?.get(key) ?: L10n.table[AppLanguage.PT]?.get(key) ?: key
+
+    /** Localize free-form catalog categories (supplier-entered, usually pt).
+     *  Known words map per language; unknown ones pass through unchanged. */
+    fun categoryLabel(raw: String): String {
+        val key = raw.trim().lowercase()
+        val table = when (language) {
+            AppLanguage.ZH -> mapOf(
+                "ferramenta" to "工具装备", "motobike" to "摩托车", "combustível" to "加油",
+                "combustivel" to "加油", "celular" to "手机", "oficina" to "维修保养",
+                "mercado" to "超市", "voucher" to "代金券", "capacete" to "头盔",
+                "bateria" to "电池", "pneu" to "轮胎", "acessório" to "配件", "acessorio" to "配件",
+            )
+            AppLanguage.EN -> mapOf(
+                "ferramenta" to "Gear & tools", "motobike" to "MotoBike", "combustível" to "Fuel",
+                "combustivel" to "Fuel", "celular" to "Phone", "oficina" to "Workshop",
+                "mercado" to "Market", "voucher" to "Voucher", "capacete" to "Helmet",
+                "bateria" to "Battery", "pneu" to "Tires", "acessório" to "Accessories", "acessorio" to "Accessories",
+            )
+            else -> emptyMap()
+        }
+        return table[key] ?: raw
+    }
 }
 
 val LocalLoc = staticCompositionLocalOf<LocalizationManager> {
