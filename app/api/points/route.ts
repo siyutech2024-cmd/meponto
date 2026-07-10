@@ -9,10 +9,28 @@ import {
   riderPerformancePointRules,
 } from "../../lib/points";
 import { jsonResponse, memory } from "../../lib/server/memory";
+import { requirePermission } from "../../lib/server/authz";
+import { sessionFromRequest } from "../../lib/auth-session";
 
-export function GET(request: Request) {
+export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const riderId = searchParams.get("riderId");
+  // AUTH: this endpoint used to be open — anyone could dump every rider's
+  // ledger. Now: the full network view needs the analytics permission, and
+  // the per-rider view needs a session that OWNS that riderId (or analytics).
+  if (!riderId) {
+    const forbidden = requirePermission(request, "view_analytics");
+    if (forbidden) return forbidden;
+  } else {
+    const session = await sessionFromRequest(request);
+    const own =
+      session &&
+      memory.riders.some((r) => r.id === riderId && (r.id === session.userId || r.name === session.name));
+    if (!own) {
+      const forbidden = requirePermission(request, "view_analytics");
+      if (forbidden) return forbidden;
+    }
+  }
   // Rider-app context (riderId present) → return ONLY that rider's account and
   // ledger (no cross-rider / partner data leak). Admin context (no riderId) →
   // full network view as before.

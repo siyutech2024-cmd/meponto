@@ -59,8 +59,10 @@ async function handlePost(request: Request) {
 
   const date = nowStamp().slice(0, 10);
   const checkinId = `pts-chk-${date}-${pontoKey}-${rider.id}`;
-  if (memory.pointsLedgerEntries.some((e) => e.id === checkinId)) {
-    return jsonResponse({ error: "Você já fez check-in nesta estação hoje.", code: "already_checked_in" }, { status: 409 });
+  // ONE check-in per rider per DAY across ALL stations — otherwise a rider
+  // (or a photo collection of franchise QRs) farms every station daily.
+  if (memory.pointsLedgerEntries.some((e) => e.riderId === rider.id && e.reasonCode === "PONTO_CHECKIN" && e.createdAt.startsWith(date))) {
+    return jsonResponse({ error: "Você já fez seu check-in de hoje.", code: "already_checked_in" }, { status: 409 });
   }
 
   const award = checkinPoints();

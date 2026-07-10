@@ -67,9 +67,15 @@ async function handlePost(request: Request) {
     }
 
     case "registerToken": {
-      // Open endpoint — native apps (Android/iOS) register their FCM token.
-      const { token, riderName, platform } = body as { token?: string; riderName?: string; platform?: string };
+      // Native apps register their FCM token AFTER login: the recipient name
+      // comes from the SESSION, never from the body — otherwise anyone could
+      // subscribe their own device to another rider's notifications.
+      const { token, platform } = body as { token?: string; riderName?: string; platform?: string };
       if (!token?.trim()) return jsonResponse({ error: "token is required" }, { status: 400 });
+      const { sessionFromRequest: sessionForToken } = await import("../../lib/auth-session");
+      const tokenSession = await sessionForToken(request);
+      if (!tokenSession) return jsonResponse({ error: "login required" }, { status: 401 });
+      const riderName = tokenSession.name;
       const existing = memory.fcmTokens.findIndex((t) => t.token === token);
       const record: FcmTokenRecord = {
         id: existing !== -1 ? memory.fcmTokens[existing].id : makeServerId("fcm", memory.fcmTokens.length + 1),

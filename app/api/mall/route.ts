@@ -915,19 +915,20 @@ async function handlePost(request: Request) {
       const createdAt = nowStamp();
       const eta = new Date();
       eta.setDate(eta.getDate() + (product.deliveryCycleDays ?? 7));
-      // Virtual goods: no logistics — issue an instant voucher code instead
-      // (unless held for review, in which case the code waits for approval).
-      const isVirtual = product.isVirtual === true;
-      const issueNow = isVirtual && !heldForReview;
-      const voucherCode = issueNow
-        ? `MP-${Date.now().toString(36).toUpperCase()}-${Math.random().toString(36).slice(2, 6).toUpperCase()}`
-        : undefined;
       const cashDue = Math.round(((product.cashPriceBRL ?? 0) + pointsTopUpBRL) * 100) / 100;
       // Hybrid checkout: the cash part settles from the prepaid balance when
       // it covers the amount; otherwise the order is created as PENDING and
       // the rider pays IN CASH AT PICKUP — the mall office confirms receipt
       // (existing payment flow) before the station can hand the item over.
       const paidFromBalance = cashDue > 0 && cashBalanceOf(rider.id) >= cashDue;
+      // Virtual goods: no logistics — issue an instant voucher code, but ONLY
+      // when nothing is left to review OR COLLECT: an unpaid (cash-on-pickup)
+      // voucher would be spendable without ever paying.
+      const isVirtual = product.isVirtual === true;
+      const issueNow = isVirtual && !heldForReview && (cashDue === 0 || paidFromBalance);
+      const voucherCode = issueNow
+        ? `MP-${Date.now().toString(36).toUpperCase()}-${Math.random().toString(36).slice(2, 6).toUpperCase()}`
+        : undefined;
       // Resolve pickup store (always a Ponto). Locked for riders with a home
       // station; otherwise chosen from the allowed set (本商站点 / 公开用户任一).
       const riderCandidates = pickupCandidatesForRider(rider);
@@ -1114,8 +1115,10 @@ async function handlePost(request: Request) {
         });
       }
 
-      // Refund the cash part to the prepaid balance, if any was charged.
-      const cashRefund = Math.round((order.cashDue ?? 0) * 100) / 100;
+      // Refund the cash part to the prepaid balance ONLY when it was actually
+      // charged (paymentStatus paid). Cash-on-pickup orders that were never
+      // paid must not mint a refund (free-money exploit otherwise).
+      const cashRefund = order.paymentStatus === "paid" ? Math.round((order.cashDue ?? 0) * 100) / 100 : 0;
       if (cashRefund > 0) {
         const cashAvailable = cashBalanceOf(order.riderId);
         const refundEntry: CashLedgerEntry = {
