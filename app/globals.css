@@ -5,88 +5,112 @@
 [data-theme="dark"] {
   color-scheme: dark;
 
-  /* PontoSys / PontoMall dark operating system */
-  --background: #07090d;
-  --surface: #0d1117;
-  --surface-raised: #111722;
-  --surface-hover: #172031;
-  --surface-soft: #151c29;
-  --panel: #0d1117;
-  --panel-strong: #111722;
-  --panel-hover: #172031;
-  --line: #263244;
-  --line-soft: rgba(38, 50, 68, 0.65);
-  --line-alpha: rgba(255, 209, 0, 0.18);
+  /* PontoSys / PontoMall dark operating system.
+     Tuned to a Linear/Vercel feel: charcoal (not pure black) canvas, cards one
+     step above the canvas, low-contrast hairlines, slightly desaturated yellow. */
+  --background: #0e1013;
+  --surface: #16181d;
+  --surface-raised: #1c1f26;
+  --surface-hover: #23262e;
+  --surface-soft: #191c22;
+  --panel: #16181d;
+  --panel-strong: #1c1f26;
+  --panel-hover: #23262e;
+  --line: #272b33;
+  --line-strong: #383d47;
+  --line-soft: rgba(39, 43, 51, 0.65);
+  --line-alpha: rgba(238, 198, 67, 0.16);
 
-  --text: #f8fafc;
-  --text-soft: #d7dee8;
-  --muted: #9aa6b8;
-  --muted-strong: #b7c1d0;
+  --text: #f2f3f5;
+  --text-soft: #c9ced6;
+  --muted: #8b93a1;
+  --muted-strong: #aeb6c2;
 
-  --accent: #ffd100;
-  --accent-strong: #f2b705;
-  --accent-ink: #171400;
-  --accent-glow: rgba(255, 209, 0, 0.16);
+  --accent: #eec643;
+  --accent-strong: #d9ae1f;
+  --accent-ink: #1a1500;
+  --accent-glow: rgba(238, 198, 67, 0.14);
 
   --cyan: #2dd4bf;
   --cyan-glow: rgba(45, 212, 191, 0.18);
 
-  --danger: #ff5c70;
-  --warning: #ffb454;
+  /* Semantic status tokens — each family ships color / -bg / -ink for both
+     themes. `--warn`/`--success` are the flat mall/ops tokens; the legacy
+     `--warning`/`--ok` names are kept as compatible aliases. */
+  --danger: #f47184;
+  --danger-bg: rgba(244, 113, 132, 0.13);
+  --danger-ink: #fca5b1;
+  --warn: #d9a83d;
+  --warn-bg: rgba(217, 168, 61, 0.13);
+  --warn-ink: #edc775;
+  --success: #3fc98c;
+  --success-bg: rgba(63, 201, 140, 0.12);
+  --success-ink: #85e2ba;
+  --info: #6ba6f8;
+  --info-bg: rgba(107, 166, 248, 0.13);
+  --info-ink: #a3c8fb;
+  --warning: #edb35c;
+  --warning-ink: #f5cf94;
+  --warning-bg: rgba(237, 179, 92, 0.14);
   --ok: #2dd4bf;
-  /* Flat status tokens for mall/ops workspaces (converged from previously
-     hardcoded #c4423b / #9a7400 / #1d7a3e — see PontoMall pages). */
-  --warn: #9a7400;
-  --success: #1d7a3e;
-  --danger-ink: #ff9aa7;
-  --warning-ink: #ffd39a;
   --ok-ink: #7de9db;
-  --danger-bg: rgba(255, 92, 112, 0.14);
-  --warning-bg: rgba(255, 180, 84, 0.14);
   --ok-bg: rgba(45, 212, 191, 0.12);
-  --overlay: rgba(0, 0, 0, 0.6);
-  --shadow: rgba(0, 0, 0, 0.22);
+  --overlay: rgba(6, 7, 9, 0.66);
+  --shadow: rgba(0, 0, 0, 0.34);
 }
 
 [data-theme="light"] {
   color-scheme: light;
 
-  --background: #f5f7fa;
+  /* Professional light back office (Stripe/Shopify feel): warm near-white
+     canvas, pure-white cards, hairline borders, three ink levels; MePonto
+     yellow reserved for primary buttons / selected states / focus rings. */
+  --background: #f7f7f5;
   --surface: #ffffff;
-  --surface-raised: #f8fafc;
-  --surface-hover: #eef3f8;
-  --surface-soft: #f1f5f9;
+  --surface-raised: #f9f9f7;
+  --surface-hover: #f2f2ef;
+  --surface-soft: #f5f5f2;
   --panel: #ffffff;
-  --panel-strong: #f8fafc;
-  --panel-hover: #eef3f8;
-  --line: #d8e0ea;
-  --line-soft: rgba(216, 224, 234, 0.78);
-  --line-alpha: rgba(198, 153, 0, 0.22);
+  --panel-strong: #f9f9f7;
+  --panel-hover: #f2f2ef;
+  --line: #e5e5e1;
+  --line-strong: #cfcfc8;
+  --line-soft: rgba(229, 229, 225, 0.75);
+  --line-alpha: rgba(176, 132, 0, 0.24);
 
-  --text: #111827;
-  --text-soft: #334155;
-  --muted: #64748b;
-  --muted-strong: #475569;
+  --text: #1b1b16;
+  --text-soft: #44443c;
+  --muted: #6f6f65;
+  --muted-strong: #4c4c43;
 
-  --accent: #d9a900;
-  --accent-strong: #b88700;
-  --accent-ink: #171400;
-  --accent-glow: rgba(217, 169, 0, 0.18);
+  --accent: #c29200;
+  --accent-strong: #a37a00;
+  --accent-ink: #221b00;
+  --accent-glow: rgba(194, 146, 0, 0.16);
 
   --cyan: #0f766e;
   --cyan-glow: rgba(15, 118, 110, 0.12);
 
-  --danger: #dc2626;
-  --warning: #b45309;
+  --danger: #d92d20;
+  --danger-bg: rgba(217, 45, 32, 0.08);
+  --danger-ink: #b42318;
+  --warn: #b54708;
+  --warn-bg: rgba(181, 71, 8, 0.09);
+  --warn-ink: #93370d;
+  --success: #067647;
+  --success-bg: rgba(6, 118, 71, 0.09);
+  --success-ink: #085d3a;
+  --info: #175cd3;
+  --info-bg: rgba(23, 92, 211, 0.08);
+  --info-ink: #1849a9;
+  --warning: #b54708;
+  --warning-ink: #93370d;
+  --warning-bg: rgba(181, 71, 8, 0.1);
   --ok: #0f766e;
-  --danger-ink: #b91c1c;
-  --warning-ink: #92400e;
   --ok-ink: #0f766e;
-  --danger-bg: rgba(220, 38, 38, 0.1);
-  --warning-bg: rgba(180, 83, 9, 0.11);
-  --ok-bg: rgba(15, 118, 110, 0.1);
-  --overlay: rgba(15, 23, 42, 0.32);
-  --shadow: rgba(15, 23, 42, 0.08);
+  --ok-bg: rgba(15, 118, 110, 0.09);
+  --overlay: rgba(28, 27, 22, 0.4);
+  --shadow: rgba(28, 27, 22, 0.07);
 }
 
 * {
@@ -252,6 +276,7 @@ textarea:focus {
   --accent-ink: #050505;
   --accent-glow: rgba(255, 122, 0, 0.13);
   --accent-soft: #fff0e4;
+  --line-strong: #d6d2c9;
   --danger: #f3b6b2;
   --warning: #f0d3a6;
   --ok: #bfe6cd;
@@ -261,6 +286,17 @@ textarea:focus {
   --danger-bg: #ffe5e3;
   --warning-bg: #fdf2df;
   --ok-bg: #e8f6ee;
+  --warn: #9a6a12;
+  --warn-bg: #fdf2df;
+  --warn-ink: #7a540e;
+  --success: #20a65a;
+  --success-bg: #e8f6ee;
+  --success-ink: #17864a;
+  --info: #2563eb;
+  --info-bg: #e7effd;
+  --info-ink: #1d4ed8;
+  --overlay: rgba(28, 26, 20, 0.42);
+  --shadow: rgba(28, 26, 20, 0.08);
   color: var(--text);
   font-family: 'Poppins', 'Inter', system-ui, sans-serif;
 }
