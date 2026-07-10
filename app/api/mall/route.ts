@@ -254,12 +254,40 @@ async function markOrderArrived(index: number, actor: string): Promise<Marketpla
 
 export async function GET(request: Request) {
   const url = new URL(request.url);
-  const scopeStation = url.searchParams.get("station") ?? "";
-  const scopeFranchise = url.searchParams.get("franchise") ?? "";
+  let scopeStation = url.searchParams.get("station") ?? "";
+  let scopeFranchise = url.searchParams.get("franchise") ?? "";
   const riderId = url.searchParams.get("riderId") ?? "";
   const riderName = url.searchParams.get("riderName") ?? "";
 
   await refreshCollectionsFromDatabase(COLLECTIONS);
+
+  // ---- Scope enforcement (session-derived, never caller-widened) -----------
+  // ?station= / ?franchise= exist only for the back-office order views, so the
+  // session decides what they may resolve to (same field usage as
+  // scopeFromRequest in app/lib/server/authz.ts and /api/mall/ops):
+  //   • franchise portal → franchise forced to the session's own franchise;
+  //     ?station= is honored only if that ponto belongs to this franchise;
+  //   • ponto (station) portal → station forced to the session's own station,
+  //     franchise pinned to the session's franchise (empty if none);
+  //   • pontosys / pontomall (HQ) → unrestricted, params pass through;
+  //   • rider / partner / supplier / no session → both params cleared — their
+  //     data comes from the riderId/riderName "me" context and the partner
+  //     storefront branch below, never from back-office scope filters.
+  const { sessionFromRequest } = await import("../../lib/auth-session");
+  const session = await sessionFromRequest(request);
+  const isHq = session?.portal === "pontosys" || session?.portal === "pontomall";
+  if (session?.portal === "franchise") {
+    scopeFranchise = session.franchise || session.organization || "";
+    if (scopeStation && !memory.pontos.some((p) => p.name === scopeStation && p.franchise === scopeFranchise)) {
+      scopeStation = "";
+    }
+  } else if (session?.portal === "ponto") {
+    scopeStation = session.station || session.organization || "";
+    scopeFranchise = session.franchise ?? "";
+  } else if (!isHq) {
+    scopeStation = "";
+    scopeFranchise = "";
+  }
 
   const config = getConfig();
   // HQ/unscoped views include Partner redemptions for reconciliation; the
@@ -353,9 +381,7 @@ export async function GET(request: Request) {
 
   // HQ-only economics: supplier payables and supply prices never leave the
   // building — the public storefront still gets products/orders/me.
-  const { sessionFromRequest } = await import("../../lib/auth-session");
-  const session = await sessionFromRequest(request);
-  const isHq = session?.portal === "pontosys" || session?.portal === "pontomall";
+  // (session/isHq are parsed once at the top of GET, before scope filtering.)
   // Suppliers still see THEIR OWN quoted prices.
   const supplierName = session?.portal === "supplier" ? session.organization || "" : "";
 
