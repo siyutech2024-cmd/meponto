@@ -17,10 +17,60 @@ const COLLECTIONS = [
   "appUsers",
 ];
 
+function generatedAt() {
+  return new Date().toISOString().slice(0, 16).replace("T", " ");
+}
+
+/**
+ * Fast path: one `overview_stats` RPC aggregates everything in-database
+ * (single indexed scan per collection — see
+ * docs/overview-read-path-optimization-plan.md), plus a 60s per-instance
+ * snapshot so N dashboard viewers share ONE computation. The legacy path
+ * refreshed 12 full collections into memory per request;
+ * riderDailyKpis/riderDailyEarnings grow per rider per day, so that download
+ * eventually took minutes and the dashboard hung. Kill switch:
+ * OVERVIEW_DB_AGGREGATE=false falls back to the in-memory rollup.
+ */
+const SNAPSHOT_TTL_MS = 60_000;
+let snapshot: { at: number; body: Record<string, unknown> } | null = null;
+
+async function overviewFromDatabase(): Promise<Response | null> {
+  if (process.env.OVERVIEW_DB_AGGREGATE === "false") return null;
+  if (process.env.USE_SUPABASE !== "true") return null;
+
+  // Dashboards tolerate 60s staleness — serve every warm-instance viewer
+  // from the last computed rollup instead of re-running the RPC.
+  if (snapshot && Date.now() - snapshot.at < SNAPSHOT_TTL_MS) {
+    return jsonResponse({ data: snapshot.body });
+  }
+
+  try {
+    const { getSupabaseServerClient } = await import("../../lib/supabase/server");
+    const supabase = getSupabaseServerClient();
+    const today = new Date().toISOString().slice(0, 10);
+    const { data, error } = await supabase.rpc("overview_stats", { p_today: today });
+    if (error) throw new Error(error.message);
+    if (!data || typeof data !== "object") throw new Error("empty overview_stats payload");
+
+    const body = { generatedAt: generatedAt(), ...(data as Record<string, unknown>) };
+    snapshot = { at: Date.now(), body };
+    return jsonResponse({ data: body });
+  } catch (error) {
+    console.warn(
+      `[overview] overview_stats RPC unavailable, using in-memory rollup. (${(error as Error).message})`,
+    );
+    return null;
+  }
+}
+
 /** Real-time HQ overview: one aggregated read for the dashboard. */
 export async function GET(request: Request) {
   const forbidden = requirePermission(request, "view_dashboard");
   if (forbidden) return forbidden;
+
+  const fast = await overviewFromDatabase();
+  if (fast) return fast;
+
   await refreshCollectionsFromDatabase(COLLECTIONS);
 
   const today = new Date().toISOString().slice(0, 10);
@@ -36,7 +86,7 @@ export async function GET(request: Request) {
 
   return jsonResponse({
     data: {
-      generatedAt: new Date().toISOString().slice(0, 16).replace("T", " "),
+      generatedAt: generatedAt(),
       network: {
         franchises: memory.franchises.length,
         stations: memory.pontos.length,
