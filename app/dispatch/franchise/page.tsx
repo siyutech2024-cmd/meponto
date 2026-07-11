@@ -1,8 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { RefreshCcw, Send, Star } from "lucide-react";
-import { AppShell, Badge, PageTitle } from "../../components/ui";
+import { RefreshCcw, Send, Split, Star } from "lucide-react";
+import { AppShell, PageTitle } from "../../components/ui";
+import { DataTable, Drawer, SectionCard, Stat, StatusBadge, TodoCard, type BadgeTone, type DataColumn } from "../../components/kit";
 import { readSession } from "../../lib/session";
 import type { DispatchShift, ShiftQuota, ShiftSignup } from "../../lib/dispatch";
 import { ShiftRiderPicker } from "../../components/shift-rider-picker";
@@ -10,8 +11,11 @@ import { useVentoStore } from "../../lib/store";
 import { translate, type TranslationKey } from "../../lib/i18n";
 
 type Board = { shifts: DispatchShift[]; quotas: ShiftQuota[]; signups: ShiftSignup[] };
+type MyShiftRow = { shift: DispatchShift; franchiseQuota?: ShiftQuota; stationQuotas: ShiftQuota[] };
 
 const statusKey: Record<string, TranslationKey> = { scheduling: "dpStScheduling", executing: "dpStExecuting", finished: "dpStFinished" };
+// Badge semantics: green = running, amber = waiting on a human, gray = terminal.
+const SHIFT_TONE: Record<string, BadgeTone> = { scheduling: "warn", executing: "success", finished: "neutral" };
 const WEEKDAY_KEYS: TranslationKey[] = ["pfWdMon", "pfWdTue", "pfWdWed", "pfWdThu", "pfWdFri", "pfWdSat", "pfWdSun"];
 
 function addDays(iso: string, delta: number): string {
@@ -25,6 +29,10 @@ function mondayOf(): string {
   const back = (d.getDay() - 1 + 7) % 7;
   d.setDate(d.getDate() - back);
   return d.toISOString().slice(0, 10);
+}
+
+function weekdayKeyOf(date: string): TranslationKey {
+  return WEEKDAY_KEYS[(new Date(`${date}T12:00:00Z`).getUTCDay() + 6) % 7];
 }
 
 export default function FranchiseDispatchPage() {
@@ -63,6 +71,7 @@ export default function FranchiseDispatchPage() {
   const [message, setMessage] = useState<{ tone: "ok" | "err" | "warn"; text: string } | null>(null);
   const [stationInputs, setStationInputs] = useState<Record<string, string>>({}); // `${shiftId}|${station}` -> quota
   const [activeShiftId, setActiveShiftId] = useState("");
+  const [splitShiftId, setSplitShiftId] = useState("");
   const [weekStart, setWeekStart] = useState(() => mondayOf());
 
   const load = useCallback(async () => {
@@ -102,7 +111,7 @@ export default function FranchiseDispatchPage() {
   }
 
   // Shifts where HQ allocated a franchise-level quota to us.
-  const myShifts = board.shifts
+  const myShifts: MyShiftRow[] = board.shifts
     .map((shift) => {
       const franchiseQuota = board.quotas.find((quota) => quota.shiftId === shift.id && quota.level === "franchise" && quota.franchise === franchise);
       const stationQuotas = board.quotas.filter((quota) => quota.shiftId === shift.id && quota.level === "station" && quota.franchise === franchise);
@@ -112,6 +121,110 @@ export default function FranchiseDispatchPage() {
 
   const pending = board.signups.filter((signup) => signup.status === "submitted");
   const knownStations = [...new Set(board.quotas.filter((q) => q.level === "station" && q.franchise === franchise).map((q) => q.station))];
+
+  // Stats row: quota vs split vs review progress across all my shifts.
+  const totalQuota = myShifts.reduce((sum, row) => sum + (row.franchiseQuota?.quota ?? 0), 0);
+  const totalSplit = myShifts.reduce((sum, row) => sum + row.stationQuotas.reduce((x, q) => x + q.quota, 0), 0);
+  const approvedTotal = board.signups.filter((s) => s.status === "approved" || s.status === "reported").length;
+
+  const weekEnd = addDays(weekStart, 6);
+  const weekRows = myShifts
+    .filter(({ shift }) => shift.date >= weekStart && shift.date <= weekEnd)
+    .sort((a, b) => a.shift.date.localeCompare(b.shift.date) || a.shift.timeRange.localeCompare(b.shift.timeRange));
+
+  const splitRow = myShifts.find((row) => row.shift.id === splitShiftId);
+  const splitStations = myStations.length > 0 ? myStations : knownStations;
+
+  const shiftColumns: Array<DataColumn<MyShiftRow>> = [
+    {
+      key: "date",
+      label: t("dfDate"),
+      render: ({ shift }) => (
+        <div translate="no">
+          <div className={`font-black ${activeShiftId === shift.id ? "text-[var(--accent)]" : ""}`}>{shift.date.slice(5)}</div>
+          <div className="text-[10px] font-bold text-[var(--muted)]">{t(weekdayKeyOf(shift.date))}</div>
+        </div>
+      ),
+    },
+    {
+      key: "slot",
+      label: t("dpSlot"),
+      render: ({ shift }) => (
+        <span className={`inline-flex items-center gap-1 font-black ${activeShiftId === shift.id ? "text-[var(--accent)]" : ""}`}>
+          {shift.isCritical && <Star size={12} className="text-[var(--accent)]" />}
+          {shift.timeRange}
+        </span>
+      ),
+    },
+    { key: "hotzone", label: t("dpHotzone"), render: ({ shift }) => <span className="text-xs text-[var(--muted-strong)]">{shift.hotzone}</span> },
+    {
+      key: "status",
+      label: t("dpStatus"),
+      render: ({ shift }) => <StatusBadge tone={SHIFT_TONE[shift.status] ?? "info"} label={statusKey[shift.status] ? t(statusKey[shift.status]) : shift.status} />,
+    },
+    { key: "quota", label: t("dfMyQuota"), align: "right", render: ({ franchiseQuota }) => <span className="font-black">{franchiseQuota?.quota ?? 0}</span> },
+    {
+      key: "split",
+      label: t("dfAllocated"),
+      align: "right",
+      render: ({ franchiseQuota, stationQuotas }) => {
+        const allocated = stationQuotas.reduce((sum, quota) => sum + quota.quota, 0);
+        return <span className={`font-black ${allocated > (franchiseQuota?.quota ?? 0) ? "text-[var(--danger-ink)]" : "text-[var(--accent)]"}`}>{allocated}</span>;
+      },
+    },
+    {
+      key: "approved",
+      label: t("dpApprovedCnt"),
+      align: "right",
+      render: ({ shift }) => {
+        const approved = board.signups.filter((item) => item.shiftId === shift.id && (item.status === "approved" || item.status === "reported")).length;
+        return <span className="font-black text-[var(--ok-ink)]">{approved}</span>;
+      },
+    },
+    {
+      key: "waiting",
+      label: t("dpPendingCnt"),
+      align: "right",
+      render: ({ shift }) => {
+        const waiting = board.signups.filter((item) => item.shiftId === shift.id && item.status === "submitted").length;
+        return <span className={`font-black ${waiting > 0 ? "text-[var(--warning-ink)]" : "text-[var(--muted)]"}`}>{waiting}</span>;
+      },
+    },
+    {
+      key: "action",
+      label: t("dpAction"),
+      align: "right",
+      render: ({ shift }) => (
+        <button
+          type="button"
+          className="tag inline-flex items-center gap-1 border-[var(--accent)] text-[var(--accent)]"
+          onClick={(e) => {
+            e.stopPropagation();
+            setSplitShiftId(shift.id);
+          }}
+        >
+          <Split size={12} /> {t("dfSplitToStation")}
+        </button>
+      ),
+    },
+  ];
+
+  const pendingColumns: Array<DataColumn<ShiftSignup>> = [
+    { key: "rider", label: t("pfRider"), render: (signup) => <span className="font-black">{signup.riderName || signup.rider99Id}</span> },
+    { key: "station", label: t("pfStation"), render: (signup) => <span className="tag">{signup.station}</span> },
+    {
+      key: "date",
+      label: t("dfDate"),
+      render: (signup) => <span className="text-xs text-[var(--muted)]">{board.shifts.find((item) => item.id === signup.shiftId)?.date ?? "—"}</span>,
+    },
+    {
+      key: "slot",
+      label: t("dpSlot"),
+      render: (signup) => board.shifts.find((item) => item.id === signup.shiftId)?.timeRange ?? signup.shiftId,
+    },
+    { key: "nn", label: "99 ID", render: (signup) => <span className="font-mono text-[11px] text-[var(--muted)]">{signup.rider99Id}</span> },
+    { key: "status", label: t("dpStatus"), align: "right", render: () => <StatusBadge tone="warn" label={t("dpPendingHq")} /> },
+  ];
 
   return (
     <AppShell>
@@ -142,96 +255,38 @@ export default function FranchiseDispatchPage() {
 
       <FranchiseOverview franchise={franchise} headers={headers} />
 
+      {/* Dispatch stats: split progress + review todo. */}
+      <section className="mb-4 grid gap-3 md:grid-cols-4">
+        <Stat label={t("dfMyQuota")} value={String(totalQuota)} hint={t("dpWeekShifts", { n: myShifts.length })} />
+        <Stat label={t("dfAllocated")} value={String(totalSplit)} />
+        <Stat label={t("dpApprovedCnt")} value={String(approvedTotal)} />
+        <TodoCard label={t("dpPendingCnt")} value={pending.length} tone={pending.length > 0 ? "warn" : "neutral"} hint={t("dfSubmittedHint")} />
+      </section>
+
       <div className="grid gap-4 xl:grid-cols-[1fr_minmax(400px,460px)]">
-        <div className="panel p-4">
-          <div className="mb-3 flex flex-wrap items-center justify-between gap-2" data-i18n-skip>
-            <div className="text-xs font-black uppercase text-[var(--accent)]">{t("dfAllocTitle")}</div>
-            <div className="flex items-center gap-2">
+        <SectionCard
+          title={t("dfAllocTitle")}
+          right={
+            <div className="flex flex-wrap items-center gap-2" data-i18n-skip>
               <button type="button" className="tag" onClick={() => setWeekStart(addDays(weekStart, -7))}>{t("dpPrevWeek")}</button>
-              <span className="text-sm font-black">{weekStart} ~ {addDays(weekStart, 6)}<span className="ml-2 text-[10px] font-bold text-[var(--muted)]">{t("dpWeekShifts", { n: myShifts.filter(({ shift }) => shift.date >= weekStart && shift.date <= addDays(weekStart, 6)).length })}</span></span>
+              <span className="text-sm font-black">{weekStart} ~ {weekEnd}<span className="ml-2 text-[10px] font-bold text-[var(--muted)]">{t("dpWeekShifts", { n: weekRows.length })}</span></span>
               <button type="button" className="tag" onClick={() => setWeekStart(addDays(weekStart, 7))}>{t("dpNextWeek")}</button>
               <button type="button" className="tag" onClick={() => setWeekStart(mondayOf())}>{t("dpThisWeek")}</button>
             </div>
-          </div>
+          }
+        >
           {myShifts.length === 0 ? (
             <div className="text-sm font-bold text-[var(--muted)]">{t("dfNoQuota", { x: franchise })}</div>
           ) : (
-            <div className="grid grid-cols-2 gap-2 md:grid-cols-4 2xl:grid-cols-7">
-              {Array.from({ length: 7 }, (_, index) => addDays(weekStart, index)).map((day, index) => {
-                const dayRows = myShifts.filter(({ shift }) => shift.date === day).sort((a, b) => a.shift.timeRange.localeCompare(b.shift.timeRange));
-                return (
-                  <div key={day} className="min-w-0 space-y-2">
-                    <div className="rounded-[8px] bg-[var(--surface-raised)] py-1.5 text-center">
-                      <div className="text-[10px] font-black text-[var(--muted)]">{t(WEEKDAY_KEYS[index])}</div>
-                      <div className="text-sm font-black">{day.slice(5)}</div>
-                    </div>
-                    {dayRows.length === 0 && <div className="rounded-[8px] border border-dashed border-[var(--line)] py-4 text-center text-[10px] font-bold text-[var(--muted)]">—</div>}
-                    {dayRows.map(({ shift, franchiseQuota, stationQuotas }) => {
-                      const allocated = stationQuotas.reduce((sum, quota) => sum + quota.quota, 0);
-                      const shiftSignups = board.signups.filter((item) => item.shiftId === shift.id);
-                      const approved = shiftSignups.filter((item) => item.status === "approved" || item.status === "reported").length;
-                      const waiting = shiftSignups.filter((item) => item.status === "submitted").length;
-                      const active = activeShiftId === shift.id;
-                      return (
-                        <div
-                          key={shift.id}
-                          onClick={() => setActiveShiftId(active ? "" : shift.id)}
-                          className={`cursor-pointer rounded-[8px] border p-2.5 transition-colors ${active ? "border-[var(--accent)] bg-[var(--accent-soft)]" : "border-[var(--line)] bg-[var(--surface-raised)] hover:border-[var(--muted)]"}`}
-                        >
-                          <div className="flex items-center gap-1 text-[13px] font-black">
-                            {shift.isCritical && <Star size={11} className="shrink-0 text-[var(--accent)]" />}
-                            <span className="truncate">{shift.timeRange}</span>
-                          </div>
-                          <div className="mt-0.5 truncate text-[10px] font-bold text-[var(--muted)]">{shift.hotzone}</div>
-                          <div className="mt-1"><Badge value={statusKey[shift.status] ? t(statusKey[shift.status]) : shift.status} /></div>
-                          <div className="mt-2 grid grid-cols-2 gap-x-2 gap-y-1 text-center">
-                            {[[t("dfMyQuota"), franchiseQuota?.quota ?? 0, ""], [t("dfAllocated"), allocated, allocated > (franchiseQuota?.quota ?? 0) ? "text-[var(--danger-ink)]" : "text-[var(--accent)]"], [t("dpApprovedCnt"), approved, "text-[var(--ok-ink)]"], [t("dpPendingCnt"), waiting, waiting > 0 ? "text-[var(--warning-ink)]" : ""]].map(([label, value, cls]) => (
-                              <div key={String(label)}>
-                                <div className="text-[9px] font-black text-[var(--muted)]">{label}</div>
-                                <div className={`text-sm font-black ${cls}`}>{value}</div>
-                              </div>
-                            ))}
-                          </div>
-                          {active && (
-                            <div className="mt-2 space-y-1.5 border-t border-[var(--line)] pt-2" onClick={(e) => e.stopPropagation()}>
-                              <div className="text-[9px] font-black uppercase text-[var(--muted)]">{t("dfSplitToStation")}</div>
-                              {(myStations.length > 0 ? myStations : knownStations).map((station) => {
-                                const existing = stationQuotas.find((quota) => quota.station === station);
-                                const key = `${shift.id}|${station}`;
-                                return (
-                                  <div key={key} className="flex items-center gap-1.5">
-                                    <span className="min-w-0 flex-1 truncate text-[10px] font-bold">{station}</span>
-                                    <input
-                                      inputMode="numeric"
-                                      className="h-8 w-12 rounded-[6px] border border-[var(--line)] bg-[var(--surface)] text-center text-xs font-black outline-none focus:border-[var(--accent)]"
-                                      value={stationInputs[key] ?? String(existing?.quota ?? "")}
-                                      onChange={(e) => setStationInputs({ ...stationInputs, [key]: e.target.value.replace(/\D/g, "") })}
-                                    />
-                                    <button
-                                      type="button"
-                                      className="rounded-[6px] bg-[var(--accent)] px-2 py-1 text-[10px] font-black text-[var(--accent-ink)]"
-                                      onClick={async () => {
-                                        const quota = Number(stationInputs[key] ?? existing?.quota ?? 0);
-                                        const result = await post({ action: "quota", shiftId: shift.id, level: "station", franchise, station, quota });
-                                        if (result) setMessage({ tone: "ok", text: t("dfQuotaUpdated", { station, quota }) });
-                                      }}
-                                    >
-                                      {t("dfSave")}
-                                    </button>
-                                  </div>
-                                );
-                              })}
-                            </div>
-                          )}
-                        </div>
-                      );
-                    })}
-                  </div>
-                );
-              })}
-            </div>
+            <DataTable<MyShiftRow>
+              columns={shiftColumns}
+              rows={weekRows}
+              rowKey={(row) => row.shift.id}
+              onRowClick={(row) => setActiveShiftId(activeShiftId === row.shift.id ? "" : row.shift.id)}
+              minWidth={860}
+            />
           )}
-        </div>
+        </SectionCard>
 
         <ShiftRiderPicker
           shift={myShifts.find((row) => row.shift.id === activeShiftId)?.shift ?? null}
@@ -243,59 +298,89 @@ export default function FranchiseDispatchPage() {
         />
       </div>
 
-      {/* 已提报 · 全宽清晰表格 */}
-      <div className="panel mt-4 p-4">
-        <div className="mb-3 flex flex-wrap items-center gap-2">
-          <span className="text-xs font-black uppercase text-[var(--accent)]">{t("dfSubmittedTitle", { n: pending.length })}</span>
-          <span className="ml-auto inline-flex items-center gap-1 text-[11px] font-bold text-[var(--muted)]"><Send size={12} /> {t("dfSubmittedHint")}</span>
-        </div>
-        {(() => {
-          const stations = [...new Set(board.signups.map((x) => x.station))];
-          const rows = stations.map((name) => ({
-            name,
-            pending: board.signups.filter((x) => x.station === name && x.status === "submitted").length,
-            total: board.signups.filter((x) => x.station === name).length,
-          }));
-          return rows.length > 0 ? (
-            <div className="mb-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-              {rows.map((row) => (
-                <div key={row.name} className={`flex items-center justify-between gap-2 rounded-[8px] border px-3 py-2 text-[12px] font-bold ${row.pending > 0 ? "border-[var(--warning)] bg-[var(--warning-bg)]" : "border-[var(--line)] bg-[var(--surface-raised)]"}`}>
-                  <span className="truncate font-black">{row.name}</span>
-                  <span className="shrink-0">{t("dfWaitingRatio", { pending: row.pending, total: row.total })}</span>
-                </div>
-              ))}
+      {/* 已提报 · 待总部审核 */}
+      <div className="mt-4">
+        <SectionCard
+          title={t("dfSubmittedTitle", { n: pending.length })}
+          right={<span className="inline-flex items-center gap-1 text-[11px] font-bold text-[var(--muted)]"><Send size={12} /> {t("dfSubmittedHint")}</span>}
+        >
+          {(() => {
+            const stations = [...new Set(board.signups.map((x) => x.station))];
+            const rows = stations.map((name) => ({
+              name,
+              pending: board.signups.filter((x) => x.station === name && x.status === "submitted").length,
+              total: board.signups.filter((x) => x.station === name).length,
+            }));
+            return rows.length > 0 ? (
+              <div className="mb-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+                {rows.map((row) => (
+                  <div key={row.name} className={`flex items-center justify-between gap-2 rounded-[8px] border px-3 py-2 text-[12px] font-bold ${row.pending > 0 ? "border-[var(--warning)] bg-[var(--warning-bg)]" : "border-[var(--line)] bg-[var(--surface-raised)]"}`}>
+                    <span className="truncate font-black">{row.name}</span>
+                    <span className="shrink-0">{t("dfWaitingRatio", { pending: row.pending, total: row.total })}</span>
+                  </div>
+                ))}
+              </div>
+            ) : null;
+          })()}
+          <DataTable<ShiftSignup> columns={pendingColumns} rows={pending} rowKey={(signup) => signup.id} minWidth={680} empty={t("dpNoPending")} />
+        </SectionCard>
+      </div>
+
+      {/* Split-to-station form lives in a roomy drawer, one shift at a time. */}
+      <Drawer
+        open={Boolean(splitRow)}
+        onClose={() => setSplitShiftId("")}
+        width={460}
+        ariaLabel={t("dfSplitToStation")}
+        title={
+          splitRow ? (
+            <div>
+              <div className="text-sm font-black uppercase">{t("dfSplitToStation")}</div>
+              <div className="mt-0.5 text-[11px] font-bold text-[var(--muted)]" translate="no">
+                {splitRow.shift.date} {splitRow.shift.timeRange} · {splitRow.shift.hotzone}
+              </div>
             </div>
-          ) : null;
-        })()}
-        {pending.length === 0 ? (
-          <div className="py-6 text-center text-sm font-bold text-[var(--muted)]">{t("dpNoPending")}</div>
-        ) : (
-          <div className="overflow-x-auto rounded-[8px] border border-[var(--line)]">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="bg-[var(--surface-raised)] text-left text-[11px] font-black uppercase text-[var(--muted)]">
-                  <th className="px-3 py-2">{t("pfRider")}</th><th className="px-3 py-2">{t("pfStation")}</th><th className="px-3 py-2">{t("dfDate")}</th><th className="px-3 py-2">{t("dpSlot")}</th><th className="px-3 py-2">99 ID</th><th className="px-3 py-2 text-right">{t("dpStatus")}</th>
-                </tr>
-              </thead>
-              <tbody>
-                {pending.map((signup) => {
-                  const shift = board.shifts.find((item) => item.id === signup.shiftId);
-                  return (
-                    <tr key={signup.id} className="border-t border-[var(--line)] font-bold">
-                      <td className="px-3 py-2 font-black">{signup.riderName || signup.rider99Id}</td>
-                      <td className="px-3 py-2"><span className="tag">{signup.station}</span></td>
-                      <td className="px-3 py-2 text-[var(--muted)]">{shift?.date ?? "—"}</td>
-                      <td className="px-3 py-2">{shift?.timeRange ?? signup.shiftId}</td>
-                      <td className="px-3 py-2 font-mono text-[11px] text-[var(--muted)]">{signup.rider99Id}</td>
-                      <td className="px-3 py-2 text-right"><Badge value={t("dpPendingHq")} /></td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+          ) : null
+        }
+      >
+        {splitRow && (
+          <div className="space-y-5">
+            <div className="rounded-[8px] border border-[var(--line)] bg-[var(--surface-raised)] p-3 text-xs font-bold text-[var(--muted-strong)]">
+              {t("dfMyQuota")} {splitRow.franchiseQuota?.quota ?? 0} ｜ {t("dfAllocated")}{" "}
+              <span className={splitRow.stationQuotas.reduce((sum, q) => sum + q.quota, 0) > (splitRow.franchiseQuota?.quota ?? 0) ? "text-[var(--danger-ink)]" : ""}>
+                {splitRow.stationQuotas.reduce((sum, q) => sum + q.quota, 0)}
+              </span>
+            </div>
+            {splitStations.length === 0 && <div className="text-sm font-bold text-[var(--muted)]">{t("dsNoQuota", { x: franchise })}</div>}
+            {splitStations.map((station) => {
+              const existing = splitRow.stationQuotas.find((quota) => quota.station === station);
+              const key = `${splitRow.shift.id}|${station}`;
+              return (
+                <div key={key} className="flex items-center gap-3">
+                  <span className="min-w-0 flex-1 truncate text-sm font-black">{station}</span>
+                  <input
+                    inputMode="numeric"
+                    className="h-11 w-24 rounded-[8px] border border-[var(--line)] bg-[var(--surface)] text-center text-sm font-black outline-none focus:border-[var(--accent)]"
+                    value={stationInputs[key] ?? String(existing?.quota ?? "")}
+                    onChange={(e) => setStationInputs({ ...stationInputs, [key]: e.target.value.replace(/\D/g, "") })}
+                  />
+                  <button
+                    type="button"
+                    className="inline-flex h-11 items-center rounded-[8px] border border-[var(--accent)] px-4 text-xs font-black uppercase text-[var(--accent)] hover:bg-[var(--accent-glow)]"
+                    onClick={async () => {
+                      const quota = Number(stationInputs[key] ?? existing?.quota ?? 0);
+                      const result = await post({ action: "quota", shiftId: splitRow.shift.id, level: "station", franchise, station, quota });
+                      if (result) setMessage({ tone: "ok", text: t("dfQuotaUpdated", { station, quota }) });
+                    }}
+                  >
+                    {t("dfSave")}
+                  </button>
+                </div>
+              );
+            })}
           </div>
         )}
-      </div>
+      </Drawer>
     </AppShell>
   );
 }
@@ -349,27 +434,20 @@ function FranchiseOverview({ franchise, headers }: { franchise: string; headers:
 
   return (
     <div className="mb-4 grid gap-3 md:grid-cols-2 xl:grid-cols-6">
-      <div className="panel p-3 md:col-span-2">
-        <div className="text-[10px] font-black uppercase text-[var(--muted)]">{t("dfProfile")}</div>
+      <div className="panel p-4 md:col-span-2">
+        <div className="text-[11px] font-bold uppercase text-[var(--muted)]">{t("dfProfile")}</div>
         <div className="mt-1 text-sm font-black">{franchise}</div>
         <div className="mt-1 text-[11px] font-bold text-[var(--muted)]">
           {info ? `${info.owner || "—"}${info.phone ? ` ｜ ${info.phone}` : ""} ｜ ${info.city || "São Paulo"}` : t("dpLoading")}
         </div>
       </div>
-      {[
-        [t("dfStations"), info ? String(info.stations) : "—"],
-        [t("pfRiders"), info ? String(info.riders) : "—"],
-        [t("dfDeposit"), info ? `R$ ${(info.depositBalance ?? 0).toFixed(2)}` : "—"],
-        [week ? t("dfWeekOrders", { from: md(week.from), to: md(week.to) }) : t("dfWeekOrdersShort"), kpi ? String(kpi.orders) : "—"],
-      ].map(([label, value]) => (
-        <div key={label} className="panel p-3 text-center">
-          <div className="text-[10px] font-black uppercase text-[var(--muted)]">{label}</div>
-          <div className="mt-1 text-lg font-black">{value}</div>
-        </div>
-      ))}
-      <div className="panel border-[var(--accent)] p-3 text-center">
-        <div className="text-[10px] font-black uppercase text-[var(--accent)]">{t("dfWeekDue")}{kpi?.ar !== null && kpi?.ar !== undefined ? t("dfWeekDueAr", { ar: kpi.ar }) : ""}</div>
-        <div className="mt-1 text-lg font-black text-[var(--accent)]">{kpi ? `R$ ${kpi.settle.toFixed(2)}` : "—"}</div>
+      <Stat label={t("dfStations")} value={info ? String(info.stations) : "—"} />
+      <Stat label={t("pfRiders")} value={info ? String(info.riders) : "—"} />
+      <Stat label={t("dfDeposit")} value={info ? `R$ ${(info.depositBalance ?? 0).toFixed(2)}` : "—"} />
+      <Stat label={week ? t("dfWeekOrders", { from: md(week.from), to: md(week.to) }) : t("dfWeekOrdersShort")} value={kpi ? String(kpi.orders) : "—"} />
+      <div className="panel border-[var(--accent)] p-4">
+        <div className="text-[11px] font-bold uppercase text-[var(--accent)]">{t("dfWeekDue")}{kpi?.ar !== null && kpi?.ar !== undefined ? t("dfWeekDueAr", { ar: kpi.ar }) : ""}</div>
+        <div className="mt-1 text-2xl font-black text-[var(--accent)]">{kpi ? `R$ ${kpi.settle.toFixed(2)}` : "—"}</div>
       </div>
     </div>
   );

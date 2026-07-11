@@ -1,7 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { AppShell, Badge, PageTitle } from "../components/ui";
+import { AppShell, PageTitle } from "../components/ui";
+import { SearchInput, SectionCard, Stat, StatusBadge, type BadgeTone } from "../components/kit";
 import { readSession } from "../lib/session";
 
 type Account = { riderId: string; accountId: string; available: number; pending: number };
@@ -28,6 +29,7 @@ const RULE_FIELDS: Array<{ k: keyof Config; l: string; hint: string }> = [
 ];
 
 const typeLabel: Record<string, string> = { earn: "发放", spend: "兑换", refund: "退回", expire: "过期", reverse: "冲正", adjust: "调整", hold: "冻结", release: "释放" };
+const typeTone: Record<string, BadgeTone> = { earn: "success", spend: "info", refund: "info", expire: "neutral", reverse: "danger", adjust: "warn", hold: "warn", release: "success" };
 
 export default function PointsEconomyPage() {
   const session = useMemo(() => readSession(), []);
@@ -89,17 +91,21 @@ export default function PointsEconomyPage() {
         <div className={`mb-4 rounded-[8px] border px-4 py-3 text-sm font-black ${note.tone === "ok" ? "border-[var(--ok)] bg-[var(--ok-bg)] text-[var(--ok-ink)]" : "border-[var(--danger)] bg-[var(--danger-bg)] text-[var(--danger-ink)]"}`}>{note.text}</div>
       )}
 
+      {/* Stats */}
       <section className="mb-4 grid grid-cols-2 gap-3 lg:grid-cols-4">
-        {[["流通积分(可用)", money(totals.available)], ["待定积分", money(totals.pending)], ["Partner 积分", money(totals.partner)], ["账本条数", money(ledger.length)]].map(([l, v]) => (
-          <div key={l} className="panel p-4"><div className="text-[10px] font-black uppercase text-[var(--muted)]">{l}</div><div className="mt-1 text-2xl font-black">{v}</div></div>
-        ))}
+        <Stat label="流通积分(可用)" value={money(totals.available)} />
+        <Stat label="待定积分" value={money(totals.pending)} />
+        <Stat label="Partner 积分" value={money(totals.partner)} />
+        <Stat label="账本条数" value={money(ledger.length)} />
       </section>
 
-      {/* Editable economy rules incl. money equivalence */}
-      <div className="panel mb-4 p-5">
-        <div className="mb-1 text-sm font-black">积分规则 · 金钱等价（改完点保存即时生效)</div>
-        <p className="mb-3 text-xs font-bold text-[var(--muted)]">所有发放/兑换/上限规则在此统一管理。0 表示不限。</p>
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+      {/* Editable economy rules incl. money equivalence — the page's single primary action. */}
+      <SectionCard
+        title="积分规则 · 金钱等价"
+        desc="所有发放/兑换/上限规则在此统一管理,改完点保存即时生效。0 表示不限。"
+        className="mb-4"
+      >
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           {RULE_FIELDS.map((f) => (
             <label key={String(f.k)} className="text-[11px] font-black text-[var(--muted)]">{f.l}
               <input inputMode="numeric" value={form[f.k] ?? ""} onChange={(e) => setForm({ ...form, [f.k]: e.target.value.replace(/[^\d]/g, "") })} className={`mt-1 ${field}`} />
@@ -107,18 +113,18 @@ export default function PointsEconomyPage() {
             </label>
           ))}
         </div>
-        <div className="mt-4 flex flex-wrap items-center gap-3">
-          <button type="button" onClick={() => void saveConfig()} className="h-10 rounded-[8px] bg-[var(--accent)] px-5 text-sm font-black text-[var(--accent-ink)]">保存规则</button>
+        <div className="mt-5 flex flex-wrap items-center gap-3">
+          <button type="button" onClick={() => void saveConfig()} className="h-10 rounded-[8px] bg-[var(--accent)] px-5 text-sm font-black text-[var(--accent-ink)] hover:bg-[var(--accent-strong)]">保存规则</button>
           <span className="text-[11px] font-bold text-[var(--muted)]">固定规则:积分有效期 <b>12 个月</b>(FIFO 过期)· 站点签到 <b>+50/天</b> · 等级生日加成 prata 50 / ouro 100 / diamante 200(在基础上叠加取高)。</span>
         </div>
-      </div>
+      </SectionCard>
 
       {/* Per-user points balances */}
-      <div className="panel mb-4 p-5">
-        <div className="mb-3 flex flex-wrap items-center gap-2">
-          <span className="text-sm font-black">用户积分余额（{userRows.length} 名有余额会员)</span>
-          <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="搜索姓名 / 99ID" className="ml-auto h-9 w-56 rounded-[8px] border border-[var(--line)] bg-[var(--surface-raised)] px-3 text-sm font-bold outline-none focus:border-[var(--accent)]" />
-        </div>
+      <SectionCard
+        title={`用户积分余额（${userRows.length} 名有余额会员)`}
+        right={<SearchInput value={q} onChange={setQ} placeholder="搜索姓名 / 99ID" className="w-56" />}
+        className="mb-4"
+      >
         <div className="overflow-x-auto rounded-[8px] border border-[var(--line)]">
           <table className="w-full text-sm">
             <thead><tr className="bg-[var(--surface-raised)] text-left text-[11px] font-black uppercase text-[var(--muted)]"><th className="px-3 py-2">会员</th><th className="px-3 py-2">99 ID</th><th className="px-3 py-2 text-right">可用积分</th><th className="px-3 py-2 text-right">待定积分</th></tr></thead>
@@ -135,11 +141,10 @@ export default function PointsEconomyPage() {
           </table>
           {userRows.length === 0 && <div className="py-8 text-center text-xs font-bold text-[var(--muted)]">暂无有余额的会员。</div>}
         </div>
-      </div>
+      </SectionCard>
 
       {/* Ledger */}
-      <div className="panel p-5">
-        <div className="mb-3 text-sm font-black">积分流水 · 账本(append-only,不可改)</div>
+      <SectionCard title="积分流水 · 账本" desc="append-only,不可改">
         <div className="overflow-x-auto rounded-[8px] border border-[var(--line)]">
           <table className="w-full text-sm">
             <thead><tr className="bg-[var(--surface-raised)] text-left text-[11px] font-black uppercase text-[var(--muted)]"><th className="px-3 py-2">时间</th><th className="px-3 py-2">会员</th><th className="px-3 py-2">类型</th><th className="px-3 py-2 text-right">积分</th><th className="px-3 py-2">原因</th><th className="px-3 py-2 text-right">余额</th></tr></thead>
@@ -148,7 +153,7 @@ export default function PointsEconomyPage() {
                 <tr key={e.id} className="border-t border-[var(--line)] font-bold">
                   <td className="px-3 py-2 text-[11px] text-[var(--muted)]">{e.createdAt}</td>
                   <td className="px-3 py-2">{nameOf.get(e.riderId)?.name ?? e.riderId}</td>
-                  <td className="px-3 py-2"><Badge value={typeLabel[e.type] ?? e.type} /></td>
+                  <td className="px-3 py-2"><StatusBadge tone={typeTone[e.type] ?? "neutral"} label={typeLabel[e.type] ?? e.type} /></td>
                   <td className={`px-3 py-2 text-right ${["earn", "refund", "release"].includes(e.type) ? "text-[var(--ok-ink)]" : "text-[var(--danger-ink)]"}`}>{["earn", "refund", "release"].includes(e.type) ? "+" : "−"}{money(e.points)}</td>
                   <td className="px-3 py-2 text-[11px] text-[var(--muted)]">{e.reasonCode}</td>
                   <td className="px-3 py-2 text-right">{money(e.balanceAfter)}</td>
@@ -158,7 +163,7 @@ export default function PointsEconomyPage() {
           </table>
           {ledger.length === 0 && <div className="py-8 text-center text-xs font-bold text-[var(--muted)]">暂无积分流水。</div>}
         </div>
-      </div>
+      </SectionCard>
     </AppShell>
   );
 }

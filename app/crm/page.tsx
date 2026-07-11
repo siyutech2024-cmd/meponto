@@ -2,13 +2,19 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
-import { AddButton, AppShell, Badge, DataTable, Field, PageTitle } from "../components/ui";
+import { AddButton, AppShell, PageTitle } from "../components/ui";
+import { DataTable, Drawer, SearchInput, Stat, StatusBadge, Toolbar, type BadgeTone, type DataColumn } from "../components/kit";
 import type { CrmCategory, CrmPartner, CrmPartnerCategory, CrmPartnerRisk, CrmPartnerStatus, CrmPartnerTier } from "../lib/crm";
 
 const DEFAULT_CATEGORIES: CrmPartnerCategory[] = ["Repair Shop", "Partner Vehicle Shop", "Supplier", "Vehicle Partner"];
 const statuses: CrmPartnerStatus[] = ["Active", "Prospect", "Review", "Suspended"];
 const tiers: CrmPartnerTier[] = ["Strategic", "Preferred", "Standard", "Watchlist"];
 const risks: CrmPartnerRisk[] = ["Low", "Medium", "High"];
+
+const statusTone = (status: CrmPartnerStatus): BadgeTone =>
+  status === "Active" ? "success" : status === "Review" ? "warn" : status === "Suspended" ? "danger" : "info";
+const riskTone = (risk: CrmPartnerRisk): BadgeTone =>
+  risk === "High" ? "danger" : risk === "Medium" ? "warn" : "neutral";
 
 const emptyForm = {
   name: "",
@@ -28,6 +34,9 @@ const emptyForm = {
 };
 
 type AccountInfo = { identifier: string; status: string; portal: string; total: number; active: number };
+
+const input = "h-11 w-full rounded-[8px] border border-[var(--line)] bg-[var(--surface-raised)] px-3 text-sm font-bold outline-none focus:border-[var(--accent)]";
+const filterSelect = "h-10 rounded-[8px] border border-[var(--line)] bg-[var(--surface-raised)] px-3 text-sm font-bold outline-none focus:border-[var(--accent)]";
 
 export default function CrmPage() {
   const [partners, setPartners] = useState<CrmPartner[]>([]);
@@ -49,6 +58,12 @@ export default function CrmPage() {
   const [isSaving, setIsSaving] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
 
+  function startCreate() {
+    setForm(emptyForm);
+    setEditingId(null);
+    setFormOpen(true);
+  }
+
   function startEdit(partner: CrmPartner) {
     setForm({
       name: partner.name, category: partner.category, contactName: partner.contactName, phone: partner.phone,
@@ -58,7 +73,12 @@ export default function CrmPage() {
     });
     setEditingId(partner.id);
     setFormOpen(true);
-    if (typeof window !== "undefined") window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+
+  function closeForm() {
+    setFormOpen(false);
+    setEditingId(null);
+    setForm(emptyForm);
   }
 
   useEffect(() => {
@@ -78,7 +98,7 @@ export default function CrmPage() {
     };
   }, []);
 
-  // Service-location map picker (shown on the rider app). Inits when the form opens.
+  // Service-location map picker (shown on the rider app). Inits when the form drawer opens.
   const mapDiv = useRef<HTMLDivElement>(null);
   const mapRef = useRef<any>(null);
   useEffect(() => {
@@ -243,189 +263,247 @@ export default function CrmPage() {
     }
   }
 
+  const columns: Array<DataColumn<CrmPartner>> = [
+    {
+      key: "partner",
+      label: "Partner",
+      className: "max-w-[220px]",
+      render: (partner) => (
+        <div>
+          <div className="truncate font-black">{partner.name}</div>
+          <div className="text-xs font-bold text-[var(--muted)]">{partner.tier} · {accountTypeOf(partner.category) === "supplier" ? "供应商" : "合作方"}</div>
+        </div>
+      ),
+    },
+    { key: "category", label: "Category", render: (partner) => <span className="font-bold text-[var(--muted-strong)]">{partner.category}</span> },
+    {
+      key: "contact",
+      label: "Contact",
+      render: (partner) => (
+        <div>
+          <div>{partner.contactName}</div>
+          <div className="text-xs font-bold text-[var(--muted)]">{partner.phone}</div>
+        </div>
+      ),
+    },
+    { key: "bairro", label: "Bairro", render: (partner) => partner.bairro },
+    { key: "status", label: "Status", render: (partner) => <StatusBadge tone={statusTone(partner.status)} label={partner.status} /> },
+    { key: "risk", label: "Risk", render: (partner) => <StatusBadge tone={riskTone(partner.risk)} label={partner.risk} /> },
+    {
+      key: "services",
+      label: "Services",
+      className: "max-w-[200px]",
+      render: (partner) => (
+        <div className="flex flex-wrap gap-1">
+          {partner.services.map((service) => (
+            <span className="tag" key={service}>{service}</span>
+          ))}
+        </div>
+      ),
+    },
+    {
+      key: "account",
+      label: "登录账号",
+      render: (partner) => (
+        <div className="text-xs">
+          {accounts[partner.id] ? (
+            <>
+              <div className="break-all font-mono text-[var(--muted)]">{accounts[partner.id].identifier}</div>
+              <div className="mt-0.5 flex items-center gap-1">
+                <StatusBadge tone={accounts[partner.id].status === "active" ? "success" : "neutral"} label={accounts[partner.id].status === "active" ? "启用中" : "已停用"} />
+                {accounts[partner.id].total > 1 ? <span className="font-bold text-[var(--muted)]">共 {accounts[partner.id].total} 个</span> : null}
+              </div>
+            </>
+          ) : (
+            <span className="font-bold text-[var(--muted)]">未开通</span>
+          )}
+        </div>
+      ),
+    },
+    {
+      key: "actions",
+      label: "Ações",
+      render: (partner) => (
+        <div className="flex flex-wrap gap-1.5">
+          {partner.status !== "Active" ? (
+            <button type="button" onClick={() => void setStatus(partner, "Active")} className="h-8 rounded-[7px] border border-[var(--accent)] px-2.5 text-xs font-black text-[var(--accent)]">批准</button>
+          ) : (
+            <button type="button" onClick={() => void setStatus(partner, "Suspended")} className="h-8 rounded-[7px] border border-[var(--line)] px-2.5 text-xs font-black text-[var(--muted)]">挂起</button>
+          )}
+          <button type="button" onClick={() => startEdit(partner)} className="h-8 rounded-[7px] border border-[var(--line)] px-2.5 text-xs font-black text-[var(--muted)] hover:border-[var(--accent)]">编辑/改位置</button>
+          {accounts[partner.id] ? (
+            <>
+              <button type="button" onClick={() => void resetAccountPassword(partner)} className="h-8 rounded-[7px] border border-[var(--line)] px-2.5 text-xs font-black text-[var(--muted)] hover:border-[var(--accent)]">重置密码</button>
+              {accounts[partner.id].status === "active" ? (
+                <button type="button" onClick={() => void setAccountStatus(partner, "disabled")} className="h-8 rounded-[7px] border border-[var(--line)] px-2.5 text-xs font-black text-[var(--muted)]">停用账号</button>
+              ) : (
+                <button type="button" onClick={() => void setAccountStatus(partner, "active")} className="h-8 rounded-[7px] border border-[var(--accent)] px-2.5 text-xs font-black text-[var(--accent)]">启用账号</button>
+              )}
+            </>
+          ) : (
+            <button type="button" onClick={() => void provisionAccount(partner)} className="h-8 rounded-[7px] border border-[var(--accent)] px-2.5 text-xs font-black text-[var(--accent)]">开通账号</button>
+          )}
+          <button type="button" onClick={() => void deletePartner(partner)} className="h-8 rounded-[7px] border border-[#c4423b]/40 px-2.5 text-xs font-black text-[#c4423b] hover:border-[#c4423b]">删除</button>
+        </div>
+      ),
+    },
+  ];
+
   return (
     <AppShell>
       <PageTitle title="Partner CRM" eyebrow="Repair, fleet, supplier network" action={
         <div className="flex items-center gap-2">
-          <button type="button" onClick={() => setCatManagerOpen((v) => !v)} className="h-10 rounded-[8px] border border-[var(--line)] px-3 text-sm font-black text-[var(--muted)] hover:border-[var(--accent)]">类型管理</button>
-          <AddButton label="Add Partner" onClick={() => setFormOpen((open) => !open)} />
+          <button type="button" onClick={() => setCatManagerOpen(true)} className="h-10 rounded-[8px] border border-[var(--line)] px-3 text-sm font-black text-[var(--muted)] hover:border-[var(--accent)]">类型管理</button>
+          <AddButton label="Add Partner" onClick={startCreate} />
         </div>
       } />
 
-      {catManagerOpen ? (
-        <div className="panel mt-3 p-4">
-          <div className="mb-2 flex items-center gap-2 text-xs font-black uppercase text-[var(--muted)]">合作伙伴类型 · 每个类型决定开通账号后进哪个后台</div>
-          <p className="mb-3 text-[11px] font-bold text-[var(--muted)]">落点「供应链」→ 登录进 /mall/supplier(供应链后台);落点「Partner」→ 进 /partner-points(服务点)。</p>
-          <div className="space-y-2">
-            {[...catConfig].sort((a, b) => a.sort - b.sort).map((c) => (
-              <div key={c.id} className="flex flex-wrap items-center gap-2 rounded-[8px] border border-[var(--line)] bg-[var(--surface-raised)] px-3 py-2 text-sm">
-                <span className="font-black">{c.label}</span>
-                <Badge value={c.accountType === "supplier" ? "供应链 → /mall/supplier" : "Partner → /partner-points"} />
-                {!c.active && <span className="text-[11px] font-bold text-[var(--muted)]">已停用</span>}
-                <div className="ml-auto flex gap-1.5">
-                  <button type="button" onClick={() => setCatForm({ id: c.id, label: c.label, accountType: c.accountType })} className="h-8 rounded-[7px] border border-[var(--line)] px-2.5 text-xs font-black text-[var(--muted)] hover:border-[var(--accent)]">编辑</button>
-                  <button type="button" onClick={() => void removeCategory(c)} className="h-8 rounded-[7px] border border-[#c4423b]/40 px-2.5 text-xs font-black text-[#c4423b]">删除</button>
-                </div>
-              </div>
-            ))}
-          </div>
-          <div className="mt-3 flex flex-wrap items-end gap-2 border-t border-[var(--line)] pt-3">
-            <label className="text-[11px] font-black text-[var(--muted)]">类型名称
-              <input value={catForm.label} onChange={(e) => setCatForm((f) => ({ ...f, label: e.target.value }))} placeholder="如 供应商 / 加油站" className="mt-1 h-10 w-56 rounded-[8px] border border-[var(--line)] bg-[var(--surface)] px-3 text-sm font-bold outline-none focus:border-[var(--accent)]" />
-            </label>
-            <label className="text-[11px] font-black text-[var(--muted)]">落点(账号类型)
-              <select value={catForm.accountType} onChange={(e) => setCatForm((f) => ({ ...f, accountType: e.target.value as "supplier" | "partner" }))} className="mt-1 h-10 rounded-[8px] border border-[var(--line)] bg-[var(--surface)] px-3 text-sm font-bold outline-none">
-                <option value="partner">Partner 服务点 → /partner-points</option>
-                <option value="supplier">供应链 → /mall/supplier</option>
-              </select>
-            </label>
-            <button type="button" disabled={!catForm.label.trim()} onClick={() => void saveCategory()} className="h-10 rounded-[8px] bg-[var(--accent)] px-4 text-sm font-black text-[var(--accent-ink)] disabled:opacity-50">{catForm.id ? "保存修改" : "新增类型"}</button>
-            {catForm.id && <button type="button" onClick={() => setCatForm({ id: null, label: "", accountType: "partner" })} className="h-10 rounded-[8px] border border-[var(--line)] px-3 text-sm font-black text-[var(--muted)]">取消</button>}
-          </div>
-        </div>
-      ) : null}
       {notice ? (
         <div className="panel mb-3 flex items-start justify-between gap-3 border-l-4 border-[var(--accent)] p-3 text-sm font-bold">
           <span className="break-all">{notice}</span>
           <button type="button" onClick={() => setNotice(null)} className="shrink-0 text-[var(--muted)]">✕</button>
         </div>
       ) : null}
+
+      {/* Stats */}
       <section className="grid gap-3 md:grid-cols-4">
-        <Field label="Active Partners" value={String(activeCount)} />
-        <Field label="Monthly Cases" value={String(monthlyVolume)} />
-        <Field label="Vehicles Available" value={String(vehiclesAvailable)} />
-        <Field label="Review Queue" value={String(reviewCount)} />
+        <Stat label="Active Partners" value={String(activeCount)} />
+        <Stat label="Monthly Cases" value={String(monthlyVolume)} />
+        <Stat label="Vehicles Available" value={String(vehiclesAvailable)} />
+        <Stat label="Review Queue" value={String(reviewCount)} />
       </section>
 
-      {formOpen ? (
-        <form onSubmit={handleSubmit} className="panel mt-4 grid gap-3 p-4 lg:grid-cols-4">
-          <input required value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} className="h-11 rounded border border-[var(--line)] bg-[var(--surface)] px-3 outline-none" placeholder="Partner name" />
-          <select value={form.category} onChange={(event) => setForm({ ...form, category: event.target.value as CrmPartnerCategory })} className="h-11 rounded border border-[var(--line)] bg-[var(--surface)] px-3 outline-none">
+      {/* Toolbar: search + category / status / risk filters */}
+      <div className="mt-4">
+        <Toolbar
+          right={
+            <select value={riskFilter} onChange={(event) => setRiskFilter(event.target.value)} className={filterSelect}>
+              <option value="All Risk">All Risk</option>
+              {risks.map((risk) => (
+                <option key={risk} value={risk}>{risk}</option>
+              ))}
+            </select>
+          }
+        >
+          <SearchInput value={query} onChange={setQuery} placeholder="Search partners, contacts, phone, bairro" className="w-72" />
+          <select value={categoryFilter} onChange={(event) => setCategoryFilter(event.target.value)} className={filterSelect}>
+            <option value="All Categories">All Categories</option>
             {categories.map((category) => (
               <option key={category} value={category}>{category}</option>
             ))}
           </select>
-          <input required value={form.contactName} onChange={(event) => setForm({ ...form, contactName: event.target.value })} className="h-11 rounded border border-[var(--line)] bg-[var(--surface)] px-3 outline-none" placeholder="Contact" />
-          <input required value={form.phone} onChange={(event) => setForm({ ...form, phone: event.target.value })} className="h-11 rounded border border-[var(--line)] bg-[var(--surface)] px-3 outline-none" placeholder="Phone" />
-          <input value={form.bairro} onChange={(event) => setForm({ ...form, bairro: event.target.value })} className="h-11 rounded border border-[var(--line)] bg-[var(--surface)] px-3 outline-none" placeholder="Bairro" />
-          <input value={form.owner} onChange={(event) => setForm({ ...form, owner: event.target.value })} className="h-11 rounded border border-[var(--line)] bg-[var(--surface)] px-3 outline-none" placeholder="Owner" />
-          <select value={form.status} onChange={(event) => setForm({ ...form, status: event.target.value as CrmPartnerStatus })} className="h-11 rounded border border-[var(--line)] bg-[var(--surface)] px-3 outline-none">
+          <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)} className={filterSelect}>
+            <option value="All Status">All Status</option>
             {statuses.map((status) => (
               <option key={status} value={status}>{status}</option>
             ))}
           </select>
-          <select value={form.tier} onChange={(event) => setForm({ ...form, tier: event.target.value as CrmPartnerTier })} className="h-11 rounded border border-[var(--line)] bg-[var(--surface)] px-3 outline-none">
+        </Toolbar>
+      </div>
+
+      {/* Partner table — review actions stay inline per row */}
+      <div className="mt-4">
+        <DataTable<CrmPartner>
+          columns={columns}
+          rows={filteredPartners}
+          rowKey={(partner) => partner.id}
+          minWidth={1180}
+          empty="No partners match the filters."
+        />
+      </div>
+
+      {/* Create / edit drawer (with the rider-app map picker) */}
+      <Drawer
+        open={formOpen}
+        onClose={closeForm}
+        width={640}
+        ariaLabel={editingId ? "编辑合作方" : "Add Partner"}
+        title={<div className="text-sm font-black uppercase">{editingId ? "编辑合作方 / 改位置" : "Add Partner"}</div>}
+      >
+        <form onSubmit={handleSubmit} className="grid gap-3 sm:grid-cols-2">
+          <input required value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} className={input} placeholder="Partner name" />
+          <select value={form.category} onChange={(event) => setForm({ ...form, category: event.target.value as CrmPartnerCategory })} className={input}>
+            {categories.map((category) => (
+              <option key={category} value={category}>{category}</option>
+            ))}
+          </select>
+          <input required value={form.contactName} onChange={(event) => setForm({ ...form, contactName: event.target.value })} className={input} placeholder="Contact" />
+          <input required value={form.phone} onChange={(event) => setForm({ ...form, phone: event.target.value })} className={input} placeholder="Phone" />
+          <input value={form.bairro} onChange={(event) => setForm({ ...form, bairro: event.target.value })} className={input} placeholder="Bairro" />
+          <input value={form.owner} onChange={(event) => setForm({ ...form, owner: event.target.value })} className={input} placeholder="Owner" />
+          <select value={form.status} onChange={(event) => setForm({ ...form, status: event.target.value as CrmPartnerStatus })} className={input}>
+            {statuses.map((status) => (
+              <option key={status} value={status}>{status}</option>
+            ))}
+          </select>
+          <select value={form.tier} onChange={(event) => setForm({ ...form, tier: event.target.value as CrmPartnerTier })} className={input}>
             {tiers.map((tier) => (
               <option key={tier} value={tier}>{tier}</option>
             ))}
           </select>
-          <select value={form.risk} onChange={(event) => setForm({ ...form, risk: event.target.value as CrmPartnerRisk })} className="h-11 rounded border border-[var(--line)] bg-[var(--surface)] px-3 outline-none">
+          <select value={form.risk} onChange={(event) => setForm({ ...form, risk: event.target.value as CrmPartnerRisk })} className={input}>
             {risks.map((risk) => (
               <option key={risk} value={risk}>{risk}</option>
             ))}
           </select>
-          <input type="number" min="0" value={form.monthlyVolume} onChange={(event) => setForm({ ...form, monthlyVolume: Number(event.target.value) })} className="h-11 rounded border border-[var(--line)] bg-[var(--surface)] px-3 outline-none" placeholder="Monthly cases" />
-          <input type="number" min="0" value={form.vehiclesAvailable} onChange={(event) => setForm({ ...form, vehiclesAvailable: Number(event.target.value) })} className="h-11 rounded border border-[var(--line)] bg-[var(--surface)] px-3 outline-none" placeholder="Vehicles" />
-          <input value={form.services} onChange={(event) => setForm({ ...form, services: event.target.value })} className="h-11 rounded border border-[var(--line)] bg-[var(--surface)] px-3 outline-none" placeholder="Services, comma separated" />
-          <div className="lg:col-span-4">
+          <input type="number" min="0" value={form.monthlyVolume} onChange={(event) => setForm({ ...form, monthlyVolume: Number(event.target.value) })} className={input} placeholder="Monthly cases" />
+          <input type="number" min="0" value={form.vehiclesAvailable} onChange={(event) => setForm({ ...form, vehiclesAvailable: Number(event.target.value) })} className={input} placeholder="Vehicles" />
+          <input value={form.services} onChange={(event) => setForm({ ...form, services: event.target.value })} className={input} placeholder="Services, comma separated" />
+          <div className="sm:col-span-2">
             <div className="mb-1 text-[11px] font-black uppercase text-[var(--muted)]">服务点位置（点地图或拖图钉 · 骑手 App 地图按此显示）</div>
             <div ref={mapDiv} className="h-56 w-full overflow-hidden rounded-[10px] border border-[var(--line)]" style={{ background: "#dfe7ef" }} />
             <div className="mt-1 text-[11px] font-bold text-[var(--muted)]">坐标 {form.lat?.toFixed(5)}, {form.lng?.toFixed(5)}</div>
           </div>
-          <div className="flex gap-2 lg:col-span-4">
-            <button disabled={isSaving} className="h-11 rounded border border-[var(--accent)] bg-[var(--accent)] px-4 text-sm font-black text-[var(--accent-ink)] disabled:opacity-50">
+          <div className="flex gap-2 sm:col-span-2">
+            <button disabled={isSaving} className="h-11 rounded-[8px] bg-[var(--accent)] px-4 text-sm font-black text-[var(--accent-ink)] disabled:opacity-50">
               {isSaving ? "Saving" : editingId ? "保存修改" : "Create Partner"}
             </button>
-            <button type="button" onClick={() => { setFormOpen(false); setEditingId(null); setForm(emptyForm); }} className="h-11 rounded border border-[var(--line)] bg-[var(--surface-raised)] px-4 text-sm font-black text-[var(--text-soft)]">
+            <button type="button" onClick={closeForm} className="h-11 rounded-[8px] border border-[var(--line)] bg-[var(--surface-raised)] px-4 text-sm font-black text-[var(--text-soft)]">
               Cancel
             </button>
           </div>
         </form>
-      ) : null}
+      </Drawer>
 
-      <div className="panel my-4 grid gap-3 p-3 md:grid-cols-[1fr_210px_170px_150px]">
-        <input
-          value={query}
-          onChange={(event) => setQuery(event.target.value)}
-          className="h-11 rounded border border-[var(--line)] bg-[var(--surface)] px-3 outline-none"
-          placeholder="Search partners, contacts, phone, bairro"
-        />
-        <select value={categoryFilter} onChange={(event) => setCategoryFilter(event.target.value)} className="h-11 rounded border border-[var(--line)] bg-[var(--surface)] px-3 outline-none">
-          <option value="All Categories">All Categories</option>
-          {categories.map((category) => (
-            <option key={category} value={category}>{category}</option>
+      {/* Category manager drawer */}
+      <Drawer
+        open={catManagerOpen}
+        onClose={() => { setCatManagerOpen(false); setCatForm({ id: null, label: "", accountType: "partner" }); }}
+        width={520}
+        ariaLabel="类型管理"
+        title={<div className="text-sm font-black uppercase">合作伙伴类型</div>}
+      >
+        <div className="mb-2 text-xs font-black uppercase text-[var(--muted)]">每个类型决定开通账号后进哪个后台</div>
+        <p className="mb-3 text-[11px] font-bold text-[var(--muted)]">落点「供应链」→ 登录进 /mall/supplier(供应链后台);落点「Partner」→ 进 /partner-points(服务点)。</p>
+        <div className="space-y-2">
+          {[...catConfig].sort((a, b) => a.sort - b.sort).map((c) => (
+            <div key={c.id} className="flex flex-wrap items-center gap-2 rounded-[8px] border border-[var(--line)] bg-[var(--surface-raised)] px-3 py-2 text-sm">
+              <span className="font-black">{c.label}</span>
+              <StatusBadge tone={c.accountType === "supplier" ? "info" : "neutral"} label={c.accountType === "supplier" ? "供应链 → /mall/supplier" : "Partner → /partner-points"} />
+              {!c.active && <span className="text-[11px] font-bold text-[var(--muted)]">已停用</span>}
+              <div className="ml-auto flex gap-1.5">
+                <button type="button" onClick={() => setCatForm({ id: c.id, label: c.label, accountType: c.accountType })} className="h-8 rounded-[7px] border border-[var(--line)] px-2.5 text-xs font-black text-[var(--muted)] hover:border-[var(--accent)]">编辑</button>
+                <button type="button" onClick={() => void removeCategory(c)} className="h-8 rounded-[7px] border border-[#c4423b]/40 px-2.5 text-xs font-black text-[#c4423b]">删除</button>
+              </div>
+            </div>
           ))}
-        </select>
-        <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)} className="h-11 rounded border border-[var(--line)] bg-[var(--surface)] px-3 outline-none">
-          <option value="All Status">All Status</option>
-          {statuses.map((status) => (
-            <option key={status} value={status}>{status}</option>
-          ))}
-        </select>
-        <select value={riskFilter} onChange={(event) => setRiskFilter(event.target.value)} className="h-11 rounded border border-[var(--line)] bg-[var(--surface)] px-3 outline-none">
-          <option value="All Risk">All Risk</option>
-          {risks.map((risk) => (
-            <option key={risk} value={risk}>{risk}</option>
-          ))}
-        </select>
-      </div>
-
-      <DataTable
-        headers={["Partner", "Category", "Contact", "Bairro", "Status", "Risk", "Services", "登录账号", "Ações"]}
-        rows={filteredPartners.map((partner) => [
-          <div key="partner">
-            <div className="font-black">{partner.name}</div>
-            <div className="text-xs text-[var(--muted)]">{partner.tier} · {accountTypeOf(partner.category) === "supplier" ? "供应商" : "合作方"}</div>
-          </div>,
-          partner.category,
-          <div key="contact">
-            <div>{partner.contactName}</div>
-            <div className="text-xs text-[var(--muted)]">{partner.phone}</div>
-          </div>,
-          partner.bairro,
-          <Badge key="status" value={partner.status} />,
-          <Badge key="risk" value={partner.risk} />,
-          <div key="services" className="flex flex-wrap gap-1">
-            {partner.services.map((service) => (
-              <span className="tag" key={service}>{service}</span>
-            ))}
-          </div>,
-          <div key="account" className="text-xs">
-            {accounts[partner.id] ? (
-              <>
-                <div className="font-mono text-[var(--muted)] break-all">{accounts[partner.id].identifier}</div>
-                <div className="mt-0.5 flex items-center gap-1">
-                  <Badge value={accounts[partner.id].status === "active" ? "启用中" : "已停用"} />
-                  {accounts[partner.id].total > 1 ? <span className="text-[var(--muted)]">共 {accounts[partner.id].total} 个</span> : null}
-                </div>
-              </>
-            ) : (
-              <span className="text-[var(--muted)]">未开通</span>
-            )}
-          </div>,
-          <div key="actions" className="flex flex-wrap gap-1.5">
-            {partner.status !== "Active" ? (
-              <button type="button" onClick={() => void setStatus(partner, "Active")} className="h-8 rounded-[7px] bg-[var(--accent)] px-2.5 text-xs font-black text-[var(--accent-ink)]">批准</button>
-            ) : (
-              <button type="button" onClick={() => void setStatus(partner, "Suspended")} className="h-8 rounded-[7px] border border-[var(--line)] px-2.5 text-xs font-black text-[var(--muted)]">挂起</button>
-            )}
-            <button type="button" onClick={() => startEdit(partner)} className="h-8 rounded-[7px] border border-[var(--line)] px-2.5 text-xs font-black text-[var(--muted)] hover:border-[var(--accent)]">编辑/改位置</button>
-            {accounts[partner.id] ? (
-              <>
-                <button type="button" onClick={() => void resetAccountPassword(partner)} className="h-8 rounded-[7px] border border-[var(--line)] px-2.5 text-xs font-black text-[var(--muted)] hover:border-[var(--accent)]">重置密码</button>
-                {accounts[partner.id].status === "active" ? (
-                  <button type="button" onClick={() => void setAccountStatus(partner, "disabled")} className="h-8 rounded-[7px] border border-[var(--line)] px-2.5 text-xs font-black text-[var(--muted)]">停用账号</button>
-                ) : (
-                  <button type="button" onClick={() => void setAccountStatus(partner, "active")} className="h-8 rounded-[7px] border border-[var(--accent)] px-2.5 text-xs font-black text-[var(--accent)]">启用账号</button>
-                )}
-              </>
-            ) : (
-              <button type="button" onClick={() => void provisionAccount(partner)} className="h-8 rounded-[7px] border border-[var(--accent)] px-2.5 text-xs font-black text-[var(--accent)]">开通账号</button>
-            )}
-            <button type="button" onClick={() => void deletePartner(partner)} className="h-8 rounded-[7px] border border-[#c4423b]/40 px-2.5 text-xs font-black text-[#c4423b] hover:border-[#c4423b]">删除</button>
-          </div>,
-        ])}
-      />
+        </div>
+        <div className="mt-3 grid gap-2 border-t border-[var(--line)] pt-3">
+          <label className="text-[11px] font-black text-[var(--muted)]">类型名称
+            <input value={catForm.label} onChange={(e) => setCatForm((f) => ({ ...f, label: e.target.value }))} placeholder="如 供应商 / 加油站" className={`mt-1 ${input}`} />
+          </label>
+          <label className="text-[11px] font-black text-[var(--muted)]">落点(账号类型)
+            <select value={catForm.accountType} onChange={(e) => setCatForm((f) => ({ ...f, accountType: e.target.value as "supplier" | "partner" }))} className={`mt-1 ${input}`}>
+              <option value="partner">Partner 服务点 → /partner-points</option>
+              <option value="supplier">供应链 → /mall/supplier</option>
+            </select>
+          </label>
+          <div className="flex gap-2">
+            <button type="button" disabled={!catForm.label.trim()} onClick={() => void saveCategory()} className="h-10 rounded-[8px] bg-[var(--accent)] px-4 text-sm font-black text-[var(--accent-ink)] disabled:opacity-50">{catForm.id ? "保存修改" : "新增类型"}</button>
+            {catForm.id && <button type="button" onClick={() => setCatForm({ id: null, label: "", accountType: "partner" })} className="h-10 rounded-[8px] border border-[var(--line)] px-3 text-sm font-black text-[var(--muted)]">取消</button>}
+          </div>
+        </div>
+      </Drawer>
     </AppShell>
   );
 }

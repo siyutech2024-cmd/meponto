@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Building2, ClipboardCheck, MapPin, Pencil, RefreshCcw } from "lucide-react";
 import { AppShell, PageTitle } from "../components/ui";
+import { Chip, DataTable, Drawer, SectionCard, Stat, Toolbar, type DataColumn, type SortState } from "../components/kit";
 import { readSession } from "../lib/session";
 import { useVentoStore } from "../lib/store";
 import { translate, type TranslationKey } from "../lib/i18n";
@@ -16,6 +17,7 @@ import type { AssessmentMetric, AssessmentRule } from "../lib/assessment";
 type Cell = { actual: number | null; status: string; adjust: number };
 type BoardRow = { name: string; sub: string; riders: number; orders: number; days: number; metrics: Record<string, Cell>; totalAdjust: number; commissionPct: number };
 type Payload = { rule: AssessmentRule; week: { from: string; to: string }; scoped: boolean; franchises: BoardRow[]; stations: BoardRow[] };
+type T = (k: TranslationKey, vars?: Record<string, string | number | undefined>) => string;
 
 const HEADERS = { "Content-Type": "application/json" };
 const input = "h-10 w-full rounded-[8px] border border-[var(--line)] bg-[var(--surface-raised)] px-2 text-sm font-bold text-[var(--text)] outline-none focus:border-[var(--accent)]";
@@ -27,9 +29,127 @@ const statusStyle: Record<string, string> = {
   mid: "text-[var(--warning-ink)]",
   na: "text-[var(--muted)]",
 };
+
+/** Generic client-side sort keyed by a flat row field (numbers first, strings as fallback). */
+function sortRows<T2>(rows: T2[], sort: SortState): T2[] {
+  if (!sort) return rows;
+  const { key, dir } = sort;
+  const val = (row: T2) => (row as unknown as Record<string, unknown>)[key];
+  return [...rows].sort((a, b) => {
+    const av = val(a);
+    const bv = val(b);
+    if (typeof av === "number" && typeof bv === "number") return (av - bv) * dir;
+    const an = av === null || av === undefined ? Number.NEGATIVE_INFINITY : Number(av);
+    const bn = bv === null || bv === undefined ? Number.NEGATIVE_INFINITY : Number(bv);
+    if (Number.isFinite(an) && Number.isFinite(bn)) return (an - bn) * dir;
+    return String(av ?? "").localeCompare(String(bv ?? "")) * dir;
+  });
+}
+
+/** One metric's meet/fail thresholds inside the rule editor drawer. */
+function MetricEditor({ metric, onChange, t }: { metric: AssessmentMetric; onChange: (patch: Partial<AssessmentMetric>) => void; t: T }) {
+  return (
+    <div className="rounded-[8px] border border-[var(--line)] bg-[var(--surface-raised)] p-3">
+      <div className="mb-2 text-sm font-black">{metric.label}</div>
+      <div className="grid grid-cols-2 gap-3">
+        <div>
+          <div className="mb-1 text-[10px] font-black uppercase text-[var(--ok-ink)]">{t("asMeetUp")}</div>
+          <div className="flex items-center gap-1.5">
+            <select className={`${input} w-16`} value={metric.meetOp} onChange={(e) => onChange({ meetOp: e.target.value as "<=" | ">=" })}><option>{">="}</option><option>{"<="}</option></select>
+            <input className={input} inputMode="decimal" value={metric.meetThreshold} onChange={(e) => onChange({ meetThreshold: Number(e.target.value) || 0 })} />
+            <span className="text-xs font-black text-[var(--ok-ink)]">+</span>
+            <input className={input} inputMode="decimal" value={metric.meetAdjust} onChange={(e) => onChange({ meetAdjust: Number(e.target.value) || 0 })} />
+          </div>
+        </div>
+        <div>
+          <div className="mb-1 text-[10px] font-black uppercase text-[var(--danger-ink)]">{t("asFailDown")}</div>
+          <div className="flex items-center gap-1.5">
+            <select className={`${input} w-16`} value={metric.failOp} onChange={(e) => onChange({ failOp: e.target.value as "<=" | ">=" })}><option>{"<="}</option><option>{">="}</option></select>
+            <input className={input} inputMode="decimal" value={metric.failThreshold} onChange={(e) => onChange({ failThreshold: Number(e.target.value) || 0 })} />
+            <span className="text-xs font-black text-[var(--danger-ink)]">−</span>
+            <input className={input} inputMode="decimal" value={metric.failAdjust} onChange={(e) => onChange({ failAdjust: Number(e.target.value) || 0 })} />
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** Week-to-date actuals vs targets, one board per grouping dimension. */
+function Board({ rows, label, icon: Icon, rule, t, statusLabel }: { rows: BoardRow[]; label: string; icon: typeof Building2; rule: AssessmentRule; t: T; statusLabel: Record<string, string> }) {
+  const [sort, setSort] = useState<SortState>(null);
+  const sorted = useMemo(() => sortRows(rows, sort), [rows, sort]);
+  const onSort = (key: string) => setSort((prev) => (prev?.key === key ? (prev.dir === -1 ? { key, dir: 1 } : null) : { key, dir: -1 }));
+
+  const columns: Array<DataColumn<BoardRow>> = [
+    {
+      key: "name",
+      label: t("asColObject"),
+      sortKey: "name",
+      render: (row) => (
+        <div>
+          <div className="font-black">{row.name}</div>
+          {row.sub && <div className="text-[10px] font-bold text-[var(--muted)]">{row.sub}</div>}
+        </div>
+      ),
+    },
+    { key: "riders", label: t("asColRiders"), sortKey: "riders", align: "right", render: (row) => row.riders },
+    { key: "orders", label: t("asColOrders"), sortKey: "orders", align: "right", render: (row) => <span className="font-black">{row.orders}</span> },
+    { key: "days", label: t("asColDays"), sortKey: "days", align: "right", render: (row) => row.days },
+    ...rule.metrics.map((metric): DataColumn<BoardRow> => ({
+      key: metric.key,
+      label: (
+        <span>
+          {metric.label}
+          <span className="block font-bold normal-case">{t("asTarget")} {metric.meetOp}{metric.meetThreshold}</span>
+        </span>
+      ),
+      align: "right",
+      render: (row) => {
+        const cell = row.metrics[metric.key];
+        return (
+          <div>
+            <div className={`font-black ${statusStyle[cell?.status ?? "na"]}`}>{cell?.actual ?? "—"}{cell?.actual !== null && metric.key !== "caa" ? "%" : ""}</div>
+            <div className={`text-[10px] font-bold ${statusStyle[cell?.status ?? "na"]}`}>
+              {statusLabel[cell?.status ?? "na"]}{cell && cell.adjust !== 0 ? `（${cell.adjust > 0 ? "+" : ""}${cell.adjust}）` : ""}
+            </div>
+          </div>
+        );
+      },
+    })),
+    {
+      key: "totalAdjust",
+      label: t("asColAdjust"),
+      sortKey: "totalAdjust",
+      align: "right",
+      render: (row) => (
+        <span className={`font-black ${row.totalAdjust > 0 ? "text-[var(--ok-ink)]" : row.totalAdjust < 0 ? "text-[var(--danger-ink)]" : ""}`}>
+          {row.totalAdjust > 0 ? "+" : ""}{row.totalAdjust}%
+        </span>
+      ),
+    },
+    { key: "commissionPct", label: t("asColCommission"), sortKey: "commissionPct", align: "right", render: (row) => <span className="text-base font-black text-[var(--accent)]">{row.commissionPct}%</span> },
+  ];
+
+  return (
+    <div>
+      <div className="mb-2 flex items-center gap-2 text-xs font-black uppercase text-[var(--accent)]"><Icon size={14} /> {label}{t("asBoardSuffix")}</div>
+      <DataTable<BoardRow>
+        columns={columns}
+        rows={sorted}
+        rowKey={(row) => row.name + row.sub}
+        sort={sort}
+        onSort={onSort}
+        minWidth={980}
+        empty={t("asNoKpi")}
+      />
+    </div>
+  );
+}
+
 export default function AssessmentPage() {
   const language = useVentoStore((s) => s.language);
-  const t = (k: TranslationKey, vars?: Record<string, string | number | undefined>) => {
+  const t: T = (k, vars) => {
     let s = translate(language, k);
     if (vars) for (const [key, val] of Object.entries(vars)) s = s.replace(`{${key}}`, String(val ?? ""));
     return s;
@@ -74,94 +194,17 @@ export default function AssessmentPage() {
 
   const rule = data?.rule;
 
-  function MetricEditor({ metric, index }: { metric: AssessmentMetric; index: number }) {
-    const update = (patch: Partial<AssessmentMetric>) => {
-      if (!draft) return;
-      const metrics = draft.metrics.map((item, i) => (i === index ? { ...item, ...patch } : item));
-      setDraft({ ...draft, metrics });
-    };
-    return (
-      <div className="rounded-[8px] border border-[var(--line)] bg-[var(--surface-raised)] p-3">
-        <div className="mb-2 text-sm font-black">{metric.label}</div>
-        <div className="grid grid-cols-2 gap-3">
-          <div>
-            <div className="mb-1 text-[10px] font-black uppercase text-[var(--ok-ink)]">{t("asMeetUp")}</div>
-            <div className="flex items-center gap-1.5">
-              <select className={`${input} w-16`} value={metric.meetOp} onChange={(e) => update({ meetOp: e.target.value as "<=" | ">=" })}><option>{">="}</option><option>{"<="}</option></select>
-              <input className={input} inputMode="decimal" value={metric.meetThreshold} onChange={(e) => update({ meetThreshold: Number(e.target.value) || 0 })} />
-              <span className="text-xs font-black text-[var(--ok-ink)]">+</span>
-              <input className={input} inputMode="decimal" value={metric.meetAdjust} onChange={(e) => update({ meetAdjust: Number(e.target.value) || 0 })} />
-            </div>
-          </div>
-          <div>
-            <div className="mb-1 text-[10px] font-black uppercase text-[var(--danger-ink)]">{t("asFailDown")}</div>
-            <div className="flex items-center gap-1.5">
-              <select className={`${input} w-16`} value={metric.failOp} onChange={(e) => update({ failOp: e.target.value as "<=" | ">=" })}><option>{"<="}</option><option>{">="}</option></select>
-              <input className={input} inputMode="decimal" value={metric.failThreshold} onChange={(e) => update({ failThreshold: Number(e.target.value) || 0 })} />
-              <span className="text-xs font-black text-[var(--danger-ink)]">−</span>
-              <input className={input} inputMode="decimal" value={metric.failAdjust} onChange={(e) => update({ failAdjust: Number(e.target.value) || 0 })} />
-            </div>
-          </div>
-        </div>
-      </div>
-    );
-  }
+  const messageBanner = message && (
+    <div className={`mb-4 rounded-[8px] border px-4 py-3 text-sm font-black ${message.tone === "ok" ? "border-[var(--ok)] bg-[var(--ok-bg)] text-[var(--ok-ink)]" : "border-[var(--danger)] bg-[var(--danger-bg)] text-[var(--danger-ink)]"}`}>
+      {message.text}
+    </div>
+  );
 
-  function Board({ rows, label, icon: Icon }: { rows: BoardRow[]; label: string; icon: typeof Building2 }) {
-    if (!rule) return null;
-    return (
-      <div className="panel overflow-x-auto p-4">
-        <div className="mb-3 flex items-center gap-2 text-xs font-black uppercase text-[var(--accent)]"><Icon size={14} /> {label}{t("asBoardSuffix")}</div>
-        {rows.length === 0 ? (
-          <div className="py-4 text-sm font-bold text-[var(--muted)]">{t("asNoKpi")}</div>
-        ) : (
-          <table className="w-full min-w-[980px] text-sm">
-            <thead>
-              <tr className="text-left text-[10px] font-black uppercase text-[var(--muted)]">
-                <th className="pb-2">{t("asColObject")}</th>
-                <th className="pb-2 text-right">{t("asColRiders")}</th>
-                <th className="pb-2 text-right">{t("asColOrders")}</th>
-                <th className="pb-2 text-right">{t("asColDays")}</th>
-                {rule.metrics.map((metric) => (
-                  <th key={metric.key} className="pb-2 text-right">{metric.label}<div className="font-bold normal-case">{t("asTarget")} {metric.meetOp}{metric.meetThreshold}</div></th>
-                ))}
-                <th className="pb-2 text-right">{t("asColAdjust")}</th>
-                <th className="pb-2 text-right">{t("asColCommission")}</th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((row) => (
-                <tr key={row.name + row.sub} className="border-t border-[var(--line)]">
-                  <td className="py-2">
-                    <div className="font-black">{row.name}</div>
-                    {row.sub && <div className="text-[10px] font-bold text-[var(--muted)]">{row.sub}</div>}
-                  </td>
-                  <td className="py-2 text-right">{row.riders}</td>
-                  <td className="py-2 text-right font-black">{row.orders}</td>
-                  <td className="py-2 text-right">{row.days}</td>
-                  {rule.metrics.map((metric) => {
-                    const cell = row.metrics[metric.key];
-                    return (
-                      <td key={metric.key} className="py-2 text-right">
-                        <div className={`font-black ${statusStyle[cell?.status ?? "na"]}`}>{cell?.actual ?? "—"}{cell?.actual !== null && metric.key !== "caa" ? "%" : ""}</div>
-                        <div className={`text-[10px] font-bold ${statusStyle[cell?.status ?? "na"]}`}>
-                          {statusLabel[cell?.status ?? "na"]}{cell && cell.adjust !== 0 ? `（${cell.adjust > 0 ? "+" : ""}${cell.adjust}）` : ""}
-                        </div>
-                      </td>
-                    );
-                  })}
-                  <td className={`py-2 text-right font-black ${row.totalAdjust > 0 ? "text-[var(--ok-ink)]" : row.totalAdjust < 0 ? "text-[var(--danger-ink)]" : ""}`}>
-                    {row.totalAdjust > 0 ? "+" : ""}{row.totalAdjust}%
-                  </td>
-                  <td className="py-2 text-right text-base font-black text-[var(--accent)]">{row.commissionPct}%</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
-      </div>
-    );
-  }
+  const ruleColumns: Array<DataColumn<AssessmentMetric>> = [
+    { key: "label", label: t("asColObject"), render: (metric) => <span className="font-black">{metric.label}</span> },
+    { key: "meet", label: t("asMeetUp"), render: (metric) => <span className="font-black text-[var(--ok-ink)]">{t("asMeetLine", { op: metric.meetOp, th: metric.meetThreshold, adj: metric.meetAdjust })}</span> },
+    { key: "fail", label: t("asFailDown"), render: (metric) => <span className="font-black text-[var(--danger-ink)]">{t("asFailLine", { op: metric.failOp, th: metric.failThreshold, adj: metric.failAdjust })}</span> },
+  ];
 
   return (
     <AppShell>
@@ -176,10 +219,11 @@ export default function AssessmentPage() {
                 className="tag inline-flex items-center gap-1"
                 onClick={() => {
                   setDraft(JSON.parse(JSON.stringify(rule)) as AssessmentRule);
-                  setEditing((v) => !v);
+                  setMessage(null);
+                  setEditing(true);
                 }}
               >
-                <Pencil size={13} /> {editing ? t("asCancelEdit") : t("asEditRule")}
+                <Pencil size={13} /> {t("asEditRule")}
               </button>
             )}
             <button type="button" className="tag inline-flex items-center gap-1" onClick={() => void load()}><RefreshCcw size={13} /> {t("asRefresh")}</button>
@@ -187,71 +231,91 @@ export default function AssessmentPage() {
         }
       />
 
-      {message && (
-        <div className={`mb-4 rounded-[8px] border px-4 py-3 text-sm font-black ${message.tone === "ok" ? "border-[var(--ok)] bg-[var(--ok-bg)] text-[var(--ok-ink)]" : "border-[var(--danger)] bg-[var(--danger-bg)] text-[var(--danger-ink)]"}`}>
-          {message.text}
-        </div>
+      {messageBanner}
+
+      {/* Stat row — headline rule terms */}
+      {rule && (
+        <section className="mb-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+          <Stat label={t("asCity")} value={rule.city} />
+          <Stat label={t("asPeriod")} value={t("asWeeksN", { n: rule.periodWeeks })} />
+          <Stat label={t("asMinCommission")} value={`${rule.minCommissionPct}%`} />
+          <Stat label={t("asExclusive")} value={rule.exclusive ? "Yes" : "No"} />
+          <Stat label={t("asEffectiveDate")} value={rule.effectiveDate} hint={rule.updatedAt ? t("asRuleUpdated", { u: rule.updatedAt }) : undefined} />
+        </section>
       )}
 
-      {/* Rule terms */}
-      {rule && !editing && (
-        <div className="panel mb-4 p-4">
-          <div className="mb-3 flex items-center gap-2 text-xs font-black uppercase text-[var(--accent)]"><ClipboardCheck size={14} /> {t("asRuleEffective", { d: rule.effectiveDate })}{rule.updatedAt ? t("asRuleUpdated", { u: rule.updatedAt }) : ""}</div>
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
-            {[[t("asCity"), rule.city], [t("asPeriod"), t("asWeeksN", { n: rule.periodWeeks })], [t("asMinCommission"), `${rule.minCommissionPct}%`], [t("asExclusive"), rule.exclusive ? "Yes" : "No"], [t("asNote"), rule.note || "—"]].map(([label, value]) => (
-              <div key={label} className="rounded-[8px] border border-[var(--line)] bg-[var(--surface-raised)] p-3">
-                <div className="text-[10px] font-black uppercase text-[var(--muted)]">{label}</div>
-                <div className="mt-1 text-sm font-black">{value}</div>
-              </div>
-            ))}
-          </div>
-          <div className="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
-            {rule.metrics.map((metric) => (
-              <div key={metric.key} className="rounded-[8px] border border-[var(--line)] bg-[var(--surface-raised)] p-3">
-                <div className="text-sm font-black">{metric.label}</div>
-                <div className="mt-1 text-[11px] font-bold">
-                  <span className="text-[var(--ok-ink)]">{t("asMeetLine", { op: metric.meetOp, th: metric.meetThreshold, adj: metric.meetAdjust })}</span>
-                  <span className="mx-2 text-[var(--muted)]">｜</span>
-                  <span className="text-[var(--danger-ink)]">{t("asFailLine", { op: metric.failOp, th: metric.failThreshold, adj: metric.failAdjust })}</span>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
+      {/* Rule terms as a table */}
+      {rule && (
+        <SectionCard
+          title={<span className="inline-flex items-center gap-2"><ClipboardCheck size={14} /> {t("asRuleEffective", { d: rule.effectiveDate })}{rule.updatedAt ? t("asRuleUpdated", { u: rule.updatedAt }) : ""}</span>}
+          desc={rule.note ? `${t("asNote")}: ${rule.note}` : undefined}
+          className="mb-4"
+        >
+          <DataTable<AssessmentMetric>
+            columns={ruleColumns}
+            rows={rule.metrics}
+            rowKey={(metric) => metric.key}
+            minWidth={640}
+            empty={t("asNoKpi")}
+          />
+        </SectionCard>
       )}
 
-      {/* HQ rule editor */}
-      {editing && draft && (
-        <div className="panel mb-4 space-y-3 p-4">
-          <div className="text-xs font-black uppercase text-[var(--accent)]">{t("asEditTitle")}</div>
-          <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-5">
-            <label className="block"><span className="mb-1 block text-[10px] font-black uppercase text-[var(--muted)]">{t("asCity")}</span><input className={input} value={draft.city} onChange={(e) => setDraft({ ...draft, city: e.target.value })} /></label>
-            <label className="block"><span className="mb-1 block text-[10px] font-black uppercase text-[var(--muted)]">{t("asPeriodWeeks")}</span><input className={input} inputMode="numeric" value={draft.periodWeeks} onChange={(e) => setDraft({ ...draft, periodWeeks: Number(e.target.value) || 1 })} /></label>
-            <label className="block"><span className="mb-1 block text-[10px] font-black uppercase text-[var(--muted)]">{t("asMinCommissionPct")}</span><input className={input} inputMode="decimal" value={draft.minCommissionPct} onChange={(e) => setDraft({ ...draft, minCommissionPct: Number(e.target.value) || 0 })} /></label>
-            <label className="block"><span className="mb-1 block text-[10px] font-black uppercase text-[var(--muted)]">{t("asEffectiveDate")}</span><input type="date" className={input} value={draft.effectiveDate} onChange={(e) => setDraft({ ...draft, effectiveDate: e.target.value })} /></label>
-            <label className="block"><span className="mb-1 block text-[10px] font-black uppercase text-[var(--muted)]">{t("asExclusiveSign")}</span>
-              <select className={input} value={draft.exclusive ? "yes" : "no"} onChange={(e) => setDraft({ ...draft, exclusive: e.target.value === "yes" })}><option value="no">No</option><option value="yes">Yes</option></select>
-            </label>
-          </div>
-          <label className="block"><span className="mb-1 block text-[10px] font-black uppercase text-[var(--muted)]">{t("asNote")}</span><input className={input} value={draft.note} onChange={(e) => setDraft({ ...draft, note: e.target.value })} /></label>
-          <div className="grid gap-2 lg:grid-cols-2">
-            {draft.metrics.map((metric, index) => <MetricEditor key={metric.key} metric={metric} index={index} />)}
-          </div>
-          <button type="button" onClick={() => void save()} className="inline-flex h-11 items-center rounded-[8px] bg-[var(--accent)] px-6 text-sm font-black uppercase text-[var(--accent-ink)]">{t("asSaveRule")}</button>
-        </div>
-      )}
-
-      {/* Week selector */}
-      <div className="panel mb-4 flex flex-wrap items-center gap-3 p-3" data-i18n-skip>
-        <button type="button" className="tag" onClick={() => shiftWeek(-7)}>{t("asPrevWeek")}</button>
-        <div className="text-sm font-black">{data ? `${md(data.week.from)} – ${md(data.week.to)}` : "—"}<span className="ml-2 text-[11px] font-bold text-[var(--muted)]">{t("asDailyAuto")}</span></div>
-        <button type="button" className="tag" onClick={() => shiftWeek(7)}>{t("asNextWeek")}</button>
+      {/* Toolbar — week navigation */}
+      <div className="mb-4" data-i18n-skip>
+        <Toolbar>
+          <Chip onClick={() => shiftWeek(-7)}>{t("asPrevWeek")}</Chip>
+          <div className="text-sm font-black">{data ? `${md(data.week.from)} – ${md(data.week.to)}` : "—"}</div>
+          <Chip onClick={() => shiftWeek(7)}>{t("asNextWeek")}</Chip>
+          <span className="text-[11px] font-bold text-[var(--muted)]">{t("asDailyAuto")}</span>
+        </Toolbar>
       </div>
 
       <div className="space-y-4">
-        <Board rows={data?.franchises ?? []} label={data?.scoped ? t("asThisFranchise") : t("asByFranchise")} icon={Building2} />
-        <Board rows={data?.stations ?? []} label={t("asByStation")} icon={MapPin} />
+        {rule && <Board rows={data?.franchises ?? []} label={data?.scoped ? t("asThisFranchise") : t("asByFranchise")} icon={Building2} rule={rule} t={t} statusLabel={statusLabel} />}
+        {rule && <Board rows={data?.stations ?? []} label={t("asByStation")} icon={MapPin} rule={rule} t={t} statusLabel={statusLabel} />}
       </div>
+
+      {/* HQ rule editor drawer */}
+      <Drawer
+        open={editing && !!draft}
+        onClose={() => setEditing(false)}
+        width={560}
+        ariaLabel={t("asEditTitle")}
+        title={<div className="text-sm font-black uppercase">{t("asEditTitle")}</div>}
+      >
+        {draft && (
+          <div className="space-y-3">
+            {editing && messageBanner}
+            <div className="grid gap-2 sm:grid-cols-2">
+              <label className="block"><span className="mb-1 block text-[10px] font-black uppercase text-[var(--muted)]">{t("asCity")}</span><input className={input} value={draft.city} onChange={(e) => setDraft({ ...draft, city: e.target.value })} /></label>
+              <label className="block"><span className="mb-1 block text-[10px] font-black uppercase text-[var(--muted)]">{t("asPeriodWeeks")}</span><input className={input} inputMode="numeric" value={draft.periodWeeks} onChange={(e) => setDraft({ ...draft, periodWeeks: Number(e.target.value) || 1 })} /></label>
+              <label className="block"><span className="mb-1 block text-[10px] font-black uppercase text-[var(--muted)]">{t("asMinCommissionPct")}</span><input className={input} inputMode="decimal" value={draft.minCommissionPct} onChange={(e) => setDraft({ ...draft, minCommissionPct: Number(e.target.value) || 0 })} /></label>
+              <label className="block"><span className="mb-1 block text-[10px] font-black uppercase text-[var(--muted)]">{t("asEffectiveDate")}</span><input type="date" className={input} value={draft.effectiveDate} onChange={(e) => setDraft({ ...draft, effectiveDate: e.target.value })} /></label>
+              <label className="block"><span className="mb-1 block text-[10px] font-black uppercase text-[var(--muted)]">{t("asExclusiveSign")}</span>
+                <select className={input} value={draft.exclusive ? "yes" : "no"} onChange={(e) => setDraft({ ...draft, exclusive: e.target.value === "yes" })}><option value="no">No</option><option value="yes">Yes</option></select>
+              </label>
+            </div>
+            <label className="block"><span className="mb-1 block text-[10px] font-black uppercase text-[var(--muted)]">{t("asNote")}</span><input className={input} value={draft.note} onChange={(e) => setDraft({ ...draft, note: e.target.value })} /></label>
+            <div className="grid gap-2">
+              {draft.metrics.map((metric, index) => (
+                <MetricEditor
+                  key={metric.key}
+                  metric={metric}
+                  t={t}
+                  onChange={(patch) => {
+                    setDraft((current) => (current ? { ...current, metrics: current.metrics.map((item, i) => (i === index ? { ...item, ...patch } : item)) } : current));
+                  }}
+                />
+              ))}
+            </div>
+            <div className="flex items-center gap-2 border-t border-[var(--line)] pt-3">
+              <button type="button" onClick={() => void save()} className="inline-flex h-11 items-center rounded-[8px] bg-[var(--accent)] px-6 text-sm font-black uppercase text-[var(--accent-ink)]">{t("asSaveRule")}</button>
+              <button type="button" className="tag" onClick={() => setEditing(false)}>{t("asCancelEdit")}</button>
+            </div>
+          </div>
+        )}
+      </Drawer>
     </AppShell>
   );
 }

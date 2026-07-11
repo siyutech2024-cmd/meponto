@@ -1,8 +1,9 @@
 "use client";
 
-import { FormEvent, useEffect, useState } from "react";
-import { ExternalLink, Wallet } from "lucide-react";
-import { AppShell, Badge, DataTable, Field, PageTitle } from "../components/ui";
+import { FormEvent, useEffect, useMemo, useState } from "react";
+import { ExternalLink, Plus, Wallet } from "lucide-react";
+import { AppShell, PageTitle } from "../components/ui";
+import { DataTable, Drawer, SearchInput, Stat, StatusBadge, Toolbar, type BadgeTone, type DataColumn } from "../components/kit";
 import type { CrmPartner } from "../lib/crm";
 import type { Rider } from "../lib/data";
 import type { PartnerServiceCategory, PartnerServiceRecord } from "../lib/points";
@@ -24,6 +25,12 @@ const serviceStatusLabel: Record<string, string> = {
   rejected: "Recusado",
 };
 
+const serviceStatusTone: Record<string, BadgeTone> = {
+  confirmed: "success",
+  pending: "warn",
+  rejected: "danger",
+};
+
 type LedgerRow = { id: string; type: string; points: number; status: string; createdAt: string; balanceAfter: number };
 type PartnerMe = { accountType?: string; name?: string; balance?: number; ledger?: LedgerRow[] };
 
@@ -41,6 +48,8 @@ export default function PartnerPointsPage() {
   const [amount, setAmount] = useState(120);
   const [receiptRef, setReceiptRef] = useState("");
   const [message, setMessage] = useState("");
+  const [registerOpen, setRegisterOpen] = useState(false);
+  const [query, setQuery] = useState("");
 
   useEffect(() => {
     let active = true;
@@ -67,6 +76,15 @@ export default function PartnerPointsPage() {
   const riderName = (id: string) => riders.find((rider) => rider.id === id)?.name ?? id;
   const partnerName = (id: string) => partners.find((partner) => partner.id === id)?.name ?? id;
 
+  const shownServices = useMemo(() => {
+    const term = query.trim().toLowerCase();
+    if (!term) return services;
+    return services.filter((service) =>
+      `${riderName(service.riderId)} ${partnerName(service.partnerId)} ${service.receiptRef}`.toLowerCase().includes(term),
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [services, riders, partners, query]);
+
   async function submitService(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setMessage("");
@@ -88,14 +106,40 @@ export default function PartnerPointsPage() {
     );
   }
 
+  const field = "mt-1 h-11 w-full rounded-[8px] border border-[var(--line)] bg-[var(--surface)] px-3 font-bold outline-none focus:border-[var(--accent)]";
+
+  const columns: Array<DataColumn<PartnerServiceRecord>> = [
+    { key: "createdAt", label: "Data", render: (service) => <span className="text-xs font-bold text-[var(--muted)]">{service.createdAt}</span> },
+    { key: "rider", label: "Entregador", render: (service) => <span className="font-black">{riderName(service.riderId)}</span> },
+    { key: "partner", label: "Parceiro", render: (service) => partnerName(service.partnerId) },
+    { key: "category", label: "Categoria", render: (service) => categoryLabel[service.category] ?? service.category },
+    { key: "amount", label: "Valor", align: "right", render: (service) => `R$ ${service.amount}` },
+    { key: "discount", label: "Desconto", align: "right", render: (service) => `R$ ${service.riderDiscountBrl}` },
+    { key: "points", label: "Pontos", align: "right", render: (service) => <span className="font-black text-[var(--accent)]">{service.partnerPoints}</span> },
+    { key: "status", label: "Status", render: (service) => <StatusBadge tone={serviceStatusTone[service.status] ?? "neutral"} label={serviceStatusLabel[service.status] ?? service.status} /> },
+    { key: "reason", label: "Motivo", render: (service) => <span className="text-xs font-bold text-[var(--muted)]">{service.reviewReason ?? "OK"}</span> },
+  ];
+
   return (
     <AppShell>
-      <PageTitle title="Pontos do parceiro" eyebrow="Registrar serviço ao entregador (escaneie o QR de membro) e creditar pontos ao parceiro" />
+      <PageTitle
+        title="Pontos do parceiro"
+        eyebrow="Registrar serviço ao entregador (escaneie o QR de membro) e creditar pontos ao parceiro"
+        action={
+          <button
+            type="button"
+            onClick={() => { setMessage(""); setRegisterOpen(true); }}
+            className="inline-flex h-9 items-center gap-1 rounded-[8px] bg-[var(--accent)] px-4 text-xs font-black uppercase text-[var(--accent-ink)] hover:bg-[var(--accent-strong)]"
+          >
+            <Plus size={14} /> Registrar serviço
+          </button>
+        }
+      />
 
       {/* Cadastro, aprovação e contas de login dos parceiros vivem no CRM. */}
       <div className="mb-4 flex flex-wrap items-center gap-2 rounded-[10px] border border-dashed border-[var(--line)] p-3 text-xs font-bold text-[var(--muted)]">
         <span>合作方的入驻 / 审核 / 开通登录账号在「合作伙伴 CRM」。本页只用于<b className="text-[var(--text)]">给骑手核销一笔合作方服务</b>。</span>
-        <a href="/crm" className="ml-auto inline-flex h-8 items-center gap-1.5 rounded-[8px] bg-[var(--accent)] px-3 font-black text-[var(--accent-ink)]">管理 / 审核合作方 → CRM</a>
+        <a href="/crm" className="ml-auto inline-flex h-8 items-center gap-1.5 rounded-[8px] border border-[var(--accent)] px-3 font-black text-[var(--accent)] hover:bg-[var(--accent)] hover:text-[var(--accent-ink)]">管理 / 审核合作方 → CRM</a>
       </div>
 
       {/* Saldo do parceiro logado + entrada na loja (fecha o ciclo ganhar → ver → gastar). */}
@@ -112,7 +156,7 @@ export default function PartnerPointsPage() {
             href={STORE_URL}
             target="_blank"
             rel="noreferrer"
-            className="ml-auto inline-flex h-11 items-center gap-2 rounded-[10px] bg-[var(--accent)] px-5 text-sm font-black text-[var(--accent-ink)]"
+            className="ml-auto inline-flex h-11 items-center gap-2 rounded-[10px] border border-[var(--accent)] px-5 text-sm font-black text-[var(--accent)] hover:bg-[var(--accent)] hover:text-[var(--accent-ink)]"
           >
             <ExternalLink size={16} /> Entrar na loja e resgatar
           </a>
@@ -139,60 +183,69 @@ export default function PartnerPointsPage() {
         </section>
       )}
 
+      {/* Stats */}
       <section className="grid gap-3 md:grid-cols-4">
-        <Field label="Serviços" value={String(services.length)} />
-        <Field label="Confirmados" value={String(services.filter((item) => item.status === "confirmed").length)} />
-        <Field label="Em análise" value={String(services.filter((item) => item.status === "pending").length)} />
-        <Field label="Regra de recibo" value="Sem duplicidade" />
+        <Stat label="Serviços" value={String(services.length)} />
+        <Stat label="Confirmados" value={String(services.filter((item) => item.status === "confirmed").length)} />
+        <Stat label="Em análise" value={String(services.filter((item) => item.status === "pending").length)} />
+        <Stat label="Regra de recibo" value="Sem duplicidade" />
       </section>
 
-      <form onSubmit={submitService} className="panel my-4 grid gap-3 p-4 lg:grid-cols-6">
-        <div className="text-[11px] font-black uppercase text-[var(--muted)] lg:col-span-6">Registrar serviço · 核销合作方服务</div>
-        <label className="text-[11px] font-black text-[var(--muted)] lg:col-span-2">Parceiro 合作方
-          <select value={partnerId} onChange={(event) => setPartnerId(event.target.value)} className="mt-1 h-11 w-full rounded border border-[var(--line)] bg-[var(--surface)] px-3 outline-none">
-            {partners.map((partner) => (
-              <option key={partner.id} value={partner.id}>{partner.name}</option>
-            ))}
-          </select>
-        </label>
-        <label className="text-[11px] font-black text-[var(--muted)] lg:col-span-2">Entregador 骑手（会员码）
-          <select value={riderId} onChange={(event) => setRiderId(event.target.value)} className="mt-1 h-11 w-full rounded border border-[var(--line)] bg-[var(--surface)] px-3 outline-none">
-            {riders.map((rider) => (
-              <option key={rider.id} value={rider.id}>{rider.name}</option>
-            ))}
-          </select>
-        </label>
-        <label className="text-[11px] font-black text-[var(--muted)] lg:col-span-2">Categoria 品类
-          <select value={category} onChange={(event) => setCategory(event.target.value as PartnerServiceCategory)} className="mt-1 h-11 w-full rounded border border-[var(--line)] bg-[var(--surface)] px-3 outline-none">
-            {categories.map((item) => (
-              <option key={item} value={item}>{categoryLabel[item]}</option>
-            ))}
-          </select>
-        </label>
-        <label className="text-[11px] font-black text-[var(--muted)] lg:col-span-2">Valor R$
-          <input type="number" min="1" value={amount} onChange={(event) => setAmount(Number(event.target.value))} className="mt-1 h-11 w-full rounded border border-[var(--line)] bg-[var(--surface)] px-3 outline-none" />
-        </label>
-        <label className="text-[11px] font-black text-[var(--muted)] lg:col-span-2">Recibo / NF
-          <input value={receiptRef} onChange={(event) => setReceiptRef(event.target.value)} placeholder="Nº do comprovante" className="mt-1 h-11 w-full rounded border border-[var(--line)] bg-[var(--surface)] px-3 outline-none" />
-        </label>
-        <button disabled={!riderId || !partnerId || !receiptRef.trim() || !(amount > 0)} className="h-11 self-end rounded border border-[var(--accent)] bg-[var(--accent)] px-4 text-sm font-black text-[var(--accent-ink)] disabled:opacity-50 lg:col-span-2">Registrar serviço</button>
-        {message ? <div className="text-sm font-bold text-[var(--text-soft)] lg:col-span-6">{message}</div> : null}
-      </form>
+      {/* Toolbar */}
+      <div className="my-4">
+        <Toolbar>
+          <SearchInput value={query} onChange={setQuery} placeholder="Buscar entregador / parceiro / recibo" className="w-72" />
+        </Toolbar>
+      </div>
 
-      <DataTable
-        headers={["Data", "Entregador", "Parceiro", "Categoria", "Valor", "Desconto", "Pontos", "Status", "Motivo"]}
-        rows={services.map((service) => [
-          service.createdAt,
-          riderName(service.riderId),
-          partnerName(service.partnerId),
-          categoryLabel[service.category] ?? service.category,
-          `R$ ${service.amount}`,
-          `R$ ${service.riderDiscountBrl}`,
-          service.partnerPoints,
-          <Badge key="status" value={serviceStatusLabel[service.status] ?? service.status} />,
-          service.reviewReason ?? "OK",
-        ])}
+      {/* Service records */}
+      <DataTable<PartnerServiceRecord>
+        columns={columns}
+        rows={shownServices}
+        rowKey={(service) => service.id}
+        minWidth={860}
+        empty="Nenhum serviço registrado."
       />
+
+      {/* Registrar serviço drawer */}
+      <Drawer open={registerOpen} onClose={() => setRegisterOpen(false)} title={<div className="text-sm font-black uppercase">Registrar serviço · 核销合作方服务</div>} ariaLabel="Registrar serviço">
+        <form onSubmit={submitService} className="grid gap-3">
+          <label className="text-[11px] font-black text-[var(--muted)]">Parceiro 合作方
+            <select value={partnerId} onChange={(event) => setPartnerId(event.target.value)} className={field}>
+              {partners.map((partner) => (
+                <option key={partner.id} value={partner.id}>{partner.name}</option>
+              ))}
+            </select>
+          </label>
+          <label className="text-[11px] font-black text-[var(--muted)]">Entregador 骑手（会员码）
+            <select value={riderId} onChange={(event) => setRiderId(event.target.value)} className={field}>
+              {riders.map((rider) => (
+                <option key={rider.id} value={rider.id}>{rider.name}</option>
+              ))}
+            </select>
+          </label>
+          <label className="text-[11px] font-black text-[var(--muted)]">Categoria 品类
+            <select value={category} onChange={(event) => setCategory(event.target.value as PartnerServiceCategory)} className={field}>
+              {categories.map((item) => (
+                <option key={item} value={item}>{categoryLabel[item]}</option>
+              ))}
+            </select>
+          </label>
+          <label className="text-[11px] font-black text-[var(--muted)]">Valor R$
+            <input type="number" min="1" value={amount} onChange={(event) => setAmount(Number(event.target.value))} className={field} />
+          </label>
+          <label className="text-[11px] font-black text-[var(--muted)]">Recibo / NF
+            <input value={receiptRef} onChange={(event) => setReceiptRef(event.target.value)} placeholder="Nº do comprovante" className={field} />
+          </label>
+          <button
+            disabled={!riderId || !partnerId || !receiptRef.trim() || !(amount > 0)}
+            className="h-11 rounded-[8px] bg-[var(--accent)] px-4 text-sm font-black text-[var(--accent-ink)] hover:bg-[var(--accent-strong)] disabled:opacity-50"
+          >
+            Registrar serviço
+          </button>
+          {message ? <div className="text-sm font-bold text-[var(--text-soft)]">{message}</div> : null}
+        </form>
+      </Drawer>
     </AppShell>
   );
 }

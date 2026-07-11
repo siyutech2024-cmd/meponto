@@ -1,8 +1,9 @@
 "use client";
 
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { BarChart3, Building2, CircleDollarSign, FileSpreadsheet, MapPin, RefreshCcw, Upload, Users } from "lucide-react";
-import { AppShell, Badge, PageTitle } from "../components/ui";
+import { AppShell, PageTitle } from "../components/ui";
+import { Chip, DataTable, Drawer, Pager, SearchInput, SectionCard, Stat, StatusBadge, TodoCard, Toolbar, type BadgeTone, type DataColumn, type SortState } from "../components/kit";
 import { downloadCsv } from "../lib/csv";
 import { useDialog } from "../components/dialog";
 import { readSession } from "../lib/session";
@@ -178,6 +179,41 @@ function pct(value: number | null | undefined, good: "high" | "low" = "high", th
   return <span className={`font-black ${cls}`}>{value.toFixed(1)}%</span>;
 }
 
+const fmtPct = (value: number | null | undefined) => (value === null || value === undefined ? "N/A" : `${value.toFixed(1)}%`);
+
+function pctTone(value: number | null | undefined, good: "high" | "low" = "high", threshold = good === "high" ? 80 : 10): BadgeTone {
+  if (value === null || value === undefined) return "neutral";
+  return (good === "high" ? value >= threshold : value <= threshold) ? "success" : "danger";
+}
+
+/** Generic client-side sort keyed by a flat row field (numbers first, strings as fallback). */
+function sortRows<T>(rows: T[], sort: SortState): T[] {
+  if (!sort) return rows;
+  const { key, dir } = sort;
+  const val = (row: T) => (row as unknown as Record<string, unknown>)[key];
+  return [...rows].sort((a, b) => {
+    const av = val(a);
+    const bv = val(b);
+    if (typeof av === "number" && typeof bv === "number") return (av - bv) * dir;
+    const an = av === null || av === undefined ? Number.NEGATIVE_INFINITY : Number(av);
+    const bn = bv === null || bv === undefined ? Number.NEGATIVE_INFINITY : Number(bv);
+    if (Number.isFinite(an) && Number.isFinite(bn)) return (an - bn) * dir;
+    return String(av ?? "").localeCompare(String(bv ?? "")) * dir;
+  });
+}
+
+function toggleSort(setSort: React.Dispatch<React.SetStateAction<SortState>>) {
+  return (key: string) => setSort((prev) => (prev?.key === key ? (prev.dir === -1 ? { key, dir: 1 } : null) : { key, dir: -1 }));
+}
+
+function DetailRow({ label, value }: { label: ReactNode; value: ReactNode }) {
+  return (
+    <div className="flex items-center justify-between gap-3 border-b border-[var(--line)] py-2 text-sm">
+      <span className="text-[11px] font-bold uppercase text-[var(--muted)]">{label}</span>
+      <span className="text-right font-black">{value}</span>
+    </div>
+  );
+}
 
 function TrendChart({ trend }: { trend: Array<{ date: string; orders: number; settle: number }> }) {
   const t = useT();
@@ -256,6 +292,9 @@ export default function PerformancePage() {
   });
 
   const total = data?.total;
+  const caaTone = total ? pctTone(total.caa, "low", 5) : "neutral";
+  const otTone = total ? pctTone(total.overtime, "low", 10) : "neutral";
+  const comboTone: BadgeTone = caaTone === "danger" || otTone === "danger" ? "danger" : caaTone === "neutral" && otTone === "neutral" ? "neutral" : "success";
 
   return (
     <AppShell>
@@ -299,62 +338,54 @@ export default function PerformancePage() {
         }
       />
 
-      <div className="mb-4 flex flex-wrap items-center gap-3">
-        <div className="flex gap-2 overflow-x-auto">
-          {visibleTabs.map(({ id, labelKey, icon: Icon }) => (
-            <button
-              key={id}
-              type="button"
-              onClick={() => setTab(id)}
-              className={`inline-flex h-10 items-center gap-2 whitespace-nowrap rounded-[8px] border px-4 text-xs font-black uppercase ${tab === id ? "border-[var(--accent)] bg-[var(--accent-soft)] text-[var(--accent)]" : "border-[var(--line)] bg-[var(--surface)] text-[var(--muted-strong)]"}`}
-            >
-              <Icon size={15} />
-              {t(labelKey)}
-            </button>
-          ))}
-        </div>
-        {data && data.dates.length > 0 && (
-          <select
-            value={date}
-            onChange={(e) => {
-              setDate(e.target.value);
-              void load(e.target.value);
-            }}
-            className="h-10 rounded-[8px] border border-[var(--line)] bg-[var(--surface)] px-3 text-sm font-black outline-none"
-          >
-            {data.dates.map((item) => (
-              <option key={item} value={item}>{item} {(() => { const wk = weekdayKeyOf(item); return wk ? t(wk) : ""; })()}</option>
-            ))}
-          </select>
-        )}
-      </div>
-
-      {data?.trend && <TrendChart trend={data.trend} />}
-
       {message && (
         <div className={`mb-4 rounded-[8px] border px-4 py-3 text-sm font-black ${message.tone === "ok" ? "border-[var(--ok)] bg-[var(--ok-bg)] text-[var(--ok-ink)]" : "border-[var(--danger)] bg-[var(--danger-bg)] text-[var(--danger-ink)]"}`}>
           {message.text}
         </div>
       )}
 
+      {/* Stat row — day totals */}
       {total && tab !== "import" && (
-        <div className="mb-4 grid gap-3 md:grid-cols-7">
-          {[
-            [t("pfRiders"), String(total.riders)],
-            [t("pfOnlineHours"), total.onlineHours.toFixed(1)],
-            [t("pfCompleted"), String(total.completedOrders)],
-            [t("pfSignedHours"), total.signedShiftHours.toFixed(1)],
-          ].map(([label, value]) => (
-            <div key={label} className="panel p-3 text-center">
-              <div className="text-[10px] font-black uppercase text-[var(--muted)]">{label}</div>
-              <div className="text-xl font-black">{value}</div>
-            </div>
-          ))}
-          <div className="panel p-3 text-center"><div className="text-[10px] font-black uppercase text-[var(--muted)]">%TSH</div><div className="text-xl">{pct(total.tsh)}</div></div>
-          <div className="panel p-3 text-center"><div className="text-[10px] font-black uppercase text-[var(--muted)]">AR</div><div className="text-xl">{pct(total.ar, "high", 95)}</div></div>
-          <div className="panel p-3 text-center"><div className="text-[10px] font-black uppercase text-[var(--muted)]">{t("pfCaaOvertime")}</div><div className="text-sm">{pct(total.caa, "low", 5)} / {pct(total.overtime, "low", 10)}</div></div>
-        </div>
+        <section className="mb-4 grid gap-3 sm:grid-cols-2 md:grid-cols-4 xl:grid-cols-7">
+          <Stat label={t("pfRiders")} value={String(total.riders)} />
+          <Stat label={t("pfOnlineHours")} value={total.onlineHours.toFixed(1)} />
+          <Stat label={t("pfCompleted")} value={String(total.completedOrders)} />
+          <Stat label={t("pfSignedHours")} value={total.signedShiftHours.toFixed(1)} />
+          <TodoCard label="%TSH" value={fmtPct(total.tsh)} tone={pctTone(total.tsh)} />
+          <TodoCard label="AR" value={fmtPct(total.ar)} tone={pctTone(total.ar, "high", 95)} />
+          <TodoCard label={t("pfCaaOvertime")} value={`${fmtPct(total.caa)} / ${fmtPct(total.overtime)}`} tone={comboTone} />
+        </section>
       )}
+
+      {data?.trend && <TrendChart trend={data.trend} />}
+
+      {/* Toolbar — tab chips + business-date switch */}
+      <div className="mb-4" data-i18n-skip>
+        <Toolbar
+          right={
+            data && data.dates.length > 0 ? (
+              <select
+                value={date}
+                onChange={(e) => {
+                  setDate(e.target.value);
+                  void load(e.target.value);
+                }}
+                className="h-10 rounded-[8px] border border-[var(--line)] bg-[var(--surface-raised)] px-3 text-sm font-black outline-none"
+              >
+                {data.dates.map((item) => (
+                  <option key={item} value={item}>{item} {(() => { const wk = weekdayKeyOf(item); return wk ? t(wk) : ""; })()}</option>
+                ))}
+              </select>
+            ) : undefined
+          }
+        >
+          {visibleTabs.map(({ id, labelKey, icon: Icon }) => (
+            <Chip key={id} active={tab === id} onClick={() => setTab(id)}>
+              <span className="inline-flex items-center gap-1.5"><Icon size={13} /> {t(labelKey)}</span>
+            </Chip>
+          ))}
+        </Toolbar>
+      </div>
 
       {tab !== "import" && (!data || data.riders.length === 0) && (
         <div className="panel p-6 text-sm font-bold text-[var(--muted)]">
@@ -379,12 +410,167 @@ export default function PerformancePage() {
 
 const money = (value: number) => `R$ ${value.toFixed(2)}`;
 
+function GroupTable({ rows, label, showFranchise }: { rows: GroupRow[]; label: string; showFranchise: boolean }) {
+  const t = useT();
+  const [sort, setSort] = useState<SortState>(null);
+  const sorted = useMemo(() => sortRows(rows, sort), [rows, sort]);
+  const columns: Array<DataColumn<GroupRow>> = [
+    { key: "key", label, sortKey: "key", render: (row) => <span className="font-black">{row.key}</span> },
+    ...(showFranchise ? ([{ key: "franchise", label: t("pfBelongFranchise"), render: (row) => <span className="tag">{row.franchise}</span> }] as Array<DataColumn<GroupRow>>) : []),
+    { key: "riders", label: t("pfRiders"), sortKey: "riders", align: "right", render: (row) => <span className="font-bold">{row.riders}</span> },
+    { key: "onlineHours", label: t("pfOnlineHours"), sortKey: "onlineHours", align: "right", render: (row) => row.onlineHours.toFixed(1) },
+    { key: "completedOrders", label: t("pfCompleted"), sortKey: "completedOrders", align: "right", render: (row) => <span className="font-black">{row.completedOrders}</span> },
+    { key: "signedShifts", label: t("pfHSignedShifts"), sortKey: "signedShifts", align: "right", render: (row) => row.signedShifts },
+    { key: "signedShiftHours", label: t("pfSignedHours"), sortKey: "signedShiftHours", align: "right", render: (row) => row.signedShiftHours.toFixed(1) },
+    { key: "inShiftOnlineHours", label: t("pfHActualOnline"), sortKey: "inShiftOnlineHours", align: "right", render: (row) => row.inShiftOnlineHours.toFixed(1) },
+    { key: "tsh", label: "%TSH", sortKey: "tsh", align: "right", render: (row) => pct(row.tsh) },
+    { key: "ar", label: "AR", sortKey: "ar", align: "right", render: (row) => pct(row.ar, "high", 95) },
+    { key: "caa", label: "CAA", sortKey: "caa", align: "right", render: (row) => pct(row.caa, "low", 5) },
+    { key: "overtime", label: t("pfCsvOvertime"), sortKey: "overtime", align: "right", render: (row) => pct(row.overtime, "low", 10) },
+  ];
+  return <DataTable<GroupRow> columns={columns} rows={sorted} rowKey={(row) => row.key} sort={sort} onSort={toggleSort(setSort)} minWidth={900} empty={t("pfNoData")} />;
+}
+
+function RiderTable({ rows }: { rows: EnrichedKpi[] }) {
+  const t = useT();
+  const [query, setQuery] = useState("");
+  const [sort, setSort] = useState<SortState>(null);
+  const [page, setPage] = useState(1);
+  const [detail, setDetail] = useState<EnrichedKpi | null>(null);
+  const PAGE_SIZE = 20;
+
+  const filtered = useMemo(() => {
+    const term = query.trim().toLowerCase();
+    const base = term
+      ? rows.filter((row) => [row.riderName, row.rider99Id, row.cpf, row.phone, row.franchise, row.station].some((v) => String(v ?? "").toLowerCase().includes(term)))
+      : rows;
+    return sortRows(base, sort);
+  }, [rows, query, sort]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [query, sort, rows]);
+
+  const pages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  const safePage = Math.min(page, pages);
+  const pageRows = filtered.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
+
+  const columns: Array<DataColumn<EnrichedKpi>> = [
+    {
+      key: "riderName",
+      label: t("pfRider"),
+      sortKey: "riderName",
+      className: "max-w-[220px]",
+      render: (row) => (
+        <span className="inline-flex items-center gap-1.5">
+          <span className="truncate font-black">{row.riderName}</span>
+          {!row.riderId && <StatusBadge tone="warn" label={t("pfUnregistered")} />}
+        </span>
+      ),
+    },
+    { key: "rider99Id", label: "99 ID", render: (row) => <span className="text-[11px] font-bold text-[var(--muted)]">{row.rider99Id}</span> },
+    { key: "franchise", label: t("pfFranchise"), render: (row) => <span className="tag">{row.franchise}</span> },
+    { key: "station", label: t("pfStation"), render: (row) => <span className="tag">{row.station}</span> },
+    { key: "onlineHours", label: t("pfOnline"), sortKey: "onlineHours", align: "right", render: (row) => row.onlineHours.toFixed(1) },
+    { key: "completedOrders", label: t("pfCompleted"), sortKey: "completedOrders", align: "right", render: (row) => <span className="font-black">{row.completedOrders}</span> },
+    { key: "signedShifts", label: t("pfHSignedShifts"), sortKey: "signedShifts", align: "right", render: (row) => row.signedShifts },
+    { key: "signedShiftHours", label: t("pfSignedHours"), sortKey: "signedShiftHours", align: "right", render: (row) => row.signedShiftHours.toFixed(1) },
+    { key: "inShiftOnlineHours", label: t("pfHActualOnline"), sortKey: "inShiftOnlineHours", align: "right", render: (row) => row.inShiftOnlineHours.toFixed(1) },
+    { key: "tsh", label: "%TSH", sortKey: "tsh", align: "right", render: (row) => pct(row.tsh) },
+    { key: "tshCritical", label: t("pfTshKey"), sortKey: "tshCritical", align: "right", render: (row) => pct(row.tshCritical) },
+    { key: "ar", label: "AR", sortKey: "ar", align: "right", render: (row) => pct(row.ar, "high", 95) },
+    { key: "caa", label: "CAA", sortKey: "caa", align: "right", render: (row) => pct(row.caa, "low", 5) },
+    { key: "overtime", label: t("pfCsvOvertime"), sortKey: "overtime", align: "right", render: (row) => pct(row.overtime, "low", 10) },
+  ];
+
+  return (
+    <div className="space-y-3">
+      <Toolbar>
+        <SearchInput value={query} onChange={setQuery} placeholder={t("rdSearchPh")} />
+      </Toolbar>
+      <DataTable<EnrichedKpi>
+        columns={columns}
+        rows={pageRows}
+        rowKey={(row) => row.id}
+        onRowClick={setDetail}
+        sort={sort}
+        onSort={toggleSort(setSort)}
+        minWidth={1100}
+        empty={t("pfNoData")}
+      />
+      {pages > 1 && (
+        <div className="flex justify-end" data-i18n-skip>
+          <Pager page={safePage} pages={pages} total={filtered.length} onPage={setPage} />
+        </div>
+      )}
+      <Drawer
+        open={!!detail}
+        onClose={() => setDetail(null)}
+        ariaLabel={detail?.riderName}
+        title={
+          <div className="flex items-center gap-2">
+            <span className="truncate text-sm font-black">{detail?.riderName}</span>
+            {detail && !detail.riderId && <StatusBadge tone="warn" label={t("pfUnregistered")} />}
+          </div>
+        }
+      >
+        {detail && (
+          <div>
+            <DetailRow label={t("pfCsvDate")} value={detail.date} />
+            <DetailRow label="99 ID" value={detail.rider99Id} />
+            <DetailRow label="CPF" value={detail.cpf || "—"} />
+            <DetailRow label={t("pfCsvPhone")} value={detail.phone || "—"} />
+            <DetailRow label={t("pfCsvCity")} value={detail.city || "—"} />
+            <DetailRow label={t("pfFranchise")} value={<span className="tag">{detail.franchise}</span>} />
+            <DetailRow label={t("pfStation")} value={<span className="tag">{detail.station}</span>} />
+            <DetailRow label={t("pfOnlineHours")} value={detail.onlineHours.toFixed(1)} />
+            <DetailRow label={t("pfCompleted")} value={detail.completedOrders} />
+            <DetailRow label={t("pfHSignedShifts")} value={detail.signedShifts} />
+            <DetailRow label={t("pfSignedHours")} value={detail.signedShiftHours.toFixed(1)} />
+            <DetailRow label={t("pfHActualOnline")} value={detail.inShiftOnlineHours.toFixed(1)} />
+            <DetailRow label="%TSH" value={pct(detail.tsh)} />
+            <DetailRow label={t("pfTshKey")} value={pct(detail.tshCritical)} />
+            <DetailRow label="AR" value={pct(detail.ar, "high", 95)} />
+            <DetailRow label="CAA" value={pct(detail.caa, "low", 5)} />
+            <DetailRow label={t("pfCsvOvertime")} value={pct(detail.overtime, "low", 10)} />
+          </div>
+        )}
+      </Drawer>
+    </div>
+  );
+}
+
+function EarningGroupTable({ rows, showFranchise }: { rows: EarningGroupRow[]; showFranchise: boolean }) {
+  const t = useT();
+  const [sort, setSort] = useState<SortState>(null);
+  const sorted = useMemo(() => sortRows(rows, sort), [rows, sort]);
+  const columns: Array<DataColumn<EarningGroupRow>> = [
+    { key: "key", label: t("pfHObject"), sortKey: "key", render: (row) => <span className="font-black">{row.key}</span> },
+    ...(showFranchise ? ([{ key: "franchise", label: t("pfBelongFranchise"), render: (row) => <span className="tag">{row.franchise}</span> }] as Array<DataColumn<EarningGroupRow>>) : []),
+    { key: "riders", label: t("pfRiders"), sortKey: "riders", align: "right", render: (row) => row.riders },
+    { key: "orders", label: t("pfCompleted"), sortKey: "orders", align: "right", render: (row) => <span className="font-black">{row.orders}</span> },
+    { key: "total", label: t("pfEarnTotal"), sortKey: "total", align: "right", render: (row) => money(row.total) },
+    { key: "tripIncome", label: t("pfTripIncome"), sortKey: "tripIncome", align: "right", render: (row) => money(row.tripIncome) },
+    { key: "cashDebt", label: t("pfHCashDebt"), sortKey: "cashDebt", align: "right", render: (row) => (row.cashDebt ? <span className="text-[var(--danger-ink)]">{money(row.cashDebt)}</span> : "-") },
+    { key: "mealDeduction", label: t("pfHDeduction"), sortKey: "mealDeduction", align: "right", render: (row) => (row.mealDeduction ? money(row.mealDeduction) : "-") },
+    { key: "bonus", label: t("pfHBonus"), sortKey: "bonus", align: "right", render: (row) => (row.bonus ? money(row.bonus) : "-") },
+    { key: "tips", label: t("pfHTips"), sortKey: "tips", align: "right", render: (row) => (row.tips ? money(row.tips) : "-") },
+    { key: "settleAmount", label: t("pfHSettle"), sortKey: "settleAmount", align: "right", render: (row) => <span className="font-black text-[var(--accent)]">{money(row.settleAmount)}</span> },
+  ];
+  return <DataTable<EarningGroupRow> columns={columns} rows={sorted} rowKey={(row) => row.key} sort={sort} onSort={toggleSort(setSort)} minWidth={860} empty={t("pfNoEarnings")} />;
+}
+
 function EarningsTab({ earnings, scopeFranchise, scopeStation, date, headers }: { earnings: Payload["earnings"]; scopeFranchise: string; scopeStation: string; date: string; headers: Record<string, string> }) {
   const t = useT();
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [paidNames, setPaidNames] = useState<Set<string>>(new Set());
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState<{ tone: "ok" | "err"; text: string } | null>(null);
+  const [query, setQuery] = useState("");
+  const [sort, setSort] = useState<SortState>(null);
+  const [page, setPage] = useState(1);
+  const [detail, setDetail] = useState<EnrichedEarning | null>(null);
+  const PAGE_SIZE = 20;
 
   // Riders already marked paid for this date (daily payment records).
   const loadPaid = useCallback(async () => {
@@ -424,7 +610,24 @@ function EarningsTab({ earnings, scopeFranchise, scopeStation, date, headers }: 
   }
 
   const toggle = (id: string) => setSelected((prev) => { const next = new Set(prev); next.has(id) ? next.delete(id) : next.add(id); return next; });
-  const selectableRows = earnings.riders.filter((r) => !paidNames.has(r.riderName));
+
+  const filtered = useMemo(() => {
+    const term = query.trim().toLowerCase();
+    const base = term
+      ? earnings.riders.filter((row) => [row.riderName, row.rider99Id, row.pix, row.franchise, row.station].some((v) => String(v ?? "").toLowerCase().includes(term)))
+      : earnings.riders;
+    return sortRows(base, sort);
+  }, [earnings.riders, query, sort]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [query, sort, earnings.riders]);
+
+  const pages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  const safePage = Math.min(page, pages);
+  const pageRows = filtered.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
+
+  const selectableRows = filtered.filter((r) => !paidNames.has(r.riderName));
   const allSelected = selectableRows.length > 0 && selectableRows.every((r) => selected.has(r.id));
 
   if (earnings.riders.length === 0) {
@@ -436,6 +639,55 @@ function EarningsTab({ earnings, scopeFranchise, scopeStation, date, headers }: 
   if (!scopeFranchise && !scopeStation) groups.push({ title: t("pfGroupByFranchise"), rows: earnings.franchises, showFranchise: false });
   if (!scopeStation) groups.push({ title: t("pfGroupByStation"), rows: earnings.stations, showFranchise: !scopeFranchise });
 
+  const columns: Array<DataColumn<EnrichedEarning>> = [
+    {
+      key: "select",
+      label: (
+        <input
+          type="checkbox"
+          className="h-4 w-4 accent-[var(--accent)]"
+          checked={allSelected}
+          onChange={(e) => setSelected(e.target.checked ? new Set(selectableRows.map((r) => r.id)) : new Set())}
+        />
+      ),
+      render: (row) => (
+        <span onClick={(e) => e.stopPropagation()}>
+          {paidNames.has(row.riderName) ? (
+            <StatusBadge tone="success" label={t("pfPaid")} />
+          ) : (
+            <input type="checkbox" className="h-4 w-4 accent-[var(--accent)]" checked={selected.has(row.id)} onChange={() => toggle(row.id)} />
+          )}
+        </span>
+      ),
+    },
+    {
+      key: "riderName",
+      label: t("pfRider"),
+      sortKey: "riderName",
+      className: "max-w-[200px]",
+      render: (row) => (
+        <span className="inline-flex items-center gap-1.5">
+          <span className="truncate font-black">{row.riderName}</span>
+          {!row.riderId && <StatusBadge tone="warn" label={t("pfUnregistered")} />}
+        </span>
+      ),
+    },
+    { key: "rider99Id", label: "99 ID", render: (row) => <span className="text-[11px] font-bold text-[var(--muted)]">{row.rider99Id}</span> },
+    { key: "pix", label: "PIX", render: (row) => <span className="text-[11px] font-bold">{row.pix || "-"}</span> },
+    { key: "franchise", label: t("pfFranchise"), render: (row) => <span className="tag">{row.franchise}</span> },
+    { key: "station", label: t("pfStation"), render: (row) => <span className="tag">{row.station}</span> },
+    { key: "orders", label: t("pfCompleted"), sortKey: "orders", align: "right", render: (row) => <span className="font-black">{row.orders}</span> },
+    { key: "total", label: t("pfEarnTotal"), sortKey: "total", align: "right", render: (row) => money(row.total) },
+    { key: "tripIncome", label: t("pfTripIncome"), sortKey: "tripIncome", align: "right", render: (row) => money(row.tripIncome) },
+    { key: "cashDebt", label: t("pfHCashDebt"), sortKey: "cashDebt", align: "right", render: (row) => (row.cashDebt ? <span className="text-[var(--danger-ink)]">{money(row.cashDebt)}</span> : "-") },
+    { key: "mealDeduction", label: t("pfHMeal"), sortKey: "mealDeduction", align: "right", render: (row) => (row.mealDeduction ? money(row.mealDeduction) : "-") },
+    { key: "bonus", label: t("pfHBonus"), sortKey: "bonus", align: "right", render: (row) => (row.bonus ? money(row.bonus) : "-") },
+    { key: "tips", label: t("pfHTips"), sortKey: "tips", align: "right", render: (row) => (row.tips ? money(row.tips) : "-") },
+    { key: "manualAdjust", label: t("pfHAdjust"), sortKey: "manualAdjust", align: "right", render: (row) => (row.manualAdjust ? money(row.manualAdjust) : "-") },
+    { key: "referralBonus", label: t("pfHReferral"), sortKey: "referralBonus", align: "right", render: (row) => (row.referralBonus ? money(row.referralBonus) : "-") },
+    { key: "settleAmount", label: t("pfHSettle"), sortKey: "settleAmount", align: "right", render: (row) => <span className="font-black text-[var(--accent)]">{money(row.settleAmount)}</span> },
+  ];
+
   return (
     <div className="space-y-4">
       {brokenSettle && (
@@ -443,68 +695,30 @@ function EarningsTab({ earnings, scopeFranchise, scopeStation, date, headers }: 
           {t("pfBrokenSettle")}
         </div>
       )}
-      <div className="grid gap-3 md:grid-cols-6">
-        {[
-          [t("pfRiders"), String(total.riders)],
-          [t("pfCompleted"), String(total.orders)],
-          [t("pfEarnTotal"), money(total.total)],
-          [t("pfTripIncome"), money(total.tripIncome)],
-          [t("pfBonusTips"), money(total.bonus + total.tips)],
-        ].map(([label, value]) => (
-          <div key={label} className="panel p-3 text-center">
-            <div className="text-[10px] font-black uppercase text-[var(--muted)]">{label}</div>
-            <div className="text-lg font-black">{value}</div>
-          </div>
-        ))}
-        <div className="panel border-[var(--accent)] p-3 text-center">
-          <div className="text-[10px] font-black uppercase text-[var(--accent)]">{t("pfSettleSum")}</div>
-          <div className="text-lg font-black text-[var(--accent)]">{money(total.settleAmount)}</div>
+
+      {/* Stat row — earnings totals */}
+      <section className="grid gap-3 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-6">
+        <Stat label={t("pfRiders")} value={String(total.riders)} />
+        <Stat label={t("pfCompleted")} value={String(total.orders)} />
+        <Stat label={t("pfEarnTotal")} value={money(total.total)} />
+        <Stat label={t("pfTripIncome")} value={money(total.tripIncome)} />
+        <Stat label={t("pfBonusTips")} value={money(total.bonus + total.tips)} />
+        <div className="panel border-[var(--accent)] p-4">
+          <div className="text-[11px] font-bold uppercase text-[var(--accent)]">{t("pfSettleSum")}</div>
+          <div className="mt-1 text-2xl font-black text-[var(--accent)]">{money(total.settleAmount)}</div>
         </div>
-      </div>
+      </section>
 
       {groups.map(({ title, rows, showFranchise }) => (
-        <div key={title} className="panel overflow-x-auto p-4">
-          <div className="mb-3 text-xs font-black uppercase text-[var(--accent)]">{title}</div>
-          <table className="w-full min-w-[820px] text-sm">
-            <thead>
-              <tr className="text-left text-[10px] font-black uppercase text-[var(--muted)]">
-                <th className="pb-2">{t("pfHObject")}</th>
-                {showFranchise && <th className="pb-2">{t("pfBelongFranchise")}</th>}
-                <th className="pb-2 text-center">{t("pfRiders")}</th>
-                <th className="pb-2 text-center">{t("pfCompleted")}</th>
-                <th className="pb-2 text-right">{t("pfEarnTotal")}</th>
-                <th className="pb-2 text-right">{t("pfTripIncome")}</th>
-                <th className="pb-2 text-right">{t("pfHCashDebt")}</th>
-                <th className="pb-2 text-right">{t("pfHDeduction")}</th>
-                <th className="pb-2 text-right">{t("pfHBonus")}</th>
-                <th className="pb-2 text-right">{t("pfHTips")}</th>
-                <th className="pb-2 text-right">{t("pfHSettle")}</th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((row) => (
-                <tr key={row.key} className="border-t border-[var(--line)]">
-                  <td className="py-2 font-black">{row.key}</td>
-                  {showFranchise && <td className="py-2"><span className="tag">{row.franchise}</span></td>}
-                  <td className="py-2 text-center">{row.riders}</td>
-                  <td className="py-2 text-center font-bold">{row.orders}</td>
-                  <td className="py-2 text-right">{money(row.total)}</td>
-                  <td className="py-2 text-right">{money(row.tripIncome)}</td>
-                  <td className="py-2 text-right">{row.cashDebt ? <span className="text-[var(--danger-ink)]">{money(row.cashDebt)}</span> : "-"}</td>
-                  <td className="py-2 text-right">{row.mealDeduction ? money(row.mealDeduction) : "-"}</td>
-                  <td className="py-2 text-right">{row.bonus ? money(row.bonus) : "-"}</td>
-                  <td className="py-2 text-right">{row.tips ? money(row.tips) : "-"}</td>
-                  <td className="py-2 text-right font-black text-[var(--accent)]">{money(row.settleAmount)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+        <div key={title}>
+          <div className="mb-2 text-xs font-black uppercase text-[var(--accent)]">{title}</div>
+          <EarningGroupTable rows={rows} showFranchise={showFranchise} />
         </div>
       ))}
 
-      <div className="panel overflow-x-auto p-4">
-        <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-          <div className="text-xs font-black uppercase text-[var(--accent)]">{t("pfDetailTitle", { date: date || t("pfAllDates") })}</div>
+      {/* Toolbar — rider settlement detail */}
+      <Toolbar
+        right={
           <div className="flex items-center gap-2">
             <button
               type="button"
@@ -528,155 +742,69 @@ function EarningsTab({ earnings, scopeFranchise, scopeStation, date, headers }: 
               {t("pfMarkPaidBulk", { n: selected.size })}
             </button>
           </div>
+        }
+      >
+        <span className="text-xs font-black uppercase text-[var(--accent)]">{t("pfDetailTitle", { date: date || t("pfAllDates") })}</span>
+        <SearchInput value={query} onChange={setQuery} placeholder={t("rdSearchPh")} />
+      </Toolbar>
+
+      {note && (
+        <div className={`rounded-[8px] border px-3 py-2 text-xs font-black ${note.tone === "ok" ? "border-[var(--ok)] bg-[var(--ok-bg)] text-[var(--ok-ink)]" : "border-[var(--danger)] bg-[var(--danger-bg)] text-[var(--danger-ink)]"}`}>{note.text}</div>
+      )}
+
+      <DataTable<EnrichedEarning>
+        columns={columns}
+        rows={pageRows}
+        rowKey={(row) => row.id}
+        onRowClick={setDetail}
+        sort={sort}
+        onSort={toggleSort(setSort)}
+        minWidth={1280}
+        empty={t("pfNoEarnings")}
+      />
+      {pages > 1 && (
+        <div className="flex justify-end" data-i18n-skip>
+          <Pager page={safePage} pages={pages} total={filtered.length} onPage={setPage} />
         </div>
-        {note && (
-          <div className={`mb-3 rounded-[8px] border px-3 py-2 text-xs font-black ${note.tone === "ok" ? "border-[var(--ok)] bg-[var(--ok-bg)] text-[var(--ok-ink)]" : "border-[var(--danger)] bg-[var(--danger-bg)] text-[var(--danger-ink)]"}`}>{note.text}</div>
+      )}
+
+      <Drawer
+        open={!!detail}
+        onClose={() => setDetail(null)}
+        ariaLabel={detail?.riderName}
+        title={
+          <div className="flex items-center gap-2">
+            <span className="truncate text-sm font-black">{detail?.riderName}</span>
+            {detail && (paidNames.has(detail.riderName)
+              ? <StatusBadge tone="success" label={t("pfPaid")} />
+              : <StatusBadge tone="neutral" label={t("pfUnpaid")} />)}
+            {detail && !detail.riderId && <StatusBadge tone="warn" label={t("pfUnregistered")} />}
+          </div>
+        }
+      >
+        {detail && (
+          <div>
+            <DetailRow label={t("pfCsvDate")} value={date || t("pfAllDates")} />
+            <DetailRow label="99 ID" value={detail.rider99Id} />
+            <DetailRow label="CPF" value={detail.cpf || "—"} />
+            <DetailRow label="PIX" value={detail.pix || "—"} />
+            <DetailRow label={t("pfCsvPhone")} value={detail.phone || "—"} />
+            <DetailRow label={t("pfFranchise")} value={<span className="tag">{detail.franchise}</span>} />
+            <DetailRow label={t("pfStation")} value={<span className="tag">{detail.station}</span>} />
+            <DetailRow label={t("pfCompleted")} value={detail.orders} />
+            <DetailRow label={t("pfEarnTotal")} value={money(detail.total)} />
+            <DetailRow label={t("pfTripIncome")} value={money(detail.tripIncome)} />
+            <DetailRow label={t("pfHCashDebt")} value={detail.cashDebt ? <span className="text-[var(--danger-ink)]">{money(detail.cashDebt)}</span> : "-"} />
+            <DetailRow label={t("pfHMeal")} value={detail.mealDeduction ? money(detail.mealDeduction) : "-"} />
+            <DetailRow label={t("pfHBonus")} value={detail.bonus ? money(detail.bonus) : "-"} />
+            <DetailRow label={t("pfHTips")} value={detail.tips ? money(detail.tips) : "-"} />
+            <DetailRow label={t("pfHAdjust")} value={detail.manualAdjust ? money(detail.manualAdjust) : "-"} />
+            <DetailRow label={t("pfHReferral")} value={detail.referralBonus ? money(detail.referralBonus) : "-"} />
+            <DetailRow label={t("pfCsvOther")} value={detail.other ? money(detail.other) : "-"} />
+            <DetailRow label={t("pfHSettle")} value={<span className="font-black text-[var(--accent)]">{money(detail.settleAmount)}</span>} />
+          </div>
         )}
-        <table className="w-full min-w-[1220px] text-sm">
-          <thead>
-            <tr className="text-left text-[10px] font-black uppercase text-[var(--muted)]">
-              <th className="pb-2">
-                <input type="checkbox" className="h-4 w-4 accent-[var(--accent)]" checked={allSelected} onChange={(e) => setSelected(e.target.checked ? new Set(selectableRows.map((r) => r.id)) : new Set())} />
-              </th>
-              <th className="pb-2">{t("pfRider")}</th>
-              <th className="pb-2">99 ID</th>
-              <th className="pb-2">PIX</th>
-              <th className="pb-2">{t("pfFranchise")}</th>
-              <th className="pb-2">{t("pfStation")}</th>
-              <th className="pb-2 text-center">{t("pfCompleted")}</th>
-              <th className="pb-2 text-right">{t("pfEarnTotal")}</th>
-              <th className="pb-2 text-right">{t("pfTripIncome")}</th>
-              <th className="pb-2 text-right">{t("pfHCashDebt")}</th>
-              <th className="pb-2 text-right">{t("pfHMeal")}</th>
-              <th className="pb-2 text-right">{t("pfHBonus")}</th>
-              <th className="pb-2 text-right">{t("pfHTips")}</th>
-              <th className="pb-2 text-right">{t("pfHAdjust")}</th>
-              <th className="pb-2 text-right">{t("pfHReferral")}</th>
-              <th className="pb-2 text-right">{t("pfHSettle")}</th>
-            </tr>
-          </thead>
-          <tbody>
-            {earnings.riders.map((row) => (
-              <tr key={row.id} className={`border-t border-[var(--line)] ${paidNames.has(row.riderName) ? "opacity-60" : ""}`}>
-                <td className="py-2">
-                  {paidNames.has(row.riderName) ? (
-                    <span className="text-[10px] font-black uppercase text-[var(--ok-ink)]">{t("pfPaid")}</span>
-                  ) : (
-                    <input type="checkbox" className="h-4 w-4 accent-[var(--accent)]" checked={selected.has(row.id)} onChange={() => toggle(row.id)} />
-                  )}
-                </td>
-                <td className="py-2 font-black">{row.riderName}{!row.riderId && <span className="ml-1"><Badge value={t("pfUnregistered")} /></span>}</td>
-                <td className="py-2 text-[11px] font-bold text-[var(--muted)]">{row.rider99Id}</td>
-                <td className="py-2 text-[11px] font-bold">{row.pix || "-"}</td>
-                <td className="py-2"><span className="tag">{row.franchise}</span></td>
-                <td className="py-2"><span className="tag">{row.station}</span></td>
-                <td className="py-2 text-center font-bold">{row.orders}</td>
-                <td className="py-2 text-right">{money(row.total)}</td>
-                <td className="py-2 text-right">{money(row.tripIncome)}</td>
-                <td className="py-2 text-right">{row.cashDebt ? <span className="text-[var(--danger-ink)]">{money(row.cashDebt)}</span> : "-"}</td>
-                <td className="py-2 text-right">{row.mealDeduction ? money(row.mealDeduction) : "-"}</td>
-                <td className="py-2 text-right">{row.bonus ? money(row.bonus) : "-"}</td>
-                <td className="py-2 text-right">{row.tips ? money(row.tips) : "-"}</td>
-                <td className="py-2 text-right">{row.manualAdjust ? money(row.manualAdjust) : "-"}</td>
-                <td className="py-2 text-right">{row.referralBonus ? money(row.referralBonus) : "-"}</td>
-                <td className="py-2 text-right font-black text-[var(--accent)]">{money(row.settleAmount)}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </div>
-  );
-}
-
-function GroupTable({ rows, label, showFranchise }: { rows: GroupRow[]; label: string; showFranchise: boolean }) {
-  const t = useT();
-  return (
-    <div className="panel overflow-x-auto p-4">
-      <table className="w-full min-w-[860px] text-sm">
-        <thead>
-          <tr className="text-left text-[10px] font-black uppercase text-[var(--muted)]">
-            <th className="pb-2">{label}</th>
-            {showFranchise && <th className="pb-2">{t("pfBelongFranchise")}</th>}
-            <th className="pb-2 text-center">{t("pfRiders")}</th>
-            <th className="pb-2 text-center">{t("pfOnlineHours")}</th>
-            <th className="pb-2 text-center">{t("pfCompleted")}</th>
-            <th className="pb-2 text-center">{t("pfHSignedShifts")}</th>
-            <th className="pb-2 text-center">{t("pfSignedHours")}</th>
-            <th className="pb-2 text-center">{t("pfHActualOnline")}</th>
-            <th className="pb-2 text-center">%TSH</th>
-            <th className="pb-2 text-center">AR</th>
-            <th className="pb-2 text-center">CAA</th>
-            <th className="pb-2 text-center">{t("pfCsvOvertime")}</th>
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((row) => (
-            <tr key={row.key} className="border-t border-[var(--line)]">
-              <td className="py-2 font-black">{row.key}</td>
-              {showFranchise && <td className="py-2"><span className="tag">{row.franchise}</span></td>}
-              <td className="py-2 text-center font-bold">{row.riders}</td>
-              <td className="py-2 text-center">{row.onlineHours.toFixed(1)}</td>
-              <td className="py-2 text-center font-black">{row.completedOrders}</td>
-              <td className="py-2 text-center">{row.signedShifts}</td>
-              <td className="py-2 text-center">{row.signedShiftHours.toFixed(1)}</td>
-              <td className="py-2 text-center">{row.inShiftOnlineHours.toFixed(1)}</td>
-              <td className="py-2 text-center">{pct(row.tsh)}</td>
-              <td className="py-2 text-center">{pct(row.ar, "high", 95)}</td>
-              <td className="py-2 text-center">{pct(row.caa, "low", 5)}</td>
-              <td className="py-2 text-center">{pct(row.overtime, "low", 10)}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
-  );
-}
-
-function RiderTable({ rows }: { rows: EnrichedKpi[] }) {
-  const t = useT();
-  return (
-    <div className="panel overflow-x-auto p-4">
-      <table className="w-full min-w-[1100px] text-sm">
-        <thead>
-          <tr className="text-left text-[10px] font-black uppercase text-[var(--muted)]">
-            <th className="pb-2">{t("pfRider")}</th>
-            <th className="pb-2">99 ID</th>
-            <th className="pb-2">{t("pfFranchise")}</th>
-            <th className="pb-2">{t("pfStation")}</th>
-            <th className="pb-2 text-center">{t("pfOnline")}</th>
-            <th className="pb-2 text-center">{t("pfCompleted")}</th>
-            <th className="pb-2 text-center">{t("pfHSignedShifts")}</th>
-            <th className="pb-2 text-center">{t("pfSignedHours")}</th>
-            <th className="pb-2 text-center">{t("pfHActualOnline")}</th>
-            <th className="pb-2 text-center">%TSH</th>
-            <th className="pb-2 text-center">{t("pfTshKey")}</th>
-            <th className="pb-2 text-center">AR</th>
-            <th className="pb-2 text-center">CAA</th>
-            <th className="pb-2 text-center">{t("pfCsvOvertime")}</th>
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((row) => (
-            <tr key={row.id} className="border-t border-[var(--line)]">
-              <td className="py-2 font-black">{row.riderName}{row.riderId ? "" : " "}{!row.riderId && <Badge value={t("pfUnregistered")} />}</td>
-              <td className="py-2 text-[11px] font-bold text-[var(--muted)]">{row.rider99Id}</td>
-              <td className="py-2"><span className="tag">{row.franchise}</span></td>
-              <td className="py-2"><span className="tag">{row.station}</span></td>
-              <td className="py-2 text-center">{row.onlineHours.toFixed(1)}</td>
-              <td className="py-2 text-center font-black">{row.completedOrders}</td>
-              <td className="py-2 text-center">{row.signedShifts}</td>
-              <td className="py-2 text-center">{row.signedShiftHours.toFixed(1)}</td>
-              <td className="py-2 text-center">{row.inShiftOnlineHours.toFixed(1)}</td>
-              <td className="py-2 text-center">{pct(row.tsh)}</td>
-              <td className="py-2 text-center">{pct(row.tshCritical)}</td>
-              <td className="py-2 text-center">{pct(row.ar, "high", 95)}</td>
-              <td className="py-2 text-center">{pct(row.caa, "low", 5)}</td>
-              <td className="py-2 text-center">{pct(row.overtime, "low", 10)}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+      </Drawer>
     </div>
   );
 }
@@ -773,136 +901,131 @@ function ImportTab({ headers, onDone, onError }: { headers: Record<string, strin
 
   return (
     <div className="space-y-4">
-      <div className="panel space-y-3 p-5">
-        <div className="flex items-center gap-2 text-xs font-black uppercase text-[var(--accent)]">
-          <FileSpreadsheet size={15} /> {t("pfImpUploadTitle")}
+      <SectionCard title={<span className="inline-flex items-center gap-2"><FileSpreadsheet size={15} /> {t("pfImpUploadTitle")}</span>} desc={t("pfImpDesc")}>
+        <div className="space-y-3">
+          <label className="flex h-28 cursor-pointer flex-col items-center justify-center gap-2 rounded-[8px] border-2 border-dashed border-[var(--line)] text-sm font-black text-[var(--muted)] hover:border-[var(--accent)] hover:text-[var(--accent)]">
+            <Upload size={20} />
+            {busy ? t("pfImpParsing") : t("pfImpPickFile")}
+            <input type="file" accept=".xlsx" multiple className="hidden" disabled={busy} onChange={(e) => void importFiles(e.target.files)} />
+          </label>
+          <div className="space-y-2 border-t border-[var(--line)] pt-3">
+            <div className="text-xs font-black uppercase text-[var(--accent)]">{t("pfImpPixTitle")}</div>
+            <textarea
+              value={pixText}
+              onChange={(e) => setPixText(e.target.value)}
+              placeholder={t("pfImpPixPlaceholder")}
+              className="min-h-28 w-full rounded-[8px] border border-[var(--line)] bg-[var(--surface)] p-3 font-mono text-xs leading-5 outline-none focus:border-[var(--accent)]"
+            />
+            <button
+              type="button"
+              disabled={busy || !pixText.trim()}
+              className="tag disabled:opacity-50"
+              onClick={async () => {
+                const lines = pixText.split("\n").map((line) => line.trim()).filter(Boolean);
+                const records = lines
+                  .map((line) => {
+                    const match = line.match(/(\d{3}[.\s]?\d{3}[.\s]?\d{3}[-.\s]?\d{2})/);
+                    const cpf = match ? match[1] : "";
+                    const pix = line.replace(match?.[0] ?? "", "").replace(/^[\s,;|\t-]+|[\s,;|\t]+$/g, "").trim();
+                    return { cpf, pix };
+                  })
+                  .filter((record) => record.cpf && record.pix);
+                if (records.length === 0) {
+                  onError(t("pfImpPixErr"));
+                  return;
+                }
+                setBusy(true);
+                const response = await fetch("/api/performance", { method: "POST", headers, body: JSON.stringify({ action: "importPixRecords", records }) });
+                const payload = await response.json().catch(() => ({}));
+                setBusy(false);
+                if (!response.ok) {
+                  onError(payload.error ?? t("pfImpPixFail"));
+                  return;
+                }
+                setPixText("");
+                onDone(t("pfImpPixDone", { n: payload.data.matched, un: payload.data.unmatched.length > 0 ? t("pfImpUnmatched", { n: payload.data.unmatched.length, list: payload.data.unmatched.slice(0, 5).join("、") }) : "" }));
+              }}
+            >
+              {t("pfImpPixBtn")}
+            </button>
+          </div>
+          <div className="flex flex-wrap items-center gap-2 border-t border-[var(--line)] pt-3">
+            <button
+              type="button"
+              className="tag"
+              disabled={busy}
+              onClick={async () => {
+                const response = await fetch("/api/performance", { method: "POST", headers, body: JSON.stringify({ action: "syncRiderContacts" }) });
+                const payload = await response.json().catch(() => ({}));
+                if (response.ok) onDone(t("pfImpBackfillDone", { n: payload.data.filled }));
+                else onError(payload.error ?? t("pfImpSyncFail"));
+              }}
+            >
+              {t("pfImpBackfill")}
+            </button>
+            <label className="flex items-center gap-2 text-[11px] font-bold text-[var(--muted)]">
+              {t("pfImpClearDay")}
+              <input type="date" value={reportDate} onChange={(e) => setReportDate(e.target.value)} className="h-9 rounded-[8px] border border-[var(--line)] bg-[var(--surface-raised)] px-2 text-xs font-bold outline-none" />
+            </label>
+            <button
+              type="button"
+              className="tag text-[var(--danger-ink)]"
+              disabled={busy}
+              onClick={async () => {
+                if (!(await dialog.confirm(t("pfImpClearConfirm", { date: reportDate }), { message: t("pfImpClearMsg"), tone: "danger", confirmText: t("pfImpClearConfirmBtn") }))) return;
+                const response = await fetch("/api/performance", { method: "POST", headers, body: JSON.stringify({ action: "purgeDate", date: reportDate }) });
+                const payload = await response.json().catch(() => ({}));
+                if (response.ok) onDone(t("pfImpClearDone", { date: reportDate, kpi: payload.data.kpiRemoved, earn: payload.data.earningsRemoved }));
+                else onError(payload.error ?? t("pfImpClearFail"));
+              }}
+            >
+              {t("pfImpClearBtn")}
+            </button>
+          </div>
+          {fileLog.length > 0 && (
+            <div className="space-y-1 text-sm font-bold">
+              {fileLog.map((line) => (
+                <div key={line} className={line.startsWith("✓") ? "text-[var(--ok-ink)]" : "text-[var(--danger-ink)]"}>{line}</div>
+              ))}
+            </div>
+          )}
         </div>
-        <div className="text-sm font-bold leading-6 text-[var(--muted-strong)]">
-          {t("pfImpDesc")}
-        </div>
-        <label className="flex h-28 cursor-pointer flex-col items-center justify-center gap-2 rounded-[8px] border-2 border-dashed border-[var(--line)] text-sm font-black text-[var(--muted)] hover:border-[var(--accent)] hover:text-[var(--accent)]">
-          <Upload size={20} />
-          {busy ? t("pfImpParsing") : t("pfImpPickFile")}
-          <input type="file" accept=".xlsx" multiple className="hidden" disabled={busy} onChange={(e) => void importFiles(e.target.files)} />
-        </label>
-        <div className="space-y-2 border-t border-[var(--line)] pt-3">
-          <div className="text-xs font-black uppercase text-[var(--accent)]">{t("pfImpPixTitle")}</div>
+      </SectionCard>
+
+      <SectionCard title={<span className="inline-flex items-center gap-2"><BarChart3 size={15} /> {t("pfImpPasteTitle")}</span>}>
+        <div className="space-y-3">
+          <label className="block text-xs font-black uppercase text-[var(--muted)]">
+            {t("pfImpReportDate")}
+            <input type="date" value={reportDate} onChange={(e) => setReportDate(e.target.value)} className="mt-1 block h-11 rounded-[8px] border border-[var(--line)] bg-[var(--surface)] px-3 text-sm font-bold outline-none focus:border-[var(--accent)]" />
+          </label>
           <textarea
-            value={pixText}
-            onChange={(e) => setPixText(e.target.value)}
-            placeholder={t("pfImpPixPlaceholder")}
-            className="min-h-28 w-full rounded-[8px] border border-[var(--line)] bg-[var(--surface)] p-3 font-mono text-xs leading-5 outline-none focus:border-[var(--accent)]"
+            value={raw}
+            onChange={(e) => setRaw(e.target.value)}
+            rows={8}
+            placeholder={t("pfImpPastePlaceholder")}
+            className="w-full rounded-[8px] border border-[var(--line)] bg-[var(--surface)] p-3 font-mono text-xs outline-none focus:border-[var(--accent)]"
           />
           <button
             type="button"
-            disabled={busy || !pixText.trim()}
-            className="inline-flex h-10 items-center rounded-[8px] bg-[var(--accent)] px-4 text-xs font-black uppercase text-[var(--accent-ink)] disabled:opacity-50"
+            disabled={busy || !raw.trim()}
             onClick={async () => {
-              const lines = pixText.split("\n").map((line) => line.trim()).filter(Boolean);
-              const records = lines
-                .map((line) => {
-                  const match = line.match(/(\d{3}[.\s]?\d{3}[.\s]?\d{3}[-.\s]?\d{2})/);
-                  const cpf = match ? match[1] : "";
-                  const pix = line.replace(match?.[0] ?? "", "").replace(/^[\s,;|\t-]+|[\s,;|\t]+$/g, "").trim();
-                  return { cpf, pix };
-                })
-                .filter((record) => record.cpf && record.pix);
-              if (records.length === 0) {
-                onError(t("pfImpPixErr"));
-                return;
-              }
               setBusy(true);
-              const response = await fetch("/api/performance", { method: "POST", headers, body: JSON.stringify({ action: "importPixRecords", records }) });
+              const response = await fetch("/api/performance", { method: "POST", headers, body: JSON.stringify({ action: "import", raw, date: reportDate }) });
               const payload = await response.json().catch(() => ({}));
               setBusy(false);
               if (!response.ok) {
-                onError(payload.error ?? t("pfImpPixFail"));
+                onError(payload.error ?? t("pfImpImportFail", { status: response.status }));
                 return;
               }
-              setPixText("");
-              onDone(t("pfImpPixDone", { n: payload.data.matched, un: payload.data.unmatched.length > 0 ? t("pfImpUnmatched", { n: payload.data.unmatched.length, list: payload.data.unmatched.slice(0, 5).join("、") }) : "" }));
+              setRaw("");
+              onDone(t("pfImpImportDone", { date: reportDate, parsed: payload.data.parsed, created: payload.data.created, updated: payload.data.updated }));
             }}
+            className="inline-flex h-11 items-center gap-2 rounded-[8px] bg-[var(--accent)] px-6 text-sm font-black uppercase text-[var(--accent-ink)] hover:bg-[var(--accent-strong)] disabled:opacity-50"
           >
-            {t("pfImpPixBtn")}
+            <Upload size={16} /> {busy ? t("pfImpImporting") : t("pfImpParseImport")}
           </button>
         </div>
-        <div className="flex flex-wrap items-center gap-2 border-t border-[var(--line)] pt-3">
-          <button
-            type="button"
-            className="tag"
-            disabled={busy}
-            onClick={async () => {
-              const response = await fetch("/api/performance", { method: "POST", headers, body: JSON.stringify({ action: "syncRiderContacts" }) });
-              const payload = await response.json().catch(() => ({}));
-              if (response.ok) onDone(t("pfImpBackfillDone", { n: payload.data.filled }));
-              else onError(payload.error ?? t("pfImpSyncFail"));
-            }}
-          >
-            {t("pfImpBackfill")}
-          </button>
-          <label className="flex items-center gap-2 text-[11px] font-bold text-[var(--muted)]">
-            {t("pfImpClearDay")}
-            <input type="date" value={reportDate} onChange={(e) => setReportDate(e.target.value)} className="h-9 rounded-[8px] border border-[var(--line)] bg-[var(--surface-raised)] px-2 text-xs font-bold outline-none" />
-          </label>
-          <button
-            type="button"
-            className="tag text-[var(--danger-ink)]"
-            disabled={busy}
-            onClick={async () => {
-              if (!(await dialog.confirm(t("pfImpClearConfirm", { date: reportDate }), { message: t("pfImpClearMsg"), tone: "danger", confirmText: t("pfImpClearConfirmBtn") }))) return;
-              const response = await fetch("/api/performance", { method: "POST", headers, body: JSON.stringify({ action: "purgeDate", date: reportDate }) });
-              const payload = await response.json().catch(() => ({}));
-              if (response.ok) onDone(t("pfImpClearDone", { date: reportDate, kpi: payload.data.kpiRemoved, earn: payload.data.earningsRemoved }));
-              else onError(payload.error ?? t("pfImpClearFail"));
-            }}
-          >
-            {t("pfImpClearBtn")}
-          </button>
-        </div>
-        {fileLog.length > 0 && (
-          <div className="space-y-1 text-sm font-bold">
-            {fileLog.map((line) => (
-              <div key={line} className={line.startsWith("✓") ? "text-[var(--ok-ink)]" : "text-[var(--danger-ink)]"}>{line}</div>
-            ))}
-          </div>
-        )}
-      </div>
-
-      <div className="panel space-y-3 p-5">
-        <div className="flex items-center gap-2 text-xs font-black uppercase text-[var(--accent)]">
-          <BarChart3 size={15} /> {t("pfImpPasteTitle")}
-        </div>
-        <label className="block text-xs font-black uppercase text-[var(--muted)]">
-          {t("pfImpReportDate")}
-          <input type="date" value={reportDate} onChange={(e) => setReportDate(e.target.value)} className="mt-1 h-11 rounded-[8px] border border-[var(--line)] bg-[var(--surface)] px-3 text-sm font-bold outline-none focus:border-[var(--accent)]" />
-        </label>
-        <textarea
-          value={raw}
-          onChange={(e) => setRaw(e.target.value)}
-          rows={8}
-          placeholder={t("pfImpPastePlaceholder")}
-          className="w-full rounded-[8px] border border-[var(--line)] bg-[var(--surface)] p-3 font-mono text-xs outline-none focus:border-[var(--accent)]"
-        />
-        <button
-          type="button"
-          disabled={busy || !raw.trim()}
-          onClick={async () => {
-            setBusy(true);
-            const response = await fetch("/api/performance", { method: "POST", headers, body: JSON.stringify({ action: "import", raw, date: reportDate }) });
-            const payload = await response.json().catch(() => ({}));
-            setBusy(false);
-            if (!response.ok) {
-              onError(payload.error ?? t("pfImpImportFail", { status: response.status }));
-              return;
-            }
-            setRaw("");
-            onDone(t("pfImpImportDone", { date: reportDate, parsed: payload.data.parsed, created: payload.data.created, updated: payload.data.updated }));
-          }}
-          className="inline-flex h-11 items-center gap-2 rounded-[8px] bg-[var(--accent)] px-6 text-sm font-black uppercase text-[var(--accent-ink)] hover:bg-[var(--accent-strong)] disabled:opacity-50"
-        >
-          <Upload size={16} /> {busy ? t("pfImpImporting") : t("pfImpParseImport")}
-        </button>
-      </div>
+      </SectionCard>
     </div>
   );
 }
