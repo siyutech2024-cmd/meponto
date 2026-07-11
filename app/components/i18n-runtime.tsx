@@ -23,6 +23,10 @@ export function I18nRuntime() {
   const language = useVentoStore((state) => state.language);
   const originalText = useRef(new WeakMap<Text, string>());
   const originalAttributes = useRef(new WeakMap<Element, Record<string, string>>());
+  // Last value WE wrote into a node — lets us tell our own mutations apart
+  // from React updates, so a React re-render (e.g. a count going 0 → 3)
+  // refreshes the cached original instead of being clobbered by it.
+  const lastWritten = useRef(new WeakMap<Text, string>());
 
   useEffect(() => {
     const translateTextNode = (node: Text) => {
@@ -38,12 +42,21 @@ export function I18nRuntime() {
         return;
       }
 
-      const original = originalText.current.get(node) ?? node.nodeValue ?? "";
+      // If the node's current value is neither what we last wrote nor the
+      // cached original, React re-rendered it with new content (interpolated
+      // numbers etc.) — adopt the new value as the original.
+      const cached = originalText.current.get(node);
+      if (cached !== undefined && raw !== cached && raw !== lastWritten.current.get(node)) {
+        originalText.current.set(node, raw);
+      }
+
+      const original = originalText.current.get(node) ?? raw;
       if (!originalText.current.has(node)) {
         originalText.current.set(node, original);
       }
 
       const translated = translatePhrase(language, original);
+      lastWritten.current.set(node, translated);
       if (node.nodeValue !== translated) {
         node.nodeValue = translated;
       }
