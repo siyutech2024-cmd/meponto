@@ -5437,6 +5437,40 @@ function toEnglishPhrase(phrase: string) {
   return normalized;
 }
 
+/** Tri-directional phrase index: every keyed-dictionary triple (en/zh/pt)
+ *  plus every phraseDictionary pair, keyed by the normalized text of ANY of
+ *  the three languages. Built lazily once. This is what lets the DOM runtime
+ *  translate hardcoded zh/pt strings — not only English ones — closing the
+ *  mixed-language gap on portals. Values with {placeholders} are skipped
+ *  (rendered text never matches them exactly). First triple wins on collision. */
+type PhraseTriple = { en: string; zh: string; pt: string };
+let phraseIndex: Map<string, PhraseTriple> | null = null;
+
+function buildPhraseIndex(): Map<string, PhraseTriple> {
+  const index = new Map<string, PhraseTriple>();
+  const add = (triple: PhraseTriple) => {
+    if (triple.en.includes("{") || triple.zh.includes("{") || triple.pt.includes("{")) return;
+    for (const value of [triple.en, triple.zh, triple.pt]) {
+      const key = normalizePhrase(value);
+      if (key && !index.has(key)) index.set(key, triple);
+    }
+  };
+  const en = dictionary.en as Record<string, unknown>;
+  const zh = dictionary.zh as Record<string, unknown>;
+  const pt = dictionary.pt as Record<string, unknown>;
+  for (const key of Object.keys(en)) {
+    const e = en[key];
+    const z = zh[key];
+    const p = pt[key];
+    if (typeof e !== "string" || typeof z !== "string" || typeof p !== "string") continue;
+    add({ en: e, zh: z, pt: p });
+  }
+  for (const [english, zhValue] of Object.entries(phraseDictionary.zh)) {
+    add({ en: english, zh: zhValue, pt: phraseDictionary.pt[english] ?? english });
+  }
+  return index;
+}
+
 export function translatePhrase(language: Language, phrase: string) {
   const leading = phrase.match(/^\s*/)?.[0] ?? "";
   const trailing = phrase.match(/\s*$/)?.[0] ?? "";
@@ -5444,6 +5478,12 @@ export function translatePhrase(language: Language, phrase: string) {
 
   if (!normalized) {
     return phrase;
+  }
+
+  phraseIndex ??= buildPhraseIndex();
+  const triple = phraseIndex.get(normalized);
+  if (triple) {
+    return `${leading}${triple[language]}${trailing}`;
   }
 
   const englishPhrase = toEnglishPhrase(normalized);
