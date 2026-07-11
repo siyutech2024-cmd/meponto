@@ -22,10 +22,20 @@ export async function GET(request: Request) {
 
   const forbidden = requirePermission(request, "view_dashboard");
   if (forbidden) return forbidden;
-  await refreshCollectionsFromDatabase(COLLECTIONS);
+  await refreshCollectionsFromDatabase([...COLLECTIONS, "riders"]);
   const scope = await scopeFromRequest(request);
 
-  let stations = memory.pontos;
+  // Live rider count per station — the seeded `ridersCount` on the record is
+  // a static snapshot (new stations start at 0 and never update), which made
+  // the /pontos table show stale numbers. Count actual rider assignments.
+  const riderCountByStation = new Map<string, number>();
+  for (const rider of memory.riders) {
+    const key = rider.ponto ?? "";
+    if (!key) continue;
+    riderCountByStation.set(key, (riderCountByStation.get(key) ?? 0) + 1);
+  }
+
+  let stations = memory.pontos.map((ponto) => ({ ...ponto, ridersCount: riderCountByStation.get(ponto.name) ?? 0 }));
   let franchiseRows = memory.franchises;
   if (scope.station) {
     stations = stations.filter((ponto) => ponto.name === scope.station);

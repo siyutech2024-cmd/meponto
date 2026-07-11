@@ -27,21 +27,30 @@ export default function PontoDetailPage() {
   const [ponto, setPonto] = useState<Ponto | null>(null);
   const [riders, setRiders] = useState<Rider[]>([]);
   const [leaders, setLeaders] = useState<Leader[]>([]);
+  const [peopleLoaded, setPeopleLoaded] = useState(false);
 
+  // Progressive load: paint the station (name/map/QR) as soon as the network
+  // payload lands; the heavy riders/leaders lists fill in afterwards instead
+  // of blocking the whole page ("QR opens slowly" was three big fetches
+  // gating the first paint).
   const load = useCallback(async () => {
-    const [networkRes, ridersRes, leadersRes] = await Promise.all([
-      fetch("/api/network", { headers, cache: "no-store" }),
+    const stationReady = fetch("/api/network", { headers, cache: "no-store" }).then(async (networkRes) => {
+      if (networkRes.ok) {
+        const payload = await networkRes.json();
+        const stations: Ponto[] = payload.data?.stations ?? [];
+        setPonto(stations.find((item) => item.id === id) ?? null);
+      }
+      setLoaded(true);
+    });
+    const peopleReady = Promise.all([
       fetch("/api/riders", { headers, cache: "no-store" }),
       fetch("/api/leaders", { headers, cache: "no-store" }),
-    ]);
-    if (networkRes.ok) {
-      const payload = await networkRes.json();
-      const stations: Ponto[] = payload.data?.stations ?? [];
-      setPonto(stations.find((item) => item.id === id) ?? null);
-    }
-    if (ridersRes.ok) setRiders((await ridersRes.json()).data ?? []);
-    if (leadersRes.ok) setLeaders((await leadersRes.json()).data ?? []);
-    setLoaded(true);
+    ]).then(async ([ridersRes, leadersRes]) => {
+      if (ridersRes.ok) setRiders((await ridersRes.json()).data ?? []);
+      if (leadersRes.ok) setLeaders((await leadersRes.json()).data ?? []);
+      setPeopleLoaded(true);
+    });
+    await Promise.all([stationReady, peopleReady]);
   }, [headers, id]);
 
   useEffect(() => {
@@ -95,9 +104,9 @@ export default function PontoDetailPage() {
         </a>
       )}
       <section className="mt-4 grid gap-3 md:grid-cols-4">
-        <Field label="Total Riders" value={pontoRiders.length || ponto.ridersCount} />
-        <Field label="Night Shift Riders" value={pontoRiders.filter((rider) => rider.status === "Night Shift").length} />
-        <Field label="Leaders" value={pontoLeaders.length} />
+        <Field label="Total Riders" value={peopleLoaded ? pontoRiders.length : "…"} />
+        <Field label="Night Shift Riders" value={peopleLoaded ? pontoRiders.filter((rider) => rider.status === "Night Shift").length : "…"} />
+        <Field label="Leaders" value={peopleLoaded ? pontoLeaders.length : "…"} />
         <Field label="Safety Score" value={ponto.safetyScore} />
       </section>
       {/* 站点签到码 / check-in QR — print it and post it at the station. The
@@ -110,7 +119,9 @@ export default function PontoDetailPage() {
           alt={`QR de check-in — ${ponto.name}`}
           width={180}
           height={180}
-          className="rounded-lg border border-[var(--line)] bg-white p-2"
+          loading="eager"
+          fetchPriority="high"
+          className="min-h-[180px] min-w-[180px] rounded-lg border border-[var(--line)] bg-white p-2"
         />
         <div className="min-w-[220px]">
           <div className="text-sm font-semibold">签到二维码 · QR de check-in</div>
