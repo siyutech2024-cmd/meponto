@@ -1,4 +1,5 @@
 import { getAvailablePartnerPoints, partnerServiceBenefitRules, shouldHoldPartnerService, type PartnerServiceCategory, type PartnerServiceStatus } from "../../../lib/points";
+import { flushPendingToDatabase } from "../../../lib/server/persistence";
 import { appendServerAudit, jsonResponse, makeServerId, memory } from "../../../lib/server/memory";
 import { requirePermission } from "../../../lib/server/authz";
 
@@ -8,7 +9,7 @@ export function GET() {
   return jsonResponse({ data: memory.partnerServiceRecords });
 }
 
-export async function POST(request: Request) {
+async function postImpl(request: Request) {
   const forbidden = requirePermission(request, "manage_partner_points");
   if (forbidden) return forbidden;
 
@@ -102,4 +103,12 @@ function getRiderTier(rider: { ar: number; nightShiftCount: number; incidentCoun
   if (score >= 86) return { label: "3 estrelas", stars: 3 };
   if (score >= 72) return { label: "2 estrelas", stars: 2 };
   return { label: "1 estrela", stars: 1 };
+}
+
+// Serverless safety: flush mutations to the database BEFORE returning —
+// the instance may freeze right after the response, losing a debounced flush.
+export async function POST(...args: Parameters<typeof postImpl>) {
+  const response = await postImpl(...args);
+  await flushPendingToDatabase();
+  return response;
 }

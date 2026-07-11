@@ -1,4 +1,5 @@
 import { jsonResponse, memory } from "../../lib/server/memory";
+import { flushPendingToDatabase } from "../../lib/server/persistence";
 import { requirePermission } from "../../lib/server/authz";
 
 function nowStamp() {
@@ -18,7 +19,7 @@ export function GET() {
   });
 }
 
-export async function POST(request: Request) {
+async function postImpl(request: Request) {
   const forbidden = requirePermission(request, "view_dashboard");
   if (forbidden) return forbidden;
 
@@ -49,7 +50,7 @@ export async function POST(request: Request) {
   return jsonResponse({ data: notification }, { status: 201 });
 }
 
-export async function PUT(request: Request) {
+async function putImpl(request: Request) {
   const forbidden = requirePermission(request, "view_dashboard");
   if (forbidden) return forbidden;
 
@@ -69,4 +70,17 @@ export async function PUT(request: Request) {
   };
 
   return jsonResponse({ data: memory.notifications[index] });
+}
+
+// Serverless safety: flush mutations to the database BEFORE returning —
+// the instance may freeze right after the response, losing a debounced flush.
+export async function POST(...args: Parameters<typeof postImpl>) {
+  const response = await postImpl(...args);
+  await flushPendingToDatabase();
+  return response;
+}
+export async function PUT(...args: Parameters<typeof putImpl>) {
+  const response = await putImpl(...args);
+  await flushPendingToDatabase();
+  return response;
 }

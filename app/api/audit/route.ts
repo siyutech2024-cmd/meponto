@@ -1,4 +1,5 @@
 import { jsonResponse, makeServerId, memory, type ServerAuditEntry } from "../../lib/server/memory";
+import { flushPendingToDatabase } from "../../lib/server/persistence";
 import { requirePermission } from "../../lib/server/authz";
 
 const auditRisks = new Set(["Low", "Medium", "High"]);
@@ -23,7 +24,7 @@ export function GET(request: Request) {
   });
 }
 
-export async function POST(request: Request) {
+async function postImpl(request: Request) {
   const forbidden = requirePermission(request, "view_dashboard");
   if (forbidden) return forbidden;
 
@@ -53,4 +54,12 @@ export async function POST(request: Request) {
 
   memory.auditEntries.unshift(entry);
   return jsonResponse({ data: entry }, { status: 201 });
+}
+
+// Serverless safety: flush mutations to the database BEFORE returning —
+// the instance may freeze right after the response, losing a debounced flush.
+export async function POST(...args: Parameters<typeof postImpl>) {
+  const response = await postImpl(...args);
+  await flushPendingToDatabase();
+  return response;
 }

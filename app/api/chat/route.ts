@@ -1,4 +1,5 @@
 import { makeServerId, memory, jsonResponse } from "../../lib/server/memory";
+import { flushPendingToDatabase } from "../../lib/server/persistence";
 import { requirePermission } from "../../lib/server/authz";
 import type { ChatCoverageStatus, ChatRiskStatus, ChatRoom } from "../../lib/chat";
 
@@ -6,7 +7,7 @@ export function GET() {
   return jsonResponse({ data: memory.chatRooms });
 }
 
-export async function POST(request: Request) {
+async function postImpl(request: Request) {
   const forbidden = requirePermission(request, "manage_leaders");
   if (forbidden) return forbidden;
 
@@ -35,4 +36,12 @@ export async function POST(request: Request) {
 
   memory.chatRooms.unshift(group);
   return jsonResponse({ data: group }, { status: 201 });
+}
+
+// Serverless safety: flush mutations to the database BEFORE returning —
+// the instance may freeze right after the response, losing a debounced flush.
+export async function POST(...args: Parameters<typeof postImpl>) {
+  const response = await postImpl(...args);
+  await flushPendingToDatabase();
+  return response;
 }

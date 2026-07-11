@@ -1,10 +1,10 @@
 import { jsonResponse, memory } from "../../../lib/server/memory";
 import { requirePermission } from "../../../lib/server/authz";
-import { persistDeleteRecord } from "../../../lib/server/persistence";
+import { flushPendingToDatabase, persistDeleteRecord } from "../../../lib/server/persistence";
 
 const rewardTypes = new Set(["Rider", "Leader"]);
 
-export async function PUT(request: Request, { params }: { params: Promise<{ id: string }> }) {
+async function putImpl(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const forbidden = requirePermission(request, "manage_rewards");
   if (forbidden) return forbidden;
 
@@ -31,7 +31,7 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
   return jsonResponse({ data: memory.rewards[index] });
 }
 
-export async function DELETE(request: Request, { params }: { params: Promise<{ id: string }> }) {
+async function deleteImpl(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const forbidden = requirePermission(request, "manage_rewards");
   if (forbidden) return forbidden;
 
@@ -42,4 +42,17 @@ export async function DELETE(request: Request, { params }: { params: Promise<{ i
   const [removed] = memory.rewards.splice(index, 1);
   persistDeleteRecord("rewards", id);
   return jsonResponse({ data: removed });
+}
+
+// Serverless safety: flush mutations to the database BEFORE returning —
+// the instance may freeze right after the response, losing a debounced flush.
+export async function PUT(...args: Parameters<typeof putImpl>) {
+  const response = await putImpl(...args);
+  await flushPendingToDatabase();
+  return response;
+}
+export async function DELETE(...args: Parameters<typeof deleteImpl>) {
+  const response = await deleteImpl(...args);
+  await flushPendingToDatabase();
+  return response;
 }

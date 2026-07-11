@@ -5,6 +5,8 @@ import { Suspense, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { ArrowLeft, QrCode, CheckCircle2 } from "lucide-react";
 import { readSession } from "../lib/session";
+import { useVentoStore } from "../lib/store";
+import { translate, type TranslationKey } from "../lib/i18n";
 
 function ScanInner() {
   const params = useSearchParams();
@@ -13,25 +15,31 @@ function ScanInner() {
   const station = params.get("station") ?? params.get("ponto") ?? "";
   const session = useMemo(() => readSession(), []);
   const headers = useMemo(() => ({ "Content-Type": "application/json", "x-vento-role": session?.role ?? "Rider" }), [session]);
+  const language = useVentoStore((s) => s.language);
+  const t = (k: TranslationKey, vars?: Record<string, string | number | undefined>) => {
+    let s = translate(language, k);
+    if (vars) for (const [key, val] of Object.entries(vars)) s = s.replace(`{${key}}`, String(val ?? ""));
+    return s;
+  };
 
-  const [state, setState] = useState<{ tone: "ok" | "err" | "info"; text: string }>({ tone: "info", text: "Processando..." });
+  const [state, setState] = useState<{ tone: "ok" | "err" | "info"; key: TranslationKey; vars?: Record<string, string | number | undefined>; raw?: string }>({ tone: "info", key: "scanProcessing" });
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
-    if (ref) setState({ tone: "info", text: `Você foi convidado pelo código ${ref}. Cadastre-se na sua estação informando este código para o seu padrinho ganhar pontos após o seu primeiro pedido.` });
-    else if (partnerId) setState({ tone: "info", text: "Confirme para validar este parceiro e creditar os pontos dele." });
-    else setState({ tone: "err", text: "QR inválido." });
+    if (ref) setState({ tone: "info", key: "scanInvited", vars: { ref } });
+    else if (partnerId) setState({ tone: "info", key: "scanConfirmPartner" });
+    else setState({ tone: "err", key: "scanInvalid" });
   }, [ref, partnerId]);
 
   return (
     <div className="mx-auto min-h-screen max-w-md space-y-4 p-4">
       <div className="flex items-center gap-3">
-        <Link href="/rider-app" className="tag inline-flex items-center gap-1"><ArrowLeft size={13} /> Voltar</Link>
-        <h1 className="flex items-center gap-2 text-lg font-black"><QrCode size={18} className="text-[var(--accent)]" /> Validação por QR</h1>
+        <Link href="/rider-app" className="tag inline-flex items-center gap-1"><ArrowLeft size={13} /> {t("scanBack")}</Link>
+        <h1 className="flex items-center gap-2 text-lg font-black"><QrCode size={18} className="text-[var(--accent)]" /> {t("scanTitle")}</h1>
       </div>
 
-      <div className={`panel p-5 text-sm font-bold ${state.tone === "ok" ? "text-[var(--ok-ink)]" : state.tone === "err" ? "text-[var(--danger-ink)]" : ""}`}>
-        {state.text}
+      <div className={`panel p-5 text-sm font-bold ${state.tone === "ok" ? "text-[var(--ok-ink)]" : state.tone === "err" ? "text-[var(--danger-ink)]" : ""}`} data-i18n-skip>
+        {state.raw ?? t(state.key, state.vars)}
       </div>
 
       {ref && !session?.name && (
@@ -39,7 +47,7 @@ function ScanInner() {
           href={`/register?ref=${encodeURIComponent(ref)}${station ? `&station=${encodeURIComponent(station)}` : ""}`}
           className="inline-flex h-12 w-full items-center justify-center gap-2 rounded-[8px] bg-[var(--accent)] text-sm font-black uppercase text-[var(--accent-ink)]"
         >
-          <CheckCircle2 size={16} /> Criar minha conta
+          <CheckCircle2 size={16} /> {t("scanCreateAccount")}
         </Link>
       )}
 
@@ -49,7 +57,7 @@ function ScanInner() {
           disabled={busy}
           onClick={async () => {
             if (!session?.name) {
-              setState({ tone: "err", text: "Faça login no app do entregador antes de validar." });
+              setState({ tone: "err", key: "scanLoginFirst" });
               return;
             }
             setBusy(true);
@@ -59,29 +67,30 @@ function ScanInner() {
             const me = (riders as Array<{ id: string; name: string }>).find((r) => r.name === session.name);
             if (!me) {
               setBusy(false);
-              setState({ tone: "err", text: "Cadastro não encontrado — fale com o gestor da estação." });
+              setState({ tone: "err", key: "scanNoRegistration" });
               return;
             }
             const response = await fetch("/api/mall", { method: "POST", headers, body: JSON.stringify({ action: "scanPartner", riderId: me.id, partnerId }) });
             const payload = await response.json().catch(() => ({}));
             setBusy(false);
             if (!response.ok) {
-              setState({ tone: "err", text: payload.error ?? `Falha (${response.status})` });
+              // Server errors arrive pre-localized (pt) — show them verbatim.
+              if (payload.error) setState({ tone: "err", key: "scanFail", raw: String(payload.error) });
+              else setState({ tone: "err", key: "scanFail", vars: { s: response.status } });
               return;
             }
             {
               const d = payload.data as { partnerName: string; points: number; earned?: boolean; remaining?: number; grantPoints?: number };
-              setState({
-                tone: "ok",
-                text: d.earned
-                  ? `Parceiro ${d.partnerName} validado! +${d.points} pontos creditados ao parceiro. 🎉`
-                  : `Parceiro ${d.partnerName} validado! Faltam ${d.remaining} para ele ganhar ${d.grantPoints ?? ""} pontos.`,
-              });
+              setState(
+                d.earned
+                  ? { tone: "ok", key: "scanEarned", vars: { name: d.partnerName, points: d.points } }
+                  : { tone: "ok", key: "scanProgress", vars: { name: d.partnerName, remaining: d.remaining, grant: d.grantPoints } },
+              );
             }
           }}
           className="inline-flex h-12 w-full items-center justify-center gap-2 rounded-[8px] bg-[var(--accent)] text-sm font-black uppercase text-[var(--accent-ink)] disabled:opacity-50"
         >
-          <CheckCircle2 size={16} /> {busy ? "Validando..." : "Confirmar validação"}
+          <CheckCircle2 size={16} /> {busy ? t("scanValidating") : t("scanConfirm")}
         </button>
       )}
     </div>
@@ -90,8 +99,13 @@ function ScanInner() {
 
 export default function ScanPage() {
   return (
-    <Suspense fallback={<div className="p-6 text-sm font-bold">Carregando...</div>}>
+    <Suspense fallback={<ScanFallback />}>
       <ScanInner />
     </Suspense>
   );
+}
+
+function ScanFallback() {
+  const language = useVentoStore((s) => s.language);
+  return <div className="p-6 text-sm font-bold">{translate(language, "scanLoading")}</div>;
 }

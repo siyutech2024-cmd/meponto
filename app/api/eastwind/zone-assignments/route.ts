@@ -1,6 +1,6 @@
 import { jsonResponse, memory, type HotZoneAssignment } from "../../../lib/server/memory";
 import { requirePermission, roleFromRequest } from "../../../lib/server/authz";
-import { persistDeleteRecord, refreshCollectionsFromDatabase } from "../../../lib/server/persistence";
+import { flushPendingToDatabase, persistDeleteRecord, refreshCollectionsFromDatabase } from "../../../lib/server/persistence";
 
 /**
  * Hot-zone → franchise assignments (HQ selects and assigns; franchise portals
@@ -32,7 +32,7 @@ export async function GET() {
   return jsonResponse({ data: normalized(memory.hotZoneAssignments) });
 }
 
-export async function POST(request: Request) {
+async function postImpl(request: Request) {
   // Baseline RBAC (also audits denied attempts), then narrow to HQ roles:
   // franchise admins must not re-draw the city zone ownership map.
   const forbidden = requirePermission(request, "manage_pontos");
@@ -75,4 +75,12 @@ export async function POST(request: Request) {
   if (idx >= 0) list.splice(idx, 1, record);
   else list.push(record);
   return jsonResponse({ data: normalized(list) });
+}
+
+// Serverless safety: flush mutations to the database BEFORE returning —
+// the instance may freeze right after the response, losing a debounced flush.
+export async function POST(...args: Parameters<typeof postImpl>) {
+  const response = await postImpl(...args);
+  await flushPendingToDatabase();
+  return response;
 }

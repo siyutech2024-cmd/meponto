@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- FileProvider roots — cache/camera holds the full-res avatar capture the
+     member-card camera writes before it is scaled + persisted. -->
+<paths>
+    <cache-path name="camera" path="camera/" />
+    <!-- Rendered member-card PNG handed to the share sheet. -->
+    <cache-path name="share" path="share/" />
+</paths>

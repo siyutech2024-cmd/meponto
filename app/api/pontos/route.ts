@@ -1,11 +1,15 @@
 import { acceptClientId, makeServerId, memory, jsonResponse } from "../../lib/server/memory";
+import { flushPendingToDatabase, refreshCollectionsFromDatabase } from "../../lib/server/persistence";
 import { requirePermission } from "../../lib/server/authz";
 
-export function GET() {
+export async function GET() {
+  // Read-through refresh: cold serverless instances otherwise return only the
+  // static seed stations (the APP map + console lists miss franchise stations).
+  await refreshCollectionsFromDatabase(["pontos"]);
   return jsonResponse({ data: memory.pontos });
 }
 
-export async function POST(request: Request) {
+async function postImpl(request: Request) {
   const forbidden = requirePermission(request, "manage_pontos");
   if (forbidden) return forbidden;
 
@@ -32,4 +36,12 @@ export async function POST(request: Request) {
 
   memory.pontos.unshift(ponto);
   return jsonResponse({ data: ponto }, { status: 201 });
+}
+
+// Serverless safety: flush mutations to the database BEFORE returning —
+// the instance may freeze right after the response, losing a debounced flush.
+export async function POST(...args: Parameters<typeof postImpl>) {
+  const response = await postImpl(...args);
+  await flushPendingToDatabase();
+  return response;
 }

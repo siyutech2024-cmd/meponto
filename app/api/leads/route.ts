@@ -1,4 +1,5 @@
 import { jsonResponse, makeServerId, memory } from "../../lib/server/memory";
+import { flushPendingToDatabase } from "../../lib/server/persistence";
 import { requirePermission } from "../../lib/server/authz";
 import { leadTypes, type Lead, type LeadType } from "../../lib/leads";
 
@@ -21,7 +22,7 @@ function cleanText(value: unknown, maxLength: number): string {
   return value.trim().slice(0, maxLength);
 }
 
-export async function POST(request: Request) {
+async function postImpl(request: Request) {
   const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
 
   const type = (typeof body.type === "string" && leadTypes.includes(body.type as LeadType) ? body.type : "") as LeadType | "";
@@ -57,4 +58,12 @@ export async function POST(request: Request) {
 
   memory.leads.unshift(lead);
   return jsonResponse({ data: { id: lead.id, status: lead.status } }, { status: 201 });
+}
+
+// Serverless safety: flush mutations to the database BEFORE returning —
+// the instance may freeze right after the response, losing a debounced flush.
+export async function POST(...args: Parameters<typeof postImpl>) {
+  const response = await postImpl(...args);
+  await flushPendingToDatabase();
+  return response;
 }

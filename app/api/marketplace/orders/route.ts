@@ -1,4 +1,5 @@
 import { getAvailablePartnerPoints, getAvailablePoints, type PointsAccountType } from "../../../lib/points";
+import { flushPendingToDatabase } from "../../../lib/server/persistence";
 import { appendInventoryLedger, appendServerAudit, jsonResponse, makeServerId, maybeAutoReplenishDraft, memory } from "../../../lib/server/memory";
 import { requirePermission } from "../../../lib/server/authz";
 import { isSupplierCategory } from "../../../lib/server/crm-categories";
@@ -7,7 +8,7 @@ export function GET() {
   return jsonResponse({ data: memory.marketplaceOrders });
 }
 
-export async function POST(request: Request) {
+async function postImpl(request: Request) {
   const forbidden = requirePermission(request, "manage_marketplace");
   if (forbidden) return forbidden;
 
@@ -111,4 +112,12 @@ export async function POST(request: Request) {
   });
 
   return jsonResponse({ data: { order, ledger } }, { status: 201 });
+}
+
+// Serverless safety: flush mutations to the database BEFORE returning —
+// the instance may freeze right after the response, losing a debounced flush.
+export async function POST(...args: Parameters<typeof postImpl>) {
+  const response = await postImpl(...args);
+  await flushPendingToDatabase();
+  return response;
 }

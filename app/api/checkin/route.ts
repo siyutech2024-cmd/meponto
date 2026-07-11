@@ -15,7 +15,11 @@ const COLLECTIONS = ["pointsLedgerEntries", "riders", "pontos", "mallConfigs"];
 const DEFAULT_CHECKIN_POINTS = 10;
 const checkinPoints = () =>
   memory.mallConfigs.find((c) => c.id === "mall-config")?.checkinPoints ?? DEFAULT_CHECKIN_POINTS;
-const nowStamp = () => new Date().toISOString().slice(0, 16).replace("T", " ");
+// São Paulo local time (not UTC) — the once-per-DAY dedupe must roll over at
+// the rider's midnight. With UTC, a 21:00+ check-in (UTC-3) lands on the next
+// UTC date and wrongly blocks the following morning's check-in.
+// `sv-SE` formats as ISO-like "YYYY-MM-DD HH:mm:ss".
+const nowStamp = () => new Date().toLocaleString("sv-SE", { timeZone: "America/Sao_Paulo" }).slice(0, 16);
 const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, "-").slice(0, 24);
 
 type Body = { pontoId?: string; pontoCode?: string; code?: string };

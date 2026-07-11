@@ -1,11 +1,11 @@
 import { incidents, leaders, ledgerEntries, pontos, rewards, riders } from "../../../lib/data";
 import { seedNotificationsFromIncidents } from "../../../lib/notifications";
 import { jsonResponse, memory } from "../../../lib/server/memory";
-import { persistAllCollections, persistPurgeCollections } from "../../../lib/server/persistence";
+import { flushPendingToDatabase, persistAllCollections, persistPurgeCollections } from "../../../lib/server/persistence";
 import { requirePermission } from "../../../lib/server/authz";
 
 /** Restore the core demo collections to their seed state (server + database). */
-export async function POST(request: Request) {
+async function postImpl(request: Request) {
   const forbidden = requirePermission(request, "reset_demo");
   if (forbidden) return forbidden;
 
@@ -34,4 +34,12 @@ export async function POST(request: Request) {
   persistAllCollections();
 
   return jsonResponse({ ok: true, resetAt: new Date().toISOString() });
+}
+
+// Serverless safety: flush mutations to the database BEFORE returning —
+// the instance may freeze right after the response, losing a debounced flush.
+export async function POST(...args: Parameters<typeof postImpl>) {
+  const response = await postImpl(...args);
+  await flushPendingToDatabase();
+  return response;
 }

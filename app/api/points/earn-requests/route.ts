@@ -1,12 +1,17 @@
 import { getAvailablePoints, type PointsSourceType } from "../../../lib/points";
+import { flushPendingToDatabase, refreshCollectionsFromDatabase } from "../../../lib/server/persistence";
 import { appendServerAudit, jsonResponse, makeServerId, memory } from "../../../lib/server/memory";
 import { requirePermission } from "../../../lib/server/authz";
 
 const allowedSources = new Set<PointsSourceType>(["delivery", "mission", "admin_adjustment"]);
 
-export async function POST(request: Request) {
+async function postImpl(request: Request) {
   const forbidden = requirePermission(request, "manage_points");
   if (forbidden) return forbidden;
+
+  // Refresh first: balanceAfter is computed from the ledger — a cold instance
+  // holding only seed data would otherwise mint a wrong running balance.
+  await refreshCollectionsFromDatabase(["pointsLedgerEntries", "riders"]);
 
   const body = await request.json();
   const riderId = typeof body.riderId === "string" ? body.riderId : "";
@@ -56,4 +61,12 @@ export async function POST(request: Request) {
   });
 
   return jsonResponse({ data: entry }, { status: 201 });
+}
+
+// Serverless safety: flush mutations to the database BEFORE returning —
+// the instance may freeze right after the response, losing a debounced flush.
+export async function POST(...args: Parameters<typeof postImpl>) {
+  const response = await postImpl(...args);
+  await flushPendingToDatabase();
+  return response;
 }

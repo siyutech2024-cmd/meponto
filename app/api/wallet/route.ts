@@ -174,6 +174,24 @@ export async function GET(request: Request) {
 
   // Single-rider wallet (rider app).
   if (riderName || riderId) {
+    // AUTH (anti-IDOR, mirrors /api/points): a rider session may only read its
+    // OWN wallet — the response carries CPF/PIX/phone/balance. Reading someone
+    // else's requires the finance permission (back-office).
+    {
+      const { sessionFromRequest } = await import("../../lib/auth-session");
+      const session = await sessionFromRequest(request);
+      const own =
+        session &&
+        memory.riders.some(
+          (r) =>
+            ((riderId && r.id === riderId) || (riderName && r.name === riderName)) &&
+            (r.id === session.userId || r.name === session.name),
+        );
+      if (!own) {
+        const denied = requirePermission(request, "view_finance");
+        if (denied) return denied;
+      }
+    }
     const rider = memory.riders.find((item) => (riderId && item.id === riderId) || (riderName && item.name === riderName));
     if (!rider || !rider.ninetyNineId) {
       return jsonResponse({ data: { me: null, withdrawals: [] } });

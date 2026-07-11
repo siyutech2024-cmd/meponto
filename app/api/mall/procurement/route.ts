@@ -1,5 +1,5 @@
 import { appendInventoryLedger, appendServerAudit, jsonResponse, makeServerId, memory } from "../../../lib/server/memory";
-import { refreshCollectionsFromDatabase } from "../../../lib/server/persistence";
+import { flushPendingToDatabase, refreshCollectionsFromDatabase } from "../../../lib/server/persistence";
 import { requirePermission, roleFromRequest } from "../../../lib/server/authz";
 import { sessionFromRequest } from "../../../lib/auth-session";
 import { appendEvent, PROCUREMENT_EVENTS, SUPPLIER_EVENTS } from "../../../lib/server/events";
@@ -278,7 +278,7 @@ function refundBuyout(fpo: FranchisePurchaseOrder, amountBRL: number, reasonKey:
   return result.ok ? result.entry : null;
 }
 
-export async function POST(request: Request) {
+async function postImpl(request: Request) {
   const body = (await request.json().catch(() => ({}))) as Body;
   const action = String(body.action ?? "");
   const session = await sessionFromRequest(request);
@@ -833,4 +833,12 @@ export async function POST(request: Request) {
     default:
       return err(400, "unknown action", "fpErrNotFound");
   }
+}
+
+// Serverless safety: flush mutations to the database BEFORE returning —
+// the instance may freeze right after the response, losing a debounced flush.
+export async function POST(...args: Parameters<typeof postImpl>) {
+  const response = await postImpl(...args);
+  await flushPendingToDatabase();
+  return response;
 }

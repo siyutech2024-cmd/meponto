@@ -23,8 +23,8 @@ android {
         applicationId "com.meponto.rider"
         minSdk 24
         targetSdk 35
-        versionCode 7
-        versionName "1.4"
+        versionCode 8
+        versionName "1.5"
         vectorDrawables { useSupportLibrary true }
 
         // PontoSys backend base URL (overridable per build type).
@@ -82,7 +82,9 @@ android {
 }
 
 dependencies {
-    def composeBom = platform('androidx.compose:compose-bom:2024.06.00')
+    // 2024.09.03 → Compose UI 1.7.x: needed for rememberGraphicsLayer
+    // (member-card share-as-image capture).
+    def composeBom = platform('androidx.compose:compose-bom:2024.09.03')
     implementation composeBom
 
     // Product images in PontoMall (async load + cache).

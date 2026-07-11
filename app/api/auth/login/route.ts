@@ -1,4 +1,5 @@
 import { jsonResponse } from "../../../lib/server/memory";
+import { flushPendingToDatabase } from "../../../lib/server/persistence";
 import { findTestAccount, mallHubPortals, portalConfigs, type PortalId, type TestAccount } from "../../../lib/portals";
 import { getSupabaseServerClient } from "../../../lib/supabase/server";
 import type { Role } from "../../../lib/rbac";
@@ -11,7 +12,7 @@ type LoginBody = {
   portal?: PortalId;
 };
 
-export async function POST(request: Request) {
+async function postImpl(request: Request) {
   const body = (await request.json().catch(() => ({}))) as LoginBody;
 
   const identifier = body.identifier ?? body.phone ?? "";
@@ -186,4 +187,12 @@ async function findSupabaseTestAccount(identifier: string, password: string): Pr
   } catch {
     return undefined;
   }
+}
+
+// Serverless safety: flush mutations to the database BEFORE returning —
+// the instance may freeze right after the response, losing a debounced flush.
+export async function POST(...args: Parameters<typeof postImpl>) {
+  const response = await postImpl(...args);
+  await flushPendingToDatabase();
+  return response;
 }
