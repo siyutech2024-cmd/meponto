@@ -53,6 +53,7 @@ export default function RidersPage() {
   const [franchiseFilter, setFranchiseFilter] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
   const [onlyUnassigned, setOnlyUnassigned] = useState(false);
+  const [showNo99, setShowNo99] = useState(false);
   const [addOpen, setAddOpen] = useState(false);
   const [message, setMessage] = useState<{ tone: "ok" | "err"; text: string } | null>(null);
   const [busyId, setBusyId] = useState("");
@@ -135,6 +136,9 @@ export default function RidersPage() {
     const term = query.trim().toLowerCase();
     return riders
       .filter((rider) => {
+        // Riders without a 99 ID are operational noise (incomplete imports) —
+        // hidden by default, reachable via the toolbar toggle.
+        if (!showNo99 && String(rider.ninetyNineId ?? "").trim() === "") return false;
         const haystack = [rider.name, rider.cpf, rider.phone, rider.ninetyNineId].map((value) => String(value ?? "").toLowerCase());
         if (term && !haystack.some((value) => value.includes(term))) return false;
         if (stationFilter && rider.ponto !== stationFilter) return false;
@@ -149,9 +153,10 @@ export default function RidersPage() {
         const bUn = isUnassigned(b.ponto) || isUnassigned(b.franchise) ? 0 : 1;
         return aUn - bUn || b.totalOrders - a.totalOrders;
       });
-  }, [riders, query, stationFilter, franchiseFilter, statusFilter, onlyUnassigned]);
+  }, [riders, query, stationFilter, franchiseFilter, statusFilter, onlyUnassigned, showNo99]);
 
   const unassignedCount = riders.filter((rider) => isUnassigned(rider.ponto) || isUnassigned(rider.franchise)).length;
+  const no99Count = riders.filter((rider) => String(rider.ninetyNineId ?? "").trim() === "").length;
   const reportOnlyCount = riders.filter((rider) => rider.source === "report").length;
 
   // Pagination keeps the table short even with hundreds of riders.
@@ -311,6 +316,11 @@ export default function RidersPage() {
           {STATUS_OPTIONS.map((status) => (
             <Chip key={status} active={statusFilter === status} onClick={() => setStatusFilter(statusFilter === status ? "" : status)}>{status}</Chip>
           ))}
+          {no99Count > 0 && (
+            <Chip active={showNo99} onClick={() => setShowNo99((v) => !v)}>
+              {t("rdNo99Toggle", { n: no99Count })}
+            </Chip>
+          )}
         </Toolbar>
       </div>
 
