@@ -5,8 +5,31 @@ import { sendPushToRider } from "../../lib/server/notify";
 import { postFranchiseDeposit } from "../../lib/server/franchise-deposit";
 import { computeBalance, type RiderWithdrawal, type WalletPayment } from "../../lib/finance";
 import { scopeFromRequest } from "../../lib/server/authz";
+import { callRpc, dbDirectReadEnabled, fetchRows } from "../../lib/server/db-read";
+import type { RiderDailyEarning, RiderDailyKpi } from "../../lib/performance";
 
 const COLLECTIONS = ["riderWithdrawals", "riderDailyEarnings", "riderDailyKpis", "riders", "franchises", "walletPayments", "franchiseDepositLedgerEntries"];
+// L2 direct-read mode: the two T+1 collections (grow per rider per day) are
+// fetched as WINDOWED database rows instead of hydrated wholesale — only the
+// small collections still go through the memory refresh.
+const SMALL_COLLECTIONS = ["riderWithdrawals", "riders", "franchises", "walletPayments", "franchiseDepositLedgerEntries"];
+
+/** Windowed T+1 rows straight from the database; falls back to a full legacy
+ *  refresh + in-memory filter when direct read is off or fails. */
+async function earningsWindow(from: string, to: string): Promise<RiderDailyEarning[]> {
+  if (dbDirectReadEnabled()) {
+    try {
+      return await fetchRows<RiderDailyEarning>("riderDailyEarnings", [
+        { op: "gte", field: "date", value: from },
+        { op: "lte", field: "date", value: to },
+      ]);
+    } catch (error) {
+      console.warn(`[wallet] direct earnings read failed, legacy path. (${(error as Error).message})`);
+    }
+  }
+  await refreshCollectionsFromDatabase(["riderDailyEarnings"]);
+  return memory.riderDailyEarnings.filter((row) => row.date >= from && row.date <= to);
+}
 
 const today = () => new Date().toISOString().slice(0, 10);
 const nowStamp = () => new Date().toISOString().slice(0, 16).replace("T", " ");
@@ -31,7 +54,7 @@ export async function GET(request: Request) {
   const forbidden = requirePermission(request, riderName || riderId ? "use_rider_app" : "view_finance");
   if (forbidden) return forbidden;
 
-  await refreshCollectionsFromDatabase(COLLECTIONS);
+  await refreshCollectionsFromDatabase(dbDirectReadEnabled() ? SMALL_COLLECTIONS : COLLECTIONS);
 
   const franchiseScope = url.searchParams.get("franchise") ?? "";
   const stationScope = url.searchParams.get("station") ?? "";
@@ -45,8 +68,24 @@ export async function GET(request: Request) {
     const to = url.searchParams.get("to") || today();
     const from = url.searchParams.get("from") || new Date(Date.now() - 6 * 86400000).toISOString().slice(0, 10);
     const byNinetyNine = new Map(memory.riders.filter((r) => r.ninetyNineId).map((r) => [r.ninetyNineId!, r]));
-    const kpiByKey = new Map(memory.riderDailyKpis.filter((k) => k.date >= from && k.date <= to).map((k) => [`${k.date}|${k.rider99Id}`, k]));
-    const earnByKey = new Map(memory.riderDailyEarnings.filter((e) => e.date >= from && e.date <= to).map((e) => [`${e.date}|${e.rider99Id}`, e]));
+    let kpiWin: RiderDailyKpi[];
+    if (dbDirectReadEnabled()) {
+      try {
+        kpiWin = await fetchRows<RiderDailyKpi>("riderDailyKpis", [
+          { op: "gte", field: "date", value: from },
+          { op: "lte", field: "date", value: to },
+        ]);
+      } catch (error) {
+        console.warn(`[wallet] direct kpi read failed, legacy path. (${(error as Error).message})`);
+        await refreshCollectionsFromDatabase(["riderDailyKpis"]);
+        kpiWin = memory.riderDailyKpis.filter((k) => k.date >= from && k.date <= to);
+      }
+    } else {
+      kpiWin = memory.riderDailyKpis.filter((k) => k.date >= from && k.date <= to);
+    }
+    const earnWin = await earningsWindow(from, to);
+    const kpiByKey = new Map(kpiWin.map((k) => [`${k.date}|${k.rider99Id}`, k]));
+    const earnByKey = new Map(earnWin.map((e) => [`${e.date}|${e.rider99Id}`, e]));
     // Union of both T+1 tables so KPI-only days still appear (data completeness).
     const keys = [...new Set([...kpiByKey.keys(), ...earnByKey.keys()])];
     // Daily rider payments inside the window → per-day paid status.
@@ -109,17 +148,24 @@ export async function GET(request: Request) {
     // data (T+1 imports lag the calendar), so the default view is never blank.
     let anchor = url.searchParams.get("week") || "";
     if (!anchor) {
-      const dates = memory.riderDailyEarnings.map((e) => e.date).filter(Boolean).sort();
-      anchor = dates.length ? dates[dates.length - 1] : today();
+      if (dbDirectReadEnabled()) {
+        anchor = (await callRpc<string | null>("collection_max_date", { p_collection: "riderDailyEarnings" }).catch(() => null)) ?? "";
+      }
+      if (!anchor) {
+        await refreshCollectionsFromDatabase(["riderDailyEarnings"]);
+        const dates = memory.riderDailyEarnings.map((e) => e.date).filter(Boolean).sort();
+        anchor = dates.length ? dates[dates.length - 1] : today();
+      }
     }
     const win = weekWindow(anchor);
+    const weekEarnings = await earningsWindow(win.from, win.to);
     const scope = await scopeFromRequest(request);
     const byNinetyNine = new Map(memory.riders.filter((r) => r.ninetyNineId).map((r) => [r.ninetyNineId!, r]));
     const round = (n: number) => Math.round(n * 100) / 100;
 
     // Sum settle per rider within the window.
     const riderAgg = new Map<string, { name: string; rider99Id: string; franchise: string; station: string; settle: number; orders: number; days: number }>();
-    for (const row of memory.riderDailyEarnings) {
+    for (const row of weekEarnings) {
       if (row.date < win.from || row.date > win.to) continue;
       const rider = byNinetyNine.get(row.rider99Id);
       const franchise = rider?.franchise ?? "Unassigned";
@@ -196,7 +242,22 @@ export async function GET(request: Request) {
     if (!rider || !rider.ninetyNineId) {
       return jsonResponse({ data: { me: null, withdrawals: [] } });
     }
-    const balance = computeBalance(memory.riderDailyEarnings, memory.riderWithdrawals, rider.ninetyNineId, today());
+    // Direct read: only THIS rider's earning rows (a few hundred at most).
+    let riderEarnings: RiderDailyEarning[];
+    if (dbDirectReadEnabled()) {
+      try {
+        riderEarnings = await fetchRows<RiderDailyEarning>("riderDailyEarnings", [
+          { op: "eq", field: "rider99Id", value: rider.ninetyNineId },
+        ]);
+      } catch (error) {
+        console.warn(`[wallet] direct rider earnings read failed, legacy path. (${(error as Error).message})`);
+        await refreshCollectionsFromDatabase(["riderDailyEarnings"]);
+        riderEarnings = memory.riderDailyEarnings;
+      }
+    } else {
+      riderEarnings = memory.riderDailyEarnings;
+    }
+    const balance = computeBalance(riderEarnings, memory.riderWithdrawals, rider.ninetyNineId, today());
     const withdrawals = memory.riderWithdrawals
       .filter((w) => w.rider99Id === rider.ninetyNineId)
       .sort((a, b) => b.requestedAt.localeCompare(a.requestedAt));
@@ -210,6 +271,27 @@ export async function GET(request: Request) {
   if (franchiseScope) riders = riders.filter((rider) => (rider.franchise ?? "Unassigned") === franchiseScope);
   if (stationScope) riders = riders.filter((rider) => (rider.ponto ?? "Unassigned") === stationScope);
 
+  // Direct read: per-rider settled totals come from ONE grouped aggregate in
+  // the database (earnings_settled_totals) instead of summing the whole
+  // earnings collection in memory for every rider.
+  let settledBy: Map<string, number> | null = null;
+  if (dbDirectReadEnabled()) {
+    settledBy = await callRpc<Array<{ rider99Id: string; settled: number }>>("earnings_settled_totals", { p_today: today() })
+      .then((rows) => new Map(rows.map((r) => [r.rider99Id, Number(r.settled) || 0])))
+      .catch((error) => {
+        console.warn(`[wallet] earnings_settled_totals unavailable, legacy path. (${(error as Error).message})`);
+        return null;
+      });
+  }
+  if (!settledBy) await refreshCollectionsFromDatabase(["riderDailyEarnings"]);
+  const balanceFor = (nineId: string) => {
+    if (!settledBy) return computeBalance(memory.riderDailyEarnings, memory.riderWithdrawals, nineId, today());
+    const settled = settledBy.get(nineId) ?? 0;
+    const held = memory.riderWithdrawals.filter((w) => w.rider99Id === nineId && w.status === "requested").reduce((sum, w) => sum + w.amount, 0);
+    const paid = memory.riderWithdrawals.filter((w) => w.rider99Id === nineId && w.status === "paid").reduce((sum, w) => sum + w.amount, 0);
+    return { settled, held, paid, available: Math.max(0, settled - held - paid) };
+  };
+
   const balances = riders
     .map((rider) => ({
       riderId: rider.id,
@@ -218,7 +300,7 @@ export async function GET(request: Request) {
       pix: rider.pix,
       franchise: rider.franchise ?? "Unassigned",
       station: rider.ponto ?? "Unassigned",
-      ...computeBalance(memory.riderDailyEarnings, memory.riderWithdrawals, rider.ninetyNineId!, today()),
+      ...balanceFor(rider.ninetyNineId!),
     }))
     .filter((row) => row.settled > 0 || row.paid > 0 || row.held > 0)
     .sort((a, b) => b.available - a.available);

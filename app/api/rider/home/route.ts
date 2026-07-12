@@ -4,6 +4,8 @@ import { sessionFromRequest } from "../../../lib/auth-session";
 import { badgeMilestones, defaultMallConfig, eligibleCoupons, resolveRiderTierStatus, tierThresholds } from "../../../lib/mall";
 import { applyInactivityDecay } from "../../../lib/points";
 import { isSupplierCategory } from "../../../lib/server/crm-categories";
+import { dbDirectReadEnabled, fetchRows } from "../../../lib/server/db-read";
+import type { RiderDailyKpi } from "../../../lib/performance";
 
 /**
  * Rider Home dashboard aggregate (session-scoped). One read powering the
@@ -57,7 +59,11 @@ function findRider(session: { userId?: string; name: string }) {
 export async function GET(request: Request) {
   const session = await sessionFromRequest(request);
   if (!session) return jsonResponse({ error: "Faça login.", code: "unauthenticated" }, { status: 401 });
-  await refreshCollectionsFromDatabase(COLLECTIONS);
+  // L2 direct read: this rider's KPI rows come straight from the database
+  // (rider-scoped, a few hundred rows) — riderDailyKpis is the biggest
+  // collection this route used to hydrate wholesale on every APP home load.
+  const direct = dbDirectReadEnabled();
+  await refreshCollectionsFromDatabase(direct ? COLLECTIONS.filter((c) => c !== "riderDailyKpis") : COLLECTIONS);
 
   const rider = findRider(session);
   if (!rider) return jsonResponse({ error: "Cadastro não encontrado.", code: "not_found" }, { status: 404 });
@@ -65,9 +71,29 @@ export async function GET(request: Request) {
   const nineId = rider.ninetyNineId ?? "";
 
   // --- Performance (latest KPI for rates, week sum for totals) ---
-  const kpis = memory.riderDailyKpis
-    .filter((k) => k.riderName === name || (!!nineId && k.rider99Id === nineId))
-    .sort((a, b) => (a.date < b.date ? 1 : -1)); // newest first
+  let kpiRows: RiderDailyKpi[] | null = null;
+  if (direct) {
+    try {
+      // Legacy semantics: match by riderName OR rider99Id → two scoped
+      // fetches, merged unique by row id.
+      const [byName, byId] = await Promise.all([
+        fetchRows<RiderDailyKpi>("riderDailyKpis", [{ op: "eq", field: "riderName", value: name }]),
+        nineId
+          ? fetchRows<RiderDailyKpi>("riderDailyKpis", [{ op: "eq", field: "rider99Id", value: nineId }])
+          : Promise.resolve([] as RiderDailyKpi[]),
+      ]);
+      const seen = new Map<string, RiderDailyKpi>();
+      for (const row of [...byName, ...byId]) seen.set(row.id, row);
+      kpiRows = [...seen.values()];
+    } catch (error) {
+      console.warn(`[rider/home] direct kpi read failed, legacy path. (${(error as Error).message})`);
+    }
+  }
+  if (!kpiRows) {
+    await refreshCollectionsFromDatabase(["riderDailyKpis"]);
+    kpiRows = memory.riderDailyKpis.filter((k) => k.riderName === name || (!!nineId && k.rider99Id === nineId));
+  }
+  const kpis = kpiRows.sort((a, b) => (a.date < b.date ? 1 : -1)); // newest first
   const latest = kpis[0];
   // Every KPI block reads the LATEST imported day (T+1 = yesterday): orders,
   // TSH hours, acceptance rate and cancellations all describe the same day,

@@ -11,6 +11,8 @@ import {
 import { defaultMallConfig, resolveRiderTierStatus } from "../../lib/mall";
 import { getAvailablePoints } from "../../lib/points";
 import { sendPushToRider } from "../../lib/server/notify";
+import { callRpc, dbDirectReadEnabled, fetchRows } from "../../lib/server/db-read";
+import type { Rider } from "../../lib/data";
 
 /** Lifetime-orders milestones that trigger an achievement push. */
 const BADGE_MILESTONES: Array<{ at: number; label: string }> = [
@@ -27,8 +29,8 @@ type Located = { franchise: string; station: string; riderId: string | null };
 type Enriched = RiderDailyKpi & Located;
 type EnrichedEarning = RiderDailyEarning & Located;
 
-function locate(rider99Id: string): Located {
-  const rider = memory.riders.find((item) => item.ninetyNineId && item.ninetyNineId === rider99Id);
+function locate(rider99Id: string, riders: Rider[] = memory.riders): Located {
+  const rider = riders.find((item) => item.ninetyNineId && item.ninetyNineId === rider99Id);
   return {
     riderId: rider?.id ?? null,
     franchise: rider?.franchise ?? "未关联",
@@ -36,8 +38,110 @@ function locate(rider99Id: string): Located {
   };
 }
 
-function enrich(rows: RiderDailyKpi[]): Enriched[] {
-  return rows.map((row) => ({ ...row, ...locate(row.rider99Id) }));
+function enrich(rows: RiderDailyKpi[], riders: Rider[] = memory.riders): Enriched[] {
+  return rows.map((row) => ({ ...row, ...locate(row.rider99Id, riders) }));
+}
+
+/**
+ * L2 direct read (docs/overview-read-path-optimization-plan.md §3): serve the
+ * analytics GET views straight from indexed database rows — one date / one
+ * rider of rows plus three tiny aggregate RPCs — instead of hydrating the
+ * whole KPI + earnings collections per request. Any failure returns null and
+ * the caller falls back to the legacy in-memory path. Kill switch:
+ * READPATH_DB_DIRECT=false.
+ */
+async function performanceDirect(url: URL): Promise<Response | null> {
+  if (!dbDirectReadEnabled()) return null;
+  try {
+    if (url.searchParams.get("ranking") !== null) {
+      const top = await callRpc<Array<{ name: string; orders: number }>>("kpi_leaderboard", { p_limit: 10 });
+      return jsonResponse({ data: { top } });
+    }
+
+    const mine = url.searchParams.get("mine");
+    if (mine) {
+      const riderRows = await fetchRows<Rider>("riders", [{ op: "eq", field: "name", value: mine }]);
+      const nineId = riderRows[0]?.ninetyNineId;
+      if (!nineId) return jsonResponse({ data: null });
+      const rows = await fetchRows<RiderDailyKpi>("riderDailyKpis", [{ op: "eq", field: "rider99Id", value: nineId }]);
+      const latest = rows.sort((a, b) => b.date.localeCompare(a.date))[0];
+      if (!latest) return jsonResponse({ data: null });
+      return jsonResponse({ data: { date: latest.date, completedOrders: latest.completedOrders, tsh: latest.tsh, ar: latest.ar } });
+    }
+
+    const date = url.searchParams.get("date");
+    const franchise = url.searchParams.get("franchise");
+    const station = url.searchParams.get("station");
+
+    const allDates = await callRpc<string[]>("perf_dates");
+    const activeDate = date && allDates.includes(date) ? date : allDates[0] ?? null;
+
+    const [kpiRaw, earnRaw, riders, trend] = await Promise.all([
+      activeDate
+        ? fetchRows<RiderDailyKpi>("riderDailyKpis", [{ op: "eq", field: "date", value: activeDate }])
+        : Promise.resolve([] as RiderDailyKpi[]),
+      activeDate
+        ? fetchRows<RiderDailyEarning>("riderDailyEarnings", [{ op: "eq", field: "date", value: activeDate }])
+        : Promise.resolve([] as RiderDailyEarning[]),
+      fetchRows<Rider>("riders"),
+      callRpc<Array<{ date: string; orders: number; settle: number }>>("perf_trend", { p_days: 30 }),
+    ]);
+
+    let rows = enrich(kpiRaw, riders);
+    if (franchise) rows = rows.filter((row) => row.franchise === franchise);
+    if (station) rows = rows.filter((row) => row.station === station);
+
+    const groupBy = (field: "station" | "franchise") => {
+      const map = new Map<string, Enriched[]>();
+      for (const row of rows) map.set(row[field], [...(map.get(row[field]) ?? []), row]);
+      return [...map.entries()]
+        .map(([key, group]) => ({ ...aggregateKpis(group, key), franchise: group[0].franchise }))
+        .sort((a, b) => b.completedOrders - a.completedOrders);
+    };
+
+    const profileByNinetyNine = new Map(riders.filter((r) => r.ninetyNineId).map((r) => [r.ninetyNineId!, r]));
+    let earningRows: EnrichedEarning[] = earnRaw.map((row) => {
+      const profile = profileByNinetyNine.get(row.rider99Id);
+      return {
+        ...row,
+        pix: row.pix || profile?.pix || "",
+        cpf: row.cpf || profile?.cpf || "",
+        phone: row.phone || profile?.phone || "",
+        ...locate(row.rider99Id, riders),
+      };
+    });
+    if (franchise) earningRows = earningRows.filter((row) => row.franchise === franchise);
+    if (station) earningRows = earningRows.filter((row) => row.station === station);
+
+    const groupEarnings = (field: "station" | "franchise") => {
+      const map = new Map<string, EnrichedEarning[]>();
+      for (const row of earningRows) map.set(row[field], [...(map.get(row[field]) ?? []), row]);
+      return [...map.entries()]
+        .map(([key, group]) => ({ ...aggregateEarnings(group, key), franchise: group[0].franchise }))
+        .sort((a, b) => b.settleAmount - a.settleAmount);
+    };
+
+    return jsonResponse({
+      data: {
+        date: activeDate,
+        dates: allDates,
+        trend,
+        riders: rows.sort((a, b) => b.completedOrders - a.completedOrders),
+        stations: groupBy("station"),
+        franchises: groupBy("franchise"),
+        total: aggregateKpis(rows, "total"),
+        earnings: {
+          riders: earningRows.sort((a, b) => b.settleAmount - a.settleAmount),
+          stations: groupEarnings("station"),
+          franchises: groupEarnings("franchise"),
+          total: aggregateEarnings(earningRows, "total"),
+        },
+      },
+    });
+  } catch (error) {
+    console.warn(`[performance] direct read unavailable, legacy path. (${(error as Error).message})`);
+    return null;
+  }
 }
 
 const num = (value: unknown) => {
@@ -117,6 +221,8 @@ export async function GET(request: Request) {
       // Lifetime completed-orders leaderboard (visible to riders).
       const forbidden = requirePermission(request, "use_rider_app");
       if (forbidden) return forbidden;
+      const direct = await performanceDirect(url0);
+      if (direct) return direct;
       await refreshCollectionsFromDatabase(COLLECTIONS);
       const byRider = new Map<string, number>();
       for (const row of memory.riderDailyKpis) {
@@ -136,6 +242,8 @@ export async function GET(request: Request) {
     if (mine) {
       const forbidden = requirePermission(request, "use_rider_app");
       if (forbidden) return forbidden;
+      const direct = await performanceDirect(url);
+      if (direct) return direct;
       await refreshCollectionsFromDatabase(COLLECTIONS);
       const rider = memory.riders.find((item) => item.name === mine);
       if (!rider?.ninetyNineId) return jsonResponse({ data: null });
@@ -147,6 +255,11 @@ export async function GET(request: Request) {
   }
   const forbidden = requirePermission(request, "view_analytics");
   if (forbidden) return forbidden;
+
+  {
+    const direct = await performanceDirect(new URL(request.url));
+    if (direct) return direct;
+  }
 
   await refreshCollectionsFromDatabase(COLLECTIONS);
 
