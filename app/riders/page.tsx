@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Plus, RefreshCcw, UserPlus } from "lucide-react";
 import { AppShell, PageTitle } from "../components/ui";
-import { Chip, DataTable, Drawer, Pager, SearchInput, Stat, StatusBadge, TodoCard, Toolbar, type BadgeTone, type DataColumn } from "../components/kit";
+import { Chip, DataTable, Drawer, Pager, SearchInput, SectionCard, Stat, StatusBadge, TodoCard, Toolbar, type BadgeTone, type DataColumn } from "../components/kit";
 import { downloadCsv } from "../lib/csv";
 import { useDialog } from "../components/dialog";
 import { useVentoStore } from "../lib/store";
@@ -53,7 +53,6 @@ export default function RidersPage() {
   const [franchiseFilter, setFranchiseFilter] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
   const [onlyUnassigned, setOnlyUnassigned] = useState(false);
-  const [showNo99, setShowNo99] = useState(false);
   const [addOpen, setAddOpen] = useState(false);
   const [message, setMessage] = useState<{ tone: "ok" | "err"; text: string } | null>(null);
   const [busyId, setBusyId] = useState("");
@@ -79,6 +78,38 @@ export default function RidersPage() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  // Live riders (Eastwind board) with NO MePonto profile — surfaced here so
+  // operations can onboard them and assign a franchise. Loaded after the main
+  // data to stay off the critical path.
+  type LiveUnmatched = { riderExtId: string | null; name: string | null; phone: string | null; hotZone: string | null; matched?: boolean };
+  const [liveUnmatched, setLiveUnmatched] = useState<LiveUnmatched[]>([]);
+  useEffect(() => {
+    const timer = window.setTimeout(async () => {
+      try {
+        const res = await fetch("/api/eastwind/riders-live", { headers: HEADERS, cache: "no-store" });
+        if (!res.ok) return;
+        const payload = (await res.json()).data as { riders?: LiveUnmatched[] } | LiveUnmatched[];
+        const rows = Array.isArray(payload) ? payload : payload?.riders ?? [];
+        setLiveUnmatched(rows.filter((row) => row.matched === false));
+      } catch {
+        // Live board unavailable — section simply stays hidden.
+      }
+    }, 800);
+    return () => window.clearTimeout(timer);
+  }, [riders.length]);
+
+  function onboardFromLive(row: LiveUnmatched) {
+    setForm({
+      name: row.name ?? "",
+      ninetyNineId: String(row.riderExtId ?? "").replace(/\D/g, ""),
+      phone: row.phone ?? "",
+      cpf: "",
+      ponto: "",
+      franchise: "",
+    });
+    setAddOpen(true);
+  }
 
   async function assign(rider: RiderRow, fields: { ponto?: string; franchise?: string; status?: string }) {
     setBusyId(rider.id);
@@ -136,9 +167,9 @@ export default function RidersPage() {
     const term = query.trim().toLowerCase();
     return riders
       .filter((rider) => {
-        // Riders without a 99 ID are operational noise (incomplete imports) —
-        // hidden by default, reachable via the toolbar toggle.
-        if (!showNo99 && String(rider.ninetyNineId ?? "").trim() === "") return false;
+        // Riders without a 99 ID stay off this operational page — they remain
+        // visible in the Members page for profile completion.
+        if (String(rider.ninetyNineId ?? "").trim() === "") return false;
         const haystack = [rider.name, rider.cpf, rider.phone, rider.ninetyNineId].map((value) => String(value ?? "").toLowerCase());
         if (term && !haystack.some((value) => value.includes(term))) return false;
         if (stationFilter && rider.ponto !== stationFilter) return false;
@@ -153,10 +184,9 @@ export default function RidersPage() {
         const bUn = isUnassigned(b.ponto) || isUnassigned(b.franchise) ? 0 : 1;
         return aUn - bUn || b.totalOrders - a.totalOrders;
       });
-  }, [riders, query, stationFilter, franchiseFilter, statusFilter, onlyUnassigned, showNo99]);
+  }, [riders, query, stationFilter, franchiseFilter, statusFilter, onlyUnassigned]);
 
   const unassignedCount = riders.filter((rider) => isUnassigned(rider.ponto) || isUnassigned(rider.franchise)).length;
-  const no99Count = riders.filter((rider) => String(rider.ninetyNineId ?? "").trim() === "").length;
   const reportOnlyCount = riders.filter((rider) => rider.source === "report").length;
 
   // Pagination keeps the table short even with hundreds of riders.
@@ -316,13 +346,31 @@ export default function RidersPage() {
           {STATUS_OPTIONS.map((status) => (
             <Chip key={status} active={statusFilter === status} onClick={() => setStatusFilter(statusFilter === status ? "" : status)}>{status}</Chip>
           ))}
-          {no99Count > 0 && (
-            <Chip active={showNo99} onClick={() => setShowNo99((v) => !v)}>
-              {t("rdNo99Toggle", { n: no99Count })}
-            </Chip>
-          )}
         </Toolbar>
       </div>
+
+      {/* Live riders with no profile: onboard + assign in two clicks */}
+      {liveUnmatched.length > 0 && (
+        <div className="mt-4">
+          <SectionCard title={t("rdLiveTitle", { n: liveUnmatched.length })} desc={t("rdLiveDesc")}>
+            <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
+              {liveUnmatched.map((row, index) => (
+                <div key={`${row.riderExtId ?? index}`} className="flex items-center gap-3 rounded-[10px] border border-[var(--warn)] bg-[var(--surface-raised)] px-3 py-2">
+                  <div className="min-w-0 flex-1">
+                    <div className="truncate text-sm font-black">{row.name || "—"}</div>
+                    <div className="truncate text-[11px] font-bold text-[var(--muted)]" translate="no">
+                      99ID {row.riderExtId ?? "—"}{row.phone ? ` · ${row.phone}` : ""}{row.hotZone ? ` · ${row.hotZone}` : ""}
+                    </div>
+                  </div>
+                  <button type="button" onClick={() => onboardFromLive(row)} className="tag shrink-0 border-[var(--accent)] text-[var(--accent)]">
+                    {t("rdOnboard")}
+                  </button>
+                </div>
+              ))}
+            </div>
+          </SectionCard>
+        </div>
+      )}
 
       {/* Riders table */}
       <div className="mt-4">

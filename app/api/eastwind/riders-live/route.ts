@@ -97,6 +97,10 @@ export async function GET(request: Request) {
       finishedCnt: s.finished_cnt, lat: s.lat, lng: s.lng,
       franchise: match?.franchise || "", ponto: match?.ponto || "", leader: match?.leader || "",
       assigned: Boolean(match && match.franchise),
+      // No MePonto profile at all (99 ID / CPF / phone all unmatched) — the
+      // riders page surfaces these so operations can onboard + assign.
+      // (CPF deliberately NOT exposed here: list endpoints stay masked.)
+      matched: Boolean(match),
       // Per-rider "Performance in Current Shift" detail (tolerant extraction
       // from the stored raw record; missing fields are null → shown as N/A).
       perf: extractRiderPerf(s.raw),
