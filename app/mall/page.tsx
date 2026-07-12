@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState, type ComponentType } from "react";
-import { Banknote, BarChart3, Boxes, Building2, Coins, LayoutGrid, LineChart, Package, Settings2, ShoppingBag, Truck, Users } from "lucide-react";
+import { Banknote, BarChart3, Boxes, Building2, Coins, HandCoins, Handshake, LayoutGrid, LineChart, Package, Settings2, ShoppingBag, Truck, Users } from "lucide-react";
 import { MallShell, type MallNavGroup } from "./shell";
 import type { MarketplaceOrder } from "../lib/points";
 import type { CashTopUp } from "../lib/mall-ops";
@@ -17,6 +17,8 @@ import PointsTab from "./tabs/points";
 import OrdersTab from "./tabs/orders";
 import PaymentsTab from "./tabs/payments";
 import SupplyTab from "./tabs/supply";
+import CrmTab from "./tabs/crm";
+import PartnerPointsTab from "./tabs/partner-points";
 import InsightsTab from "./tabs/insights";
 import MembersTab from "./tabs/members";
 import SettingsTab from "./tabs/settings";
@@ -32,7 +34,7 @@ import SettingsTab from "./tabs/settings";
  * Each business surface lives in app/mall/tabs/*.
  */
 
-const TAB_IDS: TabId[] = ["overview", "products", "merch", "suppliers", "points", "orders", "payments", "supply", "procurement", "insights", "members", "settings"];
+const TAB_IDS: TabId[] = ["overview", "products", "merch", "suppliers", "points", "orders", "payments", "supply", "procurement", "crm", "partnerPoints", "insights", "members", "settings"];
 
 type NavItem = { id: TabId; label: string; icon: typeof BarChart3 };
 type NavGroup = { label: string | null; items: NavItem[] };
@@ -50,6 +52,12 @@ const NAV_GROUPS: NavGroup[] = [
   { label: "资金", items: [
     { id: "payments", label: "收款与充值", icon: Banknote },
     { id: "supply", label: "补货与对账", icon: Truck },
+  ] },
+  // 合作方 — flat in-workspace tabs (formerly external links to /crm & /partner-points):
+  // the tabs render the SAME shared panels those PontoSys pages render.
+  { label: "合作方", items: [
+    { id: "crm", label: "CRM(合作伙伴)", icon: Handshake },
+    { id: "partnerPoints", label: "合作方积分", icon: HandCoins },
   ] },
   // 洞察 — flat in-workspace tabs (formerly external links to /mall-insights & /members):
   // the tabs render the SAME shared panels those PontoSys pages render.
@@ -70,6 +78,8 @@ const TAB_COMPONENTS: Record<TabId, ComponentType> = {
   payments: PaymentsTab,
   supply: SupplyTab,
   procurement: ProcurementTab,
+  crm: CrmTab,
+  partnerPoints: PartnerPointsTab,
   insights: InsightsTab,
   members: MembersTab,
   settings: SettingsTab,

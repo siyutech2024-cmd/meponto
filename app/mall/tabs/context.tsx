@@ -121,7 +121,7 @@ export const isLowStock = (product: MarketplaceProduct) => product.stock <= (pro
 // Navigation contract
 // ---------------------------------------------------------------------------
 
-export type TabId = "overview" | "products" | "merch" | "suppliers" | "points" | "orders" | "payments" | "supply" | "procurement" | "insights" | "members" | "settings";
+export type TabId = "overview" | "products" | "merch" | "suppliers" | "points" | "orders" | "payments" | "supply" | "procurement" | "crm" | "partnerPoints" | "insights" | "members" | "settings";
 
 /** One-shot pre-filter carried by navigate(tab, preset); target tab consumes and clears it. */
 export type TabPreset = "pending_pricing" | "lowstock" | "consent" | "review" | null;
