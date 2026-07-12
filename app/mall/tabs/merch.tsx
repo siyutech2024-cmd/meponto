@@ -1,11 +1,12 @@
 "use client";
 
 import { useState } from "react";
-import type { MallCoupon } from "../../lib/mall-ops";
-import { DataTable, SectionCard, Skeleton, StatusBadge, type DataColumn } from "../kit";
+import { useDialog } from "../../components/dialog";
+import type { MallBanner, MallCategory, MallCoupon } from "../../lib/mall-ops";
+import { DataTable, ImagePreview, SectionCard, Skeleton, StatusBadge, type DataColumn } from "../kit";
 import { useMallAdmin } from "./context";
 
-/** 分类与营销 — 三张 SectionCard：商品分类（内联添加）/ 门面 Banner（展开式新增）/ 优惠券（DataTable + 展开式创建）。 */
+/** 分类与营销 — 三张 SectionCard：商品分类（内联添加）/ 门面 Banner（展开式新增、↑↓ 排序）/ 优惠券（DataTable + 展开式创建）。删除均走 danger 确认弹窗。 */
 
 const TIER_LABEL: Record<MallCoupon["minTier"], string> = { member: "全员", bronze: "铜牌+", prata: "银牌+", ouro: "金牌+", diamante: "钻石" };
 
@@ -22,6 +23,7 @@ const EMPTY_COUPON = { title: "", type: "points_off" as MallCoupon["type"], valu
 
 export default function MerchTab() {
   const { loading, ops, post } = useMallAdmin();
+  const dialog = useDialog();
   /** First load still in flight — Skeleton bars, never fake "暂无" states. */
   const booting = loading && !ops;
   const [categoryName, setCategoryName] = useState("");
@@ -33,6 +35,30 @@ export default function MerchTab() {
   const categories = ops?.categories ?? [];
   const banners = ops?.banners ?? [];
   const coupons = ops?.coupons ?? [];
+
+  // ---- 删除均需 danger 确认弹窗 ----
+  async function removeCategory(category: MallCategory) {
+    if (!(await dialog.confirm("删除分类", { message: `删除商品分类「${category.name}」？门面将按商品自带分类自动归组。`, confirmText: "删除", tone: "danger" }))) return;
+    void post("/api/mall/ops", { action: "deleteCategory", categoryId: category.id }, "分类已删除");
+  }
+  async function removeBanner(banner: MallBanner) {
+    if (!(await dialog.confirm("删除 Banner", { message: `删除门面 Banner「${banner.title}」？删除后立即从商城门面消失，不可恢复。`, confirmText: "删除", tone: "danger" }))) return;
+    void post("/api/mall/ops", { action: "deleteBanner", bannerId: banner.id }, "Banner 已删除");
+  }
+  async function removeCoupon(coupon: MallCoupon) {
+    if (!(await dialog.confirm("删除优惠券", { message: `删除优惠券「${coupon.title}」？已领取/在途兑换不受影响，但之后不再自动匹配该券。不可恢复。`, confirmText: "删除", tone: "danger" }))) return;
+    void post("/api/mall/ops", { action: "deleteCoupon", couponId: coupon.id }, "优惠券已删除");
+  }
+
+  /** Banner 排序：与相邻 Banner 交换 sort 值（sort 相同则错开一位），复用现有 updateBanner action。 */
+  async function moveBanner(index: number, dir: -1 | 1) {
+    const a = banners[index];
+    const b = banners[index + dir];
+    if (!a || !b) return;
+    const equal = a.sort === b.sort;
+    await post("/api/mall/ops", { action: "updateBanner", bannerId: a.id, sort: equal ? b.sort + dir : b.sort }, equal ? "Banner 顺序已更新" : undefined);
+    if (!equal) await post("/api/mall/ops", { action: "updateBanner", bannerId: b.id, sort: a.sort }, "Banner 顺序已更新");
+  }
 
   function couponStatus(coupon: MallCoupon) {
     if (!coupon.active) return <StatusBadge tone="neutral" label="已停用" />;
@@ -57,7 +83,7 @@ export default function MerchTab() {
       render: (coupon) => (
         <span className="inline-flex gap-2">
           <button type="button" onClick={() => void post("/api/mall/ops", { action: "updateCoupon", couponId: coupon.id, active: !coupon.active })} className={smallOutlineBtn}>{coupon.active ? "停用" : "启用"}</button>
-          <button type="button" onClick={() => void post("/api/mall/ops", { action: "deleteCoupon", couponId: coupon.id })} className={smallDangerBtn}>删除</button>
+          <button type="button" onClick={() => void removeCoupon(coupon)} className={smallDangerBtn}>删除</button>
         </span>
       ),
     },
@@ -92,7 +118,7 @@ export default function MerchTab() {
               <span className={`min-w-0 flex-1 truncate text-sm font-bold ${category.active ? "" : "text-[var(--muted)]"}`}>{category.name}</span>
               <StatusBadge tone={category.active ? "success" : "neutral"} label={category.active ? "启用中" : "已停用"} />
               <button type="button" onClick={() => void post("/api/mall/ops", { action: "updateCategory", categoryId: category.id, active: !category.active })} className={smallOutlineBtn}>{category.active ? "停用" : "启用"}</button>
-              <button type="button" onClick={() => void post("/api/mall/ops", { action: "deleteCategory", categoryId: category.id })} className={smallDangerBtn}>删除</button>
+              <button type="button" onClick={() => void removeCategory(category)} className={smallDangerBtn}>删除</button>
             </div>
           ))}
           {categories.length === 0 && <div className="py-4 text-center text-xs font-bold text-[var(--muted)]">暂无分类。</div>}
@@ -118,6 +144,10 @@ export default function MerchTab() {
               <label className={`${labelCls} md:col-span-2`}>图片 URL（可选，建议 1600×500）
                 <input value={bannerDraft.imageUrl} onChange={(e) => setBannerDraft((prev) => ({ ...prev, imageUrl: e.target.value }))} placeholder="https://…" className={fieldCls} />
               </label>
+              <div className="flex items-center gap-3 md:col-span-2">
+                <ImagePreview url={bannerDraft.imageUrl} size={56} width={180} alt="Banner 预览" />
+                <span className="text-[11px] font-bold text-[var(--muted)]">实时预览 — 为空则门面直接展示标题文字。</span>
+              </div>
             </div>
             <button
               type="button"
@@ -129,14 +159,15 @@ export default function MerchTab() {
         )}
         {booting ? <Skeleton rows={3} className="" /> : (
         <div className="divide-y divide-[var(--line)]">
-          {banners.map((banner) => (
+          {banners.map((banner, index) => (
             <div key={banner.id} className="flex items-center gap-3 py-2">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              {banner.imageUrl ? <img src={banner.imageUrl} alt="" className="h-10 w-20 shrink-0 rounded-[6px] border border-[var(--line)] object-cover" /> : <div className="grid h-10 w-20 shrink-0 place-items-center rounded-[6px] border border-[var(--line)] bg-[var(--surface-raised)] text-[10px] font-bold text-[var(--muted)]">文字</div>}
+              {banner.imageUrl ? <ImagePreview url={banner.imageUrl} size={40} width={80} alt={banner.title} /> : <div className="grid h-10 w-20 shrink-0 place-items-center rounded-[6px] border border-[var(--line)] bg-[var(--surface-raised)] text-[10px] font-bold text-[var(--muted)]">文字</div>}
               <span className={`min-w-0 flex-1 truncate text-sm font-bold ${banner.active ? "" : "text-[var(--muted)]"}`}>{banner.title}</span>
               <StatusBadge tone={banner.active ? "success" : "neutral"} label={banner.active ? "展示中" : "已停用"} />
+              <button type="button" disabled={index === 0} aria-label={`上移 ${banner.title}`} onClick={() => void moveBanner(index, -1)} className={`${smallOutlineBtn} disabled:opacity-40`}>↑</button>
+              <button type="button" disabled={index === banners.length - 1} aria-label={`下移 ${banner.title}`} onClick={() => void moveBanner(index, 1)} className={`${smallOutlineBtn} disabled:opacity-40`}>↓</button>
               <button type="button" onClick={() => void post("/api/mall/ops", { action: "updateBanner", bannerId: banner.id, active: !banner.active })} className={smallOutlineBtn}>{banner.active ? "停用" : "启用"}</button>
-              <button type="button" onClick={() => void post("/api/mall/ops", { action: "deleteBanner", bannerId: banner.id })} className={smallDangerBtn}>删除</button>
+              <button type="button" onClick={() => void removeBanner(banner)} className={smallDangerBtn}>删除</button>
             </div>
           ))}
           {banners.length === 0 && <div className="py-4 text-center text-xs font-bold text-[var(--muted)]">暂无 Banner。</div>}

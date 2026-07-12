@@ -11,9 +11,18 @@ const nowStamp = () => new Date().toISOString().slice(0, 16).replace("T", " ");
  * PUBLIC self-onboarding endpoint — a supplier or partner submits an
  * application. It lands as a `Prospect` in the CRM review queue (no login,
  * no points capability) until an operator approves and provisions an account.
- * "Invite" is simply sharing the /partner-register link.
+ * "Invite" is simply sharing the /partner-register?ref=<inviter> link.
  */
-const ALLOWED: CrmPartnerCategory[] = ["Repair Shop", "Partner Vehicle Shop", "Supplier", "Vehicle Partner"];
+
+/** Accepts http(s) URLs only (map links pasted from Google Maps etc.). */
+function isValidHttpUrl(raw: string): boolean {
+  try {
+    const url = new URL(raw);
+    return url.protocol === "http:" || url.protocol === "https:";
+  } catch {
+    return false;
+  }
+}
 
 export async function POST(request: Request) {
   const body = (await request.json().catch(() => ({}))) as {
@@ -22,19 +31,44 @@ export async function POST(request: Request) {
     contactName?: string;
     phone?: string;
     bairro?: string;
+    address?: string;
+    mapUrl?: string;
     notes?: string;
     lat?: number;
     lng?: number;
     inviterId?: string;
   };
-  await refreshCollectionsFromDatabase(["riders", "pointsLedgerEntries"]);
+  await refreshCollectionsFromDatabase(["riders", "pointsLedgerEntries", "crmPartners", "crmCategories"]);
 
   const name = (body.name ?? "").trim();
   const contactName = (body.contactName ?? "").trim();
   const phone = (body.phone ?? "").trim();
-  const category = ALLOWED.includes(body.category as CrmPartnerCategory) ? (body.category as CrmPartnerCategory) : "Repair Shop";
-  if (!name || !contactName || !phone) {
-    return jsonResponse({ error: "Nome, contato e telefone são obrigatórios." }, { status: 400 });
+  const address = (body.address ?? "").trim();
+  const mapUrl = (body.mapUrl ?? "").trim();
+  const rawCategory = String(body.category ?? "").trim();
+
+  // Service type must be one of the configurable, active CRM categories
+  // (same list the console manages and GET /api/crm?public=categories serves).
+  const activeCategories = memory.crmCategories.filter((c) => c.active).map((c) => c.label);
+  const category = activeCategories.find((label) => label === rawCategory);
+
+  // Server-side required-field validation (mirror of the form). `fields`
+  // lets the client highlight exactly what is missing.
+  const missing: string[] = [];
+  if (!name) missing.push("name");
+  if (!category) missing.push("category");
+  if (!contactName) missing.push("contactName");
+  if (!phone) missing.push("phone");
+  if (!mapUrl) missing.push("mapUrl");
+  if (!address) missing.push("address");
+  if (missing.length > 0) {
+    return jsonResponse(
+      { error: "Preencha todos os campos obrigatórios: nome, tipo de serviço, responsável, telefone, link do mapa e endereço.", fields: missing },
+      { status: 400 },
+    );
+  }
+  if (!isValidHttpUrl(mapUrl)) {
+    return jsonResponse({ error: "Link do mapa inválido — cole uma URL http(s) válida.", fields: ["mapUrl"] }, { status: 400 });
   }
 
   // Light dedupe: same name + phone already pending/active.
@@ -45,7 +79,9 @@ export async function POST(request: Request) {
   const partner: CrmPartner = {
     id: makeServerId("crm", memory.crmPartners.length + 1),
     name,
-    category,
+    category: category as CrmPartnerCategory,
+    // Always lands as a pending application (Prospect). It only reaches the
+    // service map / rider app / redemption after an operator approves (Active).
     status: "Prospect",
     tier: "Standard",
     contactName,
@@ -59,6 +95,9 @@ export async function POST(request: Request) {
     contractRenewal: new Date().toISOString().slice(0, 10),
     risk: "Medium",
     notes: (body.notes ?? "").slice(0, 300),
+    address: address.slice(0, 200),
+    mapUrl: mapUrl.slice(0, 400),
+    ...(body.inviterId ? { invitedBy: String(body.inviterId).trim().slice(0, 60) } : {}),
     services: [],
     // Real service-point location from the registration map (NOT a pickup point
     // — pickups happen at Ponto stations). Falls back to São Paulo centre.
@@ -69,7 +108,10 @@ export async function POST(request: Request) {
   appendServerAudit({ actor: "Self-registration", action: "CRM_SELF_REGISTER", entity: "CrmPartner", entityId: partner.id, detail: `${name} (${category}) aguardando análise`, risk: "Low" });
 
   // Referral: a member (公开用户) who invited this partner earns points.
-  const inviter = body.inviterId ? memory.riders.find((r) => r.id === body.inviterId) : undefined;
+  // Accept any stable identifier (rider id / 99 ID / name) — same contract as
+  // the member referral in /api/member-login.
+  const ref = String(body.inviterId ?? "").trim();
+  const inviter = ref ? memory.riders.find((r) => r.id === ref || r.ninetyNineId === ref || r.name === ref) : undefined;
   let referral: { inviter: string; points: number } | null = null;
   if (inviter) {
     const available = getAvailablePoints(memory.pointsLedgerEntries, inviter.id);

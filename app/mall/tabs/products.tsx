@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useDialog } from "../../components/dialog";
 import { downloadCsv } from "../../lib/csv";
 import type { MarketplaceProduct } from "../../lib/points";
-import { Chip, DataTable, Drawer, Pager, SearchInput, SectionCard, Skeleton, TodoCard, Toolbar, type DataColumn, type SortState } from "../kit";
+import { Chip, DataTable, Drawer, ImagePreview, Pager, SearchInput, SectionCard, Skeleton, TodoCard, Toolbar, type DataColumn, type SortState } from "../kit";
 import { isLowStock, productMargin, productStatusLabel, PROCUREMENT_MODE_LABEL, statusBadge, useMallAdmin, type ApiPath, type MallMessage, type ProcureProduct } from "./context";
 
 /** 商品与定价 — 待办卡 + Toolbar + DataTable + 配置抽屉（kit 组件）工作台。 */
@@ -399,12 +399,7 @@ function ProductDrawer({ product, proc, showProcurement, rate, note, onClose, po
             <label className={labelCls}>图片 URL
               <input value={basic.imageUrl} onChange={(e) => setBasic((prev) => ({ ...prev, imageUrl: e.target.value }))} placeholder="https://…" className={inputCls} />
             </label>
-            {basic.imageUrl.trim() !== "" && (
-              <div className="h-24 w-24 overflow-hidden rounded-[8px] border border-[var(--line)] bg-[var(--surface)]">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={basic.imageUrl} alt="预览" className="h-full w-full object-cover" />
-              </div>
-            )}
+            <ImagePreview url={basic.imageUrl} size={96} alt={`${product.name} 预览`} />
             <label className={labelCls}>描述
               <textarea value={basic.description} onChange={(e) => setBasic((prev) => ({ ...prev, description: e.target.value }))} rows={2} className="mt-1 w-full rounded-[8px] border border-[var(--line)] bg-[var(--surface)] px-2.5 py-2 text-sm font-bold outline-none focus:border-[var(--accent)]" />
             </label>

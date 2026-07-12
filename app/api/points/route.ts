@@ -9,12 +9,25 @@ import {
   riderPerformancePointRules,
 } from "../../lib/points";
 import { jsonResponse, memory } from "../../lib/server/memory";
+import { refreshCollectionsFromDatabase } from "../../lib/server/persistence";
 import { requirePermission } from "../../lib/server/authz";
 import { sessionFromRequest } from "../../lib/auth-session";
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const riderId = searchParams.get("riderId");
+  // Read-through refresh for the rider app: right after a redeem (POST
+  // /api/mall) the app re-reads its balance HERE — if that GET lands on a
+  // sibling instance the in-memory ledger may predate the redeem. Rider-scoped
+  // requests therefore re-pull the ledger before computing the account.
+  if (riderId) {
+    await refreshCollectionsFromDatabase(["pointsLedgerEntries"]);
+    // A freshly registered rider may be missing from this instance's list —
+    // without it the ownership check below would wrongly 403 the rider's app.
+    if (!memory.riders.some((r) => r.id === riderId)) {
+      await refreshCollectionsFromDatabase(["riders"]);
+    }
+  }
   // AUTH: this endpoint used to be open — anyone could dump every rider's
   // ledger. Now: the full network view needs the analytics permission, and
   // the per-rider view needs a session that OWNS that riderId (or analytics).

@@ -275,6 +275,20 @@ export async function GET(request: Request) {
 
   await refreshForGet();
 
+  // Rider-context reads (storefront "me") must see a redeem/cancel that just
+  // happened on ANOTHER instance: `me.balance`/`me.ledger` come from the
+  // points ledger and the inbox from memberMessages — both HEAVY collections
+  // above, so a redeem POST followed by this GET on a sibling instance could
+  // show a stale balance for up to 60s. Bypass the heavy TTL for requests
+  // carrying riderId/riderName (small, rider-scoped reads).
+  if (riderId || riderName) {
+    await refreshCollectionsFromDatabase(["pointsLedgerEntries", "memberMessages"]);
+    // Freshly registered member may not be in this instance's rider list yet.
+    if (!memory.riders.some((r) => (riderId && r.id === riderId) || (riderName && r.name === riderName))) {
+      await refreshCollectionsFromDatabase(["riders"]);
+    }
+  }
+
   // ---- Scope enforcement (session-derived, never caller-widened) -----------
   // ?station= / ?franchise= exist only for the back-office order views, so the
   // session decides what they may resolve to (same field usage as
@@ -1471,6 +1485,11 @@ async function handlePost(request: Request) {
       if (!rider) return jsonResponse({ error: "Cadastro do entregador não encontrado." }, { status: 404 });
       const partner = memory.crmPartners.find((item) => item.id === partnerId);
       if (!partner) return jsonResponse({ error: "Parceiro não encontrado." }, { status: 404 });
+      // Review closure: pending/suspended partners are outside the redemption
+      // scope — no points can accrue before an operator approves them.
+      if (partner.status !== "Active") {
+        return jsonResponse({ error: "Parceiro aguardando aprovação — validação indisponível." }, { status: 403 });
+      }
 
       const orders = lifetimeOrders(rider.ninetyNineId);
       if (!orders || orders <= 0) {

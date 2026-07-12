@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, type ReactNode } from "react";
-import { X } from "lucide-react";
+import { useEffect, useState, type ReactNode } from "react";
+import { Image as ImageIcon, ImageOff, X } from "lucide-react";
 
 /**
  * PontoMall back-office shared kit — the small component vocabulary every
@@ -67,6 +67,50 @@ export function TodoCard({ label, value, tone = "neutral", hint, onClick, active
       <div className={`font-black ${sm ? "mt-0.5 text-xl leading-6" : "mt-1 text-2xl"}`} style={{ color: TODO_TONE_COLOR[tone] ?? "var(--text)" }}>{value}</div>
       {hint && <div className={`mt-0.5 font-bold text-[var(--muted)] ${sm ? "truncate text-[10px]" : "text-[11px]"}`} title={sm ? hint : undefined}>{hint}</div>}
     </button>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// ImagePreview — live thumbnail for every "图片 URL" config input. Empty URL
+// renders a neutral placeholder; a URL that fails to load renders a broken-
+// image placeholder (state resets whenever the URL changes).
+// ---------------------------------------------------------------------------
+
+export function ImagePreview({ url, size = 96, width, className = "", alt = "图片预览" }: {
+  url: string;
+  /** Box height in px; square unless `width` overrides (e.g. wide banners). */
+  size?: number;
+  width?: number;
+  className?: string;
+  alt?: string;
+}) {
+  const [broken, setBroken] = useState(false);
+  const trimmed = url.trim();
+  useEffect(() => { setBroken(false); }, [trimmed]);
+
+  const box = `shrink-0 overflow-hidden rounded-[8px] border border-[var(--line)] bg-[var(--surface-raised)] ${className}`;
+  const style = { width: width ?? size, height: size };
+  const iconSize = size >= 48 ? 18 : 13;
+
+  if (!trimmed) {
+    return (
+      <div role="img" aria-label="暂无图片" title="暂无图片" className={`grid place-items-center text-[var(--muted)] ${box}`} style={style}>
+        <ImageIcon size={iconSize} />
+      </div>
+    );
+  }
+  if (broken) {
+    return (
+      <div role="img" aria-label="图片加载失败" title={`图片加载失败：${trimmed}`} className={`grid place-items-center text-[var(--danger)] ${box}`} style={style}>
+        <ImageOff size={iconSize} />
+      </div>
+    );
+  }
+  return (
+    <div className={box} style={style}>
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img src={trimmed} alt={alt} onError={() => setBroken(true)} className="h-full w-full object-cover" />
+    </div>
   );
 }
 

@@ -54,7 +54,10 @@ export default function RegisterPage() {
   const [pendingSignup, setPendingSignup] = useState<SignupForm | null>(null);
 
   useEffect(() => {
-    const ref = new URLSearchParams(window.location.search).get("ref");
+    // Invite links carry ?ref= (canonical); accept ?invite= as an alias so no
+    // valid referral is ever dropped.
+    const params = new URLSearchParams(window.location.search);
+    const ref = params.get("ref") ?? params.get("invite");
     if (ref) {
       setForm((f) => ({ ...f, inviterId: ref }));
       setMode("register"); // invited people come to sign up — open the right tab
@@ -382,7 +385,12 @@ export default function RegisterPage() {
             <label className="block text-xs font-black uppercase text-black/45">Aniversário 🎂 (ganhe pontos no seu dia)
               <input type="date" value={form.birthday} onChange={(e) => setForm({ ...form, birthday: e.target.value })} className={`${input} mt-1`} />
             </label>
-            {form.inviterId ? <div className="rounded-[10px] bg-[#e8f6ee] px-3 py-2 text-xs font-bold text-[#1d7a3e]">✓ Convite aplicado — quem te convidou ganha pontos quando você confirmar o telefone.</div> : null}
+            {form.inviterId ? (
+              <div className="rounded-[10px] bg-[#e8f6ee] px-3 py-2 text-xs font-bold text-[#1d7a3e]">
+                <div>✓ Convite aplicado — quem te convidou ganha pontos quando você confirmar o telefone.</div>
+                <div className="mt-0.5">Indicado por: <b data-i18n-skip>{form.inviterId}</b></div>
+              </div>
+            ) : null}
             {error ? <div className="rounded-[10px] bg-[#fdeceb] px-3 py-2 text-sm font-bold text-[#c4423b]">{error}</div> : null}
             <button disabled={sending || !form.name.trim() || form.phone.replace(/\D/g, "").length < 10} className="h-12 w-full rounded-[10px] bg-[#ff7a00] text-sm font-black text-[#19202c] disabled:opacity-50">
               {sending ? "Enviando código..." : "Criar conta grátis"}

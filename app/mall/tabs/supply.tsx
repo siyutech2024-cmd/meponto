@@ -1,13 +1,23 @@
 "use client";
 
-import { useState, type ReactNode } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import { useDialog } from "../../components/dialog";
 import { downloadCsv } from "../../lib/csv";
 import { poStatusLabel, statementStatusLabel, type PriceChangeRequest, type PurchaseOrder, type SupplierStatement } from "../../lib/mall-ops";
-import { DataTable, Drawer, SectionCard, Skeleton, type DataColumn } from "../kit";
+import { DataTable, Drawer, Pager, SectionCard, Skeleton, type DataColumn } from "../kit";
 import { extraPoLabel, extraStatementLabel, statusBadge, useMallAdmin, type OpsPayload } from "./context";
 
-/** 供应链 — 调价审批 / 补货单 / 供应商对账 / 分成对账,四段纵排工作台。 */
+/** 供应链 — 调价审批 / 补货单 / 供应商对账 / 分成对账,四段纵排工作台（每表 20/页分页）。 */
+
+const PAGE_SIZE = 20;
+
+/** Client-side pagination helper shared by the four tables. */
+function usePaged<T>(rows: T[], page: number) {
+  const pages = Math.max(1, Math.ceil(rows.length / PAGE_SIZE));
+  const safePage = Math.min(page, pages);
+  const paged = useMemo(() => rows.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE), [rows, safePage]);
+  return { pages, safePage, paged };
+}
 
 type RevShareStatement = {
   id: string;
@@ -73,11 +83,20 @@ export default function SupplyTab() {
   const [poDrawerId, setPoDrawerId] = useState("");
   const [stDrawerId, setStDrawerId] = useState("");
   const [rsDrawerId, setRsDrawerId] = useState("");
+  const [pcPage, setPcPage] = useState(1);
+  const [poPage, setPoPage] = useState(1);
+  const [stPage, setStPage] = useState(1);
+  const [rsPage, setRsPage] = useState(1);
 
   const priceChanges = ops?.priceChanges ?? [];
   const purchaseOrders = ops?.purchaseOrders ?? [];
   const statements = ops?.statements ?? [];
   const revShares = ((ops as (OpsPayload & { revShareStatements?: RevShareStatement[] }) | null)?.revShareStatements) ?? [];
+
+  const pcPg = usePaged(priceChanges, pcPage);
+  const poPg = usePaged(purchaseOrders, poPage);
+  const stPg = usePaged(statements, stPage);
+  const rsPg = usePaged(revShares, rsPage);
 
   const drawerPo = poDrawerId ? purchaseOrders.find((po) => po.id === poDrawerId) : undefined;
   const drawerSt = stDrawerId ? statements.find((s) => s.id === stDrawerId) : undefined;
@@ -89,7 +108,20 @@ export default function SupplyTab() {
     if (po.status === "draft") actions.push({ label: "确认下达", cls: btnOutline, run: () => void post("/api/mall/ops", { action: "confirmDraftPO", poId: po.id }, "补货单已下达，等待供应商确认") });
     if (po.status === "shipped") actions.push({ label: "确认入库", cls: btnOutline, run: () => void post("/api/mall/ops", { action: "receivePO", poId: po.id }, "已入库，库存已增加") });
     if (po.status === "draft" || po.status === "ordered" || po.status === "confirmed") actions.push({ label: "取消", cls: btnGhost, run: () => void post("/api/mall/ops", { action: "cancelPO", poId: po.id }, "已取消") });
+    // 清理：仅草稿 / 已取消（从未执行）的补货单可删除，服务端同样校验。
+    if (po.status === "draft" || (po.status as string) === "cancelled") actions.push({ label: "删除", cls: btnDanger, run: () => void deletePo(po) });
     return actions;
+  }
+
+  async function deletePo(po: PurchaseOrder) {
+    if (!(await dialog.confirm("删除补货单", { message: `删除补货单「${po.supplierName} · ${po.id}」（${(poStatusLabel as Record<string, string>)[po.status] ?? extraPoLabel[po.status] ?? po.status}，参考成本 R$ ${po.totalCost.toFixed(2)}）？仅草稿/已取消的补货单可删除，删除后不可恢复。`, confirmText: "删除", tone: "danger" }))) return;
+    const result = await post("/api/mall/ops", { action: "deletePO", poId: po.id }, "补货单已删除");
+    if (result !== null && poDrawerId === po.id) setPoDrawerId("");
+  }
+
+  async function clearPriceChange(row: PriceChangeRequest) {
+    if (!(await dialog.confirm("清除调价记录", { message: `清除已${row.status === "approved" ? "批准" : "拒绝"}的调价申请「${row.productName}：R$ ${row.oldPrice.toFixed(2)} → R$ ${row.newPrice.toFixed(2)}」？仅从列表移除，已生效的供货价不受影响（审计留痕）。`, confirmText: "清除", tone: "danger" }))) return;
+    void post("/api/mall/ops", { action: "deletePriceChange", requestId: row.id }, "调价记录已清除");
   }
 
   async function payStatement(statement: SupplierStatement) {
@@ -139,7 +171,12 @@ export default function SupplyTab() {
           <button type="button" onClick={() => void post("/api/mall/ops", { action: "decidePriceChange", requestId: row.id, approve: true }, "已批准，供货价已更新")} className={btnOutline}>批准</button>
           <button type="button" onClick={() => void post("/api/mall/ops", { action: "decidePriceChange", requestId: row.id, approve: false }, "已拒绝")} className={btnDanger}>拒绝</button>
         </span>
-      ) : statusBadge(row.status, row.status === "approved" ? "已批准" : "已拒绝"),
+      ) : (
+        <span className="inline-flex items-center gap-1.5">
+          {statusBadge(row.status, row.status === "approved" ? "已批准" : "已拒绝")}
+          <button type="button" onClick={() => void clearPriceChange(row)} className={btnGhost}>清除</button>
+        </span>
+      ),
     },
   ];
 
@@ -212,8 +249,13 @@ export default function SupplyTab() {
   return (
     <div className="space-y-5">
       {/* 1) 供货价调整审批 */}
-      <SectionCard title={`供货价调整审批（待处理 ${booting ? "…" : priceChanges.filter((row) => row.status === "pending").length}）`} desc="供应商发起的供货价调整,批准后立即生效并回写商品供货价。" className="!p-4">
-        {booting ? <Skeleton rows={4} className="" /> : <DataTable columns={priceColumns} rows={priceChanges} rowKey={(row) => row.id} minWidth={760} empty="暂无调价申请。" />}
+      <SectionCard
+        title={`供货价调整审批（待处理 ${booting ? "…" : priceChanges.filter((row) => row.status === "pending").length}）`}
+        desc="供应商发起的供货价调整,批准后立即生效并回写商品供货价。已决记录可「清除」。"
+        className="!p-4"
+        right={<Pager page={pcPg.safePage} pages={pcPg.pages} total={priceChanges.length} onPage={setPcPage} />}
+      >
+        {booting ? <Skeleton rows={4} className="" /> : <DataTable columns={priceColumns} rows={pcPg.paged} rowKey={(row) => row.id} minWidth={760} empty="暂无调价申请。" />}
       </SectionCard>
 
       {/* 2) 补货单（PO） */}
@@ -222,9 +264,12 @@ export default function SupplyTab() {
         desc={<>代销模式:补货单仅用于备货/调拨与入库流转,<b>不产生应付账款</b>。供应商货款一律以月度对账(履约订单 × 供货价)结算,补货金额仅为备货参考成本。</>}
         className="!p-4"
         right={
-          poFormOpen
-            ? <button type="button" onClick={() => { setPoFormOpen(false); setPoSupplier(""); setPoItems({}); }} className="h-9 rounded-[8px] border border-[var(--line)] px-3.5 text-xs font-bold text-[var(--muted)] hover:border-[var(--accent)]">收起</button>
-            : <button type="button" onClick={() => setPoFormOpen(true)} className={btnPrimary}>下补货单</button>
+          <>
+            <Pager page={poPg.safePage} pages={poPg.pages} total={purchaseOrders.length} onPage={setPoPage} />
+            {poFormOpen
+              ? <button type="button" onClick={() => { setPoFormOpen(false); setPoSupplier(""); setPoItems({}); }} className="h-9 rounded-[8px] border border-[var(--line)] px-3.5 text-xs font-bold text-[var(--muted)] hover:border-[var(--accent)]">收起</button>
+              : <button type="button" onClick={() => setPoFormOpen(true)} className={btnPrimary}>下补货单</button>}
+          </>
         }
       >
         {poFormOpen && (
@@ -259,7 +304,7 @@ export default function SupplyTab() {
             )}
           </div>
         )}
-        {booting ? <Skeleton rows={4} className="" /> : <DataTable columns={poColumns} rows={purchaseOrders} rowKey={(po) => po.id} onRowClick={(po) => setPoDrawerId(po.id)} minWidth={760} empty="暂无补货单。" />}
+        {booting ? <Skeleton rows={4} className="" /> : <DataTable columns={poColumns} rows={poPg.paged} rowKey={(po) => po.id} onRowClick={(po) => setPoDrawerId(po.id)} minWidth={760} empty="暂无补货单。" />}
       </SectionCard>
 
       {/* 3) 供应商月度对账单 */}
@@ -269,12 +314,13 @@ export default function SupplyTab() {
         className="!p-4"
         right={
           <>
+            <Pager page={stPg.safePage} pages={stPg.pages} total={statements.length} onPage={setStPage} />
             <input type="month" value={statementMonth} onChange={(e) => setStatementMonth(e.target.value)} className="h-9 rounded-[8px] border border-[var(--line)] bg-[var(--surface-raised)] px-2 text-sm font-bold outline-none" />
             <button type="button" onClick={() => void post("/api/mall/ops", { action: "generateStatement", month: statementMonth }, t("dynStatementGen", { m: statementMonth }))} className={btnPrimary}>生成对账单</button>
           </>
         }
       >
-        {booting ? <Skeleton rows={4} className="" /> : <DataTable columns={statementColumns} rows={statements} rowKey={(s) => s.id} onRowClick={(s) => setStDrawerId(s.id)} minWidth={820} empty="选择月份生成对账单：按「履约订单 × 供货价」自动汇总每个供应商。" />}
+        {booting ? <Skeleton rows={4} className="" /> : <DataTable columns={statementColumns} rows={stPg.paged} rowKey={(s) => s.id} onRowClick={(s) => setStDrawerId(s.id)} minWidth={820} empty="选择月份生成对账单：按「履约订单 × 供货价」自动汇总每个供应商。" />}
       </SectionCard>
 
       {/* 4) 销售分成对账单（加盟商） */}
@@ -284,12 +330,13 @@ export default function SupplyTab() {
         className="!p-4"
         right={
           <>
+            <Pager page={rsPg.safePage} pages={rsPg.pages} total={revShares.length} onPage={setRsPage} />
             <input type="month" value={statementMonth} onChange={(e) => setStatementMonth(e.target.value)} className="h-9 rounded-[8px] border border-[var(--line)] bg-[var(--surface-raised)] px-2 text-sm font-bold outline-none" />
             <button type="button" onClick={() => void post("/api/mall/ops", { action: "generateRevShareStatement", month: statementMonth }, t("dynShareStatementGen", { m: statementMonth }))} className={btnPrimary}>生成分成对账单</button>
           </>
         }
       >
-        {booting ? <Skeleton rows={4} className="" /> : <DataTable columns={revShareColumns} rows={revShares} rowKey={(s) => s.id} onRowClick={(s) => setRsDrawerId(s.id)} minWidth={860} empty="按「已取货订单 × 产品加盟商分成」自动汇总。加盟商在自己后台确认后，这里可标记付款。" />}
+        {booting ? <Skeleton rows={4} className="" /> : <DataTable columns={revShareColumns} rows={rsPg.paged} rowKey={(s) => s.id} onRowClick={(s) => setRsDrawerId(s.id)} minWidth={860} empty="按「已取货订单 × 产品加盟商分成」自动汇总。加盟商在自己后台确认后，这里可标记付款。" />}
       </SectionCard>
 
       {/* 补货单明细抽屉 */}

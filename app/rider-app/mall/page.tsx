@@ -2,11 +2,11 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { ArrowLeft, Bell, Check, Copy, Gift, Headphones, Home, MapPin, Package, Star, WalletCards, Zap } from "lucide-react";
+import { ArrowLeft, Bell, Check, Copy, Gift, Handshake, Headphones, Home, MapPin, Package, Star, WalletCards, Zap } from "lucide-react";
 import { readSession } from "../../lib/session";
 import type { MarketplaceOrder, MarketplaceProduct } from "../../lib/points";
 import type { MallConfig, TierDefinition } from "../../lib/mall";
-import type { MallCoupon } from "../../lib/mall-ops";
+import type { MallBanner, MallCategory, MallCoupon } from "../../lib/mall-ops";
 
 type Me = {
   riderId: string;
@@ -24,7 +24,12 @@ type Me = {
   coupons?: MallCoupon[];
 };
 
-type Payload = { config: MallConfig; tiers: TierDefinition[]; products: MarketplaceProduct[]; orders: MarketplaceOrder[]; me: Me | null };
+type Payload = { config: MallConfig; tiers: TierDefinition[]; categories?: MallCategory[]; banners?: MallBanner[]; products: MarketplaceProduct[]; orders: MarketplaceOrder[]; me: Me | null };
+
+/** Same-site banner links open in the same tab; anything else in a new one. */
+function isInternalHref(href: string) {
+  return href.startsWith("/") || href.startsWith("#") || /^https?:\/\/([a-z0-9-]+\.)*meponto\.com(\/|$)/i.test(href);
+}
 
 const orderStatusLabel: Record<string, string> = { created: "Em trânsito", arrived: "Chegou · retire", fulfilled: "Retirado", cancelled: "Cancelado" };
 
@@ -39,8 +44,20 @@ export default function RiderMallPage() {
   const [message, setMessage] = useState<{ tone: "ok" | "err"; text: string } | null>(null);
   const [busyProduct, setBusyProduct] = useState("");
   const [category, setCategory] = useState("");
+  const [bannerIndex, setBannerIndex] = useState(0);
   const [copiedCode, setCopiedCode] = useState<string | null>(null);
   const [cancelling, setCancelling] = useState("");
+  const [copiedInvite, setCopiedInvite] = useState<"member" | "partner" | null>(null);
+
+  const copyInviteLink = useCallback(async (kind: "member" | "partner", link: string) => {
+    try {
+      await navigator.clipboard.writeText(link);
+      setCopiedInvite(kind);
+      setTimeout(() => setCopiedInvite((current) => (current === kind ? null : current)), 2500);
+    } catch {
+      setMessage({ tone: "err", text: "Não foi possível copiar — copie manualmente." });
+    }
+  }, []);
 
   const copyVoucher = useCallback(async (code: string) => {
     try {
@@ -67,9 +84,39 @@ export default function RiderMallPage() {
   const me = data?.me ?? null;
   const myOrders = (data?.orders ?? []).filter((order) => me && order.riderId === me.riderId);
   const arrivals = myOrders.filter((order) => order.status === "arrived");
-  const activeProducts = (data?.products ?? []).filter((product) => product.status === "active");
-  const categories = useMemo(() => [...new Set(activeProducts.map((p) => p.category || "Outros"))].sort(), [activeProducts]);
-  const shownProducts = category ? activeProducts.filter((p) => (p.category || "Outros") === category) : activeProducts;
+  const activeProducts = useMemo(() => (data?.products ?? []).filter((product) => product.status === "active"), [data]);
+
+  // 5s auto-rotating banner carousel (mirrors /store). The server already
+  // filters out inactive banners and orders by `sort`.
+  const banners = useMemo(() => (data?.banners ?? []).filter((banner) => banner.active), [data]);
+  useEffect(() => {
+    if (banners.length < 2) return;
+    const timer = setInterval(() => setBannerIndex((index) => (index + 1) % banners.length), 5000);
+    return () => clearInterval(timer);
+  }, [banners.length]);
+
+  // HQ-configured categories drive the chips: the server already filters out
+  // deactivated ones and orders by `sort`, so the back-office order holds and
+  // a disabled category never shows here (even if products still carry its
+  // name — those fall into "Outros"). Only when nothing is configured do we
+  // fall back to the old grouping derived from the products' own strings.
+  const configuredCategories = useMemo(() => new Set((data?.categories ?? []).map((item) => item.name)), [data]);
+  const bucketFor = useCallback(
+    (product: MarketplaceProduct) => {
+      const own = product.category || "Outros";
+      return configuredCategories.size > 0 && !configuredCategories.has(own) ? "Outros" : own;
+    },
+    [configuredCategories],
+  );
+  const categories = useMemo(() => {
+    if (configuredCategories.size > 0) {
+      const fromConfig = [...configuredCategories];
+      const hasOther = activeProducts.some((product) => !configuredCategories.has(product.category || "Outros"));
+      return hasOther && !configuredCategories.has("Outros") ? [...fromConfig, "Outros"] : fromConfig;
+    }
+    return [...new Set(activeProducts.map((p) => p.category || "Outros"))].sort();
+  }, [configuredCategories, activeProducts]);
+  const shownProducts = category ? activeProducts.filter((product) => bucketFor(product) === category) : activeProducts;
   const stars = tierStars[me?.tier ?? "member"] ?? 1;
 
   // Best applicable coupon preview (server re-applies authoritatively at redeem).
@@ -236,24 +283,101 @@ export default function RiderMallPage() {
           )}
         </section>
 
-        {/* Invite friends — prominent */}
-        {me && (
-          <section id="invite" className="px-4 pt-3">
-            <div className="grid grid-cols-[auto_1fr] items-center gap-3 rounded-[8px] bg-[#ff7a00] p-3 text-[#050505] shadow-[0_12px_26px_rgba(255,122,0,0.3)]">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src={`https://api.qrserver.com/v1/create-qr-code/?size=88x88&data=${encodeURIComponent(`https://app.meponto.com/scan?ref=${me.riderId}`)}`}
-                alt="QR de convite"
-                width={88}
-                height={88}
-                className="rounded-[8px] bg-white p-1"
-              />
-              <div className="min-w-0">
-                <div className="flex items-center gap-1.5 text-sm font-black"><Gift size={15} /> Convide amigos = +{data?.config.referralPoints ?? 20} pts</div>
-                <p className="mt-1 text-[11px] font-bold leading-4 text-black/70">
-                  Seu amigo escaneia este QR, cria a conta, e você ganha os pontos após o primeiro pedido dele. Código: {me.riderId}
-                </p>
+        {/* Invite friends + refer a service partner — prominent.
+            QRs point at the PUBLIC signup pages (camera-scannable, no login),
+            carrying the inviter as ?ref= so the referral is credited. */}
+        {me && (() => {
+          const memberLink = `https://app.meponto.com/register?ref=${encodeURIComponent(me.riderId)}`;
+          const partnerLink = `https://app.meponto.com/partner-register?ref=${encodeURIComponent(me.riderId)}`;
+          return (
+            <section id="invite" className="space-y-2 px-4 pt-3">
+              <div className="grid grid-cols-[auto_1fr] items-center gap-3 rounded-[8px] bg-[#ff7a00] p-3 text-[#050505] shadow-[0_12px_26px_rgba(255,122,0,0.3)]">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={`https://api.qrserver.com/v1/create-qr-code/?size=88x88&data=${encodeURIComponent(memberLink)}`}
+                  alt="QR de convite"
+                  width={88}
+                  height={88}
+                  className="rounded-[8px] bg-white p-1"
+                />
+                <div className="min-w-0">
+                  <div className="flex items-center gap-1.5 text-sm font-black"><Gift size={15} /> Convide amigos = +{data?.config.referralPoints ?? 20} pts</div>
+                  <p className="mt-1 text-[11px] font-bold leading-4 text-black/70">
+                    Seu amigo escaneia este QR, cria a conta, e você ganha os pontos após o primeiro pedido dele. Código: {me.riderId}
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => void copyInviteLink("member", memberLink)}
+                    className="mt-1.5 inline-flex h-8 items-center gap-1.5 rounded-[8px] bg-[#050505] px-3 text-[11px] font-black text-white"
+                  >
+                    {copiedInvite === "member" ? <><Check size={13} /> Link copiado!</> : <><Copy size={13} /> Copiar link</>}
+                  </button>
+                </div>
               </div>
+              <div className="grid grid-cols-[auto_1fr] items-center gap-3 rounded-[8px] bg-white p-3 text-[#050505] shadow-[0_12px_26px_rgba(0,0,0,0.06)]">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={`https://api.qrserver.com/v1/create-qr-code/?size=88x88&data=${encodeURIComponent(partnerLink)}`}
+                  alt="QR de indicação de parceiro"
+                  width={88}
+                  height={88}
+                  className="rounded-[8px] border border-[#e9e7e1] bg-white p-1"
+                />
+                <div className="min-w-0">
+                  <div className="flex items-center gap-1.5 text-sm font-black"><Handshake size={15} className="text-[#ff7a00]" /> Indique um parceiro de serviço</div>
+                  <p className="mt-1 text-[11px] font-bold leading-4 text-[#77746f]">
+                    Convide um negócio (oficina, loja, fornecedor) para ser parceiro MePonto — você ganha pontos quando ele enviar o cadastro.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => void copyInviteLink("partner", partnerLink)}
+                    className="mt-1.5 inline-flex h-8 items-center gap-1.5 rounded-[8px] bg-[#ff7a00] px-3 text-[11px] font-black text-[#050505]"
+                  >
+                    {copiedInvite === "partner" ? <><Check size={13} /> Link copiado!</> : <><Copy size={13} /> Copiar link</>}
+                  </button>
+                </div>
+              </div>
+            </section>
+          );
+        })()}
+
+        {/* Promo banners configured in the mall back office (5s carousel + dots). */}
+        {banners.length > 0 && (
+          <section className="px-4 pt-3">
+            <div className="relative overflow-hidden rounded-[8px] shadow-[0_12px_26px_rgba(0,0,0,0.12)]">
+              {(() => {
+                const banner = banners[bannerIndex] ?? banners[0];
+                const internal = banner.href ? isInternalHref(banner.href) : true;
+                const content = banner.imageUrl ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={banner.imageUrl} alt={banner.title} className="h-36 w-full object-cover" />
+                ) : (
+                  <div className="flex h-36 w-full items-center bg-[linear-gradient(120deg,#050505_25%,#3a2405_70%,#ff7a00_135%)] px-5">
+                    <h2 className="max-w-[280px] text-lg font-black leading-6 text-white">{banner.title}</h2>
+                  </div>
+                );
+                return banner.href ? (
+                  <a href={banner.href} target={internal ? undefined : "_blank"} rel={internal ? undefined : "noreferrer"} className="block">
+                    {content}
+                  </a>
+                ) : (
+                  content
+                );
+              })()}
+              {banners.length > 1 && (
+                <div className="absolute bottom-2 left-1/2 z-10 flex -translate-x-1/2 gap-1.5">
+                  {banners.map((banner, index) => (
+                    <button
+                      key={banner.id}
+                      type="button"
+                      aria-label={`Banner ${index + 1}`}
+                      onClick={() => setBannerIndex(index)}
+                      className="h-1.5 rounded-full transition-all"
+                      style={{ width: index === bannerIndex ? 20 : 8, background: index === bannerIndex ? "#ff7a00" : "rgba(255,255,255,0.5)" }}
+                    />
+                  ))}
+                </div>
+              )}
             </div>
           </section>
         )}

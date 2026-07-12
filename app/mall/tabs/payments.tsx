@@ -6,7 +6,7 @@ import { useDialog } from "../../components/dialog";
 import { downloadCsv } from "../../lib/csv";
 import type { CashLedgerEntry, CashTopUp, MallPayment } from "../../lib/mall-ops";
 import { paymentStatusLabel, topUpStatusLabel } from "../../lib/mall-ops";
-import { DataTable, Drawer, Skeleton, Stat, StatusBadge, TodoCard, type BadgeTone, type DataColumn } from "../kit";
+import { DataTable, Drawer, Pager, Skeleton, Stat, StatusBadge, TodoCard, type BadgeTone, type DataColumn } from "../kit";
 import { useMallAdmin } from "./context";
 
 /** 充值与收款 — Stat/TodoCard + DataTable + Drawer 工作台。
@@ -45,10 +45,17 @@ export default function PaymentsTab() {
 
   const [drawerId, setDrawerId] = useState("");
   const [archiveOpen, setArchiveOpen] = useState(false);
+  const [ledgerPage, setLedgerPage] = useState(1);
 
   const topUps = useMemo(() => ops?.topUps ?? [], [ops]);
   const ledger = useMemo(() => ops?.cashLedger ?? [], [ops]);
   const payments = useMemo(() => ops?.payments ?? [], [ops]);
+
+  // ---- 现金台账分页（20/页；导出仍导全量） ----
+  const LEDGER_PAGE_SIZE = 20;
+  const ledgerPages = Math.max(1, Math.ceil(ledger.length / LEDGER_PAGE_SIZE));
+  const safeLedgerPage = Math.min(ledgerPage, ledgerPages);
+  const pagedLedger = useMemo(() => ledger.slice((safeLedgerPage - 1) * LEDGER_PAGE_SIZE, safeLedgerPage * LEDGER_PAGE_SIZE), [ledger, safeLedgerPage]);
 
   // ---- 顶部指标（客户端计算） ----
   const today = todayStr();
@@ -155,9 +162,12 @@ export default function PaymentsTab() {
       <div>
         <div className="mb-2 flex items-center gap-2 px-1">
           <span className="text-xs font-black uppercase text-[var(--muted)]">现金余额台账（不可篡改记录）</span>
-          <button type="button" onClick={() => downloadCsv("cash-ledger.csv", ["时间", "骑手", "类型", "金额", "余额", "来源", "备注", "操作人"], ledger.map((entry) => [entry.createdAt, entry.riderName, LEDGER_TYPE[entry.type].label, entry.amountBRL.toFixed(2), entry.balanceAfter.toFixed(2), entry.sourceId, entry.note ?? "", entry.createdBy]))} className="ml-auto h-9 rounded-[8px] border border-[var(--line)] px-3 text-xs font-bold text-[var(--muted)] hover:border-[var(--accent)]">导出 CSV</button>
+          <div className="ml-auto flex items-center gap-2">
+            <Pager page={safeLedgerPage} pages={ledgerPages} total={ledger.length} onPage={setLedgerPage} />
+            <button type="button" onClick={() => downloadCsv("cash-ledger.csv", ["时间", "骑手", "类型", "金额", "余额", "来源", "备注", "操作人"], ledger.map((entry) => [entry.createdAt, entry.riderName, LEDGER_TYPE[entry.type].label, entry.amountBRL.toFixed(2), entry.balanceAfter.toFixed(2), entry.sourceId, entry.note ?? "", entry.createdBy]))} className="h-9 rounded-[8px] border border-[var(--line)] px-3 text-xs font-bold text-[var(--muted)] hover:border-[var(--accent)]">导出 CSV</button>
+          </div>
         </div>
-        {booting ? <Skeleton rows={5} /> : <DataTable columns={ledgerColumns} rows={ledger} rowKey={(e) => e.id} minWidth={760} empty="暂无余额流水。" />}
+        {booting ? <Skeleton rows={5} /> : <DataTable columns={ledgerColumns} rows={pagedLedger} rowKey={(e) => e.id} minWidth={760} empty="暂无余额流水。" />}
       </div>
 
       {/* ---- 历史按单收款存档（默认收起） ---- */}

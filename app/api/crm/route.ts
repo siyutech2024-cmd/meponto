@@ -2,7 +2,8 @@ import { createHash, randomBytes } from "node:crypto";
 import { appendServerAudit, makeServerId, memory, jsonResponse } from "../../lib/server/memory";
 import { flushPendingToDatabase, persistDeleteRecord } from "../../lib/server/persistence";
 import { requirePermission } from "../../lib/server/authz";
-import { isSupplierCategory } from "../../lib/server/crm-categories";
+import { ensureDefaultCrmCategories, isSupplierCategory } from "../../lib/server/crm-categories";
+import { getAvailablePartnerPoints } from "../../lib/points";
 import type { CrmCategory, CrmPartner, CrmPartnerCategory, CrmPartnerRisk, CrmPartnerStatus } from "../../lib/crm";
 import type { AppUser } from "../../lib/users";
 import type { PortalId } from "../../lib/portals";
@@ -20,7 +21,24 @@ function hashPassword(salt: string, password: string): string {
   return createHash("sha256").update(`${salt}:${password}`).digest("hex");
 }
 
-export function GET() {
+export async function GET(request: Request) {
+  // Default service-partner types (idempotent, label-keyed): deployments that
+  // hydrated crmCategories from the database never see additions to the seed
+  // array, so the category API tops up missing defaults here — user-created
+  // categories are untouched.
+  await ensureDefaultCrmCategories();
+  // Public, lightweight category list for the self-registration form
+  // (/partner-register): only id + label of ACTIVE categories — no partner
+  // data, no accounts. Everything else in this GET stays console-facing.
+  const url = new URL(request.url);
+  if (url.searchParams.get("public") === "categories") {
+    const categories = memory.crmCategories
+      .filter((category) => category.active)
+      .sort((a, b) => a.sort - b.sort)
+      .map((category) => ({ id: category.id, label: category.label }));
+    return jsonResponse({ data: categories });
+  }
+
   // Per-company login-account visibility for the mall office: the main account
   // (provisioned from CRM, tenantId === partner.id) plus a count of all logins
   // under the company (main + team sub-accounts). Lets the office see & manage
@@ -215,6 +233,16 @@ export async function PATCH(request: Request) {
   }
 
   if (body.action === "delete") {
+    // Guard 1: outstanding partner points — deleting would orphan a live balance.
+    const openPoints = getAvailablePartnerPoints(memory.partnerPointsLedgerEntries, partner.id);
+    if (openPoints > 0) {
+      return jsonResponse({ error: `「${partner.name}」还有 ${openPoints.toLocaleString()} 未结合作方积分，请先清零积分账户再删除。` }, { status: 409 });
+    }
+    // Guard 2: service records still awaiting confirmation (未核销).
+    const pendingServices = memory.partnerServiceRecords.filter((record) => record.partnerId === partner.id && record.status === "pending").length;
+    if (pendingServices > 0) {
+      return jsonResponse({ error: `「${partner.name}」还有 ${pendingServices} 条未核销服务记录，请先确认或驳回后再删除。` }, { status: 409 });
+    }
     // Remove the partner/supplier record AND any login accounts scoped to it
     // (organization = partner name), so a deleted company can't still sign in.
     const index = memory.crmPartners.findIndex((item) => item.id === partner.id);
@@ -253,6 +281,8 @@ export async function PATCH(request: Request) {
       ...(body.services !== undefined ? { services: body.services } : {}),
       ...(body.lat !== undefined ? { lat: Number(body.lat) } : {}),
       ...(body.lng !== undefined ? { lng: Number(body.lng) } : {}),
+      ...(body.address !== undefined ? { address: String(body.address) } : {}),
+      ...(body.mapUrl !== undefined ? { mapUrl: String(body.mapUrl) } : {}),
     };
     memory.crmPartners[index] = next;
     appendServerAudit({ actor: "Mall Console", action: "CRM_PARTNER_UPDATED", entity: "CrmPartner", entityId: partner.id, detail: `${partner.name} atualizado (loc ${next.lat},${next.lng})`, risk: "Low" });
@@ -269,6 +299,12 @@ export async function PATCH(request: Request) {
   }
 
   if (body.action === "provisionAccount") {
+    // Review closure: a login is only provisioned AFTER the application is
+    // approved (status Active). Approving is an explicit setStatus step — the
+    // account no longer sneaks a pending partner live as a side effect.
+    if (partner.status !== "Active") {
+      return jsonResponse({ error: "请先审核通过(状态设为 Active)再开通登录账号。" }, { status: 409 });
+    }
     const identifier = (body.identifier ?? "").trim().toLowerCase();
     if (!identifier) return jsonResponse({ error: "identifier (e-mail or phone) is required" }, { status: 400 });
     if (memory.appUsers.some((user) => user.identifier === identifier)) {
@@ -295,9 +331,6 @@ export async function PATCH(request: Request) {
       createdAt: new Date().toISOString().slice(0, 16).replace("T", " "),
     };
     memory.appUsers.unshift(account);
-    // Activating the account also moves a pending partner live.
-    const index = memory.crmPartners.findIndex((item) => item.id === partner.id);
-    if (memory.crmPartners[index].status !== "Active") memory.crmPartners[index] = { ...memory.crmPartners[index], status: "Active" };
     appendServerAudit({ actor: "Mall Console", action: "CRM_ACCOUNT_PROVISIONED", entity: "AppUser", entityId: account.id, detail: `${shape.portal} login for ${partner.name} (${identifier})`, risk: "Medium" });
     return jsonResponse({ data: { identifier, portal: shape.portal, defaultPath: shape.defaultPath, tempPassword } }, { status: 201 });
   }

@@ -1,9 +1,10 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useDialog } from "../../components/dialog";
 import { statementStatusLabel } from "../../lib/mall-ops";
 import type { SupplierProfile } from "../../lib/supplier";
-import { DataTable, Drawer, SearchInput, Skeleton, Stat, StatusBadge, Toolbar, type DataColumn } from "../kit";
+import { DataTable, Drawer, ImagePreview, Pager, SearchInput, SectionCard, Skeleton, Stat, StatusBadge, Toolbar, type DataColumn } from "../kit";
 import { extraStatementLabel, productStatusLabel, statusBadge, useMallAdmin } from "./context";
 
 /**
@@ -41,22 +42,28 @@ const PROFILE_FIELDS: Array<{ k: keyof SupplierProfile; l: string }> = [
   { k: "contactPhone", l: "联系电话" },
   { k: "address", l: "地址" },
   { k: "pixKey", l: "PIX 收款键" },
+  { k: "logoUrl", l: "Logo URL" },
   { k: "about", l: "简介" },
 ];
 
 const fieldCls = "mt-1 h-9 w-full rounded-[8px] border border-[var(--line)] bg-[var(--surface-raised)] px-3 text-sm font-bold outline-none focus:border-[var(--accent)]";
 
+const SUPPLIER_PAGE_SIZE = 20;
+
 export default function SuppliersTab() {
-  const { loading, mall, ops, procure, products, suppliers, setMessage, pendingPricing, priceChangePending, consentPendingIds } = useMallAdmin();
+  const { loading, mall, ops, procure, products, suppliers, setMessage, load, pendingPricing, priceChangePending, consentPendingIds } = useMallAdmin();
+  const dialog = useDialog();
   /** First load still in flight — "…" stats + Skeleton table, never fake zeros. */
   const booting = loading && !mall;
   const n = (value: string | number) => (booting ? "…" : String(value));
 
   const [q, setQ] = useState("");
+  const [page, setPage] = useState(1);
   const [details, setDetails] = useState<Record<string, SupplierDetail>>({});
   const [drawerOrg, setDrawerOrg] = useState("");
   const [draft, setDraft] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   // ---- Office support mode: hydrate profile/team/orders per supplier -------
   const loadDetail = useCallback(async (org: string) => {
@@ -92,6 +99,11 @@ export default function SuppliersTab() {
       })
       .sort((a, b) => b.payable - a.payable || b.productCount - a.productCount);
   }, [suppliers, products, mall, procure, details, q]);
+
+  // ---- Pagination (20/page; search resets to page 1) -----------------------
+  const pages = Math.max(1, Math.ceil(rows.length / SUPPLIER_PAGE_SIZE));
+  const safePage = Math.min(page, pages);
+  const pagedRows = useMemo(() => rows.slice((safePage - 1) * SUPPLIER_PAGE_SIZE, safePage * SUPPLIER_PAGE_SIZE), [rows, safePage]);
 
   const priceChangePendingOf = (org: string) => (ops?.priceChanges ?? []).filter((row) => row.supplierName === org && row.status === "pending").length;
 
@@ -148,6 +160,34 @@ export default function SuppliersTab() {
     void loadDetail(drawerOrg);
   }
 
+  /** Danger zone: delete the supplier organization. Server guards refuse when
+   *  the supplier still has active products or unpaid (non-draft) statements. */
+  async function deleteSupplier() {
+    if (!drawerOrg || deleting) return;
+    const activeCount = drawerProducts.filter((product) => product.status === "active").length;
+    const confirmed = await dialog.confirm("删除供应商", {
+      message: `删除供应商「${drawerOrg}」？将删除其公司资料与待定价商品，并停用其全部门户登录账号（${drawerDetail?.team.length ?? 0} 个）。${activeCount > 0 ? `注意：该供应商仍有 ${activeCount} 个在售商品，服务端将拒绝删除。` : ""}此操作不可恢复。`,
+      confirmText: "删除供应商",
+      tone: "danger",
+    });
+    if (!confirmed) return;
+    setDeleting(true);
+    const response = await fetch(`/api/supplier?org=${encodeURIComponent(drawerOrg)}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "deleteSupplier" }),
+    }).catch(() => null);
+    setDeleting(false);
+    const payload = await response?.json().catch(() => ({}));
+    if (!response?.ok) {
+      setMessage({ tone: "err", text: payload?.error ?? "删除失败，请重试。" });
+      return;
+    }
+    setMessage({ tone: "ok", text: `已删除供应商「${drawerOrg}」：停用 ${payload?.data?.accountsDisabled ?? 0} 个门户账号，移除 ${payload?.data?.pendingProductsRemoved ?? 0} 个待定价商品（审计已留痕）。` });
+    setDrawerOrg("");
+    void load();
+  }
+
   return (
     <div className="space-y-3">
       {/* ---- 顶部统计 ---- */}
@@ -158,9 +198,9 @@ export default function SuppliersTab() {
         <Stat label="待审分销同意" value={n(consentPendingIds.size)} hint="直采开放申请等审批（直采 Tab 处理）" />
       </div>
 
-      {/* ---- 搜索 ---- */}
-      <Toolbar>
-        <SearchInput value={q} onChange={setQ} placeholder="搜索供应商 / 品牌 / CNPJ / 联系人…" />
+      {/* ---- 搜索 + 分页 ---- */}
+      <Toolbar right={<Pager page={safePage} pages={pages} total={rows.length} onPage={setPage} />}>
+        <SearchInput value={q} onChange={(value) => { setQ(value); setPage(1); }} placeholder="搜索供应商 / 品牌 / CNPJ / 联系人…" />
         <span className="text-[11px] font-bold text-[var(--muted)]">点击行打开供应商工作台：公司资料 · 商品 · 团队账号 · 月度对账单</span>
       </Toolbar>
 
@@ -170,7 +210,7 @@ export default function SuppliersTab() {
       ) : (
         <DataTable
           columns={columns}
-          rows={rows}
+          rows={pagedRows}
           rowKey={(row) => row.name}
           onRowClick={(row) => openDrawer(row.name)}
           minWidth={960}
@@ -203,6 +243,7 @@ export default function SuppliersTab() {
                   <label key={field.k} className={`text-[11px] font-black text-[var(--muted)] ${field.k === "address" || field.k === "about" ? "sm:col-span-2" : ""}`}>
                     {field.l}
                     <input value={draftValue(field.k)} onChange={(e) => setDraft((prev) => ({ ...prev, [field.k]: e.target.value }))} className={fieldCls} />
+                    {field.k === "logoUrl" && <ImagePreview url={draftValue("logoUrl")} size={48} className="mt-2" alt="Logo 预览" />}
                   </label>
                 ))}
               </div>
@@ -270,6 +311,21 @@ export default function SuppliersTab() {
                 {drawerStatements.length === 0 && <div className="py-4 text-center text-xs font-bold text-[var(--muted)]">暂无对账单——在「资金 · 补货与对账」按月生成。</div>}
               </div>
             </section>
+
+            {/* 危险区：删除供应商（服务端守卫：在售商品 / 未付对账单时 409 拒绝） */}
+            <SectionCard title={<span className="text-[var(--danger)]">危险区</span>} className="border-[var(--danger)]/40">
+              <p className="mb-3 text-[11px] font-bold leading-5 text-[var(--muted)]">
+                删除将移除公司资料与待定价商品，并停用其全部门户登录账号。仍有<b>在售商品</b>或<b>未付对账单</b>（非草稿且未付款）时服务端会拒绝删除。
+              </p>
+              <button
+                type="button"
+                disabled={deleting}
+                onClick={() => void deleteSupplier()}
+                className="h-9 rounded-[8px] border border-[var(--danger)]/40 px-3.5 text-xs font-bold text-[var(--danger)] hover:border-[var(--danger)] disabled:opacity-50"
+              >
+                {deleting ? "删除中…" : "删除供应商"}
+              </button>
+            </SectionCard>
           </div>
         )}
       </Drawer>

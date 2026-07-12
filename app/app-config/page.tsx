@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { BellRing, ImagePlus, ListChecks, Loader2, RefreshCcw, Send, Smartphone, Trash2, X } from "lucide-react";
 import { AppShell, PageTitle } from "../components/ui";
+import { ImagePreview } from "../components/kit";
 import { readSession } from "../lib/session";
 import { useVentoStore } from "../lib/store";
 import { translate, type TranslationKey } from "../lib/i18n";
@@ -219,6 +220,7 @@ export default function AppConfigPage() {
                 <input type="file" accept="image/*" className="hidden" disabled={uploading !== null} onChange={(e) => { void uploadLocalImage(e.target.files?.[0], "splash"); e.target.value = ""; }} />
               </label>
             </div>
+            <ImagePreview url={cfg.imageURL} size={56} width={96} className="mt-2" alt="开屏广告图预览" />
           </div>
           <label className="mt-3 block"><span className={label}>点击跳转 URL（可空）</span><input value={cfg.linkURL} onChange={(e) => set("linkURL", e.target.value)} placeholder="https://… 或 /store" className={field} /></label>
           <div className="mt-3 grid gap-3 sm:grid-cols-2">
@@ -296,13 +298,12 @@ export default function AppConfigPage() {
                   <input type="file" accept="image/*" className="hidden" disabled={uploading !== null} onChange={(e) => { void uploadLocalImage(e.target.files?.[0], "push"); e.target.value = ""; }} />
                 </label>
               </div>
-              {pushImage.trim().startsWith("https://") && (
-                <div className="mt-2 flex items-center gap-2">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={pushImage.trim()} alt="" className="h-14 w-24 rounded-[8px] border border-[var(--line)] object-cover" />
+              <div className="mt-2 flex items-center gap-2">
+                <ImagePreview url={pushImage} size={56} width={96} alt="通知大图预览" />
+                {pushImage.trim() !== "" && (
                   <button type="button" onClick={() => setPushImage("")} className="inline-flex h-8 items-center gap-1 rounded-[8px] border border-[var(--line)] px-2.5 text-xs font-black text-[var(--danger-ink)]"><X size={12} /> 移除图片</button>
-                </div>
-              )}
+                )}
+              </div>
             </div>
             <div className="mt-4 flex items-center gap-3">
               <button type="button" disabled={!pushTitle.trim() || !pushBody.trim() || pushSending || uploading !== null} onClick={() => void sendPush()} className="inline-flex h-11 items-center gap-2 rounded-[8px] bg-[var(--accent)] px-5 text-sm font-black uppercase text-[var(--accent-ink)] disabled:opacity-50">

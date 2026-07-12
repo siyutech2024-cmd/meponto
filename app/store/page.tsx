@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { ArrowRight, Check, Clock, Copy, Gift, LogIn, MapPin, Package, Search, Sparkles, Star, Wallet, X } from "lucide-react";
+import { ArrowRight, Check, Clock, Copy, Gift, Handshake, LogIn, MapPin, Package, Search, Sparkles, Star, Wallet, X } from "lucide-react";
 import type { MarketplaceOrder, MarketplaceProduct } from "../lib/points";
 import type { CashTopUp, MallBanner, MallCategory, MallCoupon } from "../lib/mall-ops";
 
@@ -127,6 +127,7 @@ export default function StorefrontPage() {
   const [topUpRef, setTopUpRef] = useState("");
   const [bannerIndex, setBannerIndex] = useState(0);
   const [copiedCode, setCopiedCode] = useState<string | null>(null);
+  const [copiedInvite, setCopiedInvite] = useState<"member" | "partner" | null>(null);
   const [pickupStoreId, setPickupStoreId] = useState("");
 
   const copyVoucher = useCallback(async (code: string) => {
@@ -208,9 +209,14 @@ export default function StorefrontPage() {
   }, [data, query, category]);
 
   const categories = useMemo(() => {
+    // HQ-configured categories drive the nav — the server already filters out
+    // deactivated ones and orders by `sort`, so a disabled category never shows
+    // here (even if products still carry its name) and the back-office order
+    // holds. Only when nothing is configured do we fall back to grouping by
+    // the products' own category strings (mirrors the back-office copy).
     const fromConfig = (data?.categories ?? []).map((item) => item.name);
-    const fromProducts = [...new Set((data?.products ?? []).filter((p) => p.status === "active").map((product) => product.category || "Outros"))];
-    return [...new Set([...fromConfig, ...fromProducts])];
+    if (fromConfig.length > 0) return [...new Set(fromConfig)];
+    return [...new Set((data?.products ?? []).filter((p) => p.status === "active").map((product) => product.category || "Outros"))];
   }, [data]);
 
   const myOrders = useMemo(() => {
@@ -560,24 +566,73 @@ export default function StorefrontPage() {
           </section>
         ) : null}
 
-        {/* ---- Invite friends (riders only) ------------------------------------ */}
-        {me && me.accountType !== "partner" && (
-          <section id="invite" className="mt-4 flex items-center gap-4 rounded-2xl border border-black/5 bg-white p-4 scroll-mt-20">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src={`https://api.qrserver.com/v1/create-qr-code/?size=96x96&data=${encodeURIComponent(`https://app.meponto.com/scan?ref=${me.riderId}`)}`}
-              alt="QR de convite"
-              width={96}
-              height={96}
-              className="h-24 w-24 shrink-0 rounded-xl border border-black/10 p-1"
-            />
-            <div className="min-w-0">
-              <div className="flex items-center gap-1.5 text-sm font-black"><Gift size={15} style={{ color: GOLD }} /> Convide amigos{data?.config?.referralPoints ? ` = +${data.config.referralPoints} pts` : ""}</div>
-              <p className="mt-1 text-xs font-bold leading-5 text-black/55">Seu amigo escaneia o QR, cria a conta e você ganha os pontos após o primeiro pedido dele.</p>
-              <div className="mt-1.5 inline-flex items-center rounded-lg bg-black/5 px-2.5 py-1 text-xs font-black">Código: {me.riderId}</div>
-            </div>
-          </section>
-        )}
+        {/* ---- Invite friends + refer a partner (riders only) -------------------
+             QRs encode the PUBLIC signup pages (camera-scannable, no login),
+             carrying ?ref=<inviter> so the referral is credited. */}
+        {me && me.accountType !== "partner" && (() => {
+          const memberLink = `https://app.meponto.com/register?ref=${encodeURIComponent(me.riderId)}`;
+          const partnerLink = `https://app.meponto.com/partner-register?ref=${encodeURIComponent(me.riderId)}`;
+          const copyInvite = async (kind: "member" | "partner", link: string) => {
+            try {
+              await navigator.clipboard.writeText(link);
+              setCopiedInvite(kind);
+              setTimeout(() => setCopiedInvite((current) => (current === kind ? null : current)), 2500);
+            } catch {
+              /* clipboard unavailable — user can long-press the QR instead */
+            }
+          };
+          return (
+            <section id="invite" className="mt-4 grid gap-3 scroll-mt-20 md:grid-cols-2">
+              <div className="flex items-center gap-4 rounded-2xl border border-black/5 bg-white p-4">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={`https://api.qrserver.com/v1/create-qr-code/?size=96x96&data=${encodeURIComponent(memberLink)}`}
+                  alt="QR de convite"
+                  width={96}
+                  height={96}
+                  className="h-24 w-24 shrink-0 rounded-xl border border-black/10 p-1"
+                />
+                <div className="min-w-0">
+                  <div className="flex items-center gap-1.5 text-sm font-black"><Gift size={15} style={{ color: GOLD }} /> Convide amigos{data?.config?.referralPoints ? ` = +${data.config.referralPoints} pts` : ""}</div>
+                  <p className="mt-1 text-xs font-bold leading-5 text-black/55">Seu amigo escaneia o QR, cria a conta e você ganha os pontos após o primeiro pedido dele.</p>
+                  <div className="mt-1.5 flex flex-wrap items-center gap-2">
+                    <span className="inline-flex items-center rounded-lg bg-black/5 px-2.5 py-1 text-xs font-black">Código: {me.riderId}</span>
+                    <button
+                      type="button"
+                      onClick={() => void copyInvite("member", memberLink)}
+                      className="inline-flex h-7 items-center gap-1.5 rounded-lg px-2.5 text-xs font-black text-white"
+                      style={{ background: INK }}
+                    >
+                      {copiedInvite === "member" ? <><Check size={12} /> Link copiado!</> : <><Copy size={12} /> Copiar link</>}
+                    </button>
+                  </div>
+                </div>
+              </div>
+              <div className="flex items-center gap-4 rounded-2xl border border-black/5 bg-white p-4">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={`https://api.qrserver.com/v1/create-qr-code/?size=96x96&data=${encodeURIComponent(partnerLink)}`}
+                  alt="QR de indicação de parceiro"
+                  width={96}
+                  height={96}
+                  className="h-24 w-24 shrink-0 rounded-xl border border-black/10 p-1"
+                />
+                <div className="min-w-0">
+                  <div className="flex items-center gap-1.5 text-sm font-black"><Handshake size={15} style={{ color: GOLD }} /> Indique um parceiro de serviço</div>
+                  <p className="mt-1 text-xs font-bold leading-5 text-black/55">Convide um negócio (oficina, loja, fornecedor) para ser parceiro MePonto — você ganha pontos quando ele enviar o cadastro.</p>
+                  <button
+                    type="button"
+                    onClick={() => void copyInvite("partner", partnerLink)}
+                    className="mt-1.5 inline-flex h-7 items-center gap-1.5 rounded-lg px-2.5 text-xs font-black text-white"
+                    style={{ background: INK }}
+                  >
+                    {copiedInvite === "partner" ? <><Check size={12} /> Link copiado!</> : <><Copy size={12} /> Copiar link</>}
+                  </button>
+                </div>
+              </div>
+            </section>
+          );
+        })()}
 
         {/* ---- Categories ------------------------------------------------------ */}
         <nav className="scrollbar-none mt-5 flex gap-2 overflow-x-auto pb-1">

@@ -3,7 +3,8 @@
 
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { AddButton } from "../components/ui";
-import { DataTable, Drawer, SearchInput, Skeleton, Stat, StatusBadge, Toolbar, type BadgeTone, type DataColumn } from "../components/kit";
+import { useDialog } from "../components/dialog";
+import { DataTable, Drawer, Pager, SearchInput, Skeleton, Stat, StatusBadge, Toolbar, type BadgeTone, type DataColumn } from "../components/kit";
 import type { CrmCategory, CrmPartner, CrmPartnerCategory, CrmPartnerRisk, CrmPartnerStatus, CrmPartnerTier } from "../lib/crm";
 
 /**
@@ -47,6 +48,7 @@ const input = "h-11 w-full rounded-[8px] border border-[var(--line)] bg-[var(--s
 const filterSelect = "h-10 rounded-[8px] border border-[var(--line)] bg-[var(--surface-raised)] px-3 text-sm font-bold outline-none focus:border-[var(--accent)]";
 
 export default function CrmPanel() {
+  const dialog = useDialog();
   const [partners, setPartners] = useState<CrmPartner[]>([]);
   /** True until the first fetch settles — stats show "…" + table shows Skeleton. */
   const [loading, setLoading] = useState(true);
@@ -63,6 +65,7 @@ export default function CrmPanel() {
   const [categoryFilter, setCategoryFilter] = useState("All Categories");
   const [statusFilter, setStatusFilter] = useState("All Status");
   const [riskFilter, setRiskFilter] = useState("All Risk");
+  const [page, setPage] = useState(1);
   const [formOpen, setFormOpen] = useState(false);
   const [form, setForm] = useState(emptyForm);
   const [isSaving, setIsSaving] = useState(false);
@@ -158,6 +161,12 @@ export default function CrmPanel() {
     });
   }, [categoryFilter, partners, query, riskFilter, statusFilter]);
 
+  // ---- 名录分页（20/页；搜索或任一筛选变化重置页码） ----
+  const PAGE_SIZE = 20;
+  const pages = Math.max(1, Math.ceil(filteredPartners.length / PAGE_SIZE));
+  const safePage = Math.min(page, pages);
+  const pagedPartners = useMemo(() => filteredPartners.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE), [filteredPartners, safePage]);
+
   const activeCount = partners.filter((partner) => partner.status === "Active").length;
   const reviewCount = partners.filter((partner) => partner.status === "Review" || partner.risk === "High").length;
   const monthlyVolume = partners.reduce((sum, partner) => sum + partner.monthlyVolume, 0);
@@ -213,7 +222,7 @@ export default function CrmPanel() {
   }
 
   async function removeCategory(category: CrmCategory) {
-    if (!window.confirm(`删除类型「${category.label}」？`)) return;
+    if (!(await dialog.confirm("删除类型", { message: `删除合作伙伴类型「${category.label}」？该类型下仍有公司时服务端会拒绝删除。`, confirmText: "删除", tone: "danger" }))) return;
     const response = await fetch("/api/crm", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "deleteCategory", categoryId: category.id }) });
     const payload = (await response.json()) as { data?: { deleted: string }; error?: string };
     if (payload.data) setCatConfig((current) => current.filter((c) => c.id !== category.id));
@@ -247,7 +256,7 @@ export default function CrmPanel() {
 
   async function deletePartner(partner: CrmPartner) {
     const label = accountTypeOf(partner.category) === "supplier" ? "供应商" : "合作方";
-    if (!window.confirm(`确认删除${label}「${partner.name}」？将同时移除其登录账号，且不可恢复。`)) return;
+    if (!(await dialog.confirm(`删除${label}`, { message: `确认删除${label}「${partner.name}」？将同时移除其登录账号，且不可恢复。仍有未结合作方积分或未核销服务记录时，服务端会拒绝删除。`, confirmText: "删除", tone: "danger" }))) return;
     const response = await fetch("/api/crm", {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
@@ -394,22 +403,25 @@ export default function CrmPanel() {
       <div className="mt-4">
         <Toolbar
           right={
-            <select value={riskFilter} onChange={(event) => setRiskFilter(event.target.value)} className={filterSelect}>
-              <option value="All Risk">All Risk</option>
-              {risks.map((risk) => (
-                <option key={risk} value={risk}>{risk}</option>
-              ))}
-            </select>
+            <div className="flex items-center gap-2">
+              <Pager page={safePage} pages={pages} total={filteredPartners.length} onPage={setPage} />
+              <select value={riskFilter} onChange={(event) => { setRiskFilter(event.target.value); setPage(1); }} className={filterSelect}>
+                <option value="All Risk">All Risk</option>
+                {risks.map((risk) => (
+                  <option key={risk} value={risk}>{risk}</option>
+                ))}
+              </select>
+            </div>
           }
         >
-          <SearchInput value={query} onChange={setQuery} placeholder="Search partners, contacts, phone, bairro" className="w-72" />
-          <select value={categoryFilter} onChange={(event) => setCategoryFilter(event.target.value)} className={filterSelect}>
+          <SearchInput value={query} onChange={(value) => { setQuery(value); setPage(1); }} placeholder="Search partners, contacts, phone, bairro" className="w-72" />
+          <select value={categoryFilter} onChange={(event) => { setCategoryFilter(event.target.value); setPage(1); }} className={filterSelect}>
             <option value="All Categories">All Categories</option>
             {categories.map((category) => (
               <option key={category} value={category}>{category}</option>
             ))}
           </select>
-          <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)} className={filterSelect}>
+          <select value={statusFilter} onChange={(event) => { setStatusFilter(event.target.value); setPage(1); }} className={filterSelect}>
             <option value="All Status">All Status</option>
             {statuses.map((status) => (
               <option key={status} value={status}>{status}</option>
@@ -425,7 +437,7 @@ export default function CrmPanel() {
         ) : (
           <DataTable<CrmPartner>
             columns={columns}
-            rows={filteredPartners}
+            rows={pagedPartners}
             rowKey={(partner) => partner.id}
             minWidth={1180}
             empty="No partners match the filters."

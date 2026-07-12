@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { RefreshCcw } from "lucide-react";
-import { Chip, DataTable, Drawer, SearchInput, Skeleton, Stat, StatusBadge, Toolbar, type DataColumn } from "../components/kit";
+import { Chip, DataTable, Drawer, Pager, SearchInput, Skeleton, Stat, StatusBadge, Toolbar, type DataColumn } from "../components/kit";
 import type { Rider } from "../lib/data";
 
 /**
@@ -25,6 +25,7 @@ export default function MembersPanel() {
   const [loading, setLoading] = useState(true);
   const [q, setQ] = useState("");
   const [filter, setFilter] = useState<"all" | "public" | "rider">("all");
+  const [page, setPage] = useState(1);
   const [selected, setSelected] = useState<Rider | null>(null);
 
   const load = () =>
@@ -48,6 +49,12 @@ export default function MembersPanel() {
       }),
     [riders, q, filter],
   );
+
+  // ---- 分页（20/页；搜索或筛选变化重置页码） ----
+  const PAGE_SIZE = 20;
+  const pages = Math.max(1, Math.ceil(rows.length / PAGE_SIZE));
+  const safePage = Math.min(page, pages);
+  const pagedRows = useMemo(() => rows.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE), [rows, safePage]);
 
   const publicCount = riders.filter((r) => !r.ninetyNineId).length;
   const riderCount = riders.length - publicCount;
@@ -73,14 +80,17 @@ export default function MembersPanel() {
       <div className="mb-3">
         <Toolbar
           right={
-            <button type="button" onClick={() => void load()} className="inline-flex h-10 items-center gap-2 rounded-[10px] border border-[var(--line)] px-4 text-[13px] font-black text-[var(--muted)] hover:border-[var(--accent)]">
-              <RefreshCcw size={14} /> 刷新
-            </button>
+            <div className="flex items-center gap-2">
+              <Pager page={safePage} pages={pages} total={rows.length} onPage={setPage} />
+              <button type="button" onClick={() => void load()} className="inline-flex h-10 items-center gap-2 rounded-[10px] border border-[var(--line)] px-4 text-[13px] font-black text-[var(--muted)] hover:border-[var(--accent)]">
+                <RefreshCcw size={14} /> 刷新
+              </button>
+            </div>
           }
         >
-          <SearchInput value={q} onChange={setQ} placeholder="搜索姓名 / 电话 / 99 ID" />
+          <SearchInput value={q} onChange={(value) => { setQ(value); setPage(1); }} placeholder="搜索姓名 / 电话 / 99 ID" />
           {(["all", "public", "rider"] as const).map((f) => (
-            <Chip key={f} active={filter === f} onClick={() => setFilter(f)}>
+            <Chip key={f} active={filter === f} onClick={() => { setFilter(f); setPage(1); }}>
               {f === "all" ? "全部" : f === "public" ? "公开用户" : "骑手"}
             </Chip>
           ))}
@@ -90,7 +100,7 @@ export default function MembersPanel() {
       {booting ? (
         <Skeleton rows={7} />
       ) : (
-        <DataTable columns={columns} rows={rows} rowKey={(r) => r.id} onRowClick={setSelected} minWidth={860} empty="暂无会员。" />
+        <DataTable columns={columns} rows={pagedRows} rowKey={(r) => r.id} onRowClick={setSelected} minWidth={860} empty="暂无会员。" />
       )}
 
       <Drawer

@@ -10,14 +10,46 @@ const CATEGORY_LABELS: Record<CrmPartnerCategory, string> = {
   Supplier: "Fornecedor (catálogo do mall)",
   "Vehicle Partner": "Parceiro de veículos",
 };
-const CATEGORIES = Object.keys(CATEGORY_LABELS) as CrmPartnerCategory[];
+// Seeded fallback shown until the live category list loads.
+const DEFAULT_CATEGORIES = Object.keys(CATEGORY_LABELS) as CrmPartnerCategory[];
+
+type FieldKey = "name" | "category" | "contactName" | "phone" | "mapUrl" | "address";
+
+function isValidHttpUrl(raw: string): boolean {
+  try {
+    const url = new URL(raw);
+    return url.protocol === "http:" || url.protocol === "https:";
+  } catch {
+    return false;
+  }
+}
 
 export default function PartnerRegisterPage() {
-  const [form, setForm] = useState({ name: "", category: "Repair Shop" as CrmPartnerCategory, contactName: "", phone: "", bairro: "", notes: "", lat: 0, lng: 0, inviterId: "" });
+  const [form, setForm] = useState({ name: "", category: "Repair Shop" as CrmPartnerCategory, contactName: "", phone: "", bairro: "", address: "", mapUrl: "", notes: "", lat: 0, lng: 0, inviterId: "" });
+  const [categories, setCategories] = useState<string[]>(DEFAULT_CATEGORIES);
+  const [fieldErrors, setFieldErrors] = useState<Partial<Record<FieldKey, boolean>>>({});
 
   useEffect(() => {
-    const ref = new URLSearchParams(window.location.search).get("ref");
+    const params = new URLSearchParams(window.location.search);
+    const ref = params.get("ref") ?? params.get("invite");
     if (ref) setForm((f) => ({ ...f, inviterId: ref }));
+  }, []);
+
+  // Service-type options come from the CRM's configurable category list
+  // (public, lightweight endpoint — active categories only).
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/crm?public=categories", { cache: "no-store" })
+      .then((response) => (response.ok ? response.json() : null))
+      .then((payload) => {
+        const labels = ((payload?.data ?? []) as Array<{ label?: string }>).map((c) => String(c.label ?? "")).filter(Boolean);
+        if (!cancelled && labels.length > 0) {
+          setCategories(labels);
+          setForm((f) => (labels.includes(f.category) ? f : { ...f, category: labels[0] }));
+        }
+      })
+      .catch(() => undefined);
+    return () => { cancelled = true; };
   }, []);
   const [state, setState] = useState<"idle" | "sending" | "done">("idle");
   const [error, setError] = useState("");
@@ -61,6 +93,27 @@ export default function PartnerRegisterPage() {
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setError("");
+
+    // Client-side required-field validation (the server re-validates).
+    const missing: Partial<Record<FieldKey, boolean>> = {};
+    if (!form.name.trim()) missing.name = true;
+    if (!form.category.trim()) missing.category = true;
+    if (!form.contactName.trim()) missing.contactName = true;
+    if (!form.phone.trim()) missing.phone = true;
+    if (!form.mapUrl.trim()) missing.mapUrl = true;
+    if (!form.address.trim()) missing.address = true;
+    if (Object.keys(missing).length > 0) {
+      setFieldErrors(missing);
+      setError("Preencha os campos obrigatórios destacados.");
+      return;
+    }
+    if (!isValidHttpUrl(form.mapUrl.trim())) {
+      setFieldErrors({ mapUrl: true });
+      setError("Link do mapa inválido — cole uma URL http(s) válida.");
+      return;
+    }
+    setFieldErrors({});
+
     setState("sending");
     const response = await fetch("/api/partner-register", {
       method: "POST",
@@ -69,12 +122,19 @@ export default function PartnerRegisterPage() {
     });
     const payload = await response.json().catch(() => ({}));
     if (!response.ok) {
+      // Server 400 carries `fields` — highlight exactly what it rejected.
+      if (Array.isArray(payload.fields)) {
+        setFieldErrors(Object.fromEntries((payload.fields as FieldKey[]).map((field) => [field, true])));
+      }
       setError(payload.error ?? "Não foi possível enviar. Tente novamente.");
       setState("idle");
       return;
     }
     setState("done");
   }
+
+  /** Red border + subtle red background on invalid required fields. */
+  const errStyle = (key: FieldKey) => (fieldErrors[key] ? { borderColor: "#c4423b", background: "#fff7f6" } : undefined);
 
   const input = "h-12 w-full rounded-[10px] border border-black/10 bg-white px-3 text-sm font-bold outline-none focus:border-[#f5b301]";
 
@@ -94,20 +154,41 @@ export default function PartnerRegisterPage() {
             <p className="mt-1 text-sm font-bold text-black/55">Sua solicitação está <b>em análise</b>. Entraremos em contato pelo telefone informado assim que aprovada.</p>
           </div>
         ) : (
-          <form onSubmit={submit} className="space-y-3 rounded-2xl bg-white p-5 shadow-xl">
-            <label className="block text-xs font-black uppercase text-black/45">Tipo de parceiro
-              <select value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value as CrmPartnerCategory })} className={`${input} mt-1`}>
-                {CATEGORIES.map((c) => <option key={c} value={c}>{CATEGORY_LABELS[c]}</option>)}
+          <form onSubmit={submit} noValidate className="space-y-3 rounded-2xl bg-white p-5 shadow-xl">
+            {form.inviterId ? (
+              <div className="rounded-[10px] bg-[#e8f6ee] px-3 py-2 text-xs font-bold text-[#1d7a3e]">
+                Indicado por: <b data-i18n-skip>{form.inviterId}</b>
+              </div>
+            ) : null}
+            <label className="block text-xs font-black uppercase text-black/45">Tipo de serviço *
+              <select value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value as CrmPartnerCategory })} className={`${input} mt-1`} style={errStyle("category")}>
+                {categories.map((c) => <option key={c} value={c}>{CATEGORY_LABELS[c] ?? c}</option>)}
               </select>
             </label>
-            <label className="block text-xs font-black uppercase text-black/45">Nome do negócio
-              <input required value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} className={`${input} mt-1`} placeholder="Ex.: Oficina Paulista 24h" />
+            <label className="block text-xs font-black uppercase text-black/45">Nome do negócio *
+              <input required value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} className={`${input} mt-1`} style={errStyle("name")} placeholder="Ex.: Oficina Paulista 24h" />
             </label>
-            <label className="block text-xs font-black uppercase text-black/45">Responsável
-              <input required value={form.contactName} onChange={(e) => setForm({ ...form, contactName: e.target.value })} className={`${input} mt-1`} placeholder="Nome do contato" />
+            <label className="block text-xs font-black uppercase text-black/45">Responsável *
+              <input required value={form.contactName} onChange={(e) => setForm({ ...form, contactName: e.target.value })} className={`${input} mt-1`} style={errStyle("contactName")} placeholder="Nome do contato" />
             </label>
-            <label className="block text-xs font-black uppercase text-black/45">Telefone / WhatsApp
-              <input required value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} className={`${input} mt-1`} placeholder="+55 11 9...." />
+            <label className="block text-xs font-black uppercase text-black/45">Telefone / WhatsApp *
+              <input required value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} className={`${input} mt-1`} style={errStyle("phone")} placeholder="+55 11 9...." />
+            </label>
+            <label className="block text-xs font-black uppercase text-black/45">Endereço completo *
+              <input required value={form.address} onChange={(e) => setForm({ ...form, address: e.target.value })} className={`${input} mt-1`} style={errStyle("address")} placeholder="Rua, número, bairro, cidade" />
+            </label>
+            <label className="block text-xs font-black uppercase text-black/45">Link do mapa (Google Maps) *
+              <input
+                required
+                type="url"
+                inputMode="url"
+                value={form.mapUrl}
+                onChange={(e) => setForm({ ...form, mapUrl: e.target.value })}
+                className={`${input} mt-1`}
+                style={errStyle("mapUrl")}
+                placeholder="https://maps.app.goo.gl/..."
+              />
+              <span className="mt-0.5 block text-[11px] font-bold normal-case text-black/45">Cole o link do Google Maps do seu ponto de serviço.</span>
             </label>
             <label className="block text-xs font-black uppercase text-black/45">Bairro / região
               <input value={form.bairro} onChange={(e) => setForm({ ...form, bairro: e.target.value })} className={`${input} mt-1`} placeholder="Opcional" />

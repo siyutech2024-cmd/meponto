@@ -1,6 +1,6 @@
 import { randomBytes } from "node:crypto";
 import { appendServerAudit, jsonResponse, makeServerId, memory } from "../../lib/server/memory";
-import { flushPendingToDatabase, refreshCollectionsFromDatabase } from "../../lib/server/persistence";
+import { flushPendingToDatabase, persistDeleteRecord, refreshCollectionsFromDatabase } from "../../lib/server/persistence";
 import { sessionFromRequest } from "../../lib/auth-session";
 import { hashPassword } from "../../lib/server/password";
 import { emptySupplierProfile, type SupplierProfile } from "../../lib/supplier";
@@ -129,6 +129,51 @@ async function handlePost(request: Request) {
     memory.appUsers.unshift(account);
     appendServerAudit({ actor: session.name, action: "supplier.member.created.v1", entity: "AppUser", entityId: account.id, detail: `${org}: novo membro ${name} (${identifier})`, risk: "Medium" });
     return jsonResponse({ data: { id: account.id, name, identifier, tempPassword } }, { status: 201 });
+  }
+
+  // ---- Delete the supplier organization (office only) ---------------------
+  if (action === "deleteSupplier") {
+    if (session.portal !== "pontomall" && session.portal !== "pontosys") {
+      return jsonResponse({ error: "仅商城后台可删除供应商。", code: "forbidden" }, { status: 403 });
+    }
+    // Guard 1: active catalog — the storefront still sells this supplier's goods.
+    await refreshCollectionsFromDatabase(["supplierStatements"]);
+    const activeProducts = memory.marketplaceProducts.filter((p) => p.supplierName === org && p.status === "active");
+    if (activeProducts.length > 0) {
+      return jsonResponse({ error: `该供应商仍有 ${activeProducts.length} 个在售商品，请先下架或删除商品后再删除供应商。`, code: "conflict" }, { status: 409 });
+    }
+    // Guard 2: money still owed — any statement past draft and not yet paid.
+    const unpaid = memory.supplierStatements.filter((s) => s.supplierName === org && s.status !== "paid" && s.status !== "draft");
+    if (unpaid.length > 0) {
+      const total = Math.round(unpaid.reduce((sum, s) => sum + s.total, 0) * 100) / 100;
+      return jsonResponse({ error: `该供应商还有 ${unpaid.length} 张未付对账单（合计 R$ ${total.toFixed(2)}），请先结清或重开处理后再删除。`, code: "conflict" }, { status: 409 });
+    }
+    // 1) Delete the company profile record.
+    const profileIndex = memory.supplierProfiles.findIndex((p) => p.id === org);
+    if (profileIndex !== -1) {
+      memory.supplierProfiles.splice(profileIndex, 1);
+      persistDeleteRecord("supplierProfiles", org);
+    }
+    // 2) Disable (not delete) every supplier-portal login of the organization.
+    let disabledAccounts = 0;
+    for (let i = 0; i < memory.appUsers.length; i += 1) {
+      const user = memory.appUsers[i];
+      if (user.portal === "supplier" && user.organization === org && user.status === "active") {
+        memory.appUsers[i] = { ...user, status: "disabled" };
+        disabledAccounts += 1;
+      }
+    }
+    // 3) Remove the supplier's not-yet-priced submissions (never sold, safe to drop).
+    const pendingProducts = memory.marketplaceProducts.filter((p) => p.supplierName === org && p.status === "pending_pricing");
+    for (const product of pendingProducts) {
+      const at = memory.marketplaceProducts.findIndex((p) => p.id === product.id);
+      if (at !== -1) {
+        memory.marketplaceProducts.splice(at, 1);
+        persistDeleteRecord("marketplaceProducts", product.id);
+      }
+    }
+    appendServerAudit({ actor: session.name, action: "SUPPLIER_DELETED", entity: "SupplierProfile", entityId: org, detail: `供应商「${org}」已删除：${disabledAccounts} 个门户账号停用，${pendingProducts.length} 个待定价商品移除。`, risk: "High" });
+    return jsonResponse({ data: { deleted: org, accountsDisabled: disabledAccounts, pendingProductsRemoved: pendingProducts.length } });
   }
 
   // ---- Enable / disable a team member -------------------------------------

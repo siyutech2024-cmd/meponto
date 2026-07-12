@@ -6,7 +6,7 @@ import { readSession } from "../lib/session";
 import { useVentoStore } from "../lib/store";
 import { translate, type TranslationKey } from "../lib/i18n";
 import type { FranchisePurchaseOrder, ProcurementDiscrepancy, ProcurementMarginEntry, StationStockBucket } from "../lib/procurement";
-import { DataTable, Drawer, SectionCard, Skeleton, StatusBadge, type DataColumn } from "./kit";
+import { DataTable, Drawer, Pager, SectionCard, Skeleton, StatusBadge, type DataColumn } from "./kit";
 import { statusBadge } from "./tabs/context";
 
 /** PontoMall back office — 加盟商直采 tab (the ONLY write surface for
@@ -83,6 +83,8 @@ export default function ProcurementTab() {
   const [cfgDraft, setCfgDraft] = useState<Record<string, string | boolean>>({});
   const [productDrafts, setProductDrafts] = useState<Record<string, { mode: string; price: string; minQ: string; maxQ: string }>>({});
   const [fpoDrawerId, setFpoDrawerId] = useState("");
+  const [fpoPage, setFpoPage] = useState(1);
+  const [marginPage, setMarginPage] = useState(1);
 
   const load = useCallback(async () => {
     const response = await fetch("/api/mall/procurement", { headers, cache: "no-store" });
@@ -110,10 +112,15 @@ export default function ProcurementTab() {
 
   const config = data.config;
   const frozen = cfgDraft.procurementFrozen !== undefined ? cfgDraft.procurementFrozen === true : config.procurementFrozen;
+  const PAGE_SIZE = 20;
   const queue = data.fpos.filter((fpo) => fpo.status === "submitted");
   const inFlight = data.fpos.filter((fpo) => ["approved", "confirmed", "shipped", "arrived"].includes(fpo.status));
-  const done = data.fpos.filter((fpo) => !["submitted", "approved", "confirmed", "shipped", "arrived"].includes(fpo.status)).slice(0, 20);
+  const done = data.fpos.filter((fpo) => !["submitted", "approved", "confirmed", "shipped", "arrived"].includes(fpo.status));
   const orderedFpos = [...queue, ...inFlight, ...done];
+  // FPO 表分页（20/页；待审批/在途排前，历史单靠翻页全部可达）。
+  const fpoPages = Math.max(1, Math.ceil(orderedFpos.length / PAGE_SIZE));
+  const safeFpoPage = Math.min(fpoPage, fpoPages);
+  const pagedFpos = orderedFpos.slice((safeFpoPage - 1) * PAGE_SIZE, safeFpoPage * PAGE_SIZE);
   const timeoutMs = (config.procurementShipTimeoutDays || 7) * 86_400_000;
   const isStalled = (fpo: FranchisePurchaseOrder) => fpo.status === "shipped" && fpo.shippedAt !== undefined && Date.now() - new Date(fpo.shippedAt.replace(" ", "T")).getTime() > timeoutMs;
   const pendingTopUps = data.topUps.filter((topUp) => topUp.status === "submitted");
@@ -121,6 +128,17 @@ export default function ProcurementTab() {
   const pendingConsents = data.products.filter((product) => product.procurementConsent === "pending");
   const marginEntries = data.marginEntries ?? [];
   const marginMonths = [...new Set(marginEntries.map((entry) => entry.month))].sort().reverse();
+  // 毛利账本分页（20/页）：条目按月倒序摊平后切页；月小计行在该月最后一条
+  // 条目所在的页尾显示（小计口径始终为整月，账本完整性不受分页影响）。
+  const flatMarginRows = marginMonths.flatMap((month) => marginEntries.filter((entry) => entry.month === month));
+  const marginPages = Math.max(1, Math.ceil(flatMarginRows.length / PAGE_SIZE));
+  const safeMarginPage = Math.min(marginPage, marginPages);
+  const pagedMarginRows = flatMarginRows.slice((safeMarginPage - 1) * PAGE_SIZE, safeMarginPage * PAGE_SIZE);
+  const pagedMarginMonths = [...new Set(pagedMarginRows.map((entry) => entry.month))];
+  const lastGlobalIdOfMonth = new Map(marginMonths.map((month) => {
+    const rows = flatMarginRows.filter((entry) => entry.month === month);
+    return [month, rows[rows.length - 1]?.id] as const;
+  }));
   const consentLabel = (consent: ProductRow["procurementConsent"]) => (consent === "approved" ? "已同意开放" : consent === "pending" ? "待供应商审批" : "未开放");
 
   const cfgValue = (key: keyof OfficeSnapshot["config"]) => (cfgDraft[key] !== undefined ? cfgDraft[key] : config[key]);
@@ -280,8 +298,12 @@ export default function ProcurementTab() {
       </SectionCard>
 
       {/* 直采订单 */}
-      <SectionCard title={`直采订单（待审批 ${queue.length} · 在途 ${inFlight.length}）`} desc="代销单货款为备货参考成本(不产生应付);买断单货款已从加盟商预存扣减。点击行查看明细、时间线与差异单。">
-        <DataTable columns={fpoColumns} rows={orderedFpos} rowKey={(fpo) => fpo.id} onRowClick={(fpo) => setFpoDrawerId(fpo.id)} minWidth={980} empty="暂无直采订单。" />
+      <SectionCard
+        title={`直采订单（待审批 ${queue.length} · 在途 ${inFlight.length}）`}
+        desc="代销单货款为备货参考成本(不产生应付);买断单货款已从加盟商预存扣减。点击行查看明细、时间线与差异单。"
+        right={<Pager page={safeFpoPage} pages={fpoPages} total={orderedFpos.length} onPage={setFpoPage} />}
+      >
+        <DataTable columns={fpoColumns} rows={pagedFpos} rowKey={(fpo) => fpo.id} onRowClick={(fpo) => setFpoDrawerId(fpo.id)} minWidth={980} empty="暂无直采订单。" />
       </SectionCard>
 
       {/* 入金核销 + 差异 + 预存余额 */}
@@ -372,11 +394,15 @@ export default function ProcurementTab() {
       </SectionCard>
 
       {/* 直采毛利账本（append-only;负行为补偿冲销） */}
-      <SectionCard title={`直采毛利账本（${marginEntries.length}）`} desc="按月小计;条目应计入账,月度供应商对账单付款后转为已结算。负数行为补偿冲销。">
+      <SectionCard
+        title={`直采毛利账本（${marginEntries.length}）`}
+        desc="按月小计;条目应计入账,月度供应商对账单付款后转为已结算。负数行为补偿冲销。"
+        right={<Pager page={safeMarginPage} pages={marginPages} total={flatMarginRows.length} onPage={setMarginPage} />}
+      >
         {marginEntries.length === 0 ? (
           <div className="py-4 text-center text-sm font-bold text-[var(--muted)]">暂无毛利记录。</div>
         ) : (
-          <div className="max-h-[380px] overflow-auto rounded-[8px] border border-[var(--line)]">
+          <div className="overflow-auto rounded-[8px] border border-[var(--line)]">
             <table className="w-full text-xs" style={{ minWidth: 720 }}>
               <thead>
                 <tr className="bg-[var(--surface-raised)] text-left text-[11px] font-bold uppercase text-[var(--muted)]">
@@ -391,10 +417,13 @@ export default function ProcurementTab() {
                 </tr>
               </thead>
               <tbody>
-                {marginMonths.map((month) => {
-                  const rows = marginEntries.filter((entry) => entry.month === month);
+                {pagedMarginMonths.map((month) => {
+                  const rows = pagedMarginRows.filter((entry) => entry.month === month);
+                  // 月小计始终按整月（全量）口径计算；仅在该月最后一条条目所在页显示。
+                  const monthRows = marginEntries.filter((entry) => entry.month === month);
+                  const showSubtotal = rows.some((entry) => entry.id === lastGlobalIdOfMonth.get(month));
                   const sum = (pick: (entry: ProcurementMarginEntry) => number) =>
-                    Math.round(rows.reduce((acc, entry) => acc + pick(entry), 0) * 100) / 100;
+                    Math.round(monthRows.reduce((acc, entry) => acc + pick(entry), 0) * 100) / 100;
                   return [
                     ...rows.map((entry) => (
                       <tr key={entry.id} className="border-t border-[var(--line)] font-bold">
@@ -408,13 +437,15 @@ export default function ProcurementTab() {
                         <td className="px-2 py-2"><StatusBadge tone={entry.status === "settled" ? "success" : "warn"} label={entry.status === "settled" ? "已结算" : "应计"} /></td>
                       </tr>
                     )),
-                    <tr key={`${month}-total`} className="border-t border-[var(--line)] bg-[var(--surface-raised)] font-black">
-                      <td className="px-3 py-2" colSpan={4}>{month} · 月小计</td>
-                      <td className="px-2 py-2 text-right">R$ {sum((e) => e.goodsCostTotal).toFixed(2)}</td>
-                      <td className="px-2 py-2 text-right">R$ {sum((e) => e.chargedTotal).toFixed(2)}</td>
-                      <td className="px-2 py-2 text-right">R$ {sum((e) => e.marginTotal).toFixed(2)}</td>
-                      <td className="px-2 py-2" />
-                    </tr>,
+                    ...(showSubtotal ? [
+                      <tr key={`${month}-total`} className="border-t border-[var(--line)] bg-[var(--surface-raised)] font-black">
+                        <td className="px-3 py-2" colSpan={4}>{month} · 月小计（整月 {monthRows.length} 条）</td>
+                        <td className="px-2 py-2 text-right">R$ {sum((e) => e.goodsCostTotal).toFixed(2)}</td>
+                        <td className="px-2 py-2 text-right">R$ {sum((e) => e.chargedTotal).toFixed(2)}</td>
+                        <td className="px-2 py-2 text-right">R$ {sum((e) => e.marginTotal).toFixed(2)}</td>
+                        <td className="px-2 py-2" />
+                      </tr>,
+                    ] : []),
                   ];
                 })}
               </tbody>

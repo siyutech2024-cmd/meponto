@@ -1,5 +1,6 @@
 import { memory } from "./memory";
-import type { CrmAccountType } from "../crm";
+import { flushPendingToDatabase, refreshCollectionsFromDatabase } from "./persistence";
+import { crmCategories as seededCrmCategories, type CrmAccountType } from "../crm";
 
 /**
  * Resolve a CRM category label to its account-type routing rule. Categories are
@@ -21,4 +22,36 @@ export function accountTypeForCategory(label: string): CrmAccountType {
 /** True when the category routes to the supply-chain console (/mall/supplier). */
 export function isSupplierCategory(label: string): boolean {
   return accountTypeForCategory(label) === "supplier";
+}
+
+/**
+ * Idempotent default-category seeding for EXISTING deployments: instances that
+ * hydrated `crmCategories` from the database never see additions to the seed
+ * array in `app/lib/crm.ts`, so the category API tops up any missing default
+ * here. Matching is by label (case-insensitive) — user-created categories are
+ * untouched and existing labels are never duplicated. To hide a default, set
+ * it inactive in the CRM back office (deleting it would re-seed on the next
+ * cold instance).
+ */
+let ensuredDefaults: Promise<void> | null = null;
+
+export function ensureDefaultCrmCategories(): Promise<void> {
+  ensuredDefaults ??= (async () => {
+    await refreshCollectionsFromDatabase(["crmCategories"]);
+    const existing = new Set(memory.crmCategories.map((category) => category.label.trim().toLowerCase()));
+    let maxSort = memory.crmCategories.reduce((max, category) => Math.max(max, category.sort ?? 0), 0);
+    let added = false;
+    for (const seed of seededCrmCategories) {
+      if (existing.has(seed.label.trim().toLowerCase())) continue;
+      memory.crmCategories.push({ ...seed, sort: ++maxSort });
+      existing.add(seed.label.trim().toLowerCase());
+      added = true;
+    }
+    // Serverless safety: flush before the instance can freeze.
+    if (added) await flushPendingToDatabase();
+  })().catch(() => {
+    // Never block the category API on a failed seed; retry on the next call.
+    ensuredDefaults = null;
+  }) as Promise<void>;
+  return ensuredDefaults;
 }

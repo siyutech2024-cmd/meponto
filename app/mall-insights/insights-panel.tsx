@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { ExternalLink, RefreshCcw } from "lucide-react";
-import { DataTable, SectionCard, Skeleton, Stat, Toolbar, type DataColumn } from "../components/kit";
+import { DataTable, Pager, SectionCard, Skeleton, Stat, Toolbar, type DataColumn } from "../components/kit";
 import type { MarketplaceProduct } from "../lib/points";
 import type { MallPayment, SupplierStatement } from "../lib/mall-ops";
 import { useVentoStore } from "../lib/store";
@@ -52,6 +52,7 @@ export default function MallInsightsPanel({ hideAdminLinks = false }: { hideAdmi
   const [liability, setLiability] = useState<PointsLiability | null>(null);
   const [events, setEvents] = useState<Array<{ id: string; type: string; occurredAt: string; payload: Record<string, unknown> }>>([]);
   const [ops, setOps] = useState<OpsPayload | null>(null);
+  const [settlementPage, setSettlementPage] = useState(1);
 
   const load = useCallback(async () => {
     try {
@@ -83,6 +84,15 @@ export default function MallInsightsPanel({ hideAdminLinks = false }: { hideAdmi
   const summary = ops?.summary;
   const payablePending = (ops?.statements ?? []).filter((statement) => statement.status === "confirmed").reduce((sum, statement) => sum + statement.total, 0);
   const maxDaily = Math.max(1, ...(summary?.daily ?? []).map((day) => day.count));
+
+  // ---- 供应商应付表分页（20/页） ----
+  const SETTLEMENT_PAGE_SIZE = 20;
+  const settlementPages = Math.max(1, Math.ceil(settlement.length / SETTLEMENT_PAGE_SIZE));
+  const safeSettlementPage = Math.min(settlementPage, settlementPages);
+  const pagedSettlement = useMemo(
+    () => settlement.slice((safeSettlementPage - 1) * SETTLEMENT_PAGE_SIZE, safeSettlementPage * SETTLEMENT_PAGE_SIZE),
+    [settlement, safeSettlementPage],
+  );
 
   const settlementCols: Array<DataColumn<SettlementRow>> = [
     { key: "supplier", label: "供应商", render: (row) => row.supplier },
@@ -198,11 +208,14 @@ export default function MallInsightsPanel({ hideAdminLinks = false }: { hideAdmi
       )}
 
       <div className="mt-5">
-        <div className="mb-2 text-xs font-black uppercase text-[var(--muted)]">供应商应付（履约口径）</div>
+        <div className="mb-2 flex items-center gap-2">
+          <span className="text-xs font-black uppercase text-[var(--muted)]">供应商应付（履约口径）</span>
+          <div className="ml-auto"><Pager page={safeSettlementPage} pages={settlementPages} total={settlement.length} onPage={setSettlementPage} /></div>
+        </div>
         {booting ? (
           <Skeleton rows={4} />
         ) : (
-          <DataTable columns={settlementCols} rows={settlement} rowKey={(row) => row.supplier} minWidth={480} empty="暂无履约订单。" />
+          <DataTable columns={settlementCols} rows={pagedSettlement} rowKey={(row) => row.supplier} minWidth={480} empty="暂无履约订单。" />
         )}
       </div>
     </div>

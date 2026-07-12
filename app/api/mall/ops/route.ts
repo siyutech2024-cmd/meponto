@@ -317,9 +317,11 @@ const OFFICE_ACTIONS = new Set([
   "updateBanner",
   "deleteBanner",
   "decidePriceChange",
+  "deletePriceChange",
   "createPO",
   "confirmDraftPO",
   "cancelPO",
+  "deletePO",
   "receivePO",
   "generateStatement",
   "payStatement",
@@ -520,6 +522,19 @@ async function handlePost(request: Request) {
       appendServerAudit({ actor, action: approve ? "MALL_PRICE_CHANGE_APPROVED" : "MALL_PRICE_CHANGE_REJECTED", entity: "PriceChangeRequest", entityId: row.id, detail: `${row.productName}: R$${row.oldPrice} → R$${row.newPrice}`, risk: "Medium" });
       return jsonResponse({ data: memory.priceChangeRequests[index] });
     }
+    case "deletePriceChange": {
+      // Housekeeping: office clears an already-decided (approved/rejected)
+      // price-change request from the queue. Pending requests must be decided
+      // first — deleting them would silently drop a supplier's ask.
+      const index = memory.priceChangeRequests.findIndex((item) => item.id === body.requestId);
+      if (index === -1) return jsonResponse({ error: "request not found" }, { status: 404 });
+      const row = memory.priceChangeRequests[index];
+      if (row.status === "pending") return jsonResponse({ error: "待审批的调价申请不能清除，请先批准或拒绝" }, { status: 409 });
+      memory.priceChangeRequests.splice(index, 1);
+      persistDeleteRecord("priceChangeRequests", row.id);
+      appendServerAudit({ actor, action: "MALL_PRICE_CHANGE_CLEARED", entity: "PriceChangeRequest", entityId: row.id, detail: `${row.productName}: R$${row.oldPrice} → R$${row.newPrice} (${row.status}) 清除`, risk: "Low" });
+      return jsonResponse({ data: { deleted: row.id } });
+    }
 
     // ---- Purchase orders ----------------------------------------------------
     case "createPO": {
@@ -597,6 +612,21 @@ async function handlePost(request: Request) {
       if (po.status === "received") return jsonResponse({ error: "已入库的补货单不能取消" }, { status: 409 });
       memory.purchaseOrders[index] = { ...po, status: "cancelled" };
       return jsonResponse({ data: memory.purchaseOrders[index] });
+    }
+    case "deletePO": {
+      // Housekeeping: only never-executed POs (auto-replenish drafts and
+      // cancelled orders) may be deleted — anything ordered or beyond stays
+      // for the supply-chain paper trail.
+      const index = memory.purchaseOrders.findIndex((item) => item.id === body.poId);
+      if (index === -1) return jsonResponse({ error: "PO not found" }, { status: 404 });
+      const po = memory.purchaseOrders[index];
+      if (po.status !== "draft" && po.status !== "cancelled") {
+        return jsonResponse({ error: "只有草稿或已取消的补货单可删除" }, { status: 409 });
+      }
+      memory.purchaseOrders.splice(index, 1);
+      persistDeleteRecord("purchaseOrders", po.id);
+      appendServerAudit({ actor, action: "MALL_PO_DELETED", entity: "PurchaseOrder", entityId: po.id, detail: `${po.supplierName} (${po.status}) R$${po.totalCost} 删除`, risk: "Low" });
+      return jsonResponse({ data: { deleted: po.id } });
     }
 
     // ---- Statements -----------------------------------------------------------

@@ -1,7 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { SearchInput, SectionCard, Skeleton, Stat, StatusBadge, type BadgeTone } from "../components/kit";
+import { Pager, SearchInput, SectionCard, Skeleton, Stat, StatusBadge, type BadgeTone } from "../components/kit";
+import { downloadCsv } from "../lib/csv";
 import { readSession } from "../lib/session";
 
 /**
@@ -47,6 +48,8 @@ export default function PointsEconomyPanel() {
   const [config, setConfig] = useState<Config>({});
   const [form, setForm] = useState<Record<string, string>>({});
   const [q, setQ] = useState("");
+  const [balancePage, setBalancePage] = useState(1);
+  const [ledgerPage, setLedgerPage] = useState(1);
   const [note, setNote] = useState<{ tone: "ok" | "err"; text: string } | null>(null);
   /** True until the first load() (all three fetches) settles — stats show "…",
    *  rule inputs stay disabled and a banner explains what's happening. */
@@ -81,6 +84,15 @@ export default function PointsEconomyPanel() {
       .sort((a, b) => b.available - a.available);
   }, [accounts, nameOf, q]);
 
+  // ---- 分页（20/页；搜索变化重置页码） ----
+  const PAGE_SIZE = 20;
+  const balancePages = Math.max(1, Math.ceil(userRows.length / PAGE_SIZE));
+  const safeBalancePage = Math.min(balancePage, balancePages);
+  const pagedUserRows = useMemo(() => userRows.slice((safeBalancePage - 1) * PAGE_SIZE, safeBalancePage * PAGE_SIZE), [userRows, safeBalancePage]);
+  const ledgerPages = Math.max(1, Math.ceil(ledger.length / PAGE_SIZE));
+  const safeLedgerPage = Math.min(ledgerPage, ledgerPages);
+  const pagedLedger = useMemo(() => ledger.slice((safeLedgerPage - 1) * PAGE_SIZE, safeLedgerPage * PAGE_SIZE), [ledger, safeLedgerPage]);
+
   async function saveConfig() {
     const body: Record<string, unknown> = { action: "setConfig" };
     for (const f of RULE_FIELDS) { const v = Number(form[f.k]); if (Number.isFinite(v) && v >= 0) body[f.k] = v; }
@@ -92,6 +104,33 @@ export default function PointsEconomyPanel() {
 
   const money = (n: number) => n.toLocaleString("pt-BR");
   const field = "h-10 w-full rounded-[8px] border border-[var(--line)] bg-[var(--surface-raised)] px-3 text-sm font-bold outline-none focus:border-[var(--accent)]";
+  const exportBtn = "h-8 rounded-[8px] border border-[var(--line)] px-3 text-xs font-bold text-[var(--muted)] hover:border-[var(--accent)] disabled:opacity-50";
+  const today = () => new Date().toISOString().slice(0, 10);
+
+  /** 导出当前筛选后的全量余额（跟随搜索词，不受分页影响）。 */
+  function exportBalancesCsv() {
+    downloadCsv(
+      `points-balances-${today()}.csv`,
+      ["会员", "99 ID", "可用积分", "待定积分"],
+      userRows.map((a) => [a.rider?.name ?? a.riderId, a.rider?.ninetyNineId ?? "", a.available, a.pending]),
+    );
+  }
+
+  /** 导出全量账本（append-only 流水，不受分页影响）。 */
+  function exportLedgerCsv() {
+    downloadCsv(
+      `points-ledger-${today()}.csv`,
+      ["时间", "会员", "类型", "积分", "原因", "余额"],
+      ledger.map((e) => [
+        e.createdAt,
+        nameOf.get(e.riderId)?.name ?? e.riderId,
+        typeLabel[e.type] ?? e.type,
+        ["earn", "refund", "release"].includes(e.type) ? e.points : -e.points,
+        e.reasonCode,
+        e.balanceAfter,
+      ]),
+    );
+  }
 
   return (
     <div>
@@ -135,7 +174,13 @@ export default function PointsEconomyPanel() {
       {/* Per-user points balances */}
       <SectionCard
         title={`用户积分余额（${userRows.length} 名有余额会员）`}
-        right={<SearchInput value={q} onChange={setQ} placeholder="搜索姓名 / 99ID" className="w-56" />}
+        right={
+          <>
+            <Pager page={safeBalancePage} pages={balancePages} total={userRows.length} onPage={setBalancePage} />
+            <SearchInput value={q} onChange={(value) => { setQ(value); setBalancePage(1); }} placeholder="搜索姓名 / 99ID" className="w-56" />
+            <button type="button" disabled={loading || userRows.length === 0} onClick={exportBalancesCsv} className={exportBtn}>导出 CSV</button>
+          </>
+        }
         className="mb-4"
       >
         {loading ? <Skeleton rows={5} className="p-1" /> : (
@@ -143,7 +188,7 @@ export default function PointsEconomyPanel() {
           <table className="w-full text-sm">
             <thead><tr className="bg-[var(--surface-raised)] text-left text-[11px] font-black uppercase text-[var(--muted)]"><th className="px-3 py-2">会员</th><th className="px-3 py-2">99 ID</th><th className="px-3 py-2 text-right">可用积分</th><th className="px-3 py-2 text-right">待定积分</th></tr></thead>
             <tbody>
-              {userRows.slice(0, 300).map((a) => (
+              {pagedUserRows.map((a) => (
                 <tr key={a.riderId} className="border-t border-[var(--line)] font-bold">
                   <td className="px-3 py-2 font-black">{a.rider?.name ?? a.riderId}</td>
                   <td className="px-3 py-2 font-mono text-[11px] text-[var(--muted)]">{a.rider?.ninetyNineId || "—"}</td>
@@ -159,13 +204,22 @@ export default function PointsEconomyPanel() {
       </SectionCard>
 
       {/* Ledger */}
-      <SectionCard title="积分流水 · 账本" desc="append-only，不可改">
+      <SectionCard
+        title="积分流水 · 账本"
+        desc="append-only，不可改"
+        right={
+          <>
+            <Pager page={safeLedgerPage} pages={ledgerPages} total={ledger.length} onPage={setLedgerPage} />
+            <button type="button" disabled={loading || ledger.length === 0} onClick={exportLedgerCsv} className={exportBtn}>导出 CSV</button>
+          </>
+        }
+      >
         {loading ? <Skeleton rows={5} className="p-1" /> : (
         <div className="overflow-x-auto rounded-[8px] border border-[var(--line)]">
           <table className="w-full text-sm">
             <thead><tr className="bg-[var(--surface-raised)] text-left text-[11px] font-black uppercase text-[var(--muted)]"><th className="px-3 py-2">时间</th><th className="px-3 py-2">会员</th><th className="px-3 py-2">类型</th><th className="px-3 py-2 text-right">积分</th><th className="px-3 py-2">原因</th><th className="px-3 py-2 text-right">余额</th></tr></thead>
             <tbody>
-              {ledger.slice(0, 200).map((e) => (
+              {pagedLedger.map((e) => (
                 <tr key={e.id} className="border-t border-[var(--line)] font-bold">
                   <td className="px-3 py-2 text-[11px] text-[var(--muted)]">{e.createdAt}</td>
                   <td className="px-3 py-2">{nameOf.get(e.riderId)?.name ?? e.riderId}</td>

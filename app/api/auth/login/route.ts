@@ -97,6 +97,10 @@ async function findAppUserAccount(identifier: string, password: string): Promise
   let { portal, role, defaultPath } = user;
   if (portal === "supplier" || portal === "partner") {
     const company = memory.crmPartners.find((p) => p.name === user.organization);
+    // Review closure: partner/supplier portals are only reachable while the
+    // company is approved (Active). Pending/suspended companies cannot log in
+    // even if an account was provisioned earlier.
+    if (company && company.status !== "Active") return undefined;
     if (company) {
       const { isSupplierCategory } = await import("../../../lib/server/crm-categories");
       const wantSupplier = isSupplierCategory(company.category);

@@ -39,6 +39,10 @@ export type CrmPartner = {
   services: string[];
   lat: number;
   lng: number;
+  // Self-registration extras (public /partner-register funnel).
+  address?: string; // full street address of the service point
+  mapUrl?: string; // Google Maps (or similar) link to the service point
+  invitedBy?: string; // referrer id/99ID carried by /partner-register?ref=
   // Rider-facing benefit (shown in the rider app). Optional — only partners
   // with an active offer surface under "合作权益 / Benefits".
   riderDiscountBRL?: number;
@@ -53,6 +57,22 @@ export const crmCategories: CrmCategory[] = [
   { id: "cat-partner-vehicle", label: "Partner Vehicle Shop", accountType: "partner", sort: 2, active: true },
   { id: "cat-supplier", label: "Supplier", accountType: "supplier", sort: 3, active: true },
   { id: "cat-vehicle-partner", label: "Vehicle Partner", accountType: "partner", sort: 4, active: true },
+  // Default service-partner types (rider daily-life ecosystem). Canonical
+  // labels stay in English like the four above — the runtime i18n phrase
+  // dictionary handles zh/pt display. Seeded idempotently by label (see
+  // ensureDefaultCrmCategories) so user-created categories are never touched
+  // and existing labels are never duplicated. 摩托维修保养/加油站/换电电池/洗车/
+  // 餐饮小吃/药房/便利店/手机维修/保险代理/车辆租赁.
+  { id: "cat-moto-maintenance", label: "Moto Repair & Maintenance", accountType: "partner", sort: 5, active: true },
+  { id: "cat-gas-station", label: "Gas Station", accountType: "partner", sort: 6, active: true },
+  { id: "cat-battery-swap", label: "Battery Swap", accountType: "partner", sort: 7, active: true },
+  { id: "cat-vehicle-wash", label: "Vehicle Wash", accountType: "partner", sort: 8, active: true },
+  { id: "cat-food-snacks", label: "Food & Snacks", accountType: "partner", sort: 9, active: true },
+  { id: "cat-pharmacy", label: "Pharmacy", accountType: "partner", sort: 10, active: true },
+  { id: "cat-convenience", label: "Convenience Store", accountType: "partner", sort: 11, active: true },
+  { id: "cat-phone-repair", label: "Phone Repair", accountType: "partner", sort: 12, active: true },
+  { id: "cat-insurance", label: "Insurance Agency", accountType: "partner", sort: 13, active: true },
+  { id: "cat-vehicle-rental", label: "Vehicle Rental", accountType: "partner", sort: 14, active: true },
 ];
 
 export const crmPartners: CrmPartner[] = [
