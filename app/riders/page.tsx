@@ -204,13 +204,36 @@ export default function RidersPage() {
       key: "rider",
       label: t("rdColRider"),
       className: "max-w-[220px]",
-      render: (rider) => (
-        <div>
-          <div className="truncate font-black">{rider.name}</div>
-          {rider.source === "report" && <span className="text-[10px] font-black uppercase text-[var(--warning-ink)]">{t("rdReportNoProfile")}</span>}
-          {pending[rider.id] && <span className="text-[10px] font-black uppercase text-[var(--warning-ink)]">{t("rdToSave")}</span>}
-        </div>
-      ),
+      render: (rider) => {
+        const noPix = rider.source === "profile" && String(rider.pix ?? "").trim() === "";
+        return (
+          <div>
+            <div className={`truncate font-black ${noPix ? "text-[var(--warning-ink)]" : ""}`}>{rider.name}</div>
+            <div className="flex flex-wrap items-center gap-1.5">
+              {noPix && (
+                <button
+                  type="button"
+                  onClick={async (e) => {
+                    e.stopPropagation();
+                    const pix = await dialog.prompt(t("rdPixPromptTitle"), { message: t("rdPixPromptMsg", { name: rider.name }), placeholder: "CPF / e-mail / chave aleatória" });
+                    if (!pix?.trim()) return;
+                    const response = await fetch(`/api/riders/${rider.id}`, { method: "PUT", headers: HEADERS, body: JSON.stringify({ pix: pix.trim() }) });
+                    if (response.ok) {
+                      setMessage({ tone: "ok", text: t("rdPixSaved", { name: rider.name }) });
+                      void load();
+                    }
+                  }}
+                  className="rounded-full border border-[var(--warn)] px-1.5 py-px text-[10px] font-black uppercase text-[var(--warning-ink)] hover:bg-[var(--warn-bg)]"
+                >
+                  {t("rdNoPix")}
+                </button>
+              )}
+              {rider.source === "report" && <span className="text-[10px] font-black uppercase text-[var(--warning-ink)]">{t("rdReportNoProfile")}</span>}
+              {pending[rider.id] && <span className="text-[10px] font-black uppercase text-[var(--warning-ink)]">{t("rdToSave")}</span>}
+            </div>
+          </div>
+        );
+      },
     },
     { key: "ninetyNineId", label: "99 ID", render: (rider) => <span className="font-bold text-[var(--muted-strong)]">{rider.ninetyNineId || "—"}</span> },
     {

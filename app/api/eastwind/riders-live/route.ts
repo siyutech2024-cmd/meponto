@@ -1,5 +1,5 @@
-import { jsonResponse, memory } from "../../../lib/server/memory";
-import { refreshCollectionsFromDatabase } from "../../../lib/server/persistence";
+import { appendServerAudit, jsonResponse, makeServerId, memory } from "../../../lib/server/memory";
+import { flushPendingToDatabase, refreshCollectionsFromDatabase } from "../../../lib/server/persistence";
 import { getSupabaseServerClient } from "../../../lib/supabase/server";
 import type { Rider } from "../../../lib/data";
 import { extractRiderPerf } from "../../../lib/eastwind";
@@ -82,6 +82,53 @@ export async function GET(request: Request) {
     if (r.cpf) byCpf.set(digits(r.cpf), r);
     if (r.phone) byPhone.set(digits(r.phone), r);
   }
+
+  // Auto-materialize profiles for live riders the system doesn't know yet
+  // (same pattern as RIDER_MATERIALIZED in /api/riders). They join the rider
+  // list as "Unassigned" so operations only has to assign a franchise and
+  // complete PIX — no manual onboarding step.
+  let materialized = 0;
+  for (const s of snapshots) {
+    if (!s.rider_ext_id) continue;
+    const known =
+      by99.get(String(s.rider_ext_id)) ||
+      (s.id_no && byCpf.get(digits(s.id_no))) ||
+      (s.phone && byPhone.get(digits(s.phone)));
+    if (known) continue;
+    const rider: Rider = {
+      id: makeServerId("r", memory.riders.length + 1),
+      name: s.rider_name || `99 ${s.rider_ext_id}`,
+      cpf: s.id_no ?? "",
+      pix: "",
+      phone: s.phone ?? "",
+      bairro: "",
+      ponto: "Unassigned",
+      leader: "Unassigned",
+      invitedBy: "Eastwind 实时看板",
+      chatRoom: "MePonto Intake",
+      ar: 100,
+      status: "Active",
+      vehicleType: "Motorcycle",
+      brand: "Unknown",
+      model: "To confirm",
+      rentalStatus: "Unknown",
+      isMottu: false,
+      onlineHours: 0,
+      nightShiftCount: 0,
+      incidentCount: 0,
+      joinDate: new Date().toISOString().slice(0, 10),
+      ninetyNineId: String(s.rider_ext_id),
+      franchise: "Unassigned",
+      birthday: "",
+    };
+    memory.riders.unshift(rider);
+    by99.set(String(s.rider_ext_id), rider);
+    if (rider.phone) byPhone.set(digits(rider.phone), rider);
+    if (rider.cpf) byCpf.set(digits(rider.cpf), rider);
+    materialized += 1;
+    appendServerAudit({ actor: "Eastwind Live", action: "RIDER_MATERIALIZED", entity: "Rider", entityId: rider.id, detail: `Profile auto-created from live board for 99 ${s.rider_ext_id} (${rider.name}).`, risk: "Low" });
+  }
+  if (materialized > 0) await flushPendingToDatabase();
 
   const rows = snapshots.map((s) => {
     const match =
