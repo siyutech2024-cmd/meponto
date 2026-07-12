@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
-import { Banknote, Building2, Info, RefreshCcw, Store, Wallet } from "lucide-react";
+import { Banknote, Building2, ChevronDown, Info, RefreshCcw, Store, Wallet } from "lucide-react";
 import { AppShell, PageTitle } from "../components/ui";
 import { DataTable, Drawer, SectionCard, Stat, StatusBadge, Toolbar, type BadgeTone, type DataColumn } from "../components/kit";
 import { downloadCsv } from "../lib/csv";
@@ -74,6 +74,7 @@ function RiderPayrollWallet() {
   // Drawers hold references, not snapshots, so a reload refreshes their content.
   const [stmtDrawerId, setStmtDrawerId] = useState("");
   const [riderRef, setRiderRef] = useState<{ franchise: string; rider99Id: string } | null>(null);
+  const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({});
 
   const loadRevShare = useCallback(async () => {
     if (!scopeFranchise) return;
@@ -381,11 +382,24 @@ function RiderPayrollWallet() {
           const net = Math.round((g.settle - g.franchisePaid) * 100) / 100;
           const pendingAmt = Math.max(0, net);
           const overpaid = net < 0 ? -net : 0;
+          // Collapsible: summary always visible in the header; the 50+ rider
+          // detail table only renders when expanded. Single group starts open.
+          const expanded = expandedGroups[g.franchise] ?? groups.length === 1;
           return (
             <SectionCard
               key={g.franchise}
               className="!p-4"
-              title={<span className="inline-flex items-center gap-1.5"><Building2 size={13} className="text-[var(--accent)]" /> {g.franchise} <span className="font-bold normal-case text-[var(--muted)]">· {t("wlRidersCount", { n: g.riders.length })}</span></span>}
+              title={
+                <button
+                  type="button"
+                  onClick={() => setExpandedGroups((prev) => ({ ...prev, [g.franchise]: !expanded }))}
+                  className="inline-flex items-center gap-1.5 text-left"
+                  aria-expanded={expanded}
+                >
+                  <ChevronDown size={14} className={`shrink-0 text-[var(--muted)] transition-transform ${expanded ? "" : "-rotate-90"}`} />
+                  <Building2 size={13} className="text-[var(--accent)]" /> {g.franchise} <span className="font-bold normal-case text-[var(--muted)]">· {t("wlRidersCount", { n: g.riders.length })}</span>
+                </button>
+              }
               desc={
                 <span data-i18n-skip>
                   {t("wlSettle")} <b className="text-[var(--text)]">{money(g.settle)}</b>
@@ -405,7 +419,9 @@ function RiderPayrollWallet() {
                 </>
               }
             >
-              <DataTable columns={riderColumns(g)} rows={g.riders} rowKey={(r) => r.rider99Id} onRowClick={(r) => setRiderRef({ franchise: g.franchise, rider99Id: r.rider99Id })} minWidth={760} empty={t("wlNoWeekData")} />
+              {expanded && (
+                <DataTable columns={riderColumns(g)} rows={g.riders} rowKey={(r) => r.rider99Id} onRowClick={(r) => setRiderRef({ franchise: g.franchise, rider99Id: r.rider99Id })} minWidth={760} empty={t("wlNoWeekData")} />
+              )}
             </SectionCard>
           );
         })}
