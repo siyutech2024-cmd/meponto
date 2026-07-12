@@ -18,6 +18,8 @@ jobs:
         run: |
           for path in \
             /api/health \
+            /api/auth/session \
+            /api/auth/login \
             /api/riders \
             /api/network \
             /api/overview \
