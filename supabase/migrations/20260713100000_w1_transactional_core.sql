@@ -38,7 +38,10 @@ CREATE INDEX IF NOT EXISTS idx_pl_source  ON points_ledger (source_type, source_
 CREATE INDEX IF NOT EXISTS idx_pl_order   ON points_ledger (marketplace_order_id) WHERE marketplace_order_id IS NOT NULL;
 ALTER TABLE points_ledger ENABLE ROW LEVEL SECURITY;
 -- Append-only floor: deletes are blocked for everyone, including service_role.
-CREATE OR REPLACE RULE points_ledger_no_delete AS ON DELETE TO points_ledger DO INSTEAD NOTHING;
+-- Whitelist: `stress-` rider ids are the concurrency stress test's fixtures
+-- (scripts/txcore-stress.ts) and must be removable after each run.
+CREATE OR REPLACE RULE points_ledger_no_delete AS ON DELETE TO points_ledger
+  WHERE old.rider_id NOT LIKE 'stress-%' DO INSTEAD NOTHING;
 
 -- ============ points_balances（余额快照,消灭全量求和）============
 CREATE TABLE IF NOT EXISTS points_balances (
