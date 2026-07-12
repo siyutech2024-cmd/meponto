@@ -20,9 +20,26 @@ async function fetchData<T>(path: string, headers?: Record<string, string>): Pro
  * that database persistence is enabled; otherwise the local (optimistic)
  * state is kept untouched.
  */
+const HYDRATED_AT_KEY = "vento-hydrated-at";
+const HYDRATE_TTL_MS = 60_000;
+
 export function StoreHydrator() {
   useEffect(() => {
     let cancelled = false;
+    let idleHandle: number | undefined;
+    let timerHandle: number | undefined;
+
+    // This bootstrap fires 8 collection fetches — each one a cold serverless
+    // invocation. Two rules keep it off the critical path:
+    //  1. Skip entirely if this tab hydrated within the last minute (page
+    //     hops between console pages were re-running the full storm).
+    //  2. Wait for browser idle so the page's OWN data fetches win the race.
+    try {
+      const last = Number(sessionStorage.getItem(HYDRATED_AT_KEY) ?? 0);
+      if (Date.now() - last < HYDRATE_TTL_MS) return;
+    } catch {
+      // sessionStorage unavailable — hydrate as usual.
+    }
 
     async function hydrate() {
       try {
@@ -49,6 +66,11 @@ export function StoreHydrator() {
           ]);
 
         if (cancelled) return;
+        try {
+          sessionStorage.setItem(HYDRATED_AT_KEY, String(Date.now()));
+        } catch {
+          // Ignore quota/availability failures.
+        }
 
         useVentoStore.setState((state) => ({
           riders: riders ?? state.riders,
@@ -65,9 +87,22 @@ export function StoreHydrator() {
       }
     }
 
-    void hydrate();
+    const kick = () => {
+      if (!cancelled) void hydrate();
+    };
+    const win = window as Window & {
+      requestIdleCallback?: (cb: () => void, opts?: { timeout: number }) => number;
+      cancelIdleCallback?: (handle: number) => void;
+    };
+    if (win.requestIdleCallback) {
+      idleHandle = win.requestIdleCallback(kick, { timeout: 4000 });
+    } else {
+      timerHandle = window.setTimeout(kick, 1500);
+    }
     return () => {
       cancelled = true;
+      if (idleHandle !== undefined && win.cancelIdleCallback) win.cancelIdleCallback(idleHandle);
+      if (timerHandle !== undefined) window.clearTimeout(timerHandle);
     };
   }, []);
 
