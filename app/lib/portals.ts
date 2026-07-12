@@ -55,6 +55,7 @@ export const portalConfigs: Record<PortalId, PortalConfig> = {
       { href: "/members", label: "用户 / 会员", description: "公开用户 + 骑手统一会员表，等级与积分。", permission: "manage_points" },
       { href: "/pontos", label: "站点网络", description: "维护 Ponto 站点、负责人和容量。", permission: "manage_pontos" },
       { href: "/franchise", label: "加盟治理", description: "合作条款、SOP 和加盟商管理口径。", permission: "view_analytics" },
+      { href: "/mall", label: "PontoMall 商城管理", description: "商品、积分定价、供应商、直采、收款与对账——商城全部事务的统一后台。", permission: "manage_marketplace" },
       { href: "/mall-insights", label: "商城关键数据", description: "商城 GMV、兑换、收款与供应商结算关键指标（操作在独立商城后台）。", permission: "view_analytics" },
       { href: "/wallet", label: "结算与提现", description: "加盟商应结对账、全网提现流水与余额台账。", permission: "view_finance" },
       { href: "/support", label: "客服工单中心", description: "骑手/加盟商/站点/官网工单统一处理。", permission: "view_audit" },

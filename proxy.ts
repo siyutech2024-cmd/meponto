@@ -196,7 +196,11 @@ export async function proxy(request: NextRequest) {
     const loginPortal = hostPortalId && allowedPortals.includes(hostPortalId) ? hostPortalId : allowedPortals[0];
     return NextResponse.redirect(new URL(`/login/${loginPortal}`, request.url));
   }
-  if (!allowedPortals.includes(session.portal)) {
+  // HQ (pontosys) sessions may open ANY portal's pages — the Super Admin runs
+  // the whole ecosystem (mall workspace, supplier/franchise/station portals).
+  // Page-level RBAC still governs what they can DO there. Without this bypass
+  // the HQ operator was bounced to /dashboard when opening /mall.
+  if (!allowedPortals.includes(session.portal) && session.portal !== "pontosys") {
     return NextResponse.redirect(new URL(portalConfigs[session.portal].homePath, request.url));
   }
 

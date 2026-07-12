@@ -24,6 +24,7 @@ jobs:
             /api/dispatch \
             /api/mall \
             /api/mall/ops \
+            /api/mall/procurement \
             /api/wallet \
             /api/eastwind/riders-live \
             /api/points; do
