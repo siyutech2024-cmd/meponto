@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useDialog } from "../../components/dialog";
 import { downloadCsv } from "../../lib/csv";
 import type { MarketplaceProduct } from "../../lib/points";
-import { Chip, DataTable, Drawer, Pager, SearchInput, SectionCard, TodoCard, Toolbar, type DataColumn, type SortState } from "../kit";
+import { Chip, DataTable, Drawer, Pager, SearchInput, SectionCard, Skeleton, TodoCard, Toolbar, type DataColumn, type SortState } from "../kit";
 import { isLowStock, productMargin, productStatusLabel, PROCUREMENT_MODE_LABEL, statusBadge, useMallAdmin, type ApiPath, type MallMessage, type ProcureProduct } from "./context";
 
 /** 商品与定价 — 待办卡 + Toolbar + DataTable + 配置抽屉（kit 组件）工作台。 */
@@ -12,8 +12,11 @@ import { isLowStock, productMargin, productStatusLabel, PROCUREMENT_MODE_LABEL, 
 const PRODUCT_PAGE_SIZE = 20;
 
 export default function ProductsTab() {
-  const { products, procure, consentPendingIds, procurementReady, pointsPerBrlRate, pendingPricing, lowStock, priceChangePending, post, load, setMessage, message, navigate, preset, clearPreset } = useMallAdmin();
+  const { loading, mall, products, procure, consentPendingIds, procurementReady, pointsPerBrlRate, pendingPricing, lowStock, priceChangePending, post, load, setMessage, message, navigate, preset, clearPreset } = useMallAdmin();
   const dialog = useDialog();
+  /** First load still in flight — "…" cards + Skeleton table, never fake zeros. */
+  const booting = loading && !mall;
+  const n = (value: string | number) => (booting ? "…" : value);
 
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [productSort, setProductSort] = useState<SortState>(null);
@@ -203,10 +206,10 @@ export default function ProductsTab() {
     <div className="space-y-3">
       {/* ---- 待办卡：点击即过滤 / 跳转 ---- */}
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-        <TodoCard label="待定价" value={pendingPricing} tone={pendingPricing > 0 ? "warn" : "neutral"} hint="供应商已提报，等待总部定价" active={productStatusFilter === "pending_pricing" && !productQuickFilter} onClick={() => { setProductStatusFilter("pending_pricing"); setProductQuickFilter(""); setProductPage(1); }} />
-        <TodoCard label="待审直采同意" value={consentPendingIds.size} tone={consentPendingIds.size > 0 ? "info" : "neutral"} hint="供应商申请开放直采，待审批" active={productQuickFilter === "consent"} onClick={() => { setProductStatusFilter(""); setProductQuickFilter("consent"); setProductPage(1); }} />
-        <TodoCard label="低库存" value={lowStock} tone={lowStock > 0 ? "danger" : "neutral"} hint="在售且库存 ≤ 补货阈值" active={productQuickFilter === "lowstock"} onClick={() => { setProductStatusFilter(""); setProductQuickFilter("lowstock"); setProductPage(1); }} />
-        <TodoCard label="调价待批" value={priceChangePending} tone={priceChangePending > 0 ? "warn" : "neutral"} hint="去「补货与对账」处理" onClick={() => navigate("supply")} />
+        <TodoCard label="待定价" value={n(pendingPricing)} tone={pendingPricing > 0 ? "warn" : "neutral"} hint="供应商已提报，等待总部定价" active={productStatusFilter === "pending_pricing" && !productQuickFilter} onClick={() => { setProductStatusFilter("pending_pricing"); setProductQuickFilter(""); setProductPage(1); }} />
+        <TodoCard label="待审直采同意" value={n(consentPendingIds.size)} tone={consentPendingIds.size > 0 ? "info" : "neutral"} hint="供应商申请开放直采，待审批" active={productQuickFilter === "consent"} onClick={() => { setProductStatusFilter(""); setProductQuickFilter("consent"); setProductPage(1); }} />
+        <TodoCard label="低库存" value={n(lowStock)} tone={lowStock > 0 ? "danger" : "neutral"} hint="在售且库存 ≤ 补货阈值" active={productQuickFilter === "lowstock"} onClick={() => { setProductStatusFilter(""); setProductQuickFilter("lowstock"); setProductPage(1); }} />
+        <TodoCard label="调价待批" value={n(priceChangePending)} tone={priceChangePending > 0 ? "warn" : "neutral"} hint="去「补货与对账」处理" onClick={() => navigate("supply")} />
       </div>
 
       {/* ---- 搜索 + 状态筛选 + 分页 ---- */}
@@ -235,8 +238,10 @@ export default function ProductsTab() {
         </div>
       )}
 
-      {/* ---- 商品表格（kit DataTable；排序 / 行点击开抽屉） ---- */}
-      {products.length === 0 ? (
+      {/* ---- 商品表格（kit DataTable；排序 / 行点击开抽屉；首载显示骨架条） ---- */}
+      {booting ? (
+        <Skeleton rows={8} />
+      ) : products.length === 0 ? (
         <div className="panel p-10 text-center text-sm font-bold text-[var(--muted)]">还没有商品——等供应商在供应链后台提报。</div>
       ) : (
         <DataTable

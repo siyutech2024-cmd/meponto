@@ -17,6 +17,8 @@ import PointsTab from "./tabs/points";
 import OrdersTab from "./tabs/orders";
 import PaymentsTab from "./tabs/payments";
 import SupplyTab from "./tabs/supply";
+import InsightsTab from "./tabs/insights";
+import MembersTab from "./tabs/members";
 import SettingsTab from "./tabs/settings";
 
 /**
@@ -30,7 +32,7 @@ import SettingsTab from "./tabs/settings";
  * Each business surface lives in app/mall/tabs/*.
  */
 
-const TAB_IDS: TabId[] = ["overview", "products", "merch", "suppliers", "points", "orders", "payments", "supply", "procurement", "settings"];
+const TAB_IDS: TabId[] = ["overview", "products", "merch", "suppliers", "points", "orders", "payments", "supply", "procurement", "insights", "members", "settings"];
 
 type NavItem = { id: TabId; label: string; icon: typeof BarChart3 };
 type NavGroup = { label: string | null; items: NavItem[] };
@@ -49,18 +51,14 @@ const NAV_GROUPS: NavGroup[] = [
     { id: "payments", label: "收款与充值", icon: Banknote },
     { id: "supply", label: "补货与对账", icon: Truck },
   ] },
-  // 设置 stays the last group; the 洞察 link group is spliced in before it (shellNav below).
+  // 洞察 — flat in-workspace tabs (formerly external links to /mall-insights & /members):
+  // the tabs render the SAME shared panels those PontoSys pages render.
+  { label: "洞察", items: [
+    { id: "insights", label: "数据洞察", icon: LineChart },
+    { id: "members", label: "会员", icon: Users },
+  ] },
   { label: null, items: [{ id: "settings", label: "设置", icon: Settings2 }] },
 ];
-
-/** 洞察 — analytics pages that live outside the mall workspace (normal links). */
-const INSIGHT_GROUP: MallNavGroup = {
-  label: "洞察",
-  items: [
-    { id: "link-mall-insights", label: "数据洞察", icon: LineChart, href: "/mall-insights" },
-    { id: "link-members", label: "会员", icon: Users, href: "/members" },
-  ],
-};
 
 const TAB_COMPONENTS: Record<TabId, ComponentType> = {
   overview: OverviewTab,
@@ -72,6 +70,8 @@ const TAB_COMPONENTS: Record<TabId, ComponentType> = {
   payments: PaymentsTab,
   supply: SupplyTab,
   procurement: ProcurementTab,
+  insights: InsightsTab,
+  members: MembersTab,
   settings: SettingsTab,
 };
 
@@ -86,6 +86,8 @@ export default function MallAdminPage() {
 
   const [tab, setTab] = useState<TabId>("overview");
   const [preset, setPreset] = useState<TabPreset>(null);
+  /** True until the first load() settles — tabs render "…" + Skeleton meanwhile. */
+  const [loading, setLoading] = useState(true);
   const [mall, setMall] = useState<MallPayload | null>(null);
   const [ops, setOps] = useState<OpsPayload | null>(null);
   const [procure, setProcure] = useState<ProcurePayload | null>(null);
@@ -110,16 +112,20 @@ export default function MallAdminPage() {
 
   // ---- Data plumbing ----
   const load = useCallback(async () => {
-    const [mallRes, opsRes, procRes] = await Promise.all([
-      fetch("/api/mall", { headers, cache: "no-store" }),
-      fetch("/api/mall/ops", { headers, cache: "no-store" }),
-      // Procurement is optional context (feature-flagged): 403/flag-off simply hides the drawer section.
-      fetch("/api/mall/procurement", { headers, cache: "no-store" }).catch(() => null),
-    ]);
-    if (mallRes.ok) setMall((await mallRes.json()).data);
-    if (opsRes.ok) setOps((await opsRes.json()).data);
-    if (procRes?.ok) setProcure((await procRes.json()).data as ProcurePayload);
-    else setProcure(null);
+    try {
+      const [mallRes, opsRes, procRes] = await Promise.all([
+        fetch("/api/mall", { headers, cache: "no-store" }),
+        fetch("/api/mall/ops", { headers, cache: "no-store" }),
+        // Procurement is optional context (feature-flagged): 403/flag-off simply hides the drawer section.
+        fetch("/api/mall/procurement", { headers, cache: "no-store" }).catch(() => null),
+      ]);
+      if (mallRes.ok) setMall((await mallRes.json()).data);
+      if (opsRes.ok) setOps((await opsRes.json()).data);
+      if (procRes?.ok) setProcure((await procRes.json()).data as ProcurePayload);
+      else setProcure(null);
+    } finally {
+      setLoading(false);
+    }
   }, [headers]);
 
   useEffect(() => {
@@ -195,7 +201,7 @@ export default function MallAdminPage() {
   };
 
   const context: MallAdminContextValue = {
-    mall, ops, procure, setMall, setOps,
+    mall, ops, procure, setMall, setOps, loading,
     message, setMessage, load, post, optimisticPost, patchOrder, patchTopUp, t,
     tab, navigate, preset, clearPreset,
     products, suppliers, pointsPerBrlRate,
@@ -205,17 +211,12 @@ export default function MallAdminPage() {
   const ActiveTab = TAB_COMPONENTS[tab];
 
   // Sidebar model for MallShell: workspace tab groups (with pending-work
-  // badges) + 洞察 links spliced in before the trailing 设置 group. Flat
-  // management: no portal entrances — HQ operates everything from these tabs.
-  const mappedGroups = NAV_GROUPS.map((group) => ({
+  // badges). Flat management: no portal entrances, no external hops — HQ
+  // operates everything (incl. 洞察) from these tabs.
+  const shellNav: MallNavGroup[] = NAV_GROUPS.map((group) => ({
     label: group.label,
     items: group.items.map(({ id, label, icon }) => ({ id, label, icon, badge: navBadges[id] ?? 0 })),
   }));
-  const shellNav: MallNavGroup[] = [
-    ...mappedGroups.slice(0, -1),
-    INSIGHT_GROUP,
-    mappedGroups[mappedGroups.length - 1],
-  ];
   const activeLabel = NAV_GROUPS.flatMap((group) => group.items).find((item) => item.id === tab)?.label ?? "总览";
 
   return (

@@ -121,7 +121,7 @@ export const isLowStock = (product: MarketplaceProduct) => product.stock <= (pro
 // Navigation contract
 // ---------------------------------------------------------------------------
 
-export type TabId = "overview" | "products" | "merch" | "suppliers" | "points" | "orders" | "payments" | "supply" | "procurement" | "settings";
+export type TabId = "overview" | "products" | "merch" | "suppliers" | "points" | "orders" | "payments" | "supply" | "procurement" | "insights" | "members" | "settings";
 
 /** One-shot pre-filter carried by navigate(tab, preset); target tab consumes and clears it. */
 export type TabPreset = "pending_pricing" | "lowstock" | "consent" | "review" | null;
@@ -141,6 +141,11 @@ export type MallAdminContextValue = {
   procure: ProcurePayload | null;
   setMall: Dispatch<SetStateAction<MallPayload | null>>;
   setOps: Dispatch<SetStateAction<OpsPayload | null>>;
+
+  /** True while the shell's first load() is still in flight (false once the
+   *  initial payloads land). Tabs use it (together with "no data yet") to show
+   *  "…" stats + Skeleton bars instead of the fake-broken zeros/empty tables. */
+  loading: boolean;
 
   // Messaging + data plumbing.
   message: MallMessage;

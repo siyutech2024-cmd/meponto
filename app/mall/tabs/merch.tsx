@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import type { MallCoupon } from "../../lib/mall-ops";
-import { DataTable, SectionCard, StatusBadge, type DataColumn } from "../kit";
+import { DataTable, SectionCard, Skeleton, StatusBadge, type DataColumn } from "../kit";
 import { useMallAdmin } from "./context";
 
 /** 分类与营销 — 三张 SectionCard：商品分类（内联添加）/ 门面 Banner（展开式新增）/ 优惠券（DataTable + 展开式创建）。 */
@@ -21,7 +21,9 @@ const selectCls = "mt-1 h-10 w-full rounded-[8px] border border-[var(--line)] bg
 const EMPTY_COUPON = { title: "", type: "points_off" as MallCoupon["type"], value: "", minPoints: "", minTier: "member" as MallCoupon["minTier"], perRiderLimit: "", expiresAt: "" };
 
 export default function MerchTab() {
-  const { ops, post } = useMallAdmin();
+  const { loading, ops, post } = useMallAdmin();
+  /** First load still in flight — Skeleton bars, never fake "暂无" states. */
+  const booting = loading && !ops;
   const [categoryName, setCategoryName] = useState("");
   const [bannerFormOpen, setBannerFormOpen] = useState(false);
   const [bannerDraft, setBannerDraft] = useState({ title: "", imageUrl: "", href: "" });
@@ -83,6 +85,7 @@ export default function MerchTab() {
           <input value={categoryName} onChange={(e) => setCategoryName(e.target.value)} placeholder="新分类名，如 Equipamento" className="h-10 min-w-0 flex-1 rounded-[8px] border border-[var(--line)] bg-[var(--surface-raised)] px-3 text-sm font-bold outline-none focus:border-[var(--accent)]" />
           <button type="button" disabled={!categoryName.trim()} onClick={() => void post("/api/mall/ops", { action: "addCategory", name: categoryName.trim() }, "分类已添加").then(() => setCategoryName(""))} className={`h-10 shrink-0 ${outlineBtn}`}>添加</button>
         </div>
+        {booting ? <Skeleton rows={3} className="" /> : (
         <div className="divide-y divide-[var(--line)]">
           {categories.map((category) => (
             <div key={category.id} className="flex items-center gap-2 py-2">
@@ -94,6 +97,7 @@ export default function MerchTab() {
           ))}
           {categories.length === 0 && <div className="py-4 text-center text-xs font-bold text-[var(--muted)]">暂无分类。</div>}
         </div>
+        )}
       </SectionCard>
 
       {/* ---- 2. 门面 Banner：列表行带缩略图，新增表单收进展开区 ---- */}
@@ -123,6 +127,7 @@ export default function MerchTab() {
             >添加 Banner</button>
           </div>
         )}
+        {booting ? <Skeleton rows={3} className="" /> : (
         <div className="divide-y divide-[var(--line)]">
           {banners.map((banner) => (
             <div key={banner.id} className="flex items-center gap-3 py-2">
@@ -136,6 +141,7 @@ export default function MerchTab() {
           ))}
           {banners.length === 0 && <div className="py-4 text-center text-xs font-bold text-[var(--muted)]">暂无 Banner。</div>}
         </div>
+        )}
       </SectionCard>
 
       {/* ---- 3. 优惠券：DataTable + 展开式创建表单（本视图唯一黄色主按钮） ---- */}
@@ -182,13 +188,17 @@ export default function MerchTab() {
             <button type="button" disabled={!couponDraft.title.trim() || !(Number(couponDraft.value) > 0)} onClick={() => void addCoupon()} className={`mt-4 h-9 ${primaryBtn}`}>创建券</button>
           </div>
         )}
-        <DataTable
-          columns={couponColumns}
-          rows={coupons}
-          rowKey={(coupon) => coupon.id}
-          minWidth={860}
-          empty="暂无优惠券。创建后骑手兑换时自动按等级匹配最优券抵扣。"
-        />
+        {booting ? (
+          <Skeleton rows={4} className="" />
+        ) : (
+          <DataTable
+            columns={couponColumns}
+            rows={coupons}
+            rowKey={(coupon) => coupon.id}
+            minWidth={860}
+            empty="暂无优惠券。创建后骑手兑换时自动按等级匹配最优券抵扣。"
+          />
+        )}
       </SectionCard>
     </div>
   );

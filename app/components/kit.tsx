@@ -183,6 +183,23 @@ export function Stat({ label, value, hint }: { label: string; value: string; hin
 }
 
 // ---------------------------------------------------------------------------
+// Skeleton — first-load placeholder: a few pulsing grey bars where a table /
+// list will appear. Use it whenever data is still loading so screens never
+// show the fake-broken "all zeros + empty table" state. Default renders as a
+// standalone panel; pass className="" to embed inside an existing card.
+// ---------------------------------------------------------------------------
+
+export function Skeleton({ rows = 5, className = "panel p-4" }: { rows?: number; className?: string }) {
+  return (
+    <div role="status" aria-label="加载中" className={`space-y-3 ${className}`}>
+      {Array.from({ length: rows }, (_, i) => (
+        <div key={i} className="h-4 animate-pulse rounded-[6px] bg-[var(--line)]" style={{ width: `${100 - (i % 3) * 14}%` }} />
+      ))}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // SectionCard — panel with title / optional description / right slot / body.
 // ---------------------------------------------------------------------------
 

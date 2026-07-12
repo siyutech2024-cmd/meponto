@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { useDialog } from "../../components/dialog";
 import { downloadCsv } from "../../lib/csv";
 import type { MarketplaceOrder } from "../../lib/points";
-import { Chip, DataTable, Drawer, Pager, SearchInput, TodoCard, Toolbar, type DataColumn } from "../kit";
+import { Chip, DataTable, Drawer, Pager, SearchInput, Skeleton, TodoCard, Toolbar, type DataColumn } from "../kit";
 import { orderStatusLabel, paymentStatusChip, statusBadge, useMallAdmin } from "./context";
 
 /** 订单履约 — 待办卡 + Toolbar + DataTable + Drawer 工作台。
@@ -30,8 +30,11 @@ const PRIMARY_BTN = "inline-flex h-9 items-center rounded-[8px] bg-[var(--accent
 const DANGER_BTN = "inline-flex h-9 items-center rounded-[8px] border border-[var(--danger)]/40 px-3.5 text-xs font-bold text-[var(--danger)] hover:bg-[var(--danger-bg)]";
 
 export default function OrdersTab() {
-  const { mall, setMall, optimisticPost, patchOrder, preset, clearPreset } = useMallAdmin();
+  const { loading, mall, setMall, optimisticPost, patchOrder, preset, clearPreset } = useMallAdmin();
   const dialog = useDialog();
+  /** First load still in flight — "…" cards + Skeleton table, never fake zeros. */
+  const booting = loading && !mall;
+  const n = (value: string | number) => (booting ? "…" : value);
 
   const [orderFilter, setOrderFilter] = useState("");
   const [orderSearch, setOrderSearch] = useState("");
@@ -210,10 +213,10 @@ export default function OrdersTab() {
     <div className="space-y-3">
       {/* ---- 待办卡：点击即预筛 ---- */}
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-        <TodoCard label="高价值待审" value={reviewPendingCount} tone={reviewPendingCount > 0 ? "warn" : "neutral"} hint="人工放行后才继续履约" active={reviewOnly} onClick={() => applyQuickFilter({ review: true })} />
-        <TodoCard label="在途" value={inTransitCount} tone={inTransitCount > 0 ? "info" : "neutral"} hint="等待供货到站，可批量到站" active={orderFilter === "created" && !reviewOnly && !orderDateFrom} onClick={() => applyQuickFilter({ status: "created" })} />
-        <TodoCard label="已到站待取" value={arrivedCount} tone={arrivedCount > 0 ? "warn" : "neutral"} hint="已推送骑手，等待到店取货" active={orderFilter === "arrived" && !reviewOnly && !orderDateFrom} onClick={() => applyQuickFilter({ status: "arrived" })} />
-        <TodoCard label="今日兑换" value={todayCount} tone={todayCount > 0 ? "success" : "neutral"} hint="今天新创建的兑换订单" active={orderDateFrom === today && orderDateTo === today && !orderFilter && !reviewOnly} onClick={() => applyQuickFilter({ today: true })} />
+        <TodoCard label="高价值待审" value={n(reviewPendingCount)} tone={reviewPendingCount > 0 ? "warn" : "neutral"} hint="人工放行后才继续履约" active={reviewOnly} onClick={() => applyQuickFilter({ review: true })} />
+        <TodoCard label="在途" value={n(inTransitCount)} tone={inTransitCount > 0 ? "info" : "neutral"} hint="等待供货到站，可批量到站" active={orderFilter === "created" && !reviewOnly && !orderDateFrom} onClick={() => applyQuickFilter({ status: "created" })} />
+        <TodoCard label="已到站待取" value={n(arrivedCount)} tone={arrivedCount > 0 ? "warn" : "neutral"} hint="已推送骑手，等待到店取货" active={orderFilter === "arrived" && !reviewOnly && !orderDateFrom} onClick={() => applyQuickFilter({ status: "arrived" })} />
+        <TodoCard label="今日兑换" value={n(todayCount)} tone={todayCount > 0 ? "success" : "neutral"} hint="今天新创建的兑换订单" active={orderDateFrom === today && orderDateTo === today && !orderFilter && !reviewOnly} onClick={() => applyQuickFilter({ today: true })} />
       </div>
 
       {/* ---- 搜索 + 状态 + 日期范围 + 导出 + 分页 ---- */}
@@ -251,8 +254,10 @@ export default function OrdersTab() {
         </div>
       )}
 
-      {/* ---- 订单表格 / 按站点分组待取视图：点行（卡）开抽屉 ---- */}
-      {groupByStation ? (
+      {/* ---- 订单表格 / 按站点分组待取视图：点行（卡）开抽屉；首载显示骨架条 ---- */}
+      {booting ? (
+        <Skeleton rows={8} />
+      ) : groupByStation ? (
         <div className="space-y-3">
           {stationGroups.map(([station, orders]) => (
             <div key={station} className="panel p-4">

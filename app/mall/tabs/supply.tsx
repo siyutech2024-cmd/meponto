@@ -4,7 +4,7 @@ import { useState, type ReactNode } from "react";
 import { useDialog } from "../../components/dialog";
 import { downloadCsv } from "../../lib/csv";
 import { poStatusLabel, statementStatusLabel, type PriceChangeRequest, type PurchaseOrder, type SupplierStatement } from "../../lib/mall-ops";
-import { DataTable, Drawer, SectionCard, type DataColumn } from "../kit";
+import { DataTable, Drawer, SectionCard, Skeleton, type DataColumn } from "../kit";
 import { extraPoLabel, extraStatementLabel, statusBadge, useMallAdmin, type OpsPayload } from "./context";
 
 /** 供应链 — 调价审批 / 补货单 / 供应商对账 / 分成对账,四段纵排工作台。 */
@@ -57,8 +57,10 @@ function DetailRow({ label, value }: { label: string; value: ReactNode }) {
 }
 
 export default function SupplyTab() {
-  const { ops, products, suppliers, post, setMessage, t } = useMallAdmin();
+  const { loading, ops, products, suppliers, post, setMessage, t } = useMallAdmin();
   const dialog = useDialog();
+  /** First load still in flight — "…" counts + Skeleton tables, never fake zeros. */
+  const booting = loading && !ops;
 
   const [poFormOpen, setPoFormOpen] = useState(false);
   const [poSupplier, setPoSupplier] = useState("");
@@ -210,8 +212,8 @@ export default function SupplyTab() {
   return (
     <div className="space-y-5">
       {/* 1) 供货价调整审批 */}
-      <SectionCard title={`供货价调整审批（待处理 ${priceChanges.filter((row) => row.status === "pending").length}）`} desc="供应商发起的供货价调整,批准后立即生效并回写商品供货价。" className="!p-4">
-        <DataTable columns={priceColumns} rows={priceChanges} rowKey={(row) => row.id} minWidth={760} empty="暂无调价申请。" />
+      <SectionCard title={`供货价调整审批（待处理 ${booting ? "…" : priceChanges.filter((row) => row.status === "pending").length}）`} desc="供应商发起的供货价调整,批准后立即生效并回写商品供货价。" className="!p-4">
+        {booting ? <Skeleton rows={4} className="" /> : <DataTable columns={priceColumns} rows={priceChanges} rowKey={(row) => row.id} minWidth={760} empty="暂无调价申请。" />}
       </SectionCard>
 
       {/* 2) 补货单（PO） */}
@@ -257,7 +259,7 @@ export default function SupplyTab() {
             )}
           </div>
         )}
-        <DataTable columns={poColumns} rows={purchaseOrders} rowKey={(po) => po.id} onRowClick={(po) => setPoDrawerId(po.id)} minWidth={760} empty="暂无补货单。" />
+        {booting ? <Skeleton rows={4} className="" /> : <DataTable columns={poColumns} rows={purchaseOrders} rowKey={(po) => po.id} onRowClick={(po) => setPoDrawerId(po.id)} minWidth={760} empty="暂无补货单。" />}
       </SectionCard>
 
       {/* 3) 供应商月度对账单 */}
@@ -272,7 +274,7 @@ export default function SupplyTab() {
           </>
         }
       >
-        <DataTable columns={statementColumns} rows={statements} rowKey={(s) => s.id} onRowClick={(s) => setStDrawerId(s.id)} minWidth={820} empty="选择月份生成对账单：按「履约订单 × 供货价」自动汇总每个供应商。" />
+        {booting ? <Skeleton rows={4} className="" /> : <DataTable columns={statementColumns} rows={statements} rowKey={(s) => s.id} onRowClick={(s) => setStDrawerId(s.id)} minWidth={820} empty="选择月份生成对账单：按「履约订单 × 供货价」自动汇总每个供应商。" />}
       </SectionCard>
 
       {/* 4) 销售分成对账单（加盟商） */}
@@ -287,7 +289,7 @@ export default function SupplyTab() {
           </>
         }
       >
-        <DataTable columns={revShareColumns} rows={revShares} rowKey={(s) => s.id} onRowClick={(s) => setRsDrawerId(s.id)} minWidth={860} empty="按「已取货订单 × 产品加盟商分成」自动汇总。加盟商在自己后台确认后，这里可标记付款。" />
+        {booting ? <Skeleton rows={4} className="" /> : <DataTable columns={revShareColumns} rows={revShares} rowKey={(s) => s.id} onRowClick={(s) => setRsDrawerId(s.id)} minWidth={860} empty="按「已取货订单 × 产品加盟商分成」自动汇总。加盟商在自己后台确认后，这里可标记付款。" />}
       </SectionCard>
 
       {/* 补货单明细抽屉 */}

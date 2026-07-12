@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { SearchInput, SectionCard, Stat, StatusBadge, type BadgeTone } from "../components/kit";
+import { SearchInput, SectionCard, Skeleton, Stat, StatusBadge, type BadgeTone } from "../components/kit";
 import { readSession } from "../lib/session";
 
 /**
@@ -48,6 +48,9 @@ export default function PointsEconomyPanel() {
   const [form, setForm] = useState<Record<string, string>>({});
   const [q, setQ] = useState("");
   const [note, setNote] = useState<{ tone: "ok" | "err"; text: string } | null>(null);
+  /** True until the first load() (all three fetches) settles — stats show "…",
+   *  rule inputs stay disabled and a banner explains what's happening. */
+  const [loading, setLoading] = useState(true);
 
   const load = useCallback(async () => {
     const [p, r, m] = await Promise.all([
@@ -58,6 +61,7 @@ export default function PointsEconomyPanel() {
     if (p && p.ok) { const d = (await p.json()).data; setAccounts(d.accounts ?? []); setPartnerAccounts(d.partnerAccounts ?? []); setLedger(d.ledger ?? []); }
     if (r && r.ok) setRiders(((await r.json()).data ?? []) as RiderLite[]);
     if (m && m.ok) { const c = ((await m.json()).data?.config ?? {}) as Config; setConfig(c); setForm(Object.fromEntries(RULE_FIELDS.map((f) => [f.k, String(c[f.k] ?? "")]))); }
+    setLoading(false);
   }, [headers]);
   useEffect(() => { void load(); }, [load]);
 
@@ -91,16 +95,21 @@ export default function PointsEconomyPanel() {
 
   return (
     <div>
+      {loading && (
+        <div className="mb-4 rounded-[8px] border border-[var(--info)]/40 bg-[var(--info-bg)] px-4 py-3 text-sm font-black text-[var(--info)]" role="status">
+          正在加载积分配置…（余额、账本与规则加载完成前暂不可编辑）
+        </div>
+      )}
       {note && (
         <div className={`mb-4 rounded-[8px] border px-4 py-3 text-sm font-black ${note.tone === "ok" ? "border-[var(--ok)] bg-[var(--ok-bg)] text-[var(--ok-ink)]" : "border-[var(--danger)] bg-[var(--danger-bg)] text-[var(--danger-ink)]"}`}>{note.text}</div>
       )}
 
-      {/* Stats */}
+      {/* Stats — "…" while the first load is in flight (never fake zeros). */}
       <section className="mb-4 grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <Stat label="流通积分（可用）" value={money(totals.available)} />
-        <Stat label="待定积分" value={money(totals.pending)} />
-        <Stat label="Partner 积分" value={money(totals.partner)} />
-        <Stat label="账本条数" value={money(ledger.length)} />
+        <Stat label="流通积分（可用）" value={loading ? "…" : money(totals.available)} />
+        <Stat label="待定积分" value={loading ? "…" : money(totals.pending)} />
+        <Stat label="Partner 积分" value={loading ? "…" : money(totals.partner)} />
+        <Stat label="账本条数" value={loading ? "…" : money(ledger.length)} />
       </section>
 
       {/* Editable economy rules incl. money equivalence — the panel's single primary action. */}
@@ -112,13 +121,13 @@ export default function PointsEconomyPanel() {
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           {RULE_FIELDS.map((f) => (
             <label key={String(f.k)} className="text-[11px] font-black text-[var(--muted)]">{f.l}
-              <input inputMode="numeric" value={form[f.k] ?? ""} onChange={(e) => setForm({ ...form, [f.k]: e.target.value.replace(/[^\d]/g, "") })} className={`mt-1 ${field}`} />
+              <input inputMode="numeric" disabled={loading} value={form[f.k] ?? ""} onChange={(e) => setForm({ ...form, [f.k]: e.target.value.replace(/[^\d]/g, "") })} className={`mt-1 ${field} disabled:opacity-50`} />
               <span className="mt-0.5 block text-[10px] font-bold text-[var(--muted)]">{f.hint}</span>
             </label>
           ))}
         </div>
         <div className="mt-5 flex flex-wrap items-center gap-3">
-          <button type="button" onClick={() => void saveConfig()} className="h-10 rounded-[8px] bg-[var(--accent)] px-5 text-sm font-black text-[var(--accent-ink)] hover:bg-[var(--accent-strong)]">保存规则</button>
+          <button type="button" disabled={loading} onClick={() => void saveConfig()} className="h-10 rounded-[8px] bg-[var(--accent)] px-5 text-sm font-black text-[var(--accent-ink)] hover:bg-[var(--accent-strong)] disabled:opacity-50">保存规则</button>
           <span className="text-[11px] font-bold text-[var(--muted)]">固定规则：积分有效期 <b>12 个月</b>（FIFO 过期）· 站点签到 <b>+50/天</b> · 等级生日加成 prata 50 / ouro 100 / diamante 200（在基础上叠加取高）。</span>
         </div>
       </SectionCard>
@@ -129,6 +138,7 @@ export default function PointsEconomyPanel() {
         right={<SearchInput value={q} onChange={setQ} placeholder="搜索姓名 / 99ID" className="w-56" />}
         className="mb-4"
       >
+        {loading ? <Skeleton rows={5} className="p-1" /> : (
         <div className="overflow-x-auto rounded-[8px] border border-[var(--line)]">
           <table className="w-full text-sm">
             <thead><tr className="bg-[var(--surface-raised)] text-left text-[11px] font-black uppercase text-[var(--muted)]"><th className="px-3 py-2">会员</th><th className="px-3 py-2">99 ID</th><th className="px-3 py-2 text-right">可用积分</th><th className="px-3 py-2 text-right">待定积分</th></tr></thead>
@@ -145,10 +155,12 @@ export default function PointsEconomyPanel() {
           </table>
           {userRows.length === 0 && <div className="py-8 text-center text-xs font-bold text-[var(--muted)]">暂无有余额的会员。</div>}
         </div>
+        )}
       </SectionCard>
 
       {/* Ledger */}
       <SectionCard title="积分流水 · 账本" desc="append-only，不可改">
+        {loading ? <Skeleton rows={5} className="p-1" /> : (
         <div className="overflow-x-auto rounded-[8px] border border-[var(--line)]">
           <table className="w-full text-sm">
             <thead><tr className="bg-[var(--surface-raised)] text-left text-[11px] font-black uppercase text-[var(--muted)]"><th className="px-3 py-2">时间</th><th className="px-3 py-2">会员</th><th className="px-3 py-2">类型</th><th className="px-3 py-2 text-right">积分</th><th className="px-3 py-2">原因</th><th className="px-3 py-2 text-right">余额</th></tr></thead>
@@ -167,6 +179,7 @@ export default function PointsEconomyPanel() {
           </table>
           {ledger.length === 0 && <div className="py-8 text-center text-xs font-bold text-[var(--muted)]">暂无积分流水。</div>}
         </div>
+        )}
       </SectionCard>
     </div>
   );

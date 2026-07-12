@@ -6,7 +6,7 @@ import { readSession } from "../lib/session";
 import { useVentoStore } from "../lib/store";
 import { translate, type TranslationKey } from "../lib/i18n";
 import type { FranchisePurchaseOrder, ProcurementDiscrepancy, ProcurementMarginEntry, StationStockBucket } from "../lib/procurement";
-import { DataTable, Drawer, SectionCard, StatusBadge, type DataColumn } from "./kit";
+import { DataTable, Drawer, SectionCard, Skeleton, StatusBadge, type DataColumn } from "./kit";
 import { statusBadge } from "./tabs/context";
 
 /** PontoMall back office — 加盟商直采 tab (the ONLY write surface for
@@ -105,7 +105,8 @@ export default function ProcurementTab() {
     return true;
   }
 
-  if (!data) return <div className="panel p-6 text-sm font-bold text-[var(--muted)]">加载中…</div>;
+  // First load still in flight — unified Skeleton bars instead of a blank/zero workbench.
+  if (!data) return <Skeleton rows={8} className="panel p-6" />;
 
   const config = data.config;
   const frozen = cfgDraft.procurementFrozen !== undefined ? cfgDraft.procurementFrozen === true : config.procurementFrozen;

@@ -6,7 +6,7 @@ import { useDialog } from "../../components/dialog";
 import { downloadCsv } from "../../lib/csv";
 import type { CashLedgerEntry, CashTopUp, MallPayment } from "../../lib/mall-ops";
 import { paymentStatusLabel, topUpStatusLabel } from "../../lib/mall-ops";
-import { DataTable, Drawer, Stat, StatusBadge, TodoCard, type BadgeTone, type DataColumn } from "../kit";
+import { DataTable, Drawer, Skeleton, Stat, StatusBadge, TodoCard, type BadgeTone, type DataColumn } from "../kit";
 import { useMallAdmin } from "./context";
 
 /** 充值与收款 — Stat/TodoCard + DataTable + Drawer 工作台。
@@ -37,8 +37,11 @@ function InfoRow({ label, children }: { label: string; children: ReactNode }) {
 }
 
 export default function PaymentsTab() {
-  const { ops, setOps, optimisticPost, patchTopUp } = useMallAdmin();
+  const { loading, ops, setOps, optimisticPost, patchTopUp } = useMallAdmin();
   const dialog = useDialog();
+  /** First load still in flight — "…" cards + Skeleton tables, never fake zeros. */
+  const booting = loading && !ops;
+  const n = (value: string | number) => (booting ? "…" : value);
 
   const [drawerId, setDrawerId] = useState("");
   const [archiveOpen, setArchiveOpen] = useState(false);
@@ -126,22 +129,26 @@ export default function PaymentsTab() {
     <div className="space-y-3">
       {/* ---- 顶部指标 ---- */}
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-        <TodoCard label="待核销凭证" value={pendingVouchers} tone={pendingVouchers > 0 ? "warn" : "neutral"} hint="骑手已提交 PIX 凭证，等待人工确认到账" />
-        <Stat label="今日已入账" value={`R$ ${todayCredited.toFixed(2)}`} hint="今天确认到账的充值总额" />
-        <Stat label="现金余额总池" value={`R$ ${balancePool.toFixed(2)}`} hint="全体骑手当前现金余额合计（按台账估算）" />
+        <TodoCard label="待核销凭证" value={n(pendingVouchers)} tone={pendingVouchers > 0 ? "warn" : "neutral"} hint="骑手已提交 PIX 凭证，等待人工确认到账" />
+        <Stat label="今日已入账" value={booting ? "…" : `R$ ${todayCredited.toFixed(2)}`} hint="今天确认到账的充值总额" />
+        <Stat label="现金余额总池" value={booting ? "…" : `R$ ${balancePool.toFixed(2)}`} hint="全体骑手当前现金余额合计（按台账估算）" />
       </div>
 
       {/* ---- PIX 充值核销 ---- */}
       <div>
         <div className="mb-2 px-1 text-xs font-black uppercase text-[var(--muted)]">PIX 充值核销 · 确认到账后入余额（操作留痕）——点行查看详情</div>
-        <DataTable
-          columns={topUpColumns}
-          rows={topUps}
-          rowKey={(t) => t.id}
-          onRowClick={(t) => setDrawerId(t.id)}
-          minWidth={760}
-          empty="暂无充值申请。"
-        />
+        {booting ? (
+          <Skeleton rows={5} />
+        ) : (
+          <DataTable
+            columns={topUpColumns}
+            rows={topUps}
+            rowKey={(t) => t.id}
+            onRowClick={(t) => setDrawerId(t.id)}
+            minWidth={760}
+            empty="暂无充值申请。"
+          />
+        )}
       </div>
 
       {/* ---- 现金余额台账 ---- */}
@@ -150,7 +157,7 @@ export default function PaymentsTab() {
           <span className="text-xs font-black uppercase text-[var(--muted)]">现金余额台账（不可篡改记录）</span>
           <button type="button" onClick={() => downloadCsv("cash-ledger.csv", ["时间", "骑手", "类型", "金额", "余额", "来源", "备注", "操作人"], ledger.map((entry) => [entry.createdAt, entry.riderName, LEDGER_TYPE[entry.type].label, entry.amountBRL.toFixed(2), entry.balanceAfter.toFixed(2), entry.sourceId, entry.note ?? "", entry.createdBy]))} className="ml-auto h-9 rounded-[8px] border border-[var(--line)] px-3 text-xs font-bold text-[var(--muted)] hover:border-[var(--accent)]">导出 CSV</button>
         </div>
-        <DataTable columns={ledgerColumns} rows={ledger} rowKey={(e) => e.id} minWidth={760} empty="暂无余额流水。" />
+        {booting ? <Skeleton rows={5} /> : <DataTable columns={ledgerColumns} rows={ledger} rowKey={(e) => e.id} minWidth={760} empty="暂无余额流水。" />}
       </div>
 
       {/* ---- 历史按单收款存档（默认收起） ---- */}

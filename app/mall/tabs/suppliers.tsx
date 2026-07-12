@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { statementStatusLabel } from "../../lib/mall-ops";
 import type { SupplierProfile } from "../../lib/supplier";
-import { DataTable, Drawer, SearchInput, Stat, StatusBadge, Toolbar, type DataColumn } from "../kit";
+import { DataTable, Drawer, SearchInput, Skeleton, Stat, StatusBadge, Toolbar, type DataColumn } from "../kit";
 import { extraStatementLabel, productStatusLabel, statusBadge, useMallAdmin } from "./context";
 
 /**
@@ -47,7 +47,10 @@ const PROFILE_FIELDS: Array<{ k: keyof SupplierProfile; l: string }> = [
 const fieldCls = "mt-1 h-9 w-full rounded-[8px] border border-[var(--line)] bg-[var(--surface-raised)] px-3 text-sm font-bold outline-none focus:border-[var(--accent)]";
 
 export default function SuppliersTab() {
-  const { mall, ops, procure, products, suppliers, setMessage, pendingPricing, priceChangePending, consentPendingIds } = useMallAdmin();
+  const { loading, mall, ops, procure, products, suppliers, setMessage, pendingPricing, priceChangePending, consentPendingIds } = useMallAdmin();
+  /** First load still in flight — "…" stats + Skeleton table, never fake zeros. */
+  const booting = loading && !mall;
+  const n = (value: string | number) => (booting ? "…" : String(value));
 
   const [q, setQ] = useState("");
   const [details, setDetails] = useState<Record<string, SupplierDetail>>({});
@@ -149,10 +152,10 @@ export default function SuppliersTab() {
     <div className="space-y-3">
       {/* ---- 顶部统计 ---- */}
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-        <Stat label="供应商总数" value={String(suppliers.length)} hint="有在册商品的供应商组织" />
-        <Stat label="待定价商品" value={String(pendingPricing)} hint="供应商已报价，等总部定售价" />
-        <Stat label="待审调价" value={String(priceChangePending)} hint="供货价调整等审批（资金 Tab 处理）" />
-        <Stat label="待审分销同意" value={String(consentPendingIds.size)} hint="直采开放申请等审批（直采 Tab 处理）" />
+        <Stat label="供应商总数" value={n(suppliers.length)} hint="有在册商品的供应商组织" />
+        <Stat label="待定价商品" value={n(pendingPricing)} hint="供应商已报价，等总部定售价" />
+        <Stat label="待审调价" value={n(priceChangePending)} hint="供货价调整等审批（资金 Tab 处理）" />
+        <Stat label="待审分销同意" value={n(consentPendingIds.size)} hint="直采开放申请等审批（直采 Tab 处理）" />
       </div>
 
       {/* ---- 搜索 ---- */}
@@ -161,15 +164,19 @@ export default function SuppliersTab() {
         <span className="text-[11px] font-bold text-[var(--muted)]">点击行打开供应商工作台：公司资料 · 商品 · 团队账号 · 月度对账单</span>
       </Toolbar>
 
-      {/* ---- 供应商列表 ---- */}
-      <DataTable
-        columns={columns}
-        rows={rows}
-        rowKey={(row) => row.name}
-        onRowClick={(row) => openDrawer(row.name)}
-        minWidth={960}
-        empty={suppliers.length === 0 ? "暂无供应商——商品建档时填写供应商名称即自动出现在这里。" : "没有匹配的供应商。"}
-      />
+      {/* ---- 供应商列表（首载显示骨架条） ---- */}
+      {booting ? (
+        <Skeleton rows={7} />
+      ) : (
+        <DataTable
+          columns={columns}
+          rows={rows}
+          rowKey={(row) => row.name}
+          onRowClick={(row) => openDrawer(row.name)}
+          minWidth={960}
+          empty={suppliers.length === 0 ? "暂无供应商——商品建档时填写供应商名称即自动出现在这里。" : "没有匹配的供应商。"}
+        />
+      )}
 
       {/* ---- 供应商工作台抽屉 ---- */}
       <Drawer
