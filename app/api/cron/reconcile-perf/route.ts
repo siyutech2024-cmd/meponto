@@ -75,6 +75,9 @@ export async function GET(request: Request) {
     ] as const) {
       const report = await reconcileCollection(collection, table, {
         toTableShape: toTableShape as unknown as (legacy: Record<string, unknown>) => Record<string, unknown>,
+        // Concurrency-test fixtures (scripts/txcore-stress.ts) live only in the
+        // real tables until the delete-rule whitelist DDL lands — exclude them.
+        excludeIdPrefixes: ["stress-"],
       });
       txClean = txClean && report.clean;
       txResults.push({

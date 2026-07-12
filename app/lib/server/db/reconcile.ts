@@ -1,5 +1,5 @@
 import { fetchRows } from "../db-read";
-import { countRows, selectRows } from "./core";
+import { selectRows } from "./core";
 import { diffValues, reconcileSets, type FieldDiff } from "./diff";
 
 /**
@@ -28,14 +28,20 @@ export async function reconcileCollection(
     idColumn?: string;
     /** Field-diff at most this many common rows (sampled from the head). */
     sampleSize?: number;
+    /** Rows whose id starts with any of these prefixes are excluded on BOTH
+     *  sides (e.g. `stress-` concurrency-test fixtures). */
+    excludeIdPrefixes?: string[];
   } = {},
 ): Promise<ReconcileReport> {
   const idColumn = options.idColumn ?? "id";
   const sampleSize = options.sampleSize ?? 200;
+  const excluded = (id: unknown) =>
+    (options.excludeIdPrefixes ?? []).some((prefix) => String(id ?? "").startsWith(prefix));
 
-  const legacyRows = await fetchRows<Record<string, unknown>>(collection);
-  const tableRows = await selectRows<Record<string, unknown>>(table);
-  const tableCount = await countRows(table);
+  const legacyRows = (await fetchRows<Record<string, unknown>>(collection)).filter((row) => !excluded(row.id));
+  const tableRows = (await selectRows<Record<string, unknown>>(table)).filter((row) => !excluded(row[idColumn]));
+  // Comparable scope on both sides: count what survived the exclusion filter.
+  const tableCount = tableRows.length;
 
   const legacyById = new Map(legacyRows.map((row) => [String(row.id), row]));
   const tableById = new Map(tableRows.map((row) => [String(row[idColumn]), row]));
