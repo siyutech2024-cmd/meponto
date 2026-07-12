@@ -276,3 +276,30 @@ REVOKE EXECUTE ON FUNCTION txcore_balance_check() FROM anon, authenticated, PUBL
 GRANT EXECUTE ON FUNCTION redeem_order(text,text,text,integer,text,text,text,boolean,jsonb) TO service_role;
 GRANT EXECUTE ON FUNCTION release_order(text,boolean,text,text) TO service_role;
 GRANT EXECUTE ON FUNCTION txcore_balance_check() TO service_role;
+
+-- Recompute the balances projection for specific riders (dual-write mirror
+-- calls this after upserting ledger rows, keeping points_balances a pure
+-- function of points_ledger throughout the window).
+CREATE OR REPLACE FUNCTION txcore_recompute_balances(p_rider_ids text[])
+RETURNS integer
+LANGUAGE sql SECURITY DEFINER SET search_path = public AS $$
+  WITH recomputed AS (
+    SELECT r.rider_id,
+      greatest(0, coalesce(sum(CASE
+        WHEN l.type IN ('earn','refund','release','adjust') THEN l.points
+        WHEN l.type IN ('spend','expire','reverse','hold') THEN -l.points
+        ELSE 0 END) FILTER (WHERE l.status = 'approved'), 0))::integer AS available
+    FROM unnest(p_rider_ids) AS r(rider_id)
+    LEFT JOIN points_ledger l ON l.rider_id = r.rider_id
+    GROUP BY r.rider_id
+  ), upserted AS (
+    INSERT INTO points_balances (rider_id, available)
+    SELECT rider_id, available FROM recomputed
+    ON CONFLICT (rider_id) DO UPDATE
+      SET available = EXCLUDED.available, updated_at = now()
+    RETURNING 1
+  )
+  SELECT count(*)::integer FROM upserted;
+$$;
+REVOKE EXECUTE ON FUNCTION txcore_recompute_balances(text[]) FROM anon, authenticated, PUBLIC;
+GRANT EXECUTE ON FUNCTION txcore_recompute_balances(text[]) TO service_role;

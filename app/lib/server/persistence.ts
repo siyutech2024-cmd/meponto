@@ -214,6 +214,14 @@ async function flushDirtyCollections() {
         if (localNewSet) for (const row of rows) localNewSet.delete(row.record_id);
       }
 
+      // M2/W1 dual-write (docs/data-core-cure-plan.md §4 S3, CORE_MODE_TXCORE):
+      // the flush pipeline is the ONE choke point every ledger/order mutation
+      // passes through, so mirroring here covers all 9+ write routes at once
+      // and stays exactly consistent with what reaches the JSONB mirror.
+      // Failures are logged, never thrown — legacy remains the source of truth;
+      // sustained divergence is the nightly reconcile's job to surface.
+      await mirrorToCoreTables(name, Array.from(byId.values()));
+
       // NOTE: we deliberately do NOT delete rows that are merely absent from
       // this instance's memory. On serverless, several instances run the same
       // collections concurrently and an instance that has not seen a freshly
@@ -223,6 +231,44 @@ async function flushDirtyCollections() {
       state.dirty.add(name);
       warnOnce((error as Error).message);
     }
+  }
+}
+
+/**
+ * M2/W1 dual-write hook (CORE_MODE_TXCORE=dualwrite|read): mirror the ledger
+ * and order collections into the transactional-core tables. Records that
+ * would violate the tables' CHECK constraints (legacy oddities) are skipped —
+ * the nightly reconcile surfaces them as missing rows for manual review.
+ * Never throws: legacy stays the source of truth during the window.
+ */
+const LEDGER_TYPES = new Set(["earn", "spend", "refund", "expire", "reverse", "adjust", "hold", "release"]);
+const LEDGER_STATUSES = new Set(["pending", "approved", "rejected", "reversed"]);
+const ORDER_STATUSES = new Set(["created", "arrived", "fulfilled", "cancelled"]);
+
+async function mirrorToCoreTables(name: string, records: AnyRecord[]): Promise<void> {
+  if (name !== "pointsLedgerEntries" && name !== "marketplaceOrders") return;
+  const mode = String(process.env.CORE_MODE_TXCORE ?? "off").toLowerCase();
+  if (mode !== "dualwrite" && mode !== "read") return;
+  try {
+    if (name === "pointsLedgerEntries") {
+      const valid = records.filter(
+        (r) => typeof r.riderId === "string" && LEDGER_TYPES.has(String(r.type)) && LEDGER_STATUSES.has(String(r.status)),
+      );
+      if (valid.length > 0) {
+        const { upsertLedgerEntries, recomputeBalances } = await import("./db/points-repo");
+        await upsertLedgerEntries(valid as never[]);
+        // Keep the balances snapshot a pure projection of the ledger.
+        await recomputeBalances([...new Set(valid.map((r) => String(r.riderId)))]);
+      }
+    } else {
+      const valid = records.filter((r) => ORDER_STATUSES.has(String(r.status ?? "created")));
+      if (valid.length > 0) {
+        const { upsertOrders } = await import("./db/orders-repo");
+        await upsertOrders(valid as never[]);
+      }
+    }
+  } catch (error) {
+    console.warn(`[core:txcore] dual-write mirror failed for ${name} (legacy unaffected): ${(error as Error).message}`);
   }
 }
 

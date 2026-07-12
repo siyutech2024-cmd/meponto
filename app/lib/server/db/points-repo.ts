@@ -91,3 +91,9 @@ export function releaseOrderTx(orderId: string, opts: { restock?: boolean; stati
 export function balanceCheck() {
   return callTransaction<{ mismatchCount: number; samples: unknown[] }>("txcore_balance_check", {});
 }
+
+/** Recompute the balances projection for the given riders (dual-write mirror). */
+export function recomputeBalances(riderIds: string[]) {
+  if (riderIds.length === 0) return Promise.resolve(0);
+  return callTransaction<number>("txcore_recompute_balances", { p_rider_ids: riderIds });
+}
