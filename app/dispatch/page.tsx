@@ -240,77 +240,63 @@ function BoardTab({ board, byShift, loading, onAction, setMessage }: { board: Bo
     if (result) setMessage({ tone: "ok", text: t("dpDelOk") });
   }
 
-  const columns: Array<DataColumn<DispatchShift>> = [
-    {
-      key: "date",
-      label: t("dfDate"),
-      render: (shift) => (
-        <div translate="no">
-          <div className="font-black">{shift.date.slice(5)}</div>
-          <div className="text-[10px] font-bold text-[var(--muted)]">{t(weekdayKeyOf(shift.date))}</div>
+  // Week board: 7 day columns, each stacking that day's slot blocks — the
+  // calendar-like view operators asked for (a flat 21-row table was unreadable).
+  const weekDates = Array.from({ length: 7 }, (_, i) => addDays(weekStart, i));
+  const shiftsByDate = new Map<string, DispatchShift[]>();
+  for (const shift of weekShifts) {
+    const list = shiftsByDate.get(shift.date) ?? [];
+    list.push(shift);
+    shiftsByDate.set(shift.date, list);
+  }
+  for (const list of shiftsByDate.values()) list.sort((a, b) => a.timeRange.localeCompare(b.timeRange));
+
+  function SlotBlock({ shift }: { shift: DispatchShift }) {
+    const franchiseQuota = (byShift.quotaMap.get(shift.id) ?? []).filter((quota) => quota.level === "franchise").reduce((sum, quota) => sum + quota.quota, 0);
+    const approved = (byShift.signupMap.get(shift.id) ?? []).filter((signup) => signup.status === "approved" || signup.status === "reported").length;
+    const pending = (byShift.signupMap.get(shift.id) ?? []).filter((signup) => signup.status === "submitted").length;
+    return (
+      <div className="group rounded-[10px] border border-[var(--line)] bg-[var(--surface-raised)] p-2.5 transition-colors hover:border-[var(--accent)]">
+        <div className="flex items-center justify-between gap-1">
+          <span className="inline-flex items-center gap-1 text-[13px] font-black" translate="no">
+            {shift.isCritical && <Star size={11} className="text-[var(--accent)]" />}
+            {shift.timeRange}
+          </span>
+          <button
+            type="button"
+            onClick={() => void removeShift(shift)}
+            className="rounded p-0.5 text-[var(--muted)] opacity-0 transition-opacity hover:text-[var(--danger-ink)] group-hover:opacity-100"
+            aria-label={t("dpDelTitle")}
+          >
+            <X size={13} />
+          </button>
         </div>
-      ),
-    },
-    {
-      key: "slot",
-      label: t("dpSlot"),
-      render: (shift) => (
-        <span className="inline-flex items-center gap-1 font-black">
-          {shift.isCritical && <Star size={12} className="text-[var(--accent)]" />}
-          {shift.timeRange}
-        </span>
-      ),
-    },
-    { key: "hotzone", label: t("dpHotzone"), render: (shift) => <span className="text-xs text-[var(--muted-strong)]">{shift.hotzone}</span> },
-    {
-      key: "status",
-      label: t("dpStatus"),
-      render: (shift) => (
-        <div className="flex flex-wrap items-center gap-1">
+        <div className="mt-0.5 truncate text-[10px] font-bold text-[var(--muted)]">{shift.hotzone}</div>
+        <div className="mt-1.5 flex flex-wrap items-center gap-1">
           <ShiftStatusBadge shift={shift} label={statusKey[shift.status] ? t(statusKey[shift.status]) : shift.status} />
           {shift.reportedAt && <StatusBadge tone="success" label={t("dpStReported")} />}
         </div>
-      ),
-    },
-    { key: "planned", label: t("dpQuota99"), align: "right", render: (shift) => <span className="font-black">{shift.plannedCount}</span> },
-    {
-      key: "allocated",
-      label: t("dpAllocated"),
-      align: "right",
-      render: (shift) => {
-        const franchiseQuota = (byShift.quotaMap.get(shift.id) ?? []).filter((quota) => quota.level === "franchise").reduce((sum, quota) => sum + quota.quota, 0);
-        return <span className={`font-black ${statBadge(franchiseQuota, shift.plannedCount)}`}>{franchiseQuota}</span>;
-      },
-    },
-    {
-      key: "approved",
-      label: t("dpApprovedCnt"),
-      align: "right",
-      render: (shift) => {
-        const approved = (byShift.signupMap.get(shift.id) ?? []).filter((signup) => signup.status === "approved" || signup.status === "reported").length;
-        return <span className={`font-black ${statBadge(approved, shift.plannedCount)}`}>{approved}</span>;
-      },
-    },
-    {
-      key: "pending",
-      label: t("dpPendingCnt"),
-      align: "right",
-      render: (shift) => {
-        const pending = (byShift.signupMap.get(shift.id) ?? []).filter((signup) => signup.status === "submitted").length;
-        return <span className={`font-black ${pending > 0 ? "text-[var(--warning-ink)]" : "text-[var(--muted)]"}`}>{pending}</span>;
-      },
-    },
-    {
-      key: "action",
-      label: t("dpAction"),
-      align: "right",
-      render: (shift) => (
-        <button type="button" onClick={() => void removeShift(shift)} className="tag inline-flex items-center gap-1 hover:border-[var(--danger)] hover:text-[var(--danger-ink)]" aria-label={t("dpDelTitle")}>
-          <X size={12} /> {t("dpDelConfirm")}
-        </button>
-      ),
-    },
-  ];
+        <div className="mt-2 grid grid-cols-4 gap-1 text-center" translate="no">
+          <div>
+            <div className="text-[9px] font-black uppercase text-[var(--muted)]">{t("dpQuota99")}</div>
+            <div className="text-sm font-black">{shift.plannedCount}</div>
+          </div>
+          <div>
+            <div className="text-[9px] font-black uppercase text-[var(--muted)]">{t("dpAllocated")}</div>
+            <div className={`text-sm font-black ${statBadge(franchiseQuota, shift.plannedCount)}`}>{franchiseQuota}</div>
+          </div>
+          <div>
+            <div className="text-[9px] font-black uppercase text-[var(--muted)]">{t("dpApprovedCnt")}</div>
+            <div className={`text-sm font-black ${statBadge(approved, shift.plannedCount)}`}>{approved}</div>
+          </div>
+          <div>
+            <div className="text-[9px] font-black uppercase text-[var(--muted)]">{t("dpPendingCnt")}</div>
+            <div className={`text-sm font-black ${pending > 0 ? "text-[var(--warning-ink)]" : "text-[var(--muted)]"}`}>{pending}</div>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-4">
@@ -339,7 +325,27 @@ function BoardTab({ board, byShift, loading, onAction, setMessage }: { board: Bo
       {loading && board.shifts.length === 0 ? (
         <div className="panel p-6 text-sm font-bold text-[var(--muted)]">{t("dpLoading")}</div>
       ) : (
-        <DataTable<DispatchShift> columns={columns} rows={weekShifts} rowKey={(shift) => shift.id} minWidth={940} />
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-7">
+          {weekDates.map((date) => {
+            const dayShifts = shiftsByDate.get(date) ?? [];
+            return (
+              <div key={date} className="rounded-[12px] border border-[var(--line)] bg-[var(--surface)] p-2">
+                <div className="mb-2 flex items-baseline justify-between px-1" translate="no">
+                  <span className="text-sm font-black">{date.slice(5)}</span>
+                  <span className="text-[10px] font-bold text-[var(--muted)]">{t(weekdayKeyOf(date))}{dayShifts.length > 0 ? ` · ${dayShifts.length}` : ""}</span>
+                </div>
+                <div className="space-y-2">
+                  {dayShifts.map((shift) => (
+                    <SlotBlock key={shift.id} shift={shift} />
+                  ))}
+                  {dayShifts.length === 0 && (
+                    <div className="grid h-16 place-items-center rounded-[10px] border border-dashed border-[var(--line)] text-[10px] font-bold text-[var(--muted)]">—</div>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
       )}
 
       {emptySlots.length > 0 && (
