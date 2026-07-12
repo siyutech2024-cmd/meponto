@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { CalendarDays, CheckCircle2, ClipboardCopy, ClipboardList, Download, Plus, RefreshCcw, Send, Star, Upload, Users, X } from "lucide-react";
 import { AppShell, PageTitle } from "../components/ui";
-import { DataTable, Drawer, SectionCard, Stat, StatusBadge, TodoCard, Toolbar, type BadgeTone, type DataColumn } from "../components/kit";
+import { Chip, DataTable, Drawer, SectionCard, Stat, StatusBadge, TodoCard, Toolbar, type BadgeTone, type DataColumn } from "../components/kit";
 import type { DispatchShift, ShiftQuota, ShiftSignup } from "../lib/dispatch";
 import { downloadCsv } from "../lib/csv";
 import { useDialog } from "../components/dialog";
@@ -572,15 +572,61 @@ function ShiftSelect({ shifts, value, onChange }: { shifts: DispatchShift[]; val
 
 function QuotaTab({ board, byShift, onSave, setMessage, network }: { board: Board; byShift: { quotaMap: Map<string, ShiftQuota[]> }; onSave: (body: Record<string, unknown>) => Promise<Record<string, unknown> | null>; setMessage: (m: { tone: "ok" | "warn" | "err"; text: string } | null) => void; network: { franchises: Franchise[]; stations: Ponto[] } }) {
   const t = useT();
+  // Week-grid shift picker (replaces the 21-option dropdown) + per-franchise
+  // batch matrix (replaces the one-row-at-a-time form).
+  const [weekStart, setWeekStart] = useState(() => mondayOf(0));
   const [shiftId, setShiftId] = useState("");
-  const [level, setLevel] = useState<"franchise" | "station">("franchise");
+  const [matrix, setMatrix] = useState<Record<string, string>>({});
+  const [busy, setBusy] = useState(false);
+  const [stationSplitOpen, setStationSplitOpen] = useState(false);
   const [franchise, setFranchise] = useState("");
   const [station, setStation] = useState("");
   const [quota, setQuota] = useState("");
 
+  const weekDates = Array.from({ length: 7 }, (_, i) => addDays(weekStart, i));
   const shift = board.shifts.find((item) => item.id === shiftId);
   const quotas = (shiftId ? byShift.quotaMap.get(shiftId) ?? [] : []).sort((a, b) => a.level.localeCompare(b.level));
-  const franchiseTotal = quotas.filter((item) => item.level === "franchise").reduce((sum, item) => sum + item.quota, 0);
+  const franchiseQuotaOf = (id: string, name: string) => (byShift.quotaMap.get(id) ?? []).find((q) => q.level === "franchise" && q.franchise === name)?.quota ?? 0;
+  const allocatedOf = (id: string) => (byShift.quotaMap.get(id) ?? []).filter((q) => q.level === "franchise").reduce((sum, q) => sum + q.quota, 0);
+
+  // Prefill the matrix from existing quotas whenever the selected shift changes.
+  useEffect(() => {
+    if (!shiftId) return;
+    const next: Record<string, string> = {};
+    for (const item of network.franchises) {
+      const existing = franchiseQuotaOf(shiftId, item.name);
+      if (existing > 0) next[item.name] = String(existing);
+    }
+    setMatrix(next);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [shiftId, board.quotas]);
+
+  const matrixTotal = network.franchises.reduce((sum, item) => sum + (Number(matrix[item.name]) || 0), 0);
+  const dirtyRows = network.franchises.filter((item) => {
+    const val = Number(matrix[item.name]) || 0;
+    return shiftId !== "" && val !== franchiseQuotaOf(shiftId, item.name);
+  });
+
+  async function saveMatrix() {
+    if (!shiftId || dirtyRows.length === 0) return;
+    setBusy(true);
+    setMessage(null);
+    let ok = 0;
+    for (const item of dirtyRows) {
+      const result = await onSave({ action: "quota", shiftId, level: "franchise", franchise: item.name, quota: Number(matrix[item.name]) || 0 });
+      if (result) ok += 1;
+    }
+    setBusy(false);
+    setMessage({ tone: "ok", text: `${t("dpQuotaOk")} ×${ok}` });
+  }
+
+  const cellTone = (s: DispatchShift) => {
+    const allocated = allocatedOf(s.id);
+    if (allocated === 0) return "border-[var(--line)] text-[var(--muted)]";
+    if (allocated < s.plannedCount) return "border-[var(--warn)] text-[var(--warn-ink,var(--warning-ink))]";
+    if (allocated === s.plannedCount) return "border-[var(--success)] text-[var(--success-ink)]";
+    return "border-[var(--danger)] text-[var(--danger-ink)]";
+  };
 
   const input = "h-11 w-full rounded-[8px] border border-[var(--line)] bg-[var(--surface)] px-3 text-sm font-bold outline-none focus:border-[var(--accent)]";
 
@@ -593,56 +639,151 @@ function QuotaTab({ board, byShift, onSave, setMessage, network }: { board: Boar
   ];
 
   return (
-    <div className="grid gap-4 lg:grid-cols-[420px_1fr]">
-      <SectionCard title={t("dpAssignQuota")}>
-        <div className="space-y-4">
-          <ShiftSelect shifts={board.shifts.filter((item) => item.status !== "finished")} value={shiftId} onChange={setShiftId} />
-          <div className="flex gap-2">
-            {(["franchise", "station"] as const).map((option) => (
-              <button key={option} type="button" onClick={() => setLevel(option)} className={`h-11 flex-1 rounded-[8px] border text-xs font-black ${level === option ? "border-[var(--accent)] bg-[var(--accent-glow)] text-[var(--accent)]" : "border-[var(--line)] text-[var(--muted-strong)]"}`}>
-                {option === "franchise" ? t("dpHqToFranchise") : t("dpFranchiseToStation")}
-              </button>
-            ))}
+    <div className="space-y-4">
+      {/* ---- Week grid: click a slot to select it ---- */}
+      <SectionCard
+        title={t("dpAssignQuota")}
+        right={
+          <div className="flex flex-wrap gap-2">
+            <button type="button" className="tag" onClick={() => setWeekStart(addDays(weekStart, -7))}>{t("dpPrevWeek")}</button>
+            <span className="self-center text-xs font-black" translate="no">{weekStart} ~ {addDays(weekStart, 6)}</span>
+            <button type="button" className="tag" onClick={() => setWeekStart(addDays(weekStart, 7))}>{t("dpNextWeek")}</button>
+            <button type="button" className="tag" onClick={() => setWeekStart(mondayOf(0))}>{t("dpThisWeek")}</button>
+            <button type="button" className="tag" onClick={() => setWeekStart(mondayOf(1))}>{t("dpNextWk")}</button>
           </div>
-          <select className={input} value={franchise} onChange={(e) => { setFranchise(e.target.value); setStation(""); }}>
-            <option value="">{t("dpSelectFranchise")}</option>
-            {network.franchises.map((item) => (
-              <option key={item.id} value={item.name}>{item.name}</option>
-            ))}
-          </select>
-          {level === "station" && (
-            <select className={input} value={station} onChange={(e) => setStation(e.target.value)}>
-              <option value="">{t("dpSelectStation")}</option>
-              {network.stations.filter((item) => !franchise || item.franchise === franchise).map((item) => (
-                <option key={item.id} value={item.name}>{item.name}</option>
+        }
+      >
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[720px] text-center text-xs">
+            <thead>
+              <tr className="text-[10px] font-black uppercase text-[var(--muted)]">
+                <th className="pb-1.5 text-left">{t("dpSlot")}</th>
+                {weekDates.map((date) => (
+                  <th key={date} className="pb-1.5" translate="no">
+                    <div>{t(weekdayKeyOf(date))}</div>
+                    <div className="font-bold text-[var(--muted-strong)]">{date.slice(5)}</div>
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {SLOT_RANGES.map((range) => (
+                <tr key={range} className="border-t border-[var(--line)]">
+                  <td className="py-1.5 text-left font-black" translate="no">{range}</td>
+                  {weekDates.map((date) => {
+                    const cellShifts = board.shifts.filter((s) => s.date === date && s.timeRange === range && s.status !== "finished");
+                    return (
+                      <td key={`${date}|${range}`} className="px-1 py-1.5">
+                        {cellShifts.length === 0 ? (
+                          <span className="text-[var(--muted)]">—</span>
+                        ) : (
+                          <div className="flex flex-col gap-1">
+                            {cellShifts.map((s) => (
+                              <button
+                                key={s.id}
+                                type="button"
+                                onClick={() => setShiftId(s.id === shiftId ? "" : s.id)}
+                                translate="no"
+                                className={`rounded-[8px] border px-1.5 py-1 font-black transition-colors ${s.id === shiftId ? "border-[var(--accent)] bg-[var(--accent)] text-[var(--accent-ink)]" : `bg-[var(--surface-raised)] hover:border-[var(--accent)] ${cellTone(s)}`}`}
+                                title={`${s.hotzone}${s.isCritical ? " ★" : ""}`}
+                              >
+                                {allocatedOf(s.id)}/{s.plannedCount}
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                      </td>
+                    );
+                  })}
+                </tr>
               ))}
-            </select>
-          )}
-          <input className={input} placeholder={t("dpQuotaCount")} inputMode="numeric" value={quota} onChange={(e) => setQuota(e.target.value.replace(/\D/g, ""))} />
-          <button
-            type="button"
-            disabled={!shiftId || !franchise.trim() || quota === "" || (level === "station" && !station.trim())}
-            onClick={async () => {
-              setMessage(null);
-              const result = await onSave({ action: "quota", shiftId, level, franchise: franchise.trim(), station: station.trim() || undefined, quota: Number(quota) });
-              if (result) setMessage({ tone: "ok", text: t("dpQuotaOk") });
-            }}
-            className="inline-flex h-11 w-full items-center justify-center gap-2 rounded-[8px] bg-[var(--accent)] text-sm font-black uppercase text-[var(--accent-ink)] hover:bg-[var(--accent-strong)] disabled:opacity-50"
-          >
-            {t("dpSaveQuota")}
-          </button>
-          {shift && (
-            <div className="rounded-[8px] border border-[var(--line)] bg-[var(--surface-raised)] p-3 text-xs font-bold text-[var(--muted-strong)]">
-              {t("dpQuotaSummary", { planned: shift.plannedCount, allocated: franchiseTotal })}
-              {franchiseTotal > shift.plannedCount && <span className="text-[var(--danger-ink)]">{t("dpOverQuota")}</span>}
-            </div>
-          )}
+            </tbody>
+          </table>
         </div>
+        <div className="mt-2 text-[11px] font-bold text-[var(--muted)]">{t("dpSelectShift")} · {t("dpAllocated")}/{t("dpQuota99")}</div>
       </SectionCard>
 
-      <SectionCard title={t("dpCurrentQuota")}>
-        <DataTable<ShiftQuota> columns={quotaColumns} rows={quotas} rowKey={(item) => item.id} minWidth={560} empty={t("dpNoQuota")} />
-      </SectionCard>
+      {shift && (
+        <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+          {/* ---- Batch matrix: HQ → all franchises in one save ---- */}
+          <SectionCard
+            title={<span translate="no">{shift.date} {shift.timeRange} · {shift.hotzone}</span>}
+            desc={t("dpQuotaSummary", { planned: shift.plannedCount, allocated: matrixTotal })}
+            right={
+              <button
+                type="button"
+                disabled={busy || dirtyRows.length === 0}
+                onClick={() => void saveMatrix()}
+                className="inline-flex h-9 items-center gap-1 rounded-[8px] bg-[var(--accent)] px-4 text-xs font-black uppercase text-[var(--accent-ink)] hover:bg-[var(--accent-strong)] disabled:opacity-50"
+              >
+                {t("dpSaveQuota")}{dirtyRows.length > 0 ? ` ×${dirtyRows.length}` : ""}
+              </button>
+            }
+          >
+            <div className="space-y-1.5">
+              {network.franchises.map((item) => {
+                const val = matrix[item.name] ?? "";
+                const changed = (Number(val) || 0) !== franchiseQuotaOf(shift.id, item.name);
+                return (
+                  <label key={item.id} className={`flex items-center gap-3 rounded-[8px] border px-3 py-1.5 ${changed ? "border-[var(--accent)]" : "border-[var(--line)]"}`}>
+                    <span className="flex-1 truncate text-sm font-black">{item.name}</span>
+                    <input
+                      inputMode="numeric"
+                      className="h-9 w-20 rounded-[8px] border border-[var(--line)] bg-[var(--surface)] text-center text-sm font-black outline-none focus:border-[var(--accent)]"
+                      value={val}
+                      onChange={(e) => setMatrix({ ...matrix, [item.name]: e.target.value.replace(/\D/g, "") })}
+                    />
+                  </label>
+                );
+              })}
+            </div>
+            {matrixTotal > shift.plannedCount && (
+              <div className="mt-2 text-xs font-black text-[var(--danger-ink)]">{t("dpOverQuota")}</div>
+            )}
+          </SectionCard>
+
+          {/* ---- Current quota records + optional station-level split ---- */}
+          <SectionCard
+            title={t("dpCurrentQuota")}
+            right={
+              <button type="button" className="tag" onClick={() => setStationSplitOpen((v) => !v)}>
+                {t("dpFranchiseToStation")}
+              </button>
+            }
+          >
+            {stationSplitOpen && (
+              <div className="mb-3 grid gap-2 rounded-[10px] border border-dashed border-[var(--line)] p-3 sm:grid-cols-[1fr_1fr_96px_auto]">
+                <select className={input} value={franchise} onChange={(e) => { setFranchise(e.target.value); setStation(""); }}>
+                  <option value="">{t("dpSelectFranchise")}</option>
+                  {network.franchises.map((item) => (
+                    <option key={item.id} value={item.name}>{item.name}</option>
+                  ))}
+                </select>
+                <select className={input} value={station} onChange={(e) => setStation(e.target.value)}>
+                  <option value="">{t("dpSelectStation")}</option>
+                  {network.stations.filter((item) => !franchise || item.franchise === franchise).map((item) => (
+                    <option key={item.id} value={item.name}>{item.name}</option>
+                  ))}
+                </select>
+                <input className={input} placeholder={t("dpQuotaCount")} inputMode="numeric" value={quota} onChange={(e) => setQuota(e.target.value.replace(/\D/g, ""))} />
+                <button
+                  type="button"
+                  disabled={!franchise.trim() || !station.trim() || quota === ""}
+                  onClick={async () => {
+                    setMessage(null);
+                    const result = await onSave({ action: "quota", shiftId, level: "station", franchise: franchise.trim(), station: station.trim(), quota: Number(quota) });
+                    if (result) setMessage({ tone: "ok", text: t("dpQuotaOk") });
+                  }}
+                  className="tag h-11 disabled:opacity-50"
+                >
+                  {t("dpSaveQuota")}
+                </button>
+              </div>
+            )}
+            <DataTable<ShiftQuota> columns={quotaColumns} rows={quotas} rowKey={(item) => item.id} minWidth={480} empty={t("dpNoQuota")} />
+          </SectionCard>
+        </div>
+      )}
     </div>
   );
 }
@@ -858,7 +999,24 @@ function ReviewTab({ board, onAction, setMessage, network }: { board: Board; onA
 
 function ReportTab({ board, byShift, onAction, setMessage }: { board: Board; byShift: { signupMap: Map<string, ShiftSignup[]> }; onAction: (body: Record<string, unknown>) => Promise<Record<string, unknown> | null>; setMessage: (m: { tone: "ok" | "warn" | "err"; text: string } | null) => void }) {
   const t = useT();
-  const candidates = board.shifts.filter((shift) => shift.status !== "finished");
+  // Week-scoped + day-grouped + whole-day batch actions. The old flat list
+  // mixed every week since June into one strip with per-row buttons only.
+  const [weekStart, setWeekStart] = useState(() => mondayOf(0));
+  const [filter, setFilter] = useState<"pending" | "reported" | "all">("pending");
+  const [busyDay, setBusyDay] = useState("");
+  const weekEnd = addDays(weekStart, 6);
+  const approvedOf = (shift: DispatchShift) => (byShift.signupMap.get(shift.id) ?? []).filter((signup) => signup.status === "approved" || signup.status === "reported").length;
+  const candidates = board.shifts
+    .filter((shift) => shift.status !== "finished" && shift.date >= weekStart && shift.date <= weekEnd)
+    .filter((shift) => (filter === "all" ? true : filter === "pending" ? !shift.reportedAt : Boolean(shift.reportedAt)))
+    .sort((a, b) => a.date.localeCompare(b.date) || a.timeRange.localeCompare(b.timeRange));
+  const dayGroups = new Map<string, DispatchShift[]>();
+  for (const shift of candidates) {
+    const list = dayGroups.get(shift.date) ?? [];
+    list.push(shift);
+    dayGroups.set(shift.date, list);
+  }
+  const pendingInWeek = board.shifts.filter((shift) => shift.status !== "finished" && shift.date >= weekStart && shift.date <= weekEnd && !shift.reportedAt).length;
 
   async function copyRoster(shiftId: string) {
     setMessage(null);
@@ -880,6 +1038,48 @@ function ReportTab({ board, byShift, onAction, setMessage }: { board: Board; byS
   async function markReported(shiftId: string) {
     const result = await onAction({ action: "report", shiftId, confirm: true });
     if (result) setMessage({ tone: "ok", text: t("dpMarkReportedOk", { n: String(result.count) }) });
+  }
+
+  /** Copy the WHOLE day's rosters in one clipboard write. */
+  async function copyDay(date: string, shifts: DispatchShift[]) {
+    setBusyDay(date);
+    setMessage(null);
+    const parts: string[] = [];
+    let total = 0;
+    for (const shift of shifts) {
+      const result = await onAction({ action: "report", shiftId: shift.id, confirm: false });
+      const text = String(result?.rosterText ?? "");
+      if (text) {
+        parts.push(`【${shift.date} ${shift.timeRange} · ${shift.hotzone}】\n${text}`);
+        total += Number(result?.count ?? 0);
+      }
+    }
+    setBusyDay("");
+    if (parts.length === 0) {
+      setMessage({ tone: "warn", text: t("dpNoApproved") });
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(parts.join("\n\n"));
+      setMessage({ tone: "ok", text: t("dpCopyOk", { n: String(total) }) });
+    } catch {
+      setMessage({ tone: "warn", text: t("dpCopyFail", { text: parts.join("\n\n").slice(0, 200) }) });
+    }
+  }
+
+  /** Mark every unreported shift of the day as reported. */
+  async function markDay(date: string, shifts: DispatchShift[]) {
+    const targets = shifts.filter((shift) => !shift.reportedAt);
+    if (targets.length === 0) return;
+    setBusyDay(date);
+    setMessage(null);
+    let n = 0;
+    for (const shift of targets) {
+      const result = await onAction({ action: "report", shiftId: shift.id, confirm: true });
+      if (result) n += Number(result.count ?? 0);
+    }
+    setBusyDay("");
+    setMessage({ tone: "ok", text: t("dpMarkReportedOk", { n: String(n) }) });
   }
 
   const columns: Array<DataColumn<DispatchShift>> = [
@@ -939,8 +1139,54 @@ function ReportTab({ board, byShift, onAction, setMessage }: { board: Board; byS
   ];
 
   return (
-    <SectionCard title={t("dpReportTitle")}>
-      <DataTable<DispatchShift> columns={columns} rows={candidates} rowKey={(shift) => shift.id} minWidth={860} empty={t("dpNoReportable")} />
-    </SectionCard>
+    <div className="space-y-4">
+      <Toolbar
+        right={
+          <div className="flex flex-wrap gap-2">
+            {([["pending", t("dpNotReported")], ["reported", t("dpStReported")], ["all", t("fmChipAll")]] as const).map(([key, label]) => (
+              <Chip key={key} active={filter === key} onClick={() => setFilter(key)}>{label}</Chip>
+            ))}
+          </div>
+        }
+      >
+        <button type="button" className="tag" onClick={() => setWeekStart(addDays(weekStart, -7))}>{t("dpPrevWeek")}</button>
+        <span className="self-center text-sm font-black" translate="no">
+          {weekStart} ~ {weekEnd}
+          {pendingInWeek > 0 && <span className="ml-2 text-[10px] font-black uppercase text-[var(--warning-ink)]">{t("dpNotReported")} {pendingInWeek}</span>}
+        </span>
+        <button type="button" className="tag" onClick={() => setWeekStart(addDays(weekStart, 7))}>{t("dpNextWeek")}</button>
+        <button type="button" className="tag" onClick={() => setWeekStart(mondayOf(0))}>{t("dpThisWeek")}</button>
+        <button type="button" className="tag" onClick={() => setWeekStart(mondayOf(1))}>{t("dpNextWk")}</button>
+      </Toolbar>
+
+      {[...dayGroups.entries()].map(([date, shifts]) => {
+        const dayPlanned = shifts.reduce((sum, shift) => sum + shift.plannedCount, 0);
+        const dayApproved = shifts.reduce((sum, shift) => sum + approvedOf(shift), 0);
+        const dayGap = Math.max(0, dayPlanned - dayApproved);
+        const dayPending = shifts.filter((shift) => !shift.reportedAt).length;
+        return (
+          <SectionCard
+            key={date}
+            title={<span translate="no">{date.slice(5)} {t(weekdayKeyOf(date))}</span>}
+            desc={`${t("dpQuota99")} ${dayPlanned} · ${t("dpStApproved")} ${dayApproved} · ${t("dpGap")} ${dayGap}`}
+            right={
+              <div className="flex flex-wrap gap-2">
+                <button type="button" disabled={busyDay === date} onClick={() => void copyDay(date, shifts)} className="tag inline-flex items-center gap-1 disabled:opacity-50">
+                  <ClipboardCopy size={13} /> {t("dpCopyRoster")}
+                </button>
+                {dayPending > 0 && (
+                  <button type="button" disabled={busyDay === date} onClick={() => void markDay(date, shifts)} className="inline-flex h-9 items-center gap-1 rounded-[8px] bg-[var(--accent)] px-3.5 text-xs font-black uppercase text-[var(--accent-ink)] hover:bg-[var(--accent-strong)] disabled:opacity-50">
+                    <Download size={13} /> {t("dpMarkReported")} ×{dayPending}
+                  </button>
+                )}
+              </div>
+            }
+          >
+            <DataTable<DispatchShift> columns={columns} rows={shifts} rowKey={(shift) => shift.id} minWidth={720} />
+          </SectionCard>
+        );
+      })}
+      {dayGroups.size === 0 && <div className="panel p-8 text-center text-sm font-bold text-[var(--muted)]">{t("dpNoReportable")}</div>}
+    </div>
   );
 }
