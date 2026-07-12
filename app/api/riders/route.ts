@@ -6,6 +6,11 @@ import type { Rider, RiderStatus } from "../../lib/data";
 import { getRiderSensitiveRevealDecision, maskRiderSensitive } from "../../lib/masking";
 
 const COLLECTIONS = ["riders", "riderDailyKpis", "pointsLedgerEntries"];
+// riderDailyKpis is by far the largest collection here (months of daily rows)
+// and only changes when a new report lands — refresh it at most once a minute
+// per instance instead of on every list request.
+const KPI_REFRESH_TTL_MS = 60_000;
+let kpiRefreshedAt = 0;
 
 /** Legacy/self-signup rows used lowercase statuses — normalize for filters. */
 function normalizeStatus(status: string | undefined): RiderStatus {
@@ -29,7 +34,9 @@ export async function GET(request: Request) {
     });
   }
 
-  await refreshCollectionsFromDatabase(COLLECTIONS);
+  const refreshKpis = Date.now() - kpiRefreshedAt > KPI_REFRESH_TTL_MS;
+  await refreshCollectionsFromDatabase(refreshKpis ? COLLECTIONS : ["riders", "pointsLedgerEntries"]);
+  if (refreshKpis) kpiRefreshedAt = Date.now();
 
   // Points ledger for one rider (detail page 积分明细).
   const pointsFor = new URL(request.url).searchParams.get("pointsFor");
@@ -60,12 +67,24 @@ export async function GET(request: Request) {
   const base = reveal.allowed ? memory.riders : memory.riders.map(maskRiderSensitive);
   const known = new Set(memory.riders.map((rider) => rider.ninetyNineId).filter(Boolean));
 
+  // Single pass over the ledger for ALL balances (same semantics as
+  // getAvailablePoints) — the per-rider scan was O(riders × ledger) and the
+  // main CPU cost of this endpoint.
+  const balanceByRider = new Map<string, number>();
+  for (const entry of memory.pointsLedgerEntries) {
+    if (entry.status !== "approved") continue;
+    const positive = entry.type === "earn" || entry.type === "refund" || entry.type === "release" || entry.type === "adjust";
+    const negative = entry.type === "spend" || entry.type === "expire" || entry.type === "reverse" || entry.type === "hold";
+    if (!positive && !negative) continue;
+    balanceByRider.set(entry.riderId, (balanceByRider.get(entry.riderId) ?? 0) + (positive ? entry.points : -entry.points));
+  }
+
   const data = base.map((rider) => {
     const stats = rider.ninetyNineId ? reportStats.get(rider.ninetyNineId) : undefined;
     return {
       ...rider,
       status: normalizeStatus(rider.status),
-      pointsBalance: getAvailablePoints(memory.pointsLedgerEntries, rider.id),
+      pointsBalance: balanceByRider.get(rider.id) ?? 0,
       totalOrders: stats?.orders ?? 0,
       lastReportDate: stats?.lastDate ?? "",
       reportAr: stats?.ar ?? null,
