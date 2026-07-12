@@ -4,6 +4,7 @@ import { findTestAccount, mallHubPortals, portalConfigs, type PortalId, type Tes
 import { getSupabaseServerClient } from "../../../lib/supabase/server";
 import type { Role } from "../../../lib/rbac";
 import { createSessionToken, sessionCookie } from "../../../lib/auth-session";
+import { normalizeBrPhone, samePhone } from "../../../lib/phone";
 
 type LoginBody = {
   identifier?: string;
@@ -81,9 +82,12 @@ async function findAppUserAccount(identifier: string, password: string): Promise
   await refreshCollectionsFromDatabase(["appUsers", "crmPartners", "crmCategories"]);
 
   const normalized = identifier.trim().toLowerCase();
-  const compactPhone = identifier.replace(/\s/g, "");
+  // Phone match is format-insensitive (shared app/lib/phone.ts): "+55 11 9…",
+  // "5511 9…" and "(11) 9…" all reach the same account, old records included.
   const user = memory.appUsers.find(
-    (item) => item.status === "active" && (item.identifier === normalized || (item.phone && item.phone.replace(/\s/g, "") === compactPhone)),
+    (item) =>
+      item.status === "active" &&
+      (item.identifier === normalized || samePhone(item.phone, identifier) || samePhone(item.identifier, identifier)),
   );
   if (!user) return undefined;
 
@@ -150,10 +154,14 @@ async function findSupabaseTestAccount(identifier: string, password: string): Pr
     const client = getSupabaseServerClient();
     const normalized = identifier.trim().toLowerCase();
     const compactPhone = identifier.replace(/\s/g, "");
+    // Try the stored-format variants: compact (legacy rows) and canonical +55.
+    const canonicalPhone = normalizeBrPhone(identifier);
+    const phoneClauses = [`phone.eq.${compactPhone}`];
+    if (canonicalPhone && canonicalPhone !== compactPhone) phoneClauses.push(`phone.eq.${canonicalPhone}`);
     const { data, error } = await client
       .from("app_test_accounts")
       .select("id, portal_id, name, identifier, phone, password_hint, organization, default_path, tenant_id, roles(name)")
-      .or(`identifier.eq.${normalized},phone.eq.${compactPhone}`)
+      .or(`identifier.eq.${normalized},${phoneClauses.join(",")}`)
       .maybeSingle();
 
     const row = data as

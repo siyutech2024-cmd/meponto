@@ -2,6 +2,7 @@ import { randomBytes } from "node:crypto";
 import { appendServerAudit, jsonResponse, makeServerId, memory } from "../../../lib/server/memory";
 import { flushPendingToDatabase, refreshCollectionsFromDatabase } from "../../../lib/server/persistence";
 import { hashPassword } from "../../../lib/server/password";
+import { normalizeBrPhone, phoneDigits } from "../../../lib/phone";
 
 const nowStamp = () => new Date().toISOString().slice(0, 16).replace("T", " ");
 const today = () => new Date().toISOString().slice(0, 10);
@@ -17,10 +18,12 @@ async function handlePost(request: Request) {
 
   if (website) return jsonResponse({ data: { ok: true } }); // honeypot
   if (!name.trim() || name.trim().length < 5) return jsonResponse({ error: "Informe seu nome completo." }, { status: 400 });
-  if (!phone.trim() || phone.replace(/\D/g, "").length < 10) return jsonResponse({ error: "Informe um telefone válido com DDD." }, { status: 400 });
+  if (!phone.trim() || phoneDigits(phone).length < 10) return jsonResponse({ error: "Informe um telefone válido com DDD." }, { status: 400 });
   if (!password || password.length < 6) return jsonResponse({ error: "A senha precisa de pelo menos 6 caracteres." }, { status: 400 });
 
-  const identifier = (email.trim() || phone.replace(/\s/g, "")).toLowerCase();
+  // Canonical "+55…" phone (shared app/lib/phone.ts); login matches any format.
+  const normalizedPhone = normalizeBrPhone(phone);
+  const identifier = (email.trim() || normalizedPhone).toLowerCase();
   if (memory.appUsers.some((u) => u.identifier === identifier)) {
     return jsonResponse({ error: "Já existe uma conta com este e-mail/telefone. Faça login." }, { status: 409 });
   }
@@ -33,7 +36,7 @@ async function handlePost(request: Request) {
   const rider = {
     id: makeServerId("r", memory.riders.length + 1001),
     name: fullName,
-    phone: phone.trim().slice(0, 30),
+    phone: normalizedPhone.slice(0, 30),
     cpf: cpf.trim().slice(0, 20),
     pix: (pix.trim() || cpf.trim()).slice(0, 80),
     birthday: birthday.slice(0, 10),
@@ -52,7 +55,7 @@ async function handlePost(request: Request) {
     id: makeServerId("u", memory.appUsers.length + 1),
     name: fullName,
     identifier,
-    phone: phone.trim(),
+    phone: normalizedPhone,
     salt,
     passwordHash: hashPassword(salt, password),
     role: "Rider" as const,

@@ -3,7 +3,7 @@ import { flushPendingToDatabase, persistDeleteRecord, refreshCollectionsFromData
 import { requirePermission, roleFromRequest } from "../../lib/server/authz";
 import { sessionFromRequest } from "../../lib/auth-session";
 import { getAvailablePoints, type PointsLedgerEntry } from "../../lib/points";
-import type { AppTask, TaskMetric, TaskPeriod } from "../../lib/tasks";
+import { taskClaimId, taskPeriodKey, taskProgress, type AppTask, type TaskMetric, type TaskPeriod } from "../../lib/tasks";
 
 /**
  * Rider tasks/missions (任务). HQ configures goal + reward + period; the rider
@@ -13,55 +13,37 @@ import type { AppTask, TaskMetric, TaskPeriod } from "../../lib/tasks";
  */
 
 const COLLECTIONS = ["appTasks", "taskClaims", "pointsLedgerEntries", "riders", "riderDailyKpis", "marketplaceOrders", "slotEnrollments"];
+// GET-path split (same proven pattern as /api/riders + /api/mall): the tiny,
+// actively-mutated collections refresh on every read; the GIANT ones (daily
+// KPIs + points ledger + orders) re-download at most once a minute per
+// instance — they were re-hydrated wholesale on every rider task-list open.
+// The claim POST keeps the strict full refresh (progress guard must be exact).
+const HOT_COLLECTIONS = ["appTasks", "taskClaims", "riders", "slotEnrollments"];
+const HEAVY_TTL_MS = 60_000;
+let heavyRefreshedAt = 0;
 const nowStamp = () => new Date().toISOString().slice(0, 16).replace("T", " ");
-const todayStr = () => new Date().toISOString().slice(0, 10);
 
-function addDays(date: string, days: number) {
-  const v = new Date(`${date}T12:00:00Z`);
-  v.setUTCDate(v.getUTCDate() + days);
-  return v.toISOString().slice(0, 10);
-}
-function mondayOf(date: string) {
-  const v = new Date(`${date}T12:00:00Z`);
-  v.setUTCDate(v.getUTCDate() - ((v.getUTCDay() + 6) % 7));
-  return v.toISOString().slice(0, 10);
-}
-function periodKey(period: TaskPeriod) {
-  return period === "weekly" ? mondayOf(todayStr()) : todayStr().slice(0, 7);
-}
-function inPeriod(period: TaskPeriod, dateLike?: string) {
-  if (!dateLike) return false;
-  const d = dateLike.slice(0, 10);
-  if (period === "monthly") return d.slice(0, 7) === todayStr().slice(0, 7);
-  const start = mondayOf(todayStr());
-  return d >= start && d <= addDays(start, 6);
-}
+const progressSources = () => ({
+  riderDailyKpis: memory.riderDailyKpis,
+  pointsLedgerEntries: memory.pointsLedgerEntries,
+  marketplaceOrders: memory.marketplaceOrders,
+  slotEnrollments: memory.slotEnrollments,
+});
 
 function progressFor(task: AppTask, rider: { id: string; ninetyNineId?: string }) {
-  switch (task.metric) {
-    case "completed_orders":
-      return memory.riderDailyKpis
-        .filter((k) => k.rider99Id === rider.ninetyNineId && inPeriod(task.period, k.date))
-        .reduce((s, k) => s + (k.completedOrders ?? 0), 0);
-    case "checkins":
-      return memory.pointsLedgerEntries.filter((e) => e.riderId === rider.id && e.reasonCode === "PONTO_CHECKIN" && inPeriod(task.period, e.createdAt)).length;
-    case "redemptions":
-      return memory.marketplaceOrders.filter((o) => o.riderId === rider.id && o.status !== "cancelled" && inPeriod(task.period, o.createdAt)).length;
-    case "slot_enrollments":
-      return memory.slotEnrollments.filter((e) => e.riderId === rider.id && !["rejected", "cancelled"].includes(e.status) && inPeriod(task.period, e.submittedAt)).length;
-    default:
-      return 0;
-  }
+  return taskProgress(task, rider, progressSources());
 }
 
 function claimId(taskId: string, riderId: string, period: TaskPeriod) {
-  return `${taskId}::${riderId}::${periodKey(period)}`;
+  return taskClaimId(taskId, riderId, period);
 }
 
 export async function GET(request: Request) {
   const session = await sessionFromRequest(request);
   if (!session) return jsonResponse({ error: "Faça login.", code: "unauthenticated" }, { status: 401 });
-  await refreshCollectionsFromDatabase(COLLECTIONS);
+  const wantHeavy = Date.now() - heavyRefreshedAt > HEAVY_TTL_MS;
+  await refreshCollectionsFromDatabase(wantHeavy ? COLLECTIONS : HOT_COLLECTIONS);
+  if (wantHeavy) heavyRefreshedAt = Date.now();
 
   // Office (HQ) → full config list. Rider → enabled tasks with live progress.
   if (session.portal === "pontosys" || session.portal === "pontomall") {
@@ -180,7 +162,7 @@ async function handlePost(request: Request) {
       createdAt: nowStamp(),
     };
     memory.pointsLedgerEntries.unshift(entry);
-    memory.taskClaims.unshift({ id, taskId: task.id, riderId: rider.id, periodKey: periodKey(task.period), rewardPoints: task.rewardPoints, claimedAt: nowStamp() });
+    memory.taskClaims.unshift({ id, taskId: task.id, riderId: rider.id, periodKey: taskPeriodKey(task.period), rewardPoints: task.rewardPoints, claimedAt: nowStamp() });
     appendServerAudit({ actor: rider.name, action: "task.reward.granted.v1", entity: "AppTask", entityId: task.id, detail: `${rider.name} 领取「${task.title}」+${task.rewardPoints} pts`, risk: "Low" });
     return jsonResponse({ data: { awarded: task.rewardPoints, available: available + task.rewardPoints } }, { status: 201 });
   }

@@ -5,7 +5,8 @@ import { requirePermission, roleFromRequest } from "../../lib/server/authz";
 import { sendPushToRider } from "../../lib/server/notify";
 import { applyInactivityDecay, getAvailablePoints, getAvailablePartnerPoints, pointsRules, type MarketplaceOrder, type MarketplaceProduct, type PartnerPointsLedgerEntry, type PointsLedgerEntry } from "../../lib/points";
 import { badgeMilestones, defaultMallConfig, eligibleCoupons, resolveRiderTierStatus, resolveTier, tierDefinitions, type MallConfig } from "../../lib/mall";
-import type { CashLedgerEntry, MallCoupon } from "../../lib/mall-ops";
+import type { CashLedgerEntry, MallCoupon, MemberMessage } from "../../lib/mall-ops";
+import { dbDirectReadEnabled, fetchRows } from "../../lib/server/db-read";
 import { consumeStationStockForOrder, postStationStock } from "../../lib/server/station-stock";
 import { accrueConsignmentMargin } from "../../lib/server/procurement-margin";
 import { stationAvailable, type FpoMode } from "../../lib/procurement";
@@ -144,20 +145,20 @@ const MONTH_MS = 30 * 24 * 3600 * 1000;
  * consumed (spends/expiries count against the oldest earns first) are written
  * off with an auditable "expire" ledger entry. Runs lazily on account access.
  */
-function applyPointsExpiry(riderId: string): number {
+function applyPointsExpiry(riderId: string, entries: PointsLedgerEntry[] = memory.pointsLedgerEntries): number {
   const now = Date.now();
   let earnedOld = 0;
   let consumed = 0;
-  for (const entry of memory.pointsLedgerEntries) {
+  for (const entry of entries) {
     if (entry.riderId !== riderId || entry.status !== "approved") continue;
     if (entry.type === "earn" && now - new Date(entry.createdAt.replace(" ", "T")).getTime() > 12 * MONTH_MS) earnedOld += entry.points;
     if (entry.type === "spend" || entry.type === "expire") consumed += entry.points;
   }
   if (earnedOld <= 0) return 0;
-  const available = getAvailablePoints(memory.pointsLedgerEntries, riderId);
+  const available = getAvailablePoints(entries, riderId);
   const toExpire = Math.min(available, earnedOld - consumed);
   if (toExpire <= 0) return 0;
-  memory.pointsLedgerEntries.unshift({
+  const expiry: PointsLedgerEntry = {
     id: makeServerId("pts", memory.pointsLedgerEntries.length + 1),
     riderId,
     accountId: `pts-${riderId}`,
@@ -171,7 +172,11 @@ function applyPointsExpiry(riderId: string): number {
     note: "Pontos com mais de 12 meses expiraram automaticamente (FIFO).",
     createdBy: "System",
     createdAt: nowStamp(),
-  });
+  };
+  // Always write through the TRACKED collection (persistence); when computing
+  // on a rider-scoped direct-read view, mirror the entry into that view too.
+  memory.pointsLedgerEntries.unshift(expiry);
+  if (entries !== memory.pointsLedgerEntries) entries.unshift(expiry);
   return toExpire;
 }
 
@@ -279,13 +284,47 @@ export async function GET(request: Request) {
   // happened on ANOTHER instance: `me.balance`/`me.ledger` come from the
   // points ledger and the inbox from memberMessages — both HEAVY collections
   // above, so a redeem POST followed by this GET on a sibling instance could
-  // show a stale balance for up to 60s. Bypass the heavy TTL for requests
-  // carrying riderId/riderName (small, rider-scoped reads).
+  // show a stale balance for up to 60s. Direct path (L2): fetch ONLY this
+  // rider's ledger + inbox rows (indexed, one round trip each) instead of the
+  // old bypass that re-downloaded BOTH giant collections wholesale on every
+  // storefront read — that full-ledger re-hydration was the main reason the
+  // points balance took seconds to appear after login. Fallback keeps the
+  // strict full refresh.
+  let meLedgerRows: PointsLedgerEntry[] | null = null;
+  let meMessageRows: MemberMessage[] | null = null;
   if (riderId || riderName) {
-    await refreshCollectionsFromDatabase(["pointsLedgerEntries", "memberMessages"]);
     // Freshly registered member may not be in this instance's rider list yet.
     if (!memory.riders.some((r) => (riderId && r.id === riderId) || (riderName && r.name === riderName))) {
       await refreshCollectionsFromDatabase(["riders"]);
+    }
+    const target = memory.riders.find((r) => (riderId && r.id === riderId) || (riderName && r.name === riderName));
+    if (target && dbDirectReadEnabled()) {
+      try {
+        const [ledgerRows, messageRows] = await Promise.all([
+          fetchRows<PointsLedgerEntry>("pointsLedgerEntries", [{ op: "eq", field: "riderId", value: target.id }]),
+          fetchRows<MemberMessage>("memberMessages", [{ op: "eq", field: "riderName", value: target.name }]),
+        ]);
+        // Overlay rows that exist only in this instance's memory (appended
+        // locally, flush possibly still in flight) so we read our own writes;
+        // then newest-first like the tracked collections.
+        const byCreated = (a: { createdAt?: string; id: string }, b: { createdAt?: string; id: string }) =>
+          (a.createdAt ?? "") < (b.createdAt ?? "") ? 1 : (a.createdAt ?? "") > (b.createdAt ?? "") ? -1 : a.id < b.id ? 1 : -1;
+        const ledgerIds = new Set(ledgerRows.map((e) => e.id));
+        meLedgerRows = [
+          ...memory.pointsLedgerEntries.filter((e) => e.riderId === target.id && !ledgerIds.has(e.id)),
+          ...ledgerRows,
+        ].sort(byCreated);
+        const messageIds = new Set(messageRows.map((m) => m.id));
+        meMessageRows = [
+          ...memory.memberMessages.filter((m) => m.riderName === target.name && !messageIds.has(m.id)),
+          ...messageRows,
+        ].sort(byCreated);
+      } catch (error) {
+        console.warn(`[mall] direct me read failed, legacy bypass. (${(error as Error).message})`);
+      }
+    }
+    if (!meLedgerRows) {
+      await refreshCollectionsFromDatabase(["pointsLedgerEntries", "memberMessages"]);
     }
   }
 
@@ -333,11 +372,20 @@ export async function GET(request: Request) {
   let expiredNow = 0;
   const rider = memory.riders.find((item) => (riderId && item.id === riderId) || (riderName && item.name === riderName));
   if (rider) {
-    expiredNow = applyPointsExpiry(rider.id);
-    applyInactivityDecay(memory.pointsLedgerEntries, rider.id, getConfig());
+    // Fresh rider-scoped views when the direct read succeeded; tracked memory
+    // (just refreshed by the legacy bypass) otherwise.
+    const riderEntries = meLedgerRows ?? memory.pointsLedgerEntries;
+    const riderMessages = meMessageRows ?? memory.memberMessages;
+    expiredNow = applyPointsExpiry(rider.id, riderEntries);
+    const decayedNow = applyInactivityDecay(riderEntries, rider.id, getConfig());
+    if (decayedNow > 0 && riderEntries !== memory.pointsLedgerEntries && riderEntries[0] && !memory.pointsLedgerEntries.some((e) => e.id === riderEntries[0].id)) {
+      // Decay computed on the scoped view — mirror the append-only entry into
+      // the tracked collection so it persists.
+      memory.pointsLedgerEntries.unshift(riderEntries[0]);
+    }
     const orderCount = lifetimeOrders(rider.ninetyNineId);
     // UNIFIED tier: rolling-window earned points (same engine prices redemptions).
-    const tier = resolveRiderTierStatus(memory.pointsLedgerEntries, rider.id, getConfig());
+    const tier = resolveRiderTierStatus(riderEntries, rider.id, getConfig());
     me = {
       tierStatus: tier,
       orders: memory.marketplaceOrders
@@ -349,21 +397,36 @@ export async function GET(request: Request) {
       name: rider.name,
       station: rider.ponto ?? "Unassigned",
       franchise: rider.franchise ?? "Unassigned",
-      balance: getAvailablePoints(memory.pointsLedgerEntries, rider.id),
+      balance: getAvailablePoints(riderEntries, rider.id),
       lifetimeOrders: orderCount,
       tier: tier.tier,
       tierLabel: tier.label,
       redeemDiscount: tier.redeemDiscount,
       perks: tier.perks,
       pickupStores: pickupCandidatesForRider(rider).map(slimStore),
-      messages: memory.memberMessages.filter((m) => m.riderName === rider.name).slice(0, 20),
-      unreadMessages: memory.memberMessages.filter((m) => m.riderName === rider.name && !m.readAt).length,
+      messages: riderMessages.filter((m) => m.riderName === rider.name).slice(0, 20),
+      unreadMessages: riderMessages.filter((m) => m.riderName === rider.name && !m.readAt).length,
       cashBalance: cashBalanceOf(rider.id),
       topUps: memory.cashTopUps.filter((t) => t.riderId === rider.id).slice(0, 10),
+      // Full cash statement (immutable ledger): date-time, type
+      // (topup/spend/refund/adjust), signed amount, balance snapshot and
+      // source record id — newest first, ready for the wallet extract view.
+      cashLedger: memory.cashLedgerEntries
+        .filter((entry) => entry.riderId === rider.id)
+        .slice(0, 30)
+        .map((entry) => ({
+          id: entry.id,
+          type: entry.type,
+          amountBRL: entry.amountBRL,
+          balanceAfter: entry.balanceAfter,
+          sourceId: entry.sourceId,
+          note: entry.note ?? "",
+          createdAt: entry.createdAt,
+        })),
       coupons: eligibleCouponsForRider(rider.id, tier.tier),
       // Read-only points ledger slice (newest 30) for the storefront extract
       // drawer. The ledger stays append-only in memory.pointsLedgerEntries.
-      ledger: memory.pointsLedgerEntries
+      ledger: riderEntries
         .filter((entry) => entry.riderId === rider.id)
         .slice(0, 30)
         .map((entry) => ({
@@ -397,7 +460,7 @@ export async function GET(request: Request) {
   if (me) {
     const now = Date.now();
     const MONTH = 30 * 24 * 3600 * 1000;
-    for (const entry of memory.pointsLedgerEntries) {
+    for (const entry of meLedgerRows ?? memory.pointsLedgerEntries) {
       if (entry.riderId !== (me as { riderId: string }).riderId || entry.type !== "earn" || entry.status !== "approved") continue;
       const age = now - new Date(entry.createdAt.replace(" ", "T")).getTime();
       if (age > 11 * MONTH && age < 12 * MONTH) expiringPoints += entry.points;

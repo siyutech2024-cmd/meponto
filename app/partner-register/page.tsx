@@ -2,6 +2,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
 import { FormEvent, useEffect, useRef, useState } from "react";
+import { normalizeBrPhone } from "../lib/phone";
 import type { CrmPartnerCategory } from "../lib/crm";
 
 const CATEGORY_LABELS: Record<CrmPartnerCategory, string> = {
@@ -118,7 +119,8 @@ export default function PartnerRegisterPage() {
     const response = await fetch("/api/partner-register", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(form),
+      // Phone goes out canonical (+55…) — the server normalizes again anyway.
+      body: JSON.stringify({ ...form, phone: normalizeBrPhone(form.phone) }),
     });
     const payload = await response.json().catch(() => ({}));
     if (!response.ok) {
@@ -172,7 +174,11 @@ export default function PartnerRegisterPage() {
               <input required value={form.contactName} onChange={(e) => setForm({ ...form, contactName: e.target.value })} className={`${input} mt-1`} style={errStyle("contactName")} placeholder="Nome do contato" />
             </label>
             <label className="block text-xs font-black uppercase text-black/45">Telefone / WhatsApp *
-              <input required value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} className={`${input} mt-1`} style={errStyle("phone")} placeholder="+55 11 9...." />
+              <span className="mt-1 flex items-center gap-2">
+                <span aria-hidden="true" data-i18n-skip className="grid h-12 shrink-0 select-none place-items-center rounded-[10px] border border-black/10 bg-[#fff7df] px-3 text-sm font-black text-[#9a7400]">+55</span>
+                <input required value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} className={input} style={errStyle("phone")} placeholder="(11) 98765-4321" inputMode="tel" autoComplete="tel" />
+              </span>
+              <span className="mt-0.5 block text-[11px] font-bold normal-case text-black/45">Brasil (+55) — digite o DDD e o número</span>
             </label>
             <label className="block text-xs font-black uppercase text-black/45">Endereço completo *
               <input required value={form.address} onChange={(e) => setForm({ ...form, address: e.target.value })} className={`${input} mt-1`} style={errStyle("address")} placeholder="Rua, número, bairro, cidade" />

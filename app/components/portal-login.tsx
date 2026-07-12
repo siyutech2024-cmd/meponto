@@ -110,10 +110,12 @@ export function PortalLogin({ portalId }: { portalId: PortalId }) {
                 }}
               >
                 <label className="block">
-                  <span className="mb-2 block text-xs font-black uppercase text-[var(--muted)]">E-mail ou telefone</span>
+                  <span className="mb-2 block text-xs font-black uppercase text-[var(--muted)]">E-mail ou telefone (+55)</span>
                   <span className="flex h-12 items-center gap-3 rounded border border-[var(--line)] bg-[var(--surface-raised)] px-3">
                     <Mail size={18} className="text-[var(--muted)]" />
-                    <input value={identifier} onChange={(event) => setIdentifier(event.target.value)} autoComplete="username" className="min-w-0 flex-1 bg-transparent outline-none" />
+                    {/* Mixed e-mail/phone field: the +55 default is conveyed by the
+                        label + placeholder; the server normalizes bare DDD numbers. */}
+                    <input value={identifier} onChange={(event) => setIdentifier(event.target.value)} autoComplete="username" placeholder="email@empresa.com ou (11) 98765-4321" className="min-w-0 flex-1 bg-transparent outline-none" />
                   </span>
                 </label>
                 <label className="block">

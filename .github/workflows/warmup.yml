@@ -25,6 +25,8 @@ jobs:
             /api/overview \
             /api/dispatch \
             /api/mall \
+            /api/rider/home \
+            /api/tasks \
             /api/mall/ops \
             /api/mall/procurement \
             /api/wallet \

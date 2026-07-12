@@ -4,6 +4,7 @@ import Link from "next/link";
 import { CheckCircle2, KeyRound, Lock, Phone, ShieldCheck } from "lucide-react";
 import { FormEvent, useState } from "react";
 import { BrandMark } from "../components/brand";
+import { normalizeBrPhone } from "../lib/phone";
 
 type ResetStatus = "idle" | "code_sent" | "password_reset";
 
@@ -20,7 +21,8 @@ export default function ResetPasswordPage() {
     const response = await fetch("/api/auth/reset-password", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
+      // Brazil default: send the canonical +55 number (server normalizes too).
+      body: JSON.stringify({ ...payload, ...(payload.phone ? { phone: normalizeBrPhone(payload.phone) } : {}) }),
     });
     const data = (await response.json()) as { status?: ResetStatus; message?: string; demoCode?: string; error?: string };
 
@@ -87,12 +89,13 @@ export default function ResetPasswordPage() {
             <span className="mb-2 block text-xs font-black uppercase text-[var(--muted)]">Phone Number</span>
             <span className="flex h-12 items-center gap-3 rounded border border-[var(--line)] bg-[var(--surface-raised)] px-3">
               <Phone size={18} className="text-[var(--muted)]" />
+              <span aria-hidden="true" data-i18n-skip className="select-none border-r border-[var(--line)] pr-3 text-sm font-black text-[var(--muted)]">+55</span>
               <input
                 name="phone"
                 value={phone}
                 onChange={(event) => setPhone(event.target.value)}
                 className="min-w-0 flex-1 bg-transparent outline-none"
-                placeholder="+55 11 90000-0000"
+                placeholder="(11) 90000-0000"
                 inputMode="tel"
               />
             </span>

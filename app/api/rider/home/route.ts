@@ -2,7 +2,8 @@ import { jsonResponse, memory } from "../../../lib/server/memory";
 import { refreshCollectionsFromDatabase } from "../../../lib/server/persistence";
 import { sessionFromRequest } from "../../../lib/auth-session";
 import { badgeMilestones, defaultMallConfig, eligibleCoupons, resolveRiderTierStatus, tierThresholds } from "../../../lib/mall";
-import { applyInactivityDecay } from "../../../lib/points";
+import { applyInactivityDecay, getAvailablePoints, type PointsLedgerEntry } from "../../../lib/points";
+import { taskProgress } from "../../../lib/tasks";
 import { isSupplierCategory } from "../../../lib/server/crm-categories";
 import { dbDirectReadEnabled, fetchRows } from "../../../lib/server/db-read";
 import type { RiderDailyKpi } from "../../../lib/performance";
@@ -17,6 +18,8 @@ import { kpisByRider99, kpisByRiderName, perfMode } from "../../../lib/server/db
  *   performance        ← riderDailyKpis (latest + week aggregate)
  *   weeklyGoalProgress ← riderDailyKpis online hours vs a 40h week
  *   cashLedger         ← riderWithdrawals (outflow) + walletPayments (inflow)
+ *                        + cashLedgerEntries (PontoMall cash: topup/spend/
+ *                        refund/adjust with balance snapshot + source id)
  *   partners           ← crmPartners (name / category / bairro / services / geo)
  *   missions           ← appTasks (rider/all, enabled) + taskClaims (progress)
  *   inbox              ← memberMessages addressed to the rider (ops
@@ -38,7 +41,19 @@ const COLLECTIONS = [
   "mallConfigs",
   "memberMessages",
   "mallCoupons",
+  "cashLedgerEntries",
+  "slotEnrollments",
 ];
+
+// GET-path split (perf(riders api) pattern): tiny actively-mutated collections
+// refresh on every read; the GIANT ones re-download at most once a minute per
+// instance. `pointsLedgerEntries` (the biggest hot collection — it drives the
+// points balance riders wait for after login) and `riderDailyKpis` are served
+// by L2 rider-scoped direct reads when READPATH_DB_DIRECT is on, so they drop
+// out of the wholesale refresh entirely on that path.
+const HOT_COLLECTIONS = ["riders", "appTasks", "taskClaims", "mallConfigs", "mallCoupons", "slotEnrollments"];
+const HEAVY_TTL_MS = 60_000;
+let heavyRefreshedAt = 0;
 
 const brl = (n: number) => "R$ " + Math.abs(n).toFixed(2).replace(".", ",");
 
@@ -60,11 +75,15 @@ function findRider(session: { userId?: string; name: string }) {
 export async function GET(request: Request) {
   const session = await sessionFromRequest(request);
   if (!session) return jsonResponse({ error: "Faça login.", code: "unauthenticated" }, { status: 401 });
-  // L2 direct read: this rider's KPI rows come straight from the database
-  // (rider-scoped, a few hundred rows) — riderDailyKpis is the biggest
-  // collection this route used to hydrate wholesale on every APP home load.
+  // L2 direct read: this rider's KPI + points-ledger rows come straight from
+  // the database (rider-scoped, a few hundred rows) — riderDailyKpis and
+  // pointsLedgerEntries are the biggest collections this route used to hydrate
+  // wholesale on every APP home load.
   const direct = dbDirectReadEnabled();
-  await refreshCollectionsFromDatabase(direct ? COLLECTIONS.filter((c) => c !== "riderDailyKpis") : COLLECTIONS);
+  const wantHeavy = Date.now() - heavyRefreshedAt > HEAVY_TTL_MS;
+  const wanted = wantHeavy ? COLLECTIONS : HOT_COLLECTIONS;
+  await refreshCollectionsFromDatabase(direct ? wanted.filter((c) => c !== "riderDailyKpis" && c !== "pointsLedgerEntries") : wanted);
+  if (wantHeavy) heavyRefreshedAt = Date.now();
 
   const rider = findRider(session);
   if (!rider) return jsonResponse({ error: "Cadastro não encontrado.", code: "not_found" }, { status: 404 });
@@ -101,6 +120,45 @@ export async function GET(request: Request) {
     kpiRows = memory.riderDailyKpis.filter((k) => k.riderName === name || (!!nineId && k.rider99Id === nineId));
   }
   const kpis = kpiRows.sort((a, b) => (a.date < b.date ? 1 : -1)); // newest first
+
+  // --- Points ledger view (rider-scoped) ---
+  // Direct path: fetch ONLY this rider's ledger rows (indexed, one round
+  // trip) instead of re-downloading the whole append-only ledger. Rows that
+  // exist only in this instance's memory (just-appended, not flushed yet) are
+  // overlaid on top so we always read our own writes.
+  let ledgerView: PointsLedgerEntry[] | null = null;
+  if (direct) {
+    try {
+      ledgerView = await fetchRows<PointsLedgerEntry>("pointsLedgerEntries", [{ op: "eq", field: "riderId", value: rider.id }]);
+    } catch (error) {
+      console.warn(`[rider/home] direct ledger read failed, legacy path. (${(error as Error).message})`);
+    }
+  }
+  if (!ledgerView) {
+    await refreshCollectionsFromDatabase(["pointsLedgerEntries"]);
+    ledgerView = memory.pointsLedgerEntries.filter((entry) => entry.riderId === rider.id);
+  }
+  /** Merge memory-only entries (e.g. decay appended below) into the view. */
+  const mergedLedger = () => {
+    const seen = new Set(ledgerView!.map((entry) => entry.id));
+    const localOnly = memory.pointsLedgerEntries.filter((entry) => entry.riderId === rider.id && !seen.has(entry.id));
+    return localOnly.length === 0 ? ledgerView! : [...localOnly, ...ledgerView!];
+  };
+
+  const mallConfig = memory.mallConfigs.find((c) => c.id === "mall-config") ?? defaultMallConfig;
+  // Inactivity decay first (append-only, idempotent per day), THEN every
+  // ledger-derived read — decay shrinks the balance but never the
+  // cumulative-earned tier score. Decay must be COMPUTED on the fresh
+  // rider-scoped view (stale memory could see an old lastEarn and decay a
+  // rider who just earned on a sibling instance); the resulting entry is then
+  // copied into the TRACKED collection so it persists.
+  const riderLedger = mergedLedger();
+  const decayedNow = applyInactivityDecay(riderLedger, rider.id, mallConfig);
+  if (decayedNow > 0 && riderLedger[0] && !memory.pointsLedgerEntries.some((e) => e.id === riderLedger[0].id)) {
+    memory.pointsLedgerEntries.unshift(riderLedger[0]);
+  }
+  // Read-only ledger sum (same math as PontoMall me.balance) — never mutated.
+  const pointsAvailable = getAvailablePoints(riderLedger, rider.id);
   const latest = kpis[0];
   // Every KPI block reads the LATEST imported day (T+1 = yesterday): orders,
   // TSH hours, acceptance rate and cancellations all describe the same day,
@@ -120,6 +178,7 @@ export async function GET(request: Request) {
         acceptanceRate: Math.round(latest.ar ?? 0),
         cancelledOrders: latest.caa ?? 0,
         caaPercent: latest.caa,
+        overtimePercent: latest.overtime,
         weekOrders: week.reduce((s2, k) => s2 + (k.completedOrders ?? 0), 0),
         weekOnlineHours: Math.round(week.reduce((s2, k) => s2 + (k.onlineHours ?? 0), 0) * 10) / 10,
       }
@@ -127,7 +186,14 @@ export async function GET(request: Request) {
   const onlineHoursWeek = kpis.slice(0, 7).reduce((s, k) => s + (k.onlineHours ?? 0), 0);
   const weeklyGoalProgress = kpis.length ? Math.min(100, Math.round((onlineHoursWeek / 40) * 100)) : 0;
 
-  // --- Cash ledger (withdrawals out + rider payments in), newest first ---
+  // --- Cash ledger, newest first. Three REAL sources merged: ---
+  //   riderWithdrawals   (saque, outflow)
+  //   walletPayments     (repasse, inflow)
+  //   cashLedgerEntries  (PontoMall cash account: topup/spend/refund/adjust,
+  //                       immutable ledger with balance snapshot + source id)
+  // Every item keeps the legacy {title, subtitle, amount, status, tone} shape
+  // (older APP builds) and adds {at, type, balanceAfter, sourceId} for the
+  // richer statement view (date-time, signed amount, snapshot, 单号).
   const withdrawals = memory.riderWithdrawals
     .filter((w) => w.riderName === name || (!!nineId && w.rider99Id === nineId))
     .map((w) => {
@@ -140,6 +206,9 @@ export async function GET(request: Request) {
         status: status.label,
         tone: status.tone,
         at: w.paidAt ?? w.requestedAt ?? "",
+        type: "withdrawal",
+        balanceAfter: null as number | null,
+        sourceId: w.id,
       };
     });
   const payments = memory.walletPayments
@@ -151,11 +220,42 @@ export async function GET(request: Request) {
       status: "Disponível",
       tone: "OK",
       at: p.paidAt ?? "",
+      type: "payout",
+      balanceAfter: null as number | null,
+      sourceId: p.id,
     }));
-  const cashLedger = [...withdrawals, ...payments]
+  const cashTypeMeta: Record<string, { title: string; tone: string }> = {
+    topup: { title: "Recarga", tone: "OK" },
+    spend: { title: "Compra", tone: "DANGER" },
+    refund: { title: "Reembolso", tone: "OK" },
+    adjust: { title: "Ajuste", tone: "WARNING" },
+  };
+  let cashTotalBRL = 0;
+  const mallCash = memory.cashLedgerEntries
+    .filter((entry) => entry.riderId === rider.id)
+    .map((entry) => {
+      const negative = entry.type === "spend" || entry.amountBRL < 0;
+      const meta = cashTypeMeta[entry.type] ?? { title: entry.type, tone: "WARNING" };
+      return {
+        title: meta.title,
+        subtitle: entry.note || (entry.sourceId ? `Ref ${entry.sourceId}` : ""),
+        amount: `${negative ? "-" : "+"}${brl(entry.amountBRL)}`,
+        status: `Saldo ${brl(entry.balanceAfter)}`,
+        tone: meta.tone,
+        at: entry.createdAt ?? "",
+        type: entry.type,
+        balanceAfter: entry.balanceAfter as number | null,
+        sourceId: entry.sourceId,
+      };
+    });
+  for (const entry of memory.cashLedgerEntries) {
+    if (entry.riderId !== rider.id) continue;
+    cashTotalBRL += entry.type === "spend" ? -entry.amountBRL : entry.amountBRL;
+  }
+  cashTotalBRL = Math.round(cashTotalBRL * 100) / 100;
+  const cashLedger = [...withdrawals, ...payments, ...mallCash]
     .sort((a, b) => (a.at < b.at ? 1 : -1))
-    .slice(0, 12)
-    .map(({ title, subtitle, amount, status, tone }) => ({ title, subtitle, amount, status, tone }));
+    .slice(0, 20);
 
   // --- Partners (real geo + services + rider offer) ---
   // Riders see SERVICE partners only (oficina, combustível, celular…);
@@ -187,17 +287,32 @@ export async function GET(request: Request) {
       tone: "OK",
     }));
 
-  // --- Missions (rider/all enabled tasks; progress from claim state) ---
+  // --- Missions (rider/all enabled tasks; LIVE progress from real metrics —
+  // same shared engine as /api/tasks, fed with the fresh rider-scoped KPI and
+  // ledger views instead of a claimed/not-claimed binary) ---
   const claimedTaskIds = new Set(
     memory.taskClaims.filter((c) => c.riderId === rider.id).map((c) => c.taskId),
   );
+  const missionSources = {
+    riderDailyKpis: kpis,
+    pointsLedgerEntries: riderLedger,
+    marketplaceOrders: memory.marketplaceOrders,
+    slotEnrollments: memory.slotEnrollments,
+  };
   const missions = memory.appTasks
     .filter((t) => t.enabled && (t.audience === "rider" || t.audience === "all"))
-    .map((t) => ({
-      title: t.title,
-      reward: `+${t.rewardPoints} pts`,
-      progress: claimedTaskIds.has(t.id) ? 1 : 0,
-    }));
+    .map((t) => {
+      const done = taskProgress(t, rider, missionSources);
+      return {
+        title: t.title,
+        reward: `+${t.rewardPoints} pts`,
+        // Fraction 0..1 (legacy shape); claimed tasks stay pinned at 1.
+        progress: claimedTaskIds.has(t.id) ? 1 : Math.min(1, done / Math.max(1, t.target)),
+        current: done,
+        target: t.target,
+        claimed: claimedTaskIds.has(t.id),
+      };
+    });
 
   // --- Inbox: messages addressed to THIS rider only (memberMessages —
   // chegou/retire notices, HQ direct messages). The ops notifications
@@ -221,12 +336,8 @@ export async function GET(request: Request) {
 
   // --- UNIFIED membership tier (rolling-window earned points; the same
   // engine PontoMall uses to price redemptions — one standard everywhere) ---
-  const mallConfig = memory.mallConfigs.find((c) => c.id === "mall-config") ?? defaultMallConfig;
-  // Inactivity decay first (append-only, idempotent per day), THEN tier —
-  // decay shrinks the balance but never the cumulative-earned tier score.
-  applyInactivityDecay(memory.pointsLedgerEntries, rider.id, mallConfig);
   const tier = {
-    ...resolveRiderTierStatus(memory.pointsLedgerEntries, rider.id, mallConfig),
+    ...resolveRiderTierStatus(riderLedger, rider.id, mallConfig),
     ladder: tierThresholds(mallConfig).map((s) => ({ tier: s.def.tier, label: s.def.label, minEarned: s.minEarned ?? 0 })),
   };
 
@@ -279,6 +390,11 @@ export async function GET(request: Request) {
       // Derived from the points-economy money equivalence (R$1 = pointsPerBrl pts).
       pointCashRateBRL: (mallConfig.pointsPerBrl ?? 0) > 0 ? 1 / (mallConfig.pointsPerBrl as number) : 0,
       weeklyGoalProgress,
+      // Points balance (same ledger math as PontoMall `me.balance`) so the APP
+      // home can show pontos without a second round trip to /api/mall.
+      pointsBalance: pointsAvailable,
+      // PontoMall cash account balance (immutable cashLedgerEntries sum).
+      cashBalance: cashTotalBRL,
       cashLedger,
       partners,
       partnerBenefits,

@@ -1,5 +1,6 @@
 import { appendServerAudit, jsonResponse, makeServerId, memory } from "../../lib/server/memory";
 import { flushPendingToDatabase, refreshCollectionsFromDatabase } from "../../lib/server/persistence";
+import { normalizeBrPhone, samePhone } from "../../lib/phone";
 import type { Rider } from "../../lib/data";
 
 /**
@@ -14,14 +15,7 @@ import type { Rider } from "../../lib/data";
  */
 const COLLECTIONS = ["riders"];
 
-const onlyDigits = (s: string) => s.replace(/\D/g, "");
-/** Normalize a BR phone to digits with country code 55 — must match member-login. */
-function normalizeBR(raw: string): string {
-  const d = onlyDigits(raw);
-  if (d.startsWith("55") && d.length >= 12) return d;
-  if (d.length === 10 || d.length === 11) return "55" + d;
-  return d;
-}
+// Phone normalization: shared app/lib/phone.ts (same rules as member-login).
 
 export async function POST(request: Request) {
   await refreshCollectionsFromDatabase(COLLECTIONS);
@@ -31,8 +25,8 @@ export async function POST(request: Request) {
   if (!name || !phone) return jsonResponse({ error: "Nome e telefone são obrigatórios." }, { status: 400 });
   // Normalized dedup — same number in any format maps to one account (matches
   // member-login), so "11 9..." and "+55 11 9..." can't create duplicates.
-  const normalizedPhone = normalizeBR(phone);
-  if (memory.riders.some((r) => r.phone && normalizeBR(r.phone) === normalizedPhone)) {
+  const normalizedPhone = normalizeBrPhone(phone);
+  if (memory.riders.some((r) => samePhone(r.phone, normalizedPhone))) {
     return jsonResponse({ error: "Este telefone já está cadastrado." }, { status: 409 });
   }
 
@@ -41,7 +35,7 @@ export async function POST(request: Request) {
     id,
     name,
     cpf: (body.cpf ?? "").trim(),
-    phone,
+    phone: normalizedPhone,
     pix: "",
     bairro: "",
     ponto: "Unassigned",

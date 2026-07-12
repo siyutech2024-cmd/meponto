@@ -189,12 +189,18 @@ export default function RiderMallPage() {
               <h1 className="text-lg font-black leading-5">Loja de Pontos</h1>
             </div>
           </div>
-          {me && (
+          {me ? (
             <div className="rounded-[8px] bg-[#050505] px-3 py-2 text-right text-white">
               <div className="text-[9px] font-black uppercase text-white/50">Saldo</div>
               <div className="text-base font-black leading-5 text-[#ffb238]">{me.balance.toLocaleString("pt-BR")} pts</div>
             </div>
-          )}
+          ) : !data && session ? (
+            // Skeleton chip: the balance is loading — never block the page on it.
+            <div className="animate-pulse rounded-[8px] bg-[#050505] px-3 py-2 text-right" aria-hidden>
+              <div className="ml-auto h-2 w-10 rounded bg-white/20" />
+              <div className="mt-1 h-4 w-16 rounded bg-white/30" />
+            </div>
+          ) : null}
         </header>
 
         {message && (
@@ -273,6 +279,19 @@ export default function RiderMallPage() {
                   ))}
                 </div>
               )}
+            </div>
+          ) : !data && session ? (
+            // Membership-card skeleton while the storefront payload loads —
+            // the products below keep rendering as soon as they arrive.
+            <div className="animate-pulse space-y-3 rounded-[8px] bg-[linear-gradient(135deg,#1d1202_0%,#9a5b08_58%,#ffb238_100%)] p-4 shadow-[0_18px_42px_rgba(0,0,0,0.22)]" aria-hidden>
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0 flex-1 space-y-2">
+                  <div className="h-4 w-1/2 rounded bg-white/25" />
+                  <div className="h-3 w-2/3 rounded bg-white/15" />
+                </div>
+                <div className="h-8 w-20 rounded bg-white/25" />
+              </div>
+              <div className="h-3 w-1/3 rounded bg-white/15" />
             </div>
           ) : (
             <div className="rounded-[8px] bg-white p-4 text-sm font-bold text-[#77746f] shadow-[0_12px_26px_rgba(0,0,0,0.06)]">

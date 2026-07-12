@@ -2,7 +2,15 @@ import type { PortalId } from "./portals";
 import type { Role } from "./rbac";
 
 export const SESSION_COOKIE = "meponto_session";
-const SESSION_TTL_SECONDS = 60 * 60 * 12;
+/**
+ * "Stay signed in until you sign out": 90-day sessions (was 12 hours) with
+ * rolling renewal — /api/auth/session re-issues the cookie whenever less than
+ * half the TTL remains (see `sessionNeedsRenewal`), so an active user never
+ * expires. Only 90 days of total inactivity or an explicit /api/auth/logout
+ * ends the session. The cookie carries Max-Age (not a session cookie), so
+ * closing the browser keeps the login. Signing scheme is unchanged.
+ */
+export const SESSION_TTL_SECONDS = 60 * 60 * 24 * 90;
 
 export type AuthSession = {
   userId: string;
@@ -61,6 +69,18 @@ export async function verifySessionToken(token: string | undefined): Promise<Aut
   } catch {
     return null;
   }
+}
+
+/** Rolling renewal: true when less than half of the session TTL remains. */
+export function sessionNeedsRenewal(session: AuthSession): boolean {
+  const remaining = session.expiresAt - Math.floor(Date.now() / 1000);
+  return remaining < SESSION_TTL_SECONDS / 2;
+}
+
+/** Re-issue the same (already verified) session payload with a fresh expiry. */
+export async function renewSessionToken(session: AuthSession) {
+  const { expiresAt: _previousExpiry, ...payload } = session;
+  return createSessionToken(payload);
 }
 
 /** Share the session across all *.meponto.com hosts (app/mall/sys/...). */

@@ -3,6 +3,7 @@ import { refreshCollectionsFromDatabase, flushPendingToDatabase } from "../../li
 import { createSessionToken, sessionCookie, sessionFromRequest } from "../../lib/auth-session";
 import { getOtpChallenge, setOtpChallenge, deleteOtpChallenge, type OtpSignupData } from "../../lib/server/otp-store";
 import { getAvailablePoints, type PointsLedgerEntry } from "../../lib/points";
+import { normalizeBrPhone, phoneDigits, samePhone } from "../../lib/phone";
 import { defaultMallConfig } from "../../lib/mall";
 import type { Rider } from "../../lib/data";
 import { createHmac } from "node:crypto";
@@ -56,18 +57,11 @@ const OTP_WINDOW_MS = 24 * 60 * 60 * 1000;
 
 const onlyDigits = (s: string) => s.replace(/\D/g, "");
 
-/** Normalize a BR phone to digits with country code 55 (E.164 without the +). */
-function normalizeBR(raw: string): string {
-  const d = onlyDigits(raw);
-  if (d.startsWith("55") && d.length >= 12) return d; // already has country code
-  if (d.length === 10 || d.length === 11) return "55" + d; // local DDD + number
-  return d; // unknown shape — leave as-is
-}
+// Phone normalization is the shared app/lib/phone.ts helper: canonical "+55…"
+// for storage, `phoneDigits` for providers, `samePhone` for format-insensitive
+// lookups (existing records may hold "11 9…" or "5511 9…" — both still match).
 
-const findMemberByPhone = (raw: string) => {
-  const want = normalizeBR(raw);
-  return memory.riders.find((r) => normalizeBR(r.phone ?? "") === want);
-};
+const findMemberByPhone = (raw: string) => memory.riders.find((r) => samePhone(r.phone, raw));
 const findMemberByCpf = (rawCpf: string) => {
   const want = onlyDigits(rawCpf);
   if (want.length !== 11) return undefined;
@@ -178,7 +172,7 @@ async function sendViaAliyun(phone: string, code: string): Promise<boolean> {
       SignatureVersion: "1.0",
       Timestamp: new Date().toISOString().replace(/\.\d{3}Z$/, "Z"),
       // International number: country code + number, digits only (no +).
-      To: normalizeBR(phone),
+      To: phoneDigits(phone),
       Type: "OTP",
       Version: "2018-05-01",
     };
@@ -216,7 +210,7 @@ async function sendViaTwilio(phone: string, code: string): Promise<boolean> {
   if (!sid || !token || !from) return false;
   const text = `MePonto: seu código de acesso é ${code}. Válido por 5 minutos.`;
   try {
-    const to = `+${normalizeBR(phone)}`;
+    const to = normalizeBrPhone(phone); // canonical E.164 with "+"
     const params = new URLSearchParams({ To: to, From: from, Body: text });
     const resp = await fetch(`https://api.twilio.com/2010-04-01/Accounts/${sid}/Messages.json`, {
       method: "POST",
@@ -373,15 +367,16 @@ export async function POST(request: Request) {
   }
 
   const phoneRaw = body.phone ?? "";
-  const normalized = normalizeBR(phoneRaw);
-  if (normalized.length < 10) return jsonResponse({ error: "Informe um telefone válido.", code: "invalid_phone" }, { status: 400 });
+  // Canonical "+55…" — used for the OTP challenge key, storage and the session.
+  const normalized = normalizeBrPhone(phoneRaw);
+  if (phoneDigits(phoneRaw).length < 10) return jsonResponse({ error: "Informe um telefone válido.", code: "invalid_phone" }, { status: 400 });
 
   // Play review / demo login: a fixed phone + code that bypasses SMS so app-store
   // reviewers (and demos) can sign in. Off unless PLAY_DEMO_PHONE + PLAY_DEMO_CODE
   // are set. Point PLAY_DEMO_PHONE at a dedicated TEST rider (no real data).
   const demoPhone = process.env.PLAY_DEMO_PHONE;
   const demoCode = process.env.PLAY_DEMO_CODE;
-  const isDemo = !!demoPhone && !!demoCode && normalized === normalizeBR(demoPhone);
+  const isDemo = !!demoPhone && !!demoCode && samePhone(normalized, demoPhone);
 
   // ---- Request OTP --------------------------------------------------------
   if (action === "request-otp") {
@@ -399,11 +394,11 @@ export async function POST(request: Request) {
     if (guest?.verified === false && guest.googleSub) {
       const existing = findMemberByPhone(phoneRaw) ?? (body.cpf ? findMemberByCpf(body.cpf) : undefined);
       if (!existing) {
-        const created = newMember({ name: guest.name || guest.email?.split("@")[0] || "Membro", phone: phoneRaw, cpf: onlyDigits(body.cpf ?? ""), googleSub: guest.googleSub });
+        const created = newMember({ name: guest.name || guest.email?.split("@")[0] || "Membro", phone: normalized, cpf: onlyDigits(body.cpf ?? ""), googleSub: guest.googleSub });
         memory.riders.unshift(created);
         appendServerAudit({ actor: "Google", action: "MEMBER_REGISTERED", entity: "Rider", entityId: created.id, detail: `${created.name} (Google sign-in, sem 99 ID)`, risk: "Low" });
         await flushPendingToDatabase();
-        return issueSession(created, phoneRaw, request);
+        return issueSession(created, normalized, request);
       }
       // fall through: existing record → SMS OTP (rebind if matched by CPF)
     }
@@ -480,7 +475,7 @@ export async function POST(request: Request) {
       const member = findMemberByPhone(phoneRaw);
       if (member) {
         await linkGoogleIfPresent(member.id, body.googleCredential);
-        return issueSession(member, phoneRaw, request);
+        return issueSession(member, normalized, request);
       }
       return jsonResponse({ error: "Cadastro de demonstração não encontrado.", code: "not_found" }, { status: 404 });
     }
@@ -521,7 +516,7 @@ export async function POST(request: Request) {
     // identity (carried in the guest session) to this rider record now.
     const guest = await sessionFromRequest(request);
     await linkGoogleSubIfPresent(member.id, guest?.googleSub);
-    return issueSession(member, phoneRaw, request);
+    return issueSession(member, normalized, request);
   }
 
   // ---- Legacy phone-only login (disabled when OTP is enforced) ------------
@@ -530,5 +525,5 @@ export async function POST(request: Request) {
   }
   const member = findMemberByPhone(phoneRaw);
   if (!member) return jsonResponse({ error: "Telefone não encontrado. Crie uma conta primeiro.", code: "not_found" }, { status: 404 });
-  return issueSession(member, phoneRaw, request);
+  return issueSession(member, normalized, request);
 }

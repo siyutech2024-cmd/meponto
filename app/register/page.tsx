@@ -1,6 +1,7 @@
 "use client";
 
 import { FormEvent, useEffect, useState } from "react";
+import { normalizeBrPhone } from "../lib/phone";
 import { writeSession } from "../lib/session";
 
 type LoginStep = "phone" | "choice" | "cpf" | "code";
@@ -155,7 +156,8 @@ export default function RegisterPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           action: "request-otp",
-          phone,
+          // Canonical +55 number — the SMS provider needs the country code.
+          phone: normalizeBrPhone(phone),
           ...(opts.cpf ? { cpf: opts.cpf } : {}),
           ...(opts.signup ? { signup: { name: opts.signup.name, cpf: opts.signup.cpf, inviterId: opts.signup.inviterId, birthday: opts.signup.birthday } } : {}),
         }),
@@ -213,7 +215,7 @@ export default function RegisterPage() {
       const res = await fetch("/api/member-login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "verify-otp", phone: loginPhone, code: loginCode, ...(googleCred ? { googleCredential: googleCred } : {}) }),
+        body: JSON.stringify({ action: "verify-otp", phone: normalizeBrPhone(loginPhone), code: loginCode, ...(googleCred ? { googleCredential: googleCred } : {}) }),
       });
       const payload = (await res.json().catch(() => ({}))) as { error?: string; data?: { id?: string; name: string; role: string; portal: string; organization: string } };
       if (!res.ok || !payload.data) throw new Error(payload.error ?? "Código inválido.");
@@ -240,6 +242,13 @@ export default function RegisterPage() {
   }
 
   const input = "h-12 w-full rounded-[10px] border border-black/10 bg-white px-3 text-sm font-bold outline-none focus:border-[#ff7a00]";
+  // Fixed Brazil country-code badge shown left of phone inputs: the person
+  // types only DDD + number; +55 is applied automatically on submit.
+  const phonePrefix = (
+    <span aria-hidden="true" data-i18n-skip className="grid h-12 shrink-0 select-none place-items-center rounded-[10px] border border-black/10 bg-[#fff4cf] px-3 text-sm font-black text-[#9a7400]">
+      +55
+    </span>
+  );
   const inviteLink = typeof window !== "undefined" && memberId ? `${window.location.origin}/register?ref=${memberId}` : "";
   const whatsappShare = inviteLink
     ? `https://wa.me/?text=${encodeURIComponent(`Vem pro PontoMall comigo! 🎁 Cria sua conta grátis e ganhe pontos: ${inviteLink}`)}`
@@ -311,7 +320,11 @@ export default function RegisterPage() {
             {loginStep === "phone" && (
               <form onSubmit={(e) => { e.preventDefault(); void requestOtp(); }} className="space-y-3">
                 <label className="block text-xs font-black uppercase text-black/45">Telefone
-                  <input required value={loginPhone} onChange={(e) => setLoginPhone(maskPhone(e.target.value))} className={`${input} mt-1`} placeholder="(11) 98765-4321" inputMode="tel" autoComplete="tel" />
+                  <span className="mt-1 flex items-center gap-2">
+                    {phonePrefix}
+                    <input required value={loginPhone} onChange={(e) => setLoginPhone(maskPhone(e.target.value))} className={input} placeholder="(11) 98765-4321" inputMode="tel" autoComplete="tel" />
+                  </span>
+                  <span className="mt-1 block text-[11px] font-bold normal-case text-black/40">Brasil (+55) — digite o DDD e o número</span>
                 </label>
                 <button disabled={sending || loginPhone.replace(/\D/g, "").length < 10} className="h-12 w-full rounded-[10px] bg-[#ff7a00] text-sm font-black text-[#19202c] disabled:opacity-50">
                   {sending ? "Enviando..." : "Enviar código"}
@@ -377,7 +390,11 @@ export default function RegisterPage() {
               <input required value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} className={`${input} mt-1`} placeholder="Seu nome" autoComplete="name" />
             </label>
             <label className="block text-xs font-black uppercase text-black/45">WhatsApp / telefone
-              <input required value={form.phone} onChange={(e) => setForm({ ...form, phone: maskPhone(e.target.value) })} className={`${input} mt-1`} placeholder="(11) 98765-4321" inputMode="tel" autoComplete="tel" />
+              <span className="mt-1 flex items-center gap-2">
+                {phonePrefix}
+                <input required value={form.phone} onChange={(e) => setForm({ ...form, phone: maskPhone(e.target.value) })} className={input} placeholder="(11) 98765-4321" inputMode="tel" autoComplete="tel" />
+              </span>
+              <span className="mt-1 block text-[11px] font-bold normal-case text-black/40">Brasil (+55) — digite o DDD e o número</span>
             </label>
             <label className="block text-xs font-black uppercase text-black/45">CPF (opcional)
               <input value={form.cpf} onChange={(e) => setForm({ ...form, cpf: maskCpf(e.target.value) })} className={`${input} mt-1`} placeholder="000.000.000-00" inputMode="numeric" />

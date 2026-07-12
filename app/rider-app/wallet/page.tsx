@@ -8,10 +8,34 @@ import type { RiderWithdrawal } from "../../lib/finance";
 
 type Me = { riderId: string; name: string; pix: string; station: string; franchise: string; settled: number; held: number; paid: number; available: number };
 
+/** One line of the unified cash statement served by /api/rider/home. */
+type CashItem = {
+  title: string;
+  subtitle: string;
+  amount: string;
+  status: string;
+  tone: string;
+  at: string;
+  type: string;
+  balanceAfter: number | null;
+  sourceId: string;
+};
+
 const statusLabel: Record<string, { text: string; cls: string }> = {
   requested: { text: "Em análise", cls: "text-[var(--warning-ink)]" },
   paid: { text: "Pago", cls: "text-[var(--ok-ink)]" },
   rejected: { text: "Recusado", cls: "text-[var(--danger-ink)]" },
+};
+
+/** Semantic colors per movement type: recarga/reembolso green, compra red,
+ *  ajuste amber, saque/repasse neutral ink. */
+const cashTypeCls: Record<string, string> = {
+  topup: "text-[var(--ok-ink)]",
+  refund: "text-[var(--ok-ink)]",
+  spend: "text-[var(--danger-ink)]",
+  adjust: "text-[var(--warning-ink)]",
+  withdrawal: "text-[var(--text)]",
+  payout: "text-[var(--ok-ink)]",
 };
 
 export default function RiderWalletPage() {
@@ -19,7 +43,10 @@ export default function RiderWalletPage() {
   const headers = useMemo(() => ({ "Content-Type": "application/json", "x-vento-role": session?.role ?? "Rider" }), [session]);
 
   const [me, setMe] = useState<Me | null>(null);
+  const [loading, setLoading] = useState(true);
   const [withdrawals, setWithdrawals] = useState<RiderWithdrawal[]>([]);
+  const [cashLedger, setCashLedger] = useState<CashItem[] | null>(null);
+  const [cashBalance, setCashBalance] = useState<number | null>(null);
   const [amount, setAmount] = useState("");
   const [message, setMessage] = useState<{ tone: "ok" | "err"; text: string } | null>(null);
   const [busy, setBusy] = useState(false);
@@ -27,8 +54,23 @@ export default function RiderWalletPage() {
   const load = useCallback(async () => {
     const params = new URLSearchParams();
     if (session?.name) params.set("riderName", session.name);
+    // Progressive: the earnings card and the cash statement load in parallel;
+    // each section renders as soon as its data lands (skeleton meanwhile).
+    void fetch(`/api/rider/home`, { headers, cache: "no-store" })
+      .then(async (response) => {
+        if (!response.ok) {
+          setCashLedger([]); // no session/profile — hide the section instead of a stuck skeleton
+          return;
+        }
+        const payload = await response.json();
+        setCashLedger((payload.data?.cashLedger ?? []) as CashItem[]);
+        const saldo = payload.data?.cashBalance;
+        setCashBalance(typeof saldo === "number" ? saldo : null);
+      })
+      .catch(() => setCashLedger([]));
     const response = await fetch(`/api/wallet?${params}`, { headers, cache: "no-store" });
     const payload = await response.json();
+    setLoading(false);
     if (response.ok) {
       setMe(payload.data.me);
       setWithdrawals(payload.data.withdrawals);
@@ -61,6 +103,19 @@ export default function RiderWalletPage() {
           <Link href="/register?returnTo=/wallet" className="inline-flex h-11 w-full items-center justify-center rounded-[8px] bg-[var(--accent)] px-4 text-sm font-black text-[var(--accent-ink)]">
             Entrar ou criar conta
           </Link>
+        </div>
+      ) : loading ? (
+        // First-paint skeleton: the balance card shows immediately as a
+        // placeholder instead of blocking the page (or flashing the
+        // "cadastro não vinculado" notice) while the wallet loads.
+        <div className="panel animate-pulse space-y-3 p-5" aria-hidden>
+          <div className="mx-auto h-3 w-1/2 rounded bg-[var(--line)]" />
+          <div className="mx-auto h-10 w-2/3 rounded bg-[var(--line)]" />
+          <div className="grid grid-cols-3 gap-2">
+            <div className="h-10 rounded bg-[var(--line)]" />
+            <div className="h-10 rounded bg-[var(--line)]" />
+            <div className="h-10 rounded bg-[var(--line)]" />
+          </div>
         </div>
       ) : !me ? (
         <div className="panel p-5 text-sm font-bold text-[var(--muted)]">
@@ -113,6 +168,57 @@ export default function RiderWalletPage() {
               <Banknote size={16} /> {busy ? "Enviando..." : "Solicitar saque"}
             </button>
           </div>
+
+          {/* Unified cash statement (REAL ledgers: saques + repasses +
+              PontoMall cash topup/spend/refund/adjust). Each line: date-time,
+              colored type, signed amount, balance snapshot and source id —
+              grouped by day, newest first. */}
+          {cashLedger === null ? (
+            <div className="panel animate-pulse space-y-2 p-4" aria-hidden>
+              <div className="h-3 w-1/2 rounded bg-[var(--line)]" />
+              <div className="h-12 rounded bg-[var(--line)]" />
+              <div className="h-12 rounded bg-[var(--line)]" />
+            </div>
+          ) : cashLedger.length > 0 && (
+            <div className="panel p-4" data-i18n-skip>
+              <div className="mb-2 flex items-center justify-between">
+                <div className="text-[10px] font-black uppercase text-[var(--muted)]">Extrato em dinheiro</div>
+                {cashBalance !== null && (
+                  <div className="text-[11px] font-black">Saldo PontoMall: <span className="text-[var(--accent)]">R$ {cashBalance.toFixed(2)}</span></div>
+                )}
+              </div>
+              <div className="space-y-3">
+                {Object.entries(
+                  cashLedger.reduce<Record<string, CashItem[]>>((groups, item) => {
+                    const day = (item.at || "").slice(0, 10) || "—";
+                    (groups[day] ??= []).push(item);
+                    return groups;
+                  }, {}),
+                ).map(([day, items]) => (
+                  <div key={day}>
+                    <div className="mb-1 text-[10px] font-black uppercase text-[var(--muted)]">{day}</div>
+                    <div className="space-y-1.5">
+                      {items.map((item, index) => (
+                        <div key={`${item.sourceId}-${index}`} className="rounded-[8px] border border-[var(--line)] bg-[var(--surface-raised)] p-3">
+                          <div className="flex items-center justify-between gap-2 text-sm font-black">
+                            <span className={cashTypeCls[item.type] ?? ""}>{item.title}</span>
+                            <span className={item.amount.startsWith("-") ? "text-[var(--danger-ink)]" : "text-[var(--ok-ink)]"}>{item.amount}</span>
+                          </div>
+                          <div className="mt-0.5 flex items-center justify-between gap-2 text-[11px] font-bold text-[var(--muted)]">
+                            <span className="min-w-0 truncate">{(item.at || "").slice(11, 16) || ""}{item.subtitle && ` · ${item.subtitle}`}</span>
+                            <span className="shrink-0">{item.status}</span>
+                          </div>
+                          {item.sourceId && (
+                            <div className="mt-0.5 text-[10px] font-bold text-[var(--muted)]">Ref: {item.sourceId}</div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
 
           {withdrawals.length > 0 && (
             <div className="panel p-4">

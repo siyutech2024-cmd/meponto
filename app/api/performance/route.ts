@@ -104,7 +104,19 @@ async function performanceDirect(url: URL): Promise<Response | null> {
         : await fetchRows<RiderDailyKpi>("riderDailyKpis", [{ op: "eq", field: "rider99Id", value: nineId }]);
       const latest = rows.sort((a, b) => b.date.localeCompare(a.date))[0];
       if (!latest) return jsonResponse({ data: null });
-      return jsonResponse({ data: { date: latest.date, completedOrders: latest.completedOrders, tsh: latest.tsh, ar: latest.ar } });
+      // Full six T+1 indicators (orders / online hours / TSH / AR / CAA /
+      // overtime) so the rider app renders the complete status grid.
+      return jsonResponse({
+        data: {
+          date: latest.date,
+          completedOrders: latest.completedOrders,
+          onlineHours: latest.onlineHours,
+          tsh: latest.tsh,
+          ar: latest.ar,
+          caa: latest.caa,
+          overtime: latest.overtime,
+        },
+      });
     }
 
     const date = url.searchParams.get("date");
@@ -294,7 +306,18 @@ export async function GET(request: Request) {
       const rows = memory.riderDailyKpis.filter((row) => row.rider99Id === rider.ninetyNineId).sort((a, b) => b.date.localeCompare(a.date));
       const latest = rows[0];
       if (!latest) return jsonResponse({ data: null });
-      return jsonResponse({ data: { date: latest.date, completedOrders: latest.completedOrders, tsh: latest.tsh, ar: latest.ar } });
+      // Same six-indicator payload as the direct path above.
+      return jsonResponse({
+        data: {
+          date: latest.date,
+          completedOrders: latest.completedOrders,
+          onlineHours: latest.onlineHours,
+          tsh: latest.tsh,
+          ar: latest.ar,
+          caa: latest.caa,
+          overtime: latest.overtime,
+        },
+      });
     }
   }
   const forbidden = requirePermission(request, "view_analytics");

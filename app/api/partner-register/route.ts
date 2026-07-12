@@ -1,6 +1,7 @@
 import { appendServerAudit, makeServerId, memory, jsonResponse } from "../../lib/server/memory";
 import { flushPendingToDatabase, refreshCollectionsFromDatabase } from "../../lib/server/persistence";
 import { getAvailablePoints, type PointsLedgerEntry } from "../../lib/points";
+import { normalizeBrPhone, samePhone } from "../../lib/phone";
 import type { CrmPartner, CrmPartnerCategory } from "../../lib/crm";
 
 /** Points awarded to a member who invited a partner that registers. */
@@ -42,7 +43,8 @@ export async function POST(request: Request) {
 
   const name = (body.name ?? "").trim();
   const contactName = (body.contactName ?? "").trim();
-  const phone = (body.phone ?? "").trim();
+  // Canonical "+55…" (shared app/lib/phone.ts) — stored and deduped normalized.
+  const phone = normalizeBrPhone((body.phone ?? "").trim());
   const address = (body.address ?? "").trim();
   const mapUrl = (body.mapUrl ?? "").trim();
   const rawCategory = String(body.category ?? "").trim();
@@ -71,8 +73,8 @@ export async function POST(request: Request) {
     return jsonResponse({ error: "Link do mapa inválido — cole uma URL http(s) válida.", fields: ["mapUrl"] }, { status: 400 });
   }
 
-  // Light dedupe: same name + phone already pending/active.
-  if (memory.crmPartners.some((p) => p.name.toLowerCase() === name.toLowerCase() && p.phone === phone)) {
+  // Light dedupe: same name + phone already pending/active (any phone format).
+  if (memory.crmPartners.some((p) => p.name.toLowerCase() === name.toLowerCase() && samePhone(p.phone, phone))) {
     return jsonResponse({ error: "Cadastro já recebido. Aguarde a análise." }, { status: 409 });
   }
 

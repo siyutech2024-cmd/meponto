@@ -3,9 +3,22 @@
 
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
-import { ArrowLeft, Wrench, Store as StoreIcon } from "lucide-react";
+import { ArrowLeft, Star, Wrench, Store as StoreIcon } from "lucide-react";
 
-type Partner = { id: string; name: string; category: string; services: string[]; bairro: string; lat: number; lng: number; phone: string };
+type Partner = {
+  id: string;
+  name: string;
+  category: string;
+  services: string[];
+  bairro: string;
+  lat: number | null;
+  lng: number | null;
+  phone: string;
+  discountBRL?: number;
+  partnerPoints?: number;
+  ratingAvg?: number;
+  reviewCount?: number;
+};
 type StorePt = { id: string; name: string; bairro: string; franchise?: string; lat: number; lng: number; address?: string };
 
 /** Rider service map (Leaflet + OpenStreetMap). Two layers: 🔧 partner service
@@ -31,7 +44,8 @@ export default function ServiceMapPage() {
       L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 19, attribution: "© OpenStreetMap" }).addTo(map);
       const markers: any[] = [];
       if (show.partners) {
-        for (const p of data!.partners) {
+        // Only partners WITH coordinates go on the map; the list below shows all.
+        for (const p of data!.partners.filter((x) => Number.isFinite(x.lat) && Number.isFinite(x.lng))) {
           markers.push(
             L.circleMarker([p.lat, p.lng], { radius: 9, color: "#ff7a00", weight: 2, fillColor: "#ff7a00", fillOpacity: 0.85 })
               .addTo(map)
@@ -99,11 +113,48 @@ export default function ServiceMapPage() {
           </button>
         </div>
 
-        <div ref={mapDiv} className="mx-4 mb-3 flex-1 overflow-hidden rounded-[12px] border border-[#e6e3dd]" style={{ minHeight: "60vh", background: "#dfe7ef" }} />
+        <div ref={mapDiv} className="mx-4 mb-3 flex-1 overflow-hidden rounded-[12px] border border-[#e6e3dd]" style={{ minHeight: "50vh", background: "#dfe7ef" }} />
 
-        <p className="px-4 pb-4 text-[11px] font-bold text-[#77746f]">
+        <p className="px-4 pb-2 text-[11px] font-bold text-[#77746f]">
           🔧 parceiros = locais de serviço · 🏪 azul = Pontos de retirada (a retirada de produtos é sempre num Ponto).
         </p>
+
+        {/* Partner LIST — every Active service partner (real CRM data), even
+            those still without coordinates on the map. */}
+        {data && data.partners.length > 0 && (
+          <section className="px-4 pb-6">
+            <h2 className="mb-2 text-sm font-black">Parceiros de serviço ({data.partners.length})</h2>
+            <div className="space-y-2">
+              {data.partners.map((p) => (
+                <div key={p.id} className="rounded-[10px] bg-white p-3 shadow-[0_8px_20px_rgba(0,0,0,0.06)]">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <div className="truncate text-sm font-black">🔧 {p.name}</div>
+                      <div className="text-[11px] font-bold text-[#77746f]">
+                        {(p.services && p.services.length ? p.services.join(" / ") : p.category) || "Serviços"}{p.bairro ? ` · ${p.bairro}` : ""}
+                      </div>
+                    </div>
+                    {(p.reviewCount ?? 0) > 0 && (
+                      <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-[#fff4cf] px-2 py-0.5 text-[10px] font-black text-[#9a7400]">
+                        <Star size={10} fill="currentColor" /> {p.ratingAvg} ({p.reviewCount})
+                      </span>
+                    )}
+                  </div>
+                  {((p.discountBRL ?? 0) > 0 || (p.partnerPoints ?? 0) > 0) && (
+                    <div className="mt-1.5 flex flex-wrap gap-1.5">
+                      {(p.discountBRL ?? 0) > 0 && (
+                        <span className="rounded-full bg-[#e8f6ee] px-2 py-0.5 text-[10px] font-black text-[#20a65a]">Desconto R$ {(p.discountBRL as number).toFixed(2)}</span>
+                      )}
+                      {(p.partnerPoints ?? 0) > 0 && (
+                        <span className="rounded-full bg-[#fff1e0] px-2 py-0.5 text-[10px] font-black text-[#ff7a00]">+{p.partnerPoints} pts</span>
+                      )}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          </section>
+        )}
       </div>
     </main>
   );

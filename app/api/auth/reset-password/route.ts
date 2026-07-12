@@ -1,4 +1,5 @@
 import { jsonResponse } from "../../../lib/server/memory";
+import { normalizeBrPhone } from "../../../lib/phone";
 
 type ResetPasswordBody = {
   phone?: string;
@@ -7,7 +8,10 @@ type ResetPasswordBody = {
 };
 
 export async function POST(request: Request) {
-  const body = (await request.json().catch(() => ({}))) as ResetPasswordBody;
+  const raw = (await request.json().catch(() => ({}))) as ResetPasswordBody;
+  // Default to Brazil (+55): any real SMS sender wired here later must receive
+  // the canonical number, and the echoed phone should match what was targeted.
+  const body: ResetPasswordBody = { ...raw, phone: raw.phone ? normalizeBrPhone(raw.phone) : raw.phone };
 
   if (!body.phone) {
     return jsonResponse({ error: "phone is required" }, { status: 400 });

@@ -85,7 +85,7 @@ export async function proxy(request: NextRequest) {
     const mallFirstSegment = pathname.split("/")[1] ?? "";
     const sessionOwnsMallPath = !!session && mallHubPortals.includes(session.portal) &&
       portalConfigs[session.portal].modules.some((m) => pathname === m.href || pathname.startsWith(`${m.href}/`));
-    if (!sessionOwnsMallPath && ["wallet", "shifts", "agenda", "support", "scan"].includes(mallFirstSegment)) {
+    if (!sessionOwnsMallPath && ["wallet", "shifts", "agenda", "tasks", "support", "scan"].includes(mallFirstSegment)) {
       return NextResponse.redirect(new URL(`https://app.meponto.com${pathname}`));
     }
   }
@@ -105,7 +105,7 @@ export async function proxy(request: NextRequest) {
       url.pathname = "/rider-app";
       return NextResponse.rewrite(url);
     }
-    const riderSections = new Set(["wallet", "shifts", "agenda", "mall", "map", "support", "scan"]);
+    const riderSections = new Set(["wallet", "shifts", "agenda", "tasks", "mall", "map", "support", "scan"]);
     const firstSegment = pathname.split("/")[1] ?? "";
     // /scan?partner=… and /scan?ref=… are the PUBLIC QR validation page; the
     // bare /scan is the in-app camera scanner.
