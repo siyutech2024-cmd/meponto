@@ -64,11 +64,27 @@ const tabs = [
 
 const SLOT_RANGES = ["11:00~14:00", "14:00~18:00", "18:00~22:00"] as const;
 
+/** Format a Date as yyyy-mm-dd in LOCAL time. Never use toISOString for
+ *  calendar dates: it converts to UTC, which in Brazil (UTC-3) shifts the
+ *  whole week by a day after 21:00 — that's how "Monday" became 07-07. */
+function localDateString(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
 function mondayOf(offsetWeeks: number): string {
   const now = new Date();
   const day = now.getDay() === 0 ? 7 : now.getDay();
   now.setDate(now.getDate() - day + 1 + offsetWeeks * 7);
-  return now.toISOString().slice(0, 10);
+  return localDateString(now);
+}
+
+/** Snap ANY yyyy-mm-dd to the Monday of its week (date-only math, UTC-safe). */
+function mondayOfDate(date: string): string {
+  const d = new Date(`${date}T12:00:00Z`);
+  if (Number.isNaN(d.getTime())) return date;
+  const day = d.getUTCDay() === 0 ? 7 : d.getUTCDay();
+  d.setUTCDate(d.getUTCDate() - day + 1);
+  return d.toISOString().slice(0, 10);
 }
 
 function addDays(date: string, days: number): string {
@@ -407,7 +423,9 @@ function WeekSetupForm({ board, onSave, setMessage }: { board: Board; onSave: (b
       <div className="grid gap-4 md:grid-cols-2">
         <label className="text-xs font-black uppercase text-[var(--muted)]">
           {t("dpMondayDate")}
-          <input type="date" className={`${input} mt-1.5 w-full`} value={weekStart} onChange={(e) => setWeekStart(e.target.value)} />
+          {/* Any picked date snaps to its week's Monday — operators shouldn't
+              need to know which day the week starts on. */}
+          <input type="date" className={`${input} mt-1.5 w-full`} value={weekStart} onChange={(e) => e.target.value && setWeekStart(mondayOfDate(e.target.value))} />
         </label>
         <label className="text-xs font-black uppercase text-[var(--muted)]">
           {t("dpHotzone")}
@@ -424,9 +442,9 @@ function WeekSetupForm({ board, onSave, setMessage }: { board: Board; onSave: (b
           <thead>
             <tr className="text-[10px] font-black uppercase text-[var(--muted)]">
               <th className="pb-2 text-left">{t("dpSlot")}</th>
-              {days.map((date, index) => (
+              {days.map((date) => (
                 <th key={date} className="pb-2">
-                  <div>{t(WEEKDAY_KEYS[index])}</div>
+                  <div>{t(weekdayKeyOf(date))}</div>
                   <div className="font-bold text-[var(--muted-strong)]">{date.slice(5)}</div>
                 </th>
               ))}

@@ -56,11 +56,15 @@ const money = (v: number) => `R$ ${v.toFixed(2)}`;
 const r2 = (v: number) => Math.round(v * 100) / 100;
 const input = "h-10 rounded-[8px] border border-[var(--line)] bg-[var(--surface-raised)] px-3 text-sm font-bold text-[var(--text)] outline-none focus:border-[var(--accent)]";
 
+function localDateString(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
 function mondayOf(date: Date): string {
   const d = new Date(date);
   const back = (d.getDay() - 1 + 7) % 7;
   d.setDate(d.getDate() - back);
-  return d.toISOString().slice(0, 10);
+  return localDateString(d);
 }
 
 /** Generic client-side sort keyed by a flat row field (numbers first, strings as fallback). */
@@ -92,7 +96,7 @@ export default function ReportsPage() {
   const scopeFranchise = session?.portal === "franchise" ? session.franchise || session.organization : "";
 
   const [from, setFrom] = useState(() => mondayOf(new Date()));
-  const [to, setTo] = useState(() => new Date().toISOString().slice(0, 10));
+  const [to, setTo] = useState(() => localDateString(new Date()));
   const [rows, setRows] = useState<Row[]>([]);
   const [dim, setDim] = useState<"franchise" | "station" | "rider">(scopeFranchise ? "station" : "franchise");
   const [loading, setLoading] = useState(false);
@@ -226,9 +230,9 @@ export default function ReportsPage() {
           <label className="flex items-center gap-2 text-xs font-black uppercase text-[var(--muted)]">
             {t("rpTo")} <input type="date" className={input} value={to} onChange={(e) => setTo(e.target.value)} />
           </label>
-          <Chip onClick={() => { setFrom(mondayOf(new Date())); setTo(new Date().toISOString().slice(0, 10)); }}>{t("rpThisWeek")}</Chip>
-          <Chip onClick={() => { const d = new Date(); d.setDate(d.getDate() - 7); const start = mondayOf(d); const end = new Date(`${start}T12:00:00`); end.setDate(end.getDate() + 6); setFrom(start); setTo(end.toISOString().slice(0, 10)); }}>{t("rpLastWeek")}</Chip>
-          <Chip onClick={() => { const d = new Date(); d.setDate(d.getDate() - 29); setFrom(d.toISOString().slice(0, 10)); setTo(new Date().toISOString().slice(0, 10)); }}>{t("rp30d")}</Chip>
+          <Chip onClick={() => { setFrom(mondayOf(new Date())); setTo(localDateString(new Date())); }}>{t("rpThisWeek")}</Chip>
+          <Chip onClick={() => { const d = new Date(); d.setDate(d.getDate() - 7); const start = mondayOf(d); const end = new Date(`${start}T12:00:00`); end.setDate(end.getDate() + 6); setFrom(start); setTo(localDateString(end)); }}>{t("rpLastWeek")}</Chip>
+          <Chip onClick={() => { const d = new Date(); d.setDate(d.getDate() - 29); setFrom(localDateString(d)); setTo(localDateString(new Date())); }}>{t("rp30d")}</Chip>
           {loading && <span className="text-xs font-bold text-[var(--muted)]">{t("rpLoading")}</span>}
         </Toolbar>
       </div>

@@ -24,11 +24,15 @@ function addDays(iso: string, delta: number): string {
   return d.toISOString().slice(0, 10);
 }
 
+function localDateString(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
 function mondayOf(): string {
   const d = new Date();
   const back = (d.getDay() - 1 + 7) % 7;
   d.setDate(d.getDate() - back);
-  return d.toISOString().slice(0, 10);
+  return localDateString(d);
 }
 
 function weekdayKeyOf(date: string): TranslationKey {
