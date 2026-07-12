@@ -186,8 +186,12 @@ export default function RidersPage() {
       });
   }, [riders, query, stationFilter, franchiseFilter, statusFilter, onlyUnassigned]);
 
-  const unassignedCount = riders.filter((rider) => isUnassigned(rider.ponto) || isUnassigned(rider.franchise)).length;
-  const reportOnlyCount = riders.filter((rider) => rider.source === "report").length;
+  // Stats use the SAME base as the table (99ID-bearing riders + report rows),
+  // otherwise the "unassigned" card counts hidden no-99ID profiles and the
+  // click-through list shows fewer rows than the card promises.
+  const visibleBase = useMemo(() => riders.filter((rider) => String(rider.ninetyNineId ?? "").trim() !== ""), [riders]);
+  const unassignedCount = visibleBase.filter((rider) => isUnassigned(rider.ponto) || isUnassigned(rider.franchise)).length;
+  const reportOnlyCount = visibleBase.filter((rider) => rider.source === "report").length;
 
   // Pagination keeps the table short even with hundreds of riders.
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
@@ -316,7 +320,7 @@ export default function RidersPage() {
     <AppShell>
       <PageTitle
         title={t("rdTitle")}
-        eyebrow={t("rdEyebrow", { n: riders.length })}
+        eyebrow={t("rdEyebrow", { n: visibleBase.length })}
         action={
           <div className="flex gap-2">
             <button
@@ -342,8 +346,8 @@ export default function RidersPage() {
 
       {/* Quick stats — unassigned is the call to action. */}
       <section className="grid gap-3 md:grid-cols-4">
-        <Stat label={t("rdTotal")} value={String(riders.length)} />
-        <Stat label={t("rdProfiled")} value={String(riders.length - reportOnlyCount)} />
+        <Stat label={t("rdTotal")} value={String(visibleBase.length)} />
+        <Stat label={t("rdProfiled")} value={String(visibleBase.length - reportOnlyCount)} />
         <TodoCard label={t("rdUnassignedClick")} value={unassignedCount} tone={unassignedCount > 0 ? "danger" : "neutral"} active={onlyUnassigned} onClick={() => setOnlyUnassigned(!onlyUnassigned)} />
         <TodoCard label={t("rdNewFaces")} value={reportOnlyCount} tone={reportOnlyCount > 0 ? "warn" : "neutral"} />
       </section>
