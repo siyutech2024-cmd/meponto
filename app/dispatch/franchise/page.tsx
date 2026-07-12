@@ -1,9 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { RefreshCcw, Send, Split, Star } from "lucide-react";
+import { RefreshCcw, Send, Star } from "lucide-react";
 import { AppShell, PageTitle } from "../../components/ui";
-import { DataTable, Drawer, SectionCard, Stat, StatusBadge, TodoCard, type BadgeTone, type DataColumn } from "../../components/kit";
+import { DataTable, SectionCard, Stat, StatusBadge, TodoCard, type BadgeTone, type DataColumn } from "../../components/kit";
 import { readSession } from "../../lib/session";
 import type { DispatchShift, ShiftQuota, ShiftSignup } from "../../lib/dispatch";
 import { ShiftRiderPicker } from "../../components/shift-rider-picker";
@@ -17,6 +17,7 @@ const statusKey: Record<string, TranslationKey> = { scheduling: "dpStScheduling"
 // Badge semantics: green = running, amber = waiting on a human, gray = terminal.
 const SHIFT_TONE: Record<string, BadgeTone> = { scheduling: "warn", executing: "success", finished: "neutral" };
 const WEEKDAY_KEYS: TranslationKey[] = ["pfWdMon", "pfWdTue", "pfWdWed", "pfWdThu", "pfWdFri", "pfWdSat", "pfWdSun"];
+const SLOT_RANGES = ["11:00~14:00", "14:00~18:00", "18:00~22:00"] as const;
 
 function addDays(iso: string, delta: number): string {
   const d = new Date(`${iso}T12:00:00Z`);
@@ -73,9 +74,10 @@ export default function FranchiseDispatchPage() {
   const [board, setBoard] = useState<Board>({ shifts: [], quotas: [], signups: [] });
   const [myStations, setMyStations] = useState<string[]>([]);
   const [message, setMessage] = useState<{ tone: "ok" | "err" | "warn"; text: string } | null>(null);
-  const [stationInputs, setStationInputs] = useState<Record<string, string>>({}); // `${shiftId}|${station}` -> quota
+  // Split matrix: station name -> quota input for the SELECTED shift.
+  const [matrix, setMatrix] = useState<Record<string, string>>({});
+  const [busy, setBusy] = useState(false);
   const [activeShiftId, setActiveShiftId] = useState("");
-  const [splitShiftId, setSplitShiftId] = useState("");
   const [weekStart, setWeekStart] = useState(() => mondayOf());
 
   const load = useCallback(async () => {
@@ -124,7 +126,7 @@ export default function FranchiseDispatchPage() {
     .filter((row) => row.franchiseQuota);
 
   const pending = board.signups.filter((signup) => signup.status === "submitted");
-  const knownStations = [...new Set(board.quotas.filter((q) => q.level === "station" && q.franchise === franchise).map((q) => q.station))];
+  const knownStations = [...new Set(board.quotas.filter((q) => q.level === "station" && q.franchise === franchise).map((q) => q.station))].filter((s): s is string => Boolean(s));
 
   // Stats row: quota vs split vs review progress across all my shifts.
   const totalQuota = myShifts.reduce((sum, row) => sum + (row.franchiseQuota?.quota ?? 0), 0);
@@ -136,8 +138,50 @@ export default function FranchiseDispatchPage() {
     .filter(({ shift }) => shift.date >= weekStart && shift.date <= weekEnd)
     .sort((a, b) => a.shift.date.localeCompare(b.shift.date) || a.shift.timeRange.localeCompare(b.shift.timeRange));
 
-  const splitRow = myShifts.find((row) => row.shift.id === splitShiftId);
+  const activeRow = myShifts.find((row) => row.shift.id === activeShiftId);
   const splitStations = myStations.length > 0 ? myStations : knownStations;
+
+  // ---- Week grid + station split matrix (same pattern as HQ QuotaTab) ----
+  const weekDates = Array.from({ length: 7 }, (_, i) => addDays(weekStart, i));
+  const slotRows = [...new Set<string>([...SLOT_RANGES, ...weekRows.map((row) => row.shift.timeRange)])].sort();
+  const splitTotalOf = (row: MyShiftRow) => row.stationQuotas.reduce((sum, quota) => sum + quota.quota, 0);
+  const stationQuotaOf = (row: MyShiftRow, station: string) => row.stationQuotas.find((quota) => quota.station === station)?.quota ?? 0;
+
+  // Prefill the matrix from existing station quotas whenever the selection changes.
+  useEffect(() => {
+    const row = myShifts.find((item) => item.shift.id === activeShiftId);
+    if (!row) return;
+    const next: Record<string, string> = {};
+    for (const quota of row.stationQuotas) if (quota.station && quota.quota > 0) next[quota.station] = String(quota.quota);
+    setMatrix(next);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeShiftId, board.quotas]);
+
+  const matrixTotal = splitStations.reduce((sum, station) => sum + (Number(matrix[station]) || 0), 0);
+  const dirtyStations = activeRow ? splitStations.filter((station) => (Number(matrix[station]) || 0) !== stationQuotaOf(activeRow, station)) : [];
+
+  async function saveSplit() {
+    if (!activeRow || dirtyStations.length === 0) return;
+    setBusy(true);
+    setMessage(null);
+    let ok = 0;
+    for (const station of dirtyStations) {
+      const result = await post({ action: "quota", shiftId: activeRow.shift.id, level: "station", franchise, station, quota: Number(matrix[station]) || 0 });
+      if (result) ok += 1;
+    }
+    setBusy(false);
+    if (ok > 0) setMessage({ tone: "ok", text: `${t("dpQuotaOk")} ×${ok}` });
+  }
+
+  // Cell tone: gray = untouched, amber = partly split, green = fully split, red = over-split.
+  const cellTone = (row: MyShiftRow) => {
+    const allocated = splitTotalOf(row);
+    const target = row.franchiseQuota?.quota ?? 0;
+    if (allocated === 0) return "border-[var(--line)] text-[var(--muted)]";
+    if (allocated < target) return "border-[var(--warn)] text-[var(--warn-ink,var(--warning-ink))]";
+    if (allocated === target) return "border-[var(--success)] text-[var(--success-ink)]";
+    return "border-[var(--danger)] text-[var(--danger-ink)]";
+  };
 
   const shiftColumns: Array<DataColumn<MyShiftRow>> = [
     {
@@ -193,23 +237,6 @@ export default function FranchiseDispatchPage() {
         const waiting = board.signups.filter((item) => item.shiftId === shift.id && item.status === "submitted").length;
         return <span className={`font-black ${waiting > 0 ? "text-[var(--warning-ink)]" : "text-[var(--muted)]"}`}>{waiting}</span>;
       },
-    },
-    {
-      key: "action",
-      label: t("dpAction"),
-      align: "right",
-      render: ({ shift }) => (
-        <button
-          type="button"
-          className="tag inline-flex items-center gap-1 border-[var(--accent)] text-[var(--accent)]"
-          onClick={(e) => {
-            e.stopPropagation();
-            setSplitShiftId(shift.id);
-          }}
-        >
-          <Split size={12} /> {t("dfSplitToStation")}
-        </button>
-      ),
     },
   ];
 
@@ -282,24 +309,129 @@ export default function FranchiseDispatchPage() {
           {myShifts.length === 0 ? (
             <div className="text-sm font-bold text-[var(--muted)]">{t("dfNoQuota", { x: franchise })}</div>
           ) : (
-            <DataTable<MyShiftRow>
-              columns={shiftColumns}
-              rows={weekRows}
-              rowKey={(row) => row.shift.id}
-              onRowClick={(row) => setActiveShiftId(activeShiftId === row.shift.id ? "" : row.shift.id)}
-              minWidth={860}
-            />
+            <>
+              {/* ---- Week grid: click a slot to select the shift ---- */}
+              <div className="overflow-x-auto">
+                <table className="w-full min-w-[680px] text-center text-xs">
+                  <thead>
+                    <tr className="text-[10px] font-black uppercase text-[var(--muted)]">
+                      <th className="pb-1.5 text-left">{t("dpSlot")}</th>
+                      {weekDates.map((date) => (
+                        <th key={date} className="pb-1.5" translate="no">
+                          <div>{t(weekdayKeyOf(date))}</div>
+                          <div className="font-bold text-[var(--muted-strong)]">{date.slice(5)}</div>
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {slotRows.map((range) => (
+                      <tr key={range} className="border-t border-[var(--line)]">
+                        <td className="py-1.5 text-left font-black" translate="no">{range}</td>
+                        {weekDates.map((date) => {
+                          const cellRows = weekRows.filter((row) => row.shift.date === date && row.shift.timeRange === range && row.shift.status !== "finished");
+                          return (
+                            <td key={`${date}|${range}`} className="px-1 py-1.5">
+                              {cellRows.length === 0 ? (
+                                <span className="text-[var(--muted)]">—</span>
+                              ) : (
+                                <div className="flex flex-col gap-1">
+                                  {cellRows.map((row) => (
+                                    <button
+                                      key={row.shift.id}
+                                      type="button"
+                                      onClick={() => setActiveShiftId(row.shift.id === activeShiftId ? "" : row.shift.id)}
+                                      translate="no"
+                                      className={`rounded-[8px] border px-1.5 py-1 font-black transition-colors ${row.shift.id === activeShiftId ? "border-[var(--accent)] bg-[var(--accent)] text-[var(--accent-ink)]" : `bg-[var(--surface-raised)] hover:border-[var(--accent)] ${cellTone(row)}`}`}
+                                      title={`${row.shift.hotzone}${row.shift.isCritical ? " ★" : ""}`}
+                                    >
+                                      {splitTotalOf(row)}/{row.franchiseQuota?.quota ?? 0}
+                                    </button>
+                                  ))}
+                                </div>
+                              )}
+                            </td>
+                          );
+                        })}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <div className="mb-3 mt-2 text-[11px] font-bold text-[var(--muted)]">{t("dpSelectShift")} · {t("dfAllocated")}/{t("dfMyQuota")}</div>
+
+              {/* ---- Detail table: clicking a row selects the same shift ---- */}
+              <DataTable<MyShiftRow>
+                columns={shiftColumns}
+                rows={weekRows}
+                rowKey={(row) => row.shift.id}
+                onRowClick={(row) => setActiveShiftId(activeShiftId === row.shift.id ? "" : row.shift.id)}
+                minWidth={760}
+              />
+            </>
           )}
         </SectionCard>
 
-        <ShiftRiderPicker
-          shift={myShifts.find((row) => row.shift.id === activeShiftId)?.shift ?? null}
-          franchise={franchise}
-          headers={headers}
-          signups={board.signups}
-          onDone={(text) => { setMessage({ tone: "ok", text }); void load(); }}
-          onError={(text) => { setMessage({ tone: "err", text }); void load(); }}
-        />
+        <div className="space-y-4">
+          {/* ---- Station split matrix: all my stations, one batch save ---- */}
+          {activeRow && (
+            <SectionCard
+              title={
+                <div>
+                  <div>{t("dfSplitToStation")}</div>
+                  <div className="mt-0.5 text-[11px] font-bold normal-case text-[var(--muted)]" translate="no">
+                    {activeRow.shift.date} {activeRow.shift.timeRange} · {activeRow.shift.hotzone}
+                  </div>
+                </div>
+              }
+              desc={t("dfSplitSummary", { quota: activeRow.franchiseQuota?.quota ?? 0, allocated: matrixTotal })}
+              right={
+                <button
+                  type="button"
+                  disabled={busy || dirtyStations.length === 0}
+                  onClick={() => void saveSplit()}
+                  className="inline-flex h-9 items-center gap-1 rounded-[8px] bg-[var(--accent)] px-4 text-xs font-black uppercase text-[var(--accent-ink)] hover:bg-[var(--accent-strong)] disabled:opacity-50"
+                >
+                  {t("dfSave")}{dirtyStations.length > 0 ? ` ×${dirtyStations.length}` : ""}
+                </button>
+              }
+            >
+              {splitStations.length === 0 ? (
+                <div className="text-sm font-bold text-[var(--muted)]">{t("dfNoStations")}</div>
+              ) : (
+                <div className="space-y-1.5">
+                  {splitStations.map((station) => {
+                    const val = matrix[station] ?? "";
+                    const changed = (Number(val) || 0) !== stationQuotaOf(activeRow, station);
+                    return (
+                      <label key={station} className={`flex items-center gap-3 rounded-[8px] border px-3 py-1.5 ${changed ? "border-[var(--accent)]" : "border-[var(--line)]"}`}>
+                        <span className="flex-1 truncate text-sm font-black">{station}</span>
+                        <input
+                          inputMode="numeric"
+                          className="h-9 w-20 rounded-[8px] border border-[var(--line)] bg-[var(--surface)] text-center text-sm font-black outline-none focus:border-[var(--accent)]"
+                          value={val}
+                          onChange={(e) => setMatrix({ ...matrix, [station]: e.target.value.replace(/\D/g, "") })}
+                        />
+                      </label>
+                    );
+                  })}
+                </div>
+              )}
+              {matrixTotal > (activeRow.franchiseQuota?.quota ?? 0) && (
+                <div className="mt-2 text-xs font-black text-[var(--danger-ink)]">{t("dfOverSplit")}</div>
+              )}
+            </SectionCard>
+          )}
+
+          <ShiftRiderPicker
+            shift={activeRow?.shift ?? null}
+            franchise={franchise}
+            headers={headers}
+            signups={board.signups}
+            onDone={(text) => { setMessage({ tone: "ok", text }); void load(); }}
+            onError={(text) => { setMessage({ tone: "err", text }); void load(); }}
+          />
+        </div>
       </div>
 
       {/* 已提报 · 待总部审核 */}
@@ -330,61 +462,6 @@ export default function FranchiseDispatchPage() {
         </SectionCard>
       </div>
 
-      {/* Split-to-station form lives in a roomy drawer, one shift at a time. */}
-      <Drawer
-        open={Boolean(splitRow)}
-        onClose={() => setSplitShiftId("")}
-        width={460}
-        ariaLabel={t("dfSplitToStation")}
-        title={
-          splitRow ? (
-            <div>
-              <div className="text-sm font-black uppercase">{t("dfSplitToStation")}</div>
-              <div className="mt-0.5 text-[11px] font-bold text-[var(--muted)]" translate="no">
-                {splitRow.shift.date} {splitRow.shift.timeRange} · {splitRow.shift.hotzone}
-              </div>
-            </div>
-          ) : null
-        }
-      >
-        {splitRow && (
-          <div className="space-y-5">
-            <div className="rounded-[8px] border border-[var(--line)] bg-[var(--surface-raised)] p-3 text-xs font-bold text-[var(--muted-strong)]">
-              {t("dfMyQuota")} {splitRow.franchiseQuota?.quota ?? 0} ｜ {t("dfAllocated")}{" "}
-              <span className={splitRow.stationQuotas.reduce((sum, q) => sum + q.quota, 0) > (splitRow.franchiseQuota?.quota ?? 0) ? "text-[var(--danger-ink)]" : ""}>
-                {splitRow.stationQuotas.reduce((sum, q) => sum + q.quota, 0)}
-              </span>
-            </div>
-            {splitStations.length === 0 && <div className="text-sm font-bold text-[var(--muted)]">{t("dsNoQuota", { x: franchise })}</div>}
-            {splitStations.map((station) => {
-              const existing = splitRow.stationQuotas.find((quota) => quota.station === station);
-              const key = `${splitRow.shift.id}|${station}`;
-              return (
-                <div key={key} className="flex items-center gap-3">
-                  <span className="min-w-0 flex-1 truncate text-sm font-black">{station}</span>
-                  <input
-                    inputMode="numeric"
-                    className="h-11 w-24 rounded-[8px] border border-[var(--line)] bg-[var(--surface)] text-center text-sm font-black outline-none focus:border-[var(--accent)]"
-                    value={stationInputs[key] ?? String(existing?.quota ?? "")}
-                    onChange={(e) => setStationInputs({ ...stationInputs, [key]: e.target.value.replace(/\D/g, "") })}
-                  />
-                  <button
-                    type="button"
-                    className="inline-flex h-11 items-center rounded-[8px] border border-[var(--accent)] px-4 text-xs font-black uppercase text-[var(--accent)] hover:bg-[var(--accent-glow)]"
-                    onClick={async () => {
-                      const quota = Number(stationInputs[key] ?? existing?.quota ?? 0);
-                      const result = await post({ action: "quota", shiftId: splitRow.shift.id, level: "station", franchise, station, quota });
-                      if (result) setMessage({ tone: "ok", text: t("dfQuotaUpdated", { station, quota }) });
-                    }}
-                  >
-                    {t("dfSave")}
-                  </button>
-                </div>
-              );
-            })}
-          </div>
-        )}
-      </Drawer>
     </AppShell>
   );
 }
