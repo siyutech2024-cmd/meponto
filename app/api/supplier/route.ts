@@ -14,6 +14,17 @@ import type { AppUser } from "../../lib/users";
  */
 
 const COLLECTIONS = ["supplierProfiles", "appUsers", "marketplaceProducts", "marketplaceOrders"];
+
+// GET-path throttle: appUsers + marketplaceOrders are the heavy ones and
+// change rarely from this route's perspective — refresh at most once a
+// minute per instance. POST keeps the strict full refresh.
+const HEAVY_TTL_MS = 60_000;
+let heavyRefreshedAt = 0;
+async function refreshForGet() {
+  const wantHeavy = Date.now() - heavyRefreshedAt > HEAVY_TTL_MS;
+  await refreshCollectionsFromDatabase(wantHeavy ? COLLECTIONS : ["supplierProfiles", "marketplaceProducts"]);
+  if (wantHeavy) heavyRefreshedAt = Date.now();
+}
 const nowStamp = () => new Date().toISOString().slice(0, 16).replace("T", " ");
 
 function orgFor(session: { portal: string; organization: string }, url: URL) {
@@ -31,7 +42,7 @@ export async function GET(request: Request) {
   if (!session) return jsonResponse({ error: "Faça login.", code: "unauthenticated" }, { status: 401 });
   const org = orgFor(session, new URL(request.url));
   if (!org) return jsonResponse({ error: "Organização não identificada.", code: "forbidden" }, { status: 403 });
-  await refreshCollectionsFromDatabase(COLLECTIONS);
+  await refreshForGet();
 
   const team = memory.appUsers
     .filter((u) => u.portal === "supplier" && u.organization === org)

@@ -36,6 +36,18 @@ const COLLECTIONS = [
   "procurementMarginEntries",
 ];
 
+// GET-path split (mirrors /api/mall): actively-mutated collections refresh on
+// every read; the giant append-only ledgers re-download at most once a minute
+// per instance. POST keeps the full strict refresh.
+const HOT_COLLECTIONS = ["cashTopUps", "mallPayments", "marketplaceProducts", "marketplaceOrders", "priceChangeRequests", "purchaseOrders", "supplierStatements", "revenueShareStatements", "franchisePurchaseOrders", "mallCategories", "mallBanners", "mallCoupons"];
+const HEAVY_TTL_MS = 60_000;
+let heavyRefreshedAt = 0;
+async function refreshForGet() {
+  const wantHeavy = Date.now() - heavyRefreshedAt > HEAVY_TTL_MS;
+  await refreshCollectionsFromDatabase(wantHeavy ? COLLECTIONS : HOT_COLLECTIONS);
+  if (wantHeavy) heavyRefreshedAt = Date.now();
+}
+
 export function cashBalanceOf(riderId: string): number {
   let balance = 0;
   for (const entry of memory.cashLedgerEntries) {
@@ -183,7 +195,7 @@ export async function GET(request: Request) {
   const scope = await scopeFromRequest(request);
   if (!isOffice && !supplierName && !scope.franchise && !scope.station) return jsonResponse({ error: "forbidden" }, { status: 403 });
 
-  await refreshCollectionsFromDatabase(COLLECTIONS);
+  await refreshForGet();
 
   // P1-1 lazy month-close (no cron): when HQ opens the ops console and the
   // PREVIOUS natural month has no statements yet (any status counts as

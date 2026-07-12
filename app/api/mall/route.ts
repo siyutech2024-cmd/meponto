@@ -39,6 +39,20 @@ function cashBalanceOf(riderId: string): number {
 
 const COLLECTIONS = ["mallConfigs", "marketplaceProducts", "marketplaceOrders", "pointsLedgerEntries", "partnerPointsLedgerEntries", "riders", "riderDailyKpis", "mallCategories", "mallBanners", "mallCoupons", "mallPayments", "cashTopUps", "cashLedgerEntries", "inventoryLedgerEntries", "memberMessages", "franchises", "pontos", "mallRevenueShareEntries", "stationStockLedgerEntries", "purchaseOrders", "procurementMarginEntries"];
 
+// GET-path split: refresh the small, actively-mutated collections on every
+// read, but re-download the GIANT ones (points ledger, riders, daily KPIs,
+// cash ledger, messages…) at most once a minute per instance — they were
+// costing ~6s per warm GET. Same-instance writes are always visible
+// immediately; POST paths keep the full strict refresh.
+const HOT_COLLECTIONS = ["mallConfigs", "marketplaceProducts", "marketplaceOrders", "mallPayments", "cashTopUps", "purchaseOrders", "mallCategories", "mallBanners", "mallCoupons"];
+const HEAVY_TTL_MS = 60_000;
+let heavyRefreshedAt = 0;
+async function refreshForGet() {
+  const wantHeavy = Date.now() - heavyRefreshedAt > HEAVY_TTL_MS;
+  await refreshCollectionsFromDatabase(wantHeavy ? COLLECTIONS : HOT_COLLECTIONS);
+  if (wantHeavy) heavyRefreshedAt = Date.now();
+}
+
 /** M3 flag (docs/franchise-procurement-full-chain-plan.md): redemptions of
  *  physical rider goods reserve/consume STATION stock pools instead of the
  *  central stock counter. Default off — behavior is unchanged until enabled. */
@@ -259,7 +273,7 @@ export async function GET(request: Request) {
   const riderId = url.searchParams.get("riderId") ?? "";
   const riderName = url.searchParams.get("riderName") ?? "";
 
-  await refreshCollectionsFromDatabase(COLLECTIONS);
+  await refreshForGet();
 
   // ---- Scope enforcement (session-derived, never caller-widened) -----------
   // ?station= / ?franchise= exist only for the back-office order views, so the
