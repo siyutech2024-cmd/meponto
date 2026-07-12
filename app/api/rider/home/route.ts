@@ -6,6 +6,7 @@ import { applyInactivityDecay } from "../../../lib/points";
 import { isSupplierCategory } from "../../../lib/server/crm-categories";
 import { dbDirectReadEnabled, fetchRows } from "../../../lib/server/db-read";
 import type { RiderDailyKpi } from "../../../lib/performance";
+import { kpisByRider99, kpisByRiderName, perfMode } from "../../../lib/server/db/performance-repo";
 
 /**
  * Rider Home dashboard aggregate (session-scoped). One read powering the
@@ -75,12 +76,18 @@ export async function GET(request: Request) {
   if (direct) {
     try {
       // Legacy semantics: match by riderName OR rider99Id → two scoped
-      // fetches, merged unique by row id.
+      // fetches, merged unique by row id. M1 read switch: fact table when
+      // CORE_MODE_PERF=read (docs/data-core-cure-plan.md W2).
+      const factRead = perfMode() === "read";
       const [byName, byId] = await Promise.all([
-        fetchRows<RiderDailyKpi>("riderDailyKpis", [{ op: "eq", field: "riderName", value: name }]),
-        nineId
-          ? fetchRows<RiderDailyKpi>("riderDailyKpis", [{ op: "eq", field: "rider99Id", value: nineId }])
-          : Promise.resolve([] as RiderDailyKpi[]),
+        factRead
+          ? kpisByRiderName(name)
+          : fetchRows<RiderDailyKpi>("riderDailyKpis", [{ op: "eq", field: "riderName", value: name }]),
+        !nineId
+          ? Promise.resolve([] as RiderDailyKpi[])
+          : factRead
+            ? kpisByRider99(nineId)
+            : fetchRows<RiderDailyKpi>("riderDailyKpis", [{ op: "eq", field: "rider99Id", value: nineId }]),
       ]);
       const seen = new Map<string, RiderDailyKpi>();
       for (const row of [...byName, ...byId]) seen.set(row.id, row);

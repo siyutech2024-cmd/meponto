@@ -40,19 +40,32 @@ export async function upsertRows(table: string, rows: Record<string, unknown>[],
   if (error) throw new Error(`upsert ${table}: ${error.message}`);
 }
 
+export async function deleteRows(table: string, where: Where): Promise<void> {
+  if (!Object.keys(where).length) throw new Error(`deleteRows(${table}): refusing unfiltered delete`);
+  const query = applyWhere(getSupabaseServerClient().from(table).delete(), where);
+  const { error } = await query;
+  if (error) throw new Error(`delete ${table}: ${error.message}`);
+}
+
 export async function updateRows(table: string, where: Where, patch: Record<string, unknown>): Promise<void> {
   const query = applyWhere(getSupabaseServerClient().from(table).update(patch), where);
   const { error } = await query;
   if (error) throw new Error(`update ${table}: ${error.message}`);
 }
 
+export type RangeFilter = { column: string; op: "gte" | "lte" | "lt" | "gt"; value: string | number };
+
 /** Paged select — never trust a single page (PostgREST caps at 1000 rows). */
-export async function selectRows<T>(table: string, opts: { where?: Where; orderBy?: { column: string; ascending?: boolean }; limit?: number } = {}): Promise<T[]> {
+export async function selectRows<T>(
+  table: string,
+  opts: { where?: Where; range?: RangeFilter[]; orderBy?: { column: string; ascending?: boolean }; limit?: number } = {},
+): Promise<T[]> {
   const max = opts.limit ?? 50_000;
   const rows: T[] = [];
   for (let offset = 0; offset < max; offset += PAGE) {
     let query = getSupabaseServerClient().from(table).select("*").range(offset, Math.min(offset + PAGE, max) - 1);
     query = applyWhere(query, opts.where);
+    for (const f of opts.range ?? []) query = query[f.op](f.column, f.value);
     if (opts.orderBy) query = query.order(opts.orderBy.column, { ascending: opts.orderBy.ascending ?? true });
     const { data, error } = await query;
     if (error) throw new Error(`select ${table}: ${error.message}`);

@@ -71,7 +71,7 @@ S8 删除该模块的 memory 依赖；module:guard 白名单收缩一格
 | 里程碑 | 内容 | 工作量 | 退出标准 |
 | --- | --- | --- | --- |
 | M0 ✅ 2026-07-11 | 仓储层骨架（`app/lib/server/db/`：core/diff/dual-write/shadow-read/reconcile）+ `npm run test:db-core`（10 用例全过）+ module:guard 基线规则（trackCollection ≤111、路由 memory 引用 ≤76，只减不增） | 3 天 | 工具函数有测试 |
-| M1 | **W2 报表事实表**（先易后难练手） | 3 天 | performance/wallet/overview 读新表，全站最慢页面 <500ms |
+| M1 🚧 S1–S4 完成 2026-07-11 | **W2 报表事实表**：`t1_rider_daily_kpis`(1594行) + `t1_rider_daily_earnings`(1149行) 已建表回填；导入路由双写就绪；读切换代码就绪。⚠️ 表名加 `t1_` 前缀——`rider_daily_kpis` 已被 0608 PRD v2 迁移占用（business_date 结构）。**下一步**：Vercel 设 `CORE_MODE_PERF=dualwrite` → 每日 `npm run reconcile:perf` 连续 7 天 clean → 改 `read` 完成切换 | 3 天 | performance/wallet/overview 读新表，全站最慢页面 <500ms |
 | M2 | **W1 交易核心**（按 phase2 草案 M1–M5） | 2 周 | 50 并发压测无双花无超卖；对账 7 天全绿 |
 | M3 | W3 金融账本族 | 1.5 周 | 同上对账标准 |
 | M4 | W4 身份组织 + W5 排班 | 1.5 周 | 登录/RBAC 回归全过；重复报名压测通过 |

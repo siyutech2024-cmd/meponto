@@ -7,6 +7,14 @@ import { computeBalance, type RiderWithdrawal, type WalletPayment } from "../../
 import { scopeFromRequest } from "../../lib/server/authz";
 import { callRpc, dbDirectReadEnabled, fetchRows } from "../../lib/server/db-read";
 import type { RiderDailyEarning, RiderDailyKpi } from "../../lib/performance";
+import {
+  earningsByDateRange,
+  earningsByRider99,
+  earningsMaxDateT,
+  earningsSettledTotalsT,
+  kpisByDateRange,
+  perfMode,
+} from "../../lib/server/db/performance-repo";
 
 const COLLECTIONS = ["riderWithdrawals", "riderDailyEarnings", "riderDailyKpis", "riders", "franchises", "walletPayments", "franchiseDepositLedgerEntries"];
 // L2 direct-read mode: the two T+1 collections (grow per rider per day) are
@@ -19,10 +27,13 @@ const SMALL_COLLECTIONS = ["riderWithdrawals", "riders", "franchises", "walletPa
 async function earningsWindow(from: string, to: string): Promise<RiderDailyEarning[]> {
   if (dbDirectReadEnabled()) {
     try {
-      return await fetchRows<RiderDailyEarning>("riderDailyEarnings", [
-        { op: "gte", field: "date", value: from },
-        { op: "lte", field: "date", value: to },
-      ]);
+      // M1 read switch: fact table when CORE_MODE_PERF=read.
+      return perfMode() === "read"
+        ? await earningsByDateRange(from, to)
+        : await fetchRows<RiderDailyEarning>("riderDailyEarnings", [
+            { op: "gte", field: "date", value: from },
+            { op: "lte", field: "date", value: to },
+          ]);
     } catch (error) {
       console.warn(`[wallet] direct earnings read failed, legacy path. (${(error as Error).message})`);
     }
@@ -71,10 +82,12 @@ export async function GET(request: Request) {
     let kpiWin: RiderDailyKpi[];
     if (dbDirectReadEnabled()) {
       try {
-        kpiWin = await fetchRows<RiderDailyKpi>("riderDailyKpis", [
-          { op: "gte", field: "date", value: from },
-          { op: "lte", field: "date", value: to },
-        ]);
+        kpiWin = perfMode() === "read"
+          ? await kpisByDateRange(from, to)
+          : await fetchRows<RiderDailyKpi>("riderDailyKpis", [
+              { op: "gte", field: "date", value: from },
+              { op: "lte", field: "date", value: to },
+            ]);
       } catch (error) {
         console.warn(`[wallet] direct kpi read failed, legacy path. (${(error as Error).message})`);
         await refreshCollectionsFromDatabase(["riderDailyKpis"]);
@@ -149,7 +162,11 @@ export async function GET(request: Request) {
     let anchor = url.searchParams.get("week") || "";
     if (!anchor) {
       if (dbDirectReadEnabled()) {
-        anchor = (await callRpc<string | null>("collection_max_date", { p_collection: "riderDailyEarnings" }).catch(() => null)) ?? "";
+        anchor =
+          (await (perfMode() === "read"
+            ? earningsMaxDateT()
+            : callRpc<string | null>("collection_max_date", { p_collection: "riderDailyEarnings" })
+          ).catch(() => null)) ?? "";
       }
       if (!anchor) {
         await refreshCollectionsFromDatabase(["riderDailyEarnings"]);
@@ -246,9 +263,11 @@ export async function GET(request: Request) {
     let riderEarnings: RiderDailyEarning[];
     if (dbDirectReadEnabled()) {
       try {
-        riderEarnings = await fetchRows<RiderDailyEarning>("riderDailyEarnings", [
-          { op: "eq", field: "rider99Id", value: rider.ninetyNineId },
-        ]);
+        riderEarnings = perfMode() === "read"
+          ? await earningsByRider99(rider.ninetyNineId)
+          : await fetchRows<RiderDailyEarning>("riderDailyEarnings", [
+              { op: "eq", field: "rider99Id", value: rider.ninetyNineId },
+            ]);
       } catch (error) {
         console.warn(`[wallet] direct rider earnings read failed, legacy path. (${(error as Error).message})`);
         await refreshCollectionsFromDatabase(["riderDailyEarnings"]);
@@ -276,7 +295,10 @@ export async function GET(request: Request) {
   // earnings collection in memory for every rider.
   let settledBy: Map<string, number> | null = null;
   if (dbDirectReadEnabled()) {
-    settledBy = await callRpc<Array<{ rider99Id: string; settled: number }>>("earnings_settled_totals", { p_today: today() })
+    settledBy = await (perfMode() === "read"
+      ? earningsSettledTotalsT(today())
+      : callRpc<Array<{ rider99Id: string; settled: number }>>("earnings_settled_totals", { p_today: today() })
+    )
       .then((rows) => new Map(rows.map((r) => [r.rider99Id, Number(r.settled) || 0])))
       .catch((error) => {
         console.warn(`[wallet] earnings_settled_totals unavailable, legacy path. (${(error as Error).message})`);

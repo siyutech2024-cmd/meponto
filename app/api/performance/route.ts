@@ -13,6 +13,38 @@ import { getAvailablePoints } from "../../lib/points";
 import { sendPushToRider } from "../../lib/server/notify";
 import { callRpc, dbDirectReadEnabled, fetchRows } from "../../lib/server/db-read";
 import type { Rider } from "../../lib/data";
+import { dualWrite } from "../../lib/server/db/dual-write";
+import {
+  PERF_MODULE,
+  deleteEarningsByDate,
+  deleteKpisByDate,
+  earningsByDate,
+  kpiLeaderboardT,
+  kpisByDate,
+  kpisByRider99,
+  perfDatesT,
+  perfMode,
+  perfTrendT,
+  upsertEarnings,
+  upsertKpis,
+} from "../../lib/server/db/performance-repo";
+
+/**
+ * M1 dual-write (docs/data-core-cure-plan.md W2, flag CORE_MODE_PERF):
+ * after the legacy in-memory import lands, replay the DAY's final state into
+ * the fact tables — day-level replay stays exactly consistent with memory
+ * regardless of created/updated/backfill branches inside the import.
+ */
+async function dualWritePerfDay(date: string, which: "kpis" | "earnings" | "both"): Promise<void> {
+  if (which !== "earnings") {
+    await dualWrite(PERF_MODULE, `kpis ${date}`, () =>
+      upsertKpis(memory.riderDailyKpis.filter((row) => row.date === date)));
+  }
+  if (which !== "kpis") {
+    await dualWrite(PERF_MODULE, `earnings ${date}`, () =>
+      upsertEarnings(memory.riderDailyEarnings.filter((row) => row.date === date)));
+  }
+}
 
 /** Lifetime-orders milestones that trigger an achievement push. */
 const BADGE_MILESTONES: Array<{ at: number; label: string }> = [
@@ -52,9 +84,13 @@ function enrich(rows: RiderDailyKpi[], riders: Rider[] = memory.riders): Enriche
  */
 async function performanceDirect(url: URL): Promise<Response | null> {
   if (!dbDirectReadEnabled()) return null;
+  // M1 read switch: fact tables when CORE_MODE_PERF=read, JSONB mirror otherwise.
+  const factRead = perfMode() === "read";
   try {
     if (url.searchParams.get("ranking") !== null) {
-      const top = await callRpc<Array<{ name: string; orders: number }>>("kpi_leaderboard", { p_limit: 10 });
+      const top = factRead
+        ? await kpiLeaderboardT(10)
+        : await callRpc<Array<{ name: string; orders: number }>>("kpi_leaderboard", { p_limit: 10 });
       return jsonResponse({ data: { top } });
     }
 
@@ -63,7 +99,9 @@ async function performanceDirect(url: URL): Promise<Response | null> {
       const riderRows = await fetchRows<Rider>("riders", [{ op: "eq", field: "name", value: mine }]);
       const nineId = riderRows[0]?.ninetyNineId;
       if (!nineId) return jsonResponse({ data: null });
-      const rows = await fetchRows<RiderDailyKpi>("riderDailyKpis", [{ op: "eq", field: "rider99Id", value: nineId }]);
+      const rows = factRead
+        ? await kpisByRider99(nineId)
+        : await fetchRows<RiderDailyKpi>("riderDailyKpis", [{ op: "eq", field: "rider99Id", value: nineId }]);
       const latest = rows.sort((a, b) => b.date.localeCompare(a.date))[0];
       if (!latest) return jsonResponse({ data: null });
       return jsonResponse({ data: { date: latest.date, completedOrders: latest.completedOrders, tsh: latest.tsh, ar: latest.ar } });
@@ -73,18 +111,24 @@ async function performanceDirect(url: URL): Promise<Response | null> {
     const franchise = url.searchParams.get("franchise");
     const station = url.searchParams.get("station");
 
-    const allDates = await callRpc<string[]>("perf_dates");
+    const allDates = factRead ? await perfDatesT() : await callRpc<string[]>("perf_dates");
     const activeDate = date && allDates.includes(date) ? date : allDates[0] ?? null;
 
     const [kpiRaw, earnRaw, riders, trend] = await Promise.all([
-      activeDate
-        ? fetchRows<RiderDailyKpi>("riderDailyKpis", [{ op: "eq", field: "date", value: activeDate }])
-        : Promise.resolve([] as RiderDailyKpi[]),
-      activeDate
-        ? fetchRows<RiderDailyEarning>("riderDailyEarnings", [{ op: "eq", field: "date", value: activeDate }])
-        : Promise.resolve([] as RiderDailyEarning[]),
+      !activeDate
+        ? Promise.resolve([] as RiderDailyKpi[])
+        : factRead
+          ? kpisByDate(activeDate)
+          : fetchRows<RiderDailyKpi>("riderDailyKpis", [{ op: "eq", field: "date", value: activeDate }]),
+      !activeDate
+        ? Promise.resolve([] as RiderDailyEarning[])
+        : factRead
+          ? earningsByDate(activeDate)
+          : fetchRows<RiderDailyEarning>("riderDailyEarnings", [{ op: "eq", field: "date", value: activeDate }]),
       fetchRows<Rider>("riders"),
-      callRpc<Array<{ date: string; orders: number; settle: number }>>("perf_trend", { p_days: 30 }),
+      factRead
+        ? perfTrendT(30)
+        : callRpc<Array<{ date: string; orders: number; settle: number }>>("perf_trend", { p_days: 30 }),
     ]);
 
     let rows = enrich(kpiRaw, riders);
@@ -495,6 +539,7 @@ async function handlePost(request: Request) {
       risk: "Low",
     });
 
+    await dualWritePerfDay(date, "kpis");
     return jsonResponse({ data: { created, updated, parsed: parsed.length } }, { status: 201 });
   }
 
@@ -654,6 +699,8 @@ async function handlePost(request: Request) {
       await sendPushToRider(a.riderName, "Conquista desbloqueada! 🏆", `Você alcançou: ${a.label}. Confira seus selos na MePonto.`, "/mall");
     }
 
+    // KPI imports may also backfill the same day's earnings orders → replay both.
+    await dualWritePerfDay(date, body.action === "importEarnings" ? "earnings" : "both");
     return jsonResponse({ data: { created, updated, parsed: created + updated, achievements: achievements.length, noShowNotices } }, { status: 201 });
   }
 
@@ -675,6 +722,10 @@ async function handlePost(request: Request) {
       if (memory.riderDailyEarnings[i].date === date) memory.riderDailyEarnings.splice(i, 1);
     }
     appendServerAudit({ actor, action: "T1_DATE_PURGED", entity: "RiderDailyKpi", entityId: date, detail: `Purged ${kpiVictims.length} KPI + ${earnVictims.length} earning rows for ${date}.`, risk: "Medium" });
+    await dualWrite(PERF_MODULE, `purge ${date}`, async () => {
+      await deleteKpisByDate(date);
+      await deleteEarningsByDate(date);
+    });
     return jsonResponse({ data: { kpiRemoved: kpiVictims.length, earningsRemoved: earnVictims.length } });
   }
 
