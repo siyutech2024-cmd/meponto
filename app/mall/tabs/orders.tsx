@@ -8,8 +8,11 @@ import { Chip, DataTable, Drawer, Pager, SearchInput, TodoCard, Toolbar, type Da
 import { orderStatusLabel, paymentStatusChip, statusBadge, useMallAdmin } from "./context";
 
 /** 订单履约 — 待办卡 + Toolbar + DataTable + Drawer 工作台。
- *  行内只保留一个最主要操作，完整操作（到站/交付/审核）集中在订单抽屉；
- *  勾选多个在途（created）订单可「批量到站」（batchArrived action）。 */
+ *  平面管理：总部在此直接完成整条履约链（审核放行 → 到站/批量到站 → 交付），
+ *  不依赖站点工作台。行内只保留一个最主要操作，完整操作集中在订单抽屉；
+ *  勾选多个在途（created）订单可「批量到站」（batchArrived action）；
+ *  「按站点分组」切换合并了原站点工作台的今日待取视图——逐站点列出
+ *  已到站待取订单，总部可直接逐单交付。 */
 
 const ORDER_PAGE_SIZE = 50;
 
@@ -39,6 +42,7 @@ export default function OrdersTab() {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [drawerId, setDrawerId] = useState("");
   const [batchBusy, setBatchBusy] = useState(false);
+  const [groupByStation, setGroupByStation] = useState(false);
 
   // One-shot preset: overview "高价值待审核" card → review-pending orders only.
   useEffect(() => {
@@ -187,6 +191,21 @@ export default function OrdersTab() {
 
   const drawerOrder = drawerId ? allOrders.find((o) => o.id === drawerId) : undefined;
 
+  // ---- 按站点分组（原站点工作台「今日待取」并入总部视角）：已到站待取订单逐站点列出 ----
+  const stationGroups = useMemo(() => {
+    const q = orderSearch.trim().toLowerCase();
+    const groups = new Map<string, MarketplaceOrder[]>();
+    for (const order of allOrders) {
+      if (order.status !== "arrived") continue;
+      if (q && ![order.productName ?? "", order.riderName ?? "", order.station ?? "", order.pickupStoreName ?? "", order.id].some((text) => text.toLowerCase().includes(q))) continue;
+      const station = order.pickupStoreName ?? order.station ?? "未指定站点";
+      const list = groups.get(station) ?? [];
+      list.push(order);
+      groups.set(station, list);
+    }
+    return [...groups.entries()].sort((a, b) => b[1].length - a[1].length);
+  }, [allOrders, orderSearch]);
+
   return (
     <div className="space-y-3">
       {/* ---- 待办卡：点击即预筛 ---- */}
@@ -201,10 +220,11 @@ export default function OrdersTab() {
       <Toolbar right={<Pager page={safeOrderPage} pages={orderPages} total={filteredOrders.length} onPage={setOrderPage} />}>
         <SearchInput value={orderSearch} onChange={(value) => { setOrderSearch(value); setOrderPage(1); }} placeholder="搜索商品 / 骑手 / 站点 / 订单号…" />
         {["", "created", "arrived", "fulfilled", "cancelled"].map((status) => (
-          <Chip key={status || "all"} active={orderFilter === status && !reviewOnly} onClick={() => { setOrderFilter(status); setOrderPage(1); }}>
+          <Chip key={status || "all"} active={orderFilter === status && !reviewOnly && !groupByStation} onClick={() => { setOrderFilter(status); setGroupByStation(false); setOrderPage(1); }}>
             {status === "" ? "全部" : orderStatusLabel[status]}
           </Chip>
         ))}
+        <Chip active={groupByStation} onClick={() => setGroupByStation((prev) => !prev)}>按站点分组</Chip>
         {reviewOnly && (
           <button type="button" onClick={() => { setReviewOnly(false); setOrderPage(1); }} className="rounded-full border border-[var(--accent)] bg-[var(--accent)]/10 px-3.5 py-1.5 text-xs font-bold text-[var(--accent)]">
             仅看高价值待审 ✕
@@ -231,15 +251,42 @@ export default function OrdersTab() {
         </div>
       )}
 
-      {/* ---- 订单表格：点行开抽屉 ---- */}
-      <DataTable
-        columns={columns}
-        rows={pagedOrders}
-        rowKey={(order) => order.id}
-        onRowClick={(order) => setDrawerId(order.id)}
-        minWidth={920}
-        empty={allOrders.length === 0 ? "暂无订单。" : "没有匹配的订单——调整关键字、状态或日期范围。"}
-      />
+      {/* ---- 订单表格 / 按站点分组待取视图：点行（卡）开抽屉 ---- */}
+      {groupByStation ? (
+        <div className="space-y-3">
+          {stationGroups.map(([station, orders]) => (
+            <div key={station} className="panel p-4">
+              <div className="mb-2 flex items-center gap-2">
+                <span className="text-sm font-black">{station}</span>
+                <span className="rounded-full bg-[var(--warn-bg)] px-2 py-0.5 text-[11px] font-black text-[var(--warn)]">待取 {orders.length}</span>
+              </div>
+              <div className="space-y-1.5">
+                {orders.map((order) => (
+                  <div key={order.id} onClick={() => setDrawerId(order.id)} className="flex cursor-pointer flex-wrap items-center gap-2 rounded-[10px] border border-[var(--line)] bg-[var(--surface-raised)] px-3 py-2 text-xs font-bold transition-colors hover:border-[var(--accent)]">
+                    <span className="min-w-0 max-w-[220px] truncate font-black">{order.productName ?? "—"}</span>
+                    <span className="text-[var(--muted)]">{order.riderName ?? "—"}</span>
+                    <span>{order.pointsSpent.toLocaleString()} 分{order.cashDue ? ` + R$${order.cashDue.toFixed(2)}` : ""}</span>
+                    <span className="text-[var(--muted)]">{order.arrivedAt ?? order.createdAt}</span>
+                    <span className="ml-auto" onClick={(e) => e.stopPropagation()}>
+                      <button type="button" onClick={() => actDeliver(order)} className={ROW_BTN}>交付</button>
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))}
+          {stationGroups.length === 0 && <div className="panel py-8 text-center text-sm font-bold text-[var(--muted)]">当前没有已到站待取的订单。</div>}
+        </div>
+      ) : (
+        <DataTable
+          columns={columns}
+          rows={pagedOrders}
+          rowKey={(order) => order.id}
+          onRowClick={(order) => setDrawerId(order.id)}
+          minWidth={920}
+          empty={allOrders.length === 0 ? "暂无订单。" : "没有匹配的订单——调整关键字、状态或日期范围。"}
+        />
+      )}
 
       {/* ---- 订单详情抽屉：时间线 + 支付 + 取货门店 + 全部操作 ---- */}
       {drawerOrder && (

@@ -10,7 +10,10 @@ import { DataTable, Drawer, SectionCard, StatusBadge, type DataColumn } from "./
 import { statusBadge } from "./tabs/context";
 
 /** PontoMall back office — 加盟商直采 tab (the ONLY write surface for
- *  procurement office actions, per plan §2). Kit-based workbench layout. */
+ *  procurement office actions, per plan §2). Kit-based workbench layout.
+ *  平面管理：总部可直接推进 FPO 全状态（审批 → 确认备货 → 发货 → 到站 →
+ *  代收入库）。收货本属站点会话（receiveFPO），office 会话同样被 API 允许
+ *  （OFFICE_ACTIONS），此处的「代收入库」即总部代收，服务端审计注明。 */
 
 type ProductRow = {
   id: string; name: string; status: string; supplierName: string; supplyPrice: number;
@@ -139,6 +142,18 @@ export default function ProcurementTab() {
         onClick: () => {
           const reason = window.prompt("请输入原因");
           if (reason) void post({ action: "closeExceptionFPO", fpoId: fpo.id, reason }, "已处理");
+        },
+      });
+    }
+    // 总部代收：本属站点会话的收货入库（receiveFPO），office 会话被 API 允许；
+    // 不传 received 明细即按下单数量全量入库，服务端审计注明「总部代收」。
+    if (fpo.status === "shipped" || fpo.status === "arrived") {
+      buttons.push({
+        label: "代收入库",
+        onClick: () => {
+          if (window.confirm(`总部代收：代站点「${fpo.stationName}」按下单数量全量收货入库？（审计将注明总部代收）`)) {
+            void post({ action: "receiveFPO", fpoId: fpo.id }, "已代收入库（总部代收，审计留痕）");
+          }
         },
       });
     }

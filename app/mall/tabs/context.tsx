@@ -54,6 +54,7 @@ export type OpsPayload = {
 export type ProcureProduct = {
   id: string;
   name: string;
+  supplierName?: string;
   procurementMode: "off" | "consignment" | "buyout" | "both";
   franchiseBuyoutPrice: number;
   minOrderQty: number;
@@ -61,7 +62,12 @@ export type ProcureProduct = {
   procurementConsent: "none" | "pending" | "approved";
   suggestedBuyoutPrice: number;
 };
-export type ProcurePayload = { config?: { procurementEnabled?: boolean }; products?: ProcureProduct[] };
+export type ProcurePayload = {
+  config?: { procurementEnabled?: boolean };
+  products?: ProcureProduct[];
+  /** FPO headers — enough for the overview "直采待审批" todo card. */
+  fpos?: Array<{ id: string; status: string }>;
+};
 
 // ---------------------------------------------------------------------------
 // Labels / status tone mapping (shared across tabs)
@@ -115,7 +121,7 @@ export const isLowStock = (product: MarketplaceProduct) => product.stock <= (pro
 // Navigation contract
 // ---------------------------------------------------------------------------
 
-export type TabId = "overview" | "products" | "merch" | "orders" | "payments" | "supply" | "procurement" | "settings";
+export type TabId = "overview" | "products" | "merch" | "suppliers" | "points" | "orders" | "payments" | "supply" | "procurement" | "settings";
 
 /** One-shot pre-filter carried by navigate(tab, preset); target tab consumes and clears it. */
 export type TabPreset = "pending_pricing" | "lowstock" | "consent" | "review" | null;

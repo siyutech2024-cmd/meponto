@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState, type ComponentType } from "react";
-import { Banknote, BarChart3, Boxes, Building2, LayoutGrid, LineChart, Package, Settings2, ShoppingBag, Store, Truck, Users, Warehouse } from "lucide-react";
+import { Banknote, BarChart3, Boxes, Building2, Coins, LayoutGrid, LineChart, Package, Settings2, ShoppingBag, Truck, Users } from "lucide-react";
 import { MallShell, type MallNavGroup } from "./shell";
 import type { MarketplaceOrder } from "../lib/points";
 import type { CashTopUp } from "../lib/mall-ops";
@@ -12,6 +12,8 @@ import { MallAdminContext, isLowStock, type ApiPath, type MallAdminContextValue,
 import OverviewTab from "./tabs/overview";
 import ProductsTab from "./tabs/products";
 import MerchTab from "./tabs/merch";
+import SuppliersTab from "./tabs/suppliers";
+import PointsTab from "./tabs/points";
 import OrdersTab from "./tabs/orders";
 import PaymentsTab from "./tabs/payments";
 import SupplyTab from "./tabs/supply";
@@ -19,13 +21,16 @@ import SettingsTab from "./tabs/settings";
 
 /**
  * PontoMall back office (mall.meponto.com/admin → /mall) — the independent
- * mall workspace. This file wires the data plumbing (/api/mall, /api/mall/ops,
- * /api/mall/procurement) into the standalone MallShell (./shell.tsx): grouped
- * sidebar navigation (URL-addressable via ?tab=), pending-work badges and the
- * message bar. Each business surface lives in app/mall/tabs/*.
+ * mall workspace, FLAT-managed: HQ runs everything about the mall from this
+ * single console (suppliers, points, fulfilment, procurement, money) without
+ * hopping to supplier/station/franchise portals. This file wires the data
+ * plumbing (/api/mall, /api/mall/ops, /api/mall/procurement) into the
+ * standalone MallShell (./shell.tsx): grouped sidebar navigation
+ * (URL-addressable via ?tab=), pending-work badges and the message bar.
+ * Each business surface lives in app/mall/tabs/*.
  */
 
-const TAB_IDS: TabId[] = ["overview", "products", "merch", "orders", "payments", "supply", "procurement", "settings"];
+const TAB_IDS: TabId[] = ["overview", "products", "merch", "suppliers", "points", "orders", "payments", "supply", "procurement", "settings"];
 
 type NavItem = { id: TabId; label: string; icon: typeof BarChart3 };
 type NavGroup = { label: string | null; items: NavItem[] };
@@ -36,13 +41,16 @@ const NAV_GROUPS: NavGroup[] = [
     { id: "products", label: "商品", icon: ShoppingBag },
     { id: "merch", label: "分类与营销", icon: LayoutGrid },
   ] },
+  { label: "供应商", items: [{ id: "suppliers", label: "供应商", icon: Building2 }] },
+  { label: "积分", items: [{ id: "points", label: "积分", icon: Coins }] },
   { label: "履约", items: [{ id: "orders", label: "订单", icon: Package }] },
-  { label: "资金", items: [{ id: "payments", label: "收款与充值", icon: Banknote }] },
-  { label: "供应链", items: [{ id: "supply", label: "补货与对账", icon: Truck }] },
-  { label: null, items: [
-    { id: "procurement", label: "直采", icon: Boxes },
-    { id: "settings", label: "设置", icon: Settings2 },
+  { label: "直采", items: [{ id: "procurement", label: "直采", icon: Boxes }] },
+  { label: "资金", items: [
+    { id: "payments", label: "收款与充值", icon: Banknote },
+    { id: "supply", label: "补货与对账", icon: Truck },
   ] },
+  // 设置 stays the last group; the 洞察 link group is spliced in before it (shellNav below).
+  { label: null, items: [{ id: "settings", label: "设置", icon: Settings2 }] },
 ];
 
 /** 洞察 — analytics pages that live outside the mall workspace (normal links). */
@@ -54,20 +62,12 @@ const INSIGHT_GROUP: MallNavGroup = {
   ],
 };
 
-/** 门户 — the three counterpart consoles of the mall flow (open in a new window). */
-const PORTAL_GROUP: MallNavGroup = {
-  label: "门户",
-  items: [
-    { id: "portal-supplier", label: "供应商门户", icon: Building2, href: "/mall/supplier", external: true },
-    { id: "portal-station", label: "站点门户", icon: Warehouse, href: "/mall/station", external: true },
-    { id: "portal-franchise", label: "加盟商直采", icon: Store, href: "/mall/franchise", external: true },
-  ],
-};
-
 const TAB_COMPONENTS: Record<TabId, ComponentType> = {
   overview: OverviewTab,
   products: ProductsTab,
   merch: MerchTab,
+  suppliers: SuppliersTab,
+  points: PointsTab,
   orders: OrdersTab,
   payments: PaymentsTab,
   supply: SupplyTab,
@@ -205,14 +205,16 @@ export default function MallAdminPage() {
   const ActiveTab = TAB_COMPONENTS[tab];
 
   // Sidebar model for MallShell: workspace tab groups (with pending-work
-  // badges) + 洞察 links + 门户 entrances (new window).
+  // badges) + 洞察 links spliced in before the trailing 设置 group. Flat
+  // management: no portal entrances — HQ operates everything from these tabs.
+  const mappedGroups = NAV_GROUPS.map((group) => ({
+    label: group.label,
+    items: group.items.map(({ id, label, icon }) => ({ id, label, icon, badge: navBadges[id] ?? 0 })),
+  }));
   const shellNav: MallNavGroup[] = [
-    ...NAV_GROUPS.map((group) => ({
-      label: group.label,
-      items: group.items.map(({ id, label, icon }) => ({ id, label, icon, badge: navBadges[id] ?? 0 })),
-    })),
+    ...mappedGroups.slice(0, -1),
     INSIGHT_GROUP,
-    PORTAL_GROUP,
+    mappedGroups[mappedGroups.length - 1],
   ];
   const activeLabel = NAV_GROUPS.flatMap((group) => group.items).find((item) => item.id === tab)?.label ?? "总览";
 

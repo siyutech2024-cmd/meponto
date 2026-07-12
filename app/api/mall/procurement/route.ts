@@ -542,7 +542,8 @@ async function postImpl(request: Request) {
       return jsonResponse({ data: updated });
     }
 
-    // ---- Station: 收货入库（差异自动登记,买断短装自动退款） --------------------
+    // ---- Station: 收货入库（差异自动登记,买断短装自动退款）。office 会话同样
+    //      允许（OFFICE_ACTIONS）= 总部代收,审计注明「总部代收」。 ---------------
     case "receiveFPO": {
       const { index, fpo } = findFpo(body);
       if (!fpo) return err(404, "FPO not found", "fpErrNotFound");
@@ -613,8 +614,8 @@ async function postImpl(request: Request) {
         receivedAt: nowStamp(),
         receivedBy: isStationActor ? stationScope : actor,
       });
-      appendEvent(PROCUREMENT_EVENTS.fpoReceived, { fpoId: fpo.id, stationId: fpo.stationId, mode: fpo.mode, refundBRL: refundTotal }, actor);
-      appendServerAudit({ actor, action: "FPO_RECEIVED", entity: "FranchisePurchaseOrder", entityId: fpo.id, detail: `${fpo.stationName} 入库${refundTotal > 0 ? ` · 短装退款 R$${refundTotal}` : ""}`, risk: refundTotal > 0 ? "Medium" : "Low" });
+      appendEvent(PROCUREMENT_EVENTS.fpoReceived, { fpoId: fpo.id, stationId: fpo.stationId, mode: fpo.mode, refundBRL: refundTotal, officeProxy: isOfficeActor }, actor);
+      appendServerAudit({ actor, action: "FPO_RECEIVED", entity: "FranchisePurchaseOrder", entityId: fpo.id, detail: `${fpo.stationName} 入库${isOfficeActor ? "（总部代收）" : ""}${refundTotal > 0 ? ` · 短装退款 R$${refundTotal}` : ""}`, risk: refundTotal > 0 ? "Medium" : "Low" });
       return jsonResponse({ data: updated });
     }
 
