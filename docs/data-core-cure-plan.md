@@ -70,7 +70,7 @@ S8 删除该模块的 memory 依赖；module:guard 白名单收缩一格
 
 | 里程碑 | 内容 | 工作量 | 退出标准 |
 | --- | --- | --- | --- |
-| M0 | 仓储层骨架 + 双写/对账/影子读工具函数 + module:guard 新规则 | 3 天 | 工具函数有测试 |
+| M0 ✅ 2026-07-11 | 仓储层骨架（`app/lib/server/db/`：core/diff/dual-write/shadow-read/reconcile）+ `npm run test:db-core`（10 用例全过）+ module:guard 基线规则（trackCollection ≤111、路由 memory 引用 ≤76，只减不增） | 3 天 | 工具函数有测试 |
 | M1 | **W2 报表事实表**（先易后难练手） | 3 天 | performance/wallet/overview 读新表，全站最慢页面 <500ms |
 | M2 | **W1 交易核心**（按 phase2 草案 M1–M5） | 2 周 | 50 并发压测无双花无超卖；对账 7 天全绿 |
 | M3 | W3 金融账本族 | 1.5 周 | 同上对账标准 |

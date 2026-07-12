@@ -12,6 +12,7 @@
     "procurement:smoke": "node scripts/procurement-smoke.mjs",
     "verify:persistence": "node scripts/verify-persistence.mjs",
     "module:guard": "node scripts/module-guard.mjs",
+    "test:db-core": "node --experimental-strip-types scripts/db-core.test.ts",
     "codex:preflight": "node scripts/codex-preflight.mjs",
     "codex:preflight:full": "node scripts/codex-preflight.mjs --full",
     "check": "node scripts/check.mjs",

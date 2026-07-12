@@ -88,6 +88,30 @@ for (const file of files) {
   }
 }
 
+// ---- Transactional-core migration guardrails (docs/data-core-cure-plan.md §2.6) ----
+// Baselines only shrink: every wave that retires a memory collection or a
+// route's `memory` import lowers the number here in the same PR.
+const TRACK_COLLECTION_BASELINE = 111; // occurrences in app/lib/server/memory.ts
+const MEMORY_ROUTE_IMPORT_BASELINE = 76; // app/api/**/route.ts importing lib/server/memory
+{
+  const memorySource = readFileSync(join(root, "app/lib/server/memory.ts"), "utf8");
+  const trackCount = (memorySource.match(/trackCollection\(/g) ?? []).length;
+  if (trackCount > TRACK_COLLECTION_BASELINE) {
+    fail(
+      `new in-memory collection detected (trackCollection x${trackCount} > baseline ${TRACK_COLLECTION_BASELINE}); ` +
+        `new data must live in a real table — see docs/data-core-cure-plan.md`,
+    );
+  }
+  const routeFiles = files.filter((file) => file.includes(`${join("app", "api")}`) && file.endsWith("route.ts"));
+  const memoryImports = routeFiles.filter((file) => /from "[./]*lib\/server\/memory"/.test(readFileSync(file, "utf8"))).length;
+  if (memoryImports > MEMORY_ROUTE_IMPORT_BASELINE) {
+    fail(
+      `new route dependency on in-memory collections (${memoryImports} routes > baseline ${MEMORY_ROUTE_IMPORT_BASELINE}); ` +
+        `use the repository layer (app/lib/server/db) — see docs/data-core-cure-plan.md`,
+    );
+  }
+}
+
 if (warnings.length > 0) {
   for (const warning of warnings) {
     console.warn(`module-guard warning: ${warning}`);
