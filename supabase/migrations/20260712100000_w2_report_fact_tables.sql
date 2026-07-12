@@ -164,3 +164,15 @@ GRANT EXECUTE ON FUNCTION perf_trend_t(integer) TO service_role;
 GRANT EXECUTE ON FUNCTION kpi_leaderboard_t(integer) TO service_role;
 GRANT EXECUTE ON FUNCTION earnings_settled_totals_t(text) TO service_role;
 GRANT EXECUTE ON FUNCTION earnings_max_date_t() TO service_role;
+
+-- ============ Reconciliation log (append-only, written by the daily cron) ============
+CREATE TABLE IF NOT EXISTS core_reconcile_log (
+  id     text PRIMARY KEY,
+  day    text NOT NULL,
+  module text NOT NULL,
+  clean  boolean NOT NULL,
+  detail jsonb NOT NULL DEFAULT '[]'::jsonb,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_crl_module_day ON core_reconcile_log (module, day DESC);
+ALTER TABLE core_reconcile_log ENABLE ROW LEVEL SECURITY;
