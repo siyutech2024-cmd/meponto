@@ -235,40 +235,73 @@ async function flushDirtyCollections() {
 }
 
 /**
- * M2/W1 dual-write hook (CORE_MODE_TXCORE=dualwrite|read): mirror the ledger
- * and order collections into the transactional-core tables. Records that
- * would violate the tables' CHECK constraints (legacy oddities) are skipped —
- * the nightly reconcile surfaces them as missing rows for manual review.
+ * Core-migration dual-write hook (docs/data-core-cure-plan.md §4 S3):
+ * mirror selected collections into their real tables when the owning
+ * module's flag (CORE_MODE_<module>) is dualwrite|read. Records that would
+ * violate the tables' CHECK constraints (legacy oddities) are skipped — the
+ * nightly reconcile surfaces them as missing rows for manual review.
  * Never throws: legacy stays the source of truth during the window.
  */
 const LEDGER_TYPES = new Set(["earn", "spend", "refund", "expire", "reverse", "adjust", "hold", "release"]);
 const LEDGER_STATUSES = new Set(["pending", "approved", "rejected", "reversed"]);
 const ORDER_STATUSES = new Set(["created", "arrived", "fulfilled", "cancelled"]);
+const WITHDRAWAL_STATUSES = new Set(["requested", "paid", "rejected"]);
+
+type MirrorTarget = {
+  module: string; // CORE_MODE_<MODULE> flag owner
+  valid: (r: AnyRecord) => boolean;
+  write: (records: AnyRecord[]) => Promise<void>;
+};
+
+const MIRROR_TARGETS: Record<string, MirrorTarget> = {
+  // ---- M2 / W1 transactional core ----
+  pointsLedgerEntries: {
+    module: "txcore",
+    valid: (r) => typeof r.riderId === "string" && LEDGER_TYPES.has(String(r.type)) && LEDGER_STATUSES.has(String(r.status)),
+    write: async (records) => {
+      const { upsertLedgerEntries, recomputeBalances } = await import("./db/points-repo");
+      await upsertLedgerEntries(records as never[]);
+      // Keep the balances snapshot a pure projection of the ledger.
+      await recomputeBalances([...new Set(records.map((r) => String(r.riderId)))]);
+    },
+  },
+  marketplaceOrders: {
+    module: "txcore",
+    valid: (r) => ORDER_STATUSES.has(String(r.status ?? "created")),
+    write: async (records) => {
+      const { upsertOrders } = await import("./db/orders-repo");
+      await upsertOrders(records as never[]);
+    },
+  },
+  // ---- M3 / W3 finance batch 1 ----
+  riderWithdrawals: {
+    module: "fin",
+    valid: (r) => WITHDRAWAL_STATUSES.has(String(r.status)) && Number(r.amount) > 0,
+    write: async (records) => {
+      const { upsertWithdrawals } = await import("./db/finance-repo");
+      await upsertWithdrawals(records as never[]);
+    },
+  },
+  walletPayments: {
+    module: "fin",
+    valid: (r) => (r.target === "franchise" || r.target === "rider") && Number(r.amount) > 0,
+    write: async (records) => {
+      const { upsertPayments } = await import("./db/finance-repo");
+      await upsertPayments(records as never[]);
+    },
+  },
+};
 
 async function mirrorToCoreTables(name: string, records: AnyRecord[]): Promise<void> {
-  if (name !== "pointsLedgerEntries" && name !== "marketplaceOrders") return;
-  const mode = String(process.env.CORE_MODE_TXCORE ?? "off").toLowerCase();
+  const target = MIRROR_TARGETS[name];
+  if (!target) return;
+  const mode = String(process.env[`CORE_MODE_${target.module.toUpperCase()}`] ?? "off").toLowerCase();
   if (mode !== "dualwrite" && mode !== "read") return;
   try {
-    if (name === "pointsLedgerEntries") {
-      const valid = records.filter(
-        (r) => typeof r.riderId === "string" && LEDGER_TYPES.has(String(r.type)) && LEDGER_STATUSES.has(String(r.status)),
-      );
-      if (valid.length > 0) {
-        const { upsertLedgerEntries, recomputeBalances } = await import("./db/points-repo");
-        await upsertLedgerEntries(valid as never[]);
-        // Keep the balances snapshot a pure projection of the ledger.
-        await recomputeBalances([...new Set(valid.map((r) => String(r.riderId)))]);
-      }
-    } else {
-      const valid = records.filter((r) => ORDER_STATUSES.has(String(r.status ?? "created")));
-      if (valid.length > 0) {
-        const { upsertOrders } = await import("./db/orders-repo");
-        await upsertOrders(valid as never[]);
-      }
-    }
+    const valid = records.filter(target.valid);
+    if (valid.length > 0) await target.write(valid);
   } catch (error) {
-    console.warn(`[core:txcore] dual-write mirror failed for ${name} (legacy unaffected): ${(error as Error).message}`);
+    console.warn(`[core:${target.module}] dual-write mirror failed for ${name} (legacy unaffected): ${(error as Error).message}`);
   }
 }
 

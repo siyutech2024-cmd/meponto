@@ -3,6 +3,7 @@ import { reconcileCollection } from "../../../lib/server/db/reconcile";
 import { earningToRow, kpiToRow } from "../../../lib/server/db/performance-repo";
 import { balanceCheck, ledgerToRow } from "../../../lib/server/db/points-repo";
 import { orderToRow } from "../../../lib/server/db/orders-repo";
+import { paymentToRow, withdrawalToRow } from "../../../lib/server/db/finance-repo";
 
 /**
  * M1 daily reconciliation cron (docs/data-core-cure-plan.md §4 S4/S5):
@@ -108,5 +109,41 @@ export async function GET(request: Request) {
     txcore = { skipped: (error as Error).message };
   }
 
-  return json({ data: { perf: { clean, results }, txcore } });
+  // ---- M3 / W3 finance batch 1 (withdrawals + payments), same degrade rule.
+  let fin: { clean: boolean; results: unknown[] } | { skipped: string };
+  try {
+    const finResults = [];
+    let finClean = true;
+    for (const [collection, table, toTableShape] of [
+      ["riderWithdrawals", "rider_withdrawals", withdrawalToRow],
+      ["walletPayments", "wallet_payments", paymentToRow],
+    ] as const) {
+      const report = await reconcileCollection(collection, table, {
+        toTableShape: toTableShape as unknown as (legacy: Record<string, unknown>) => Record<string, unknown>,
+      });
+      finClean = finClean && report.clean;
+      finResults.push({
+        collection,
+        table,
+        legacyCount: report.legacyCount,
+        tableCount: report.tableCount,
+        missingInTable: report.missingInTable.length,
+        extraInTable: report.extraInTable.length,
+        fieldDiffs: report.fieldDiffs.length,
+        clean: report.clean,
+        samples: report.clean
+          ? undefined
+          : { missing: report.missingInTable.slice(0, 5), extra: report.extraInTable.slice(0, 5), diffs: report.fieldDiffs.slice(0, 3) },
+      });
+    }
+    await insertRows("core_reconcile_log", [
+      { id: `fin-${day}-${Date.now().toString(36)}`, day, module: "fin", clean: finClean, detail: finResults },
+    ]);
+    fin = { clean: finClean, results: finResults };
+  } catch (error) {
+    console.warn(`[reconcile] fin pass skipped: ${(error as Error).message}`);
+    fin = { skipped: (error as Error).message };
+  }
+
+  return json({ data: { perf: { clean, results }, txcore, fin } });
 }

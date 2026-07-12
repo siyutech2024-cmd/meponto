@@ -73,7 +73,7 @@ S8 删除该模块的 memory 依赖；module:guard 白名单收缩一格
 | M0 ✅ 2026-07-11 | 仓储层骨架（`app/lib/server/db/`：core/diff/dual-write/shadow-read/reconcile）+ `npm run test:db-core`（10 用例全过）+ module:guard 基线规则（trackCollection ≤111、路由 memory 引用 ≤76，只减不增） | 3 天 | 工具函数有测试 |
 | M1 🚧 S1–S4 完成 2026-07-11 | **W2 报表事实表**：`t1_rider_daily_kpis`(1594行) + `t1_rider_daily_earnings`(1149行) 已建表回填；导入路由双写就绪；读切换代码就绪。⚠️ 表名加 `t1_` 前缀——`rider_daily_kpis` 已被 0608 PRD v2 迁移占用（business_date 结构）。**下一步**：Vercel 设 `CORE_MODE_PERF=dualwrite` → 每日 `npm run reconcile:perf` 连续 7 天 clean → 改 `read` 完成切换 | 3 天 | performance/wallet/overview 读新表，全站最慢页面 <500ms |
 | M2 🚧 步骤1代码就绪 2026-07-11 | **W1 交易核心**：迁移文件（points_ledger 禁删/points_balances/marketplace_orders 幂等键/station_stock + redeem_order/release_order 原子 RPC + txcore_balance_check）+ points/orders 仓储层 + 对账 cron 扩展（txcore 模块，缺表优雅跳过）。⚠️ **迁移待执行**：Supabase 后台故障中，恢复后在 SQL Editor 跑 20260713100000_w1_transactional_core.sql。✅ S3 双写已接入（2026-07-11）：flush 管道单点镜像，覆盖全部 9+ 写路径，账本镜像后自动重算 points_balances 投影（txcore_recompute_balances）。开启方式：Vercel 设 CORE_MODE_TXCORE=dualwrite。后续：对账 7 天 → 兑换路径切 redeem_order RPC → 灰度读切换 → 50 并发压测 | 2 周 | 50 并发压测无双花无超卖；对账 7 天全绿 |
-| M3 | W3 金融账本族 | 1.5 周 | 同上对账标准 |
+| M3 🚧 批次1代码就绪 2026-07-12 | **W3 金融账本族·批次1**：rider_withdrawals + wallet_payments（打款记录禁删）建表迁移 + finance-repo + 镜像钩子配置化（MIRROR_TARGETS，后续批次加集合即接入）+ 对账 fin 模块。flag CORE_MODE_FIN。⚠️ DDL 待 Supabase dashboard 恢复执行 20260714100000_w3_finance_batch1.sql。剩余 11 个金融集合按此模式分批 | 1.5 周 | 同上对账标准 |
 | M4 | W4 身份组织 + W5 排班 | 1.5 周 | 登录/RBAC 回归全过；重复报名压测通过 |
 | M5 | W6 批量直译 + 退役收尾（删 memory/persistence 机制、归档镜像表） | 1 周 | 仓库 `grep -r "memory\." app/api` 为零 |
 
