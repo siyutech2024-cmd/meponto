@@ -1529,8 +1529,19 @@ async function handlePost(request: Request) {
       const { inviterRiderId, newRiderName } = body as { inviterRiderId?: string; newRiderName?: string };
       const inviter = memory.riders.find((item) => item.id === inviterRiderId);
       if (!inviter) return jsonResponse({ error: "inviter not found" }, { status: 404 });
+      // Idempotent per invited rider, on the SAME key the first-order reward
+      // uses (pts-ref-<inviteeId>), so a manual grant can't double-pay and the
+      // automatic first-order reward won't pay again afterwards.
+      const invitee = newRiderName ? memory.riders.find((r) => r.name === newRiderName) : undefined;
+      const refId = `pts-ref-${invitee?.id ?? (newRiderName ?? "").trim()}`;
+      const existing = memory.pointsLedgerEntries.find(
+        (e) => e.reasonCode === "REFERRAL_REWARD" && (e.id === refId || e.sourceId === refId),
+      );
+      if (existing) {
+        return jsonResponse({ data: { entry: existing, balance: existing.balanceAfter, alreadyAwarded: true } });
+      }
       const config = getConfig();
-      const entry = creditPoints(inviter.id, config.referralPoints, "REFERRAL_REWARD", `邀请骑手 ${newRiderName ?? ""} 注册`, `ref-${Date.now()}`, actor);
+      const entry = creditPoints(inviter.id, config.referralPoints, "REFERRAL_REWARD", `邀请骑手 ${newRiderName ?? ""} 注册`, refId, actor);
       return jsonResponse({ data: { entry, balance: entry.balanceAfter } }, { status: 201 });
     }
 

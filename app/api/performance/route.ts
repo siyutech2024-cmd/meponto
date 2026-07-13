@@ -225,9 +225,21 @@ function creditOrderPoints(riderId: string, rider99Id: string, date: string, com
   // after the invited rider has VERIFIED completed orders in Eastwind data.
   if (lifetime === 0 && completedOrders > 0) {
     const rider = memory.riders.find((item) => item.id === riderId);
-    const inviter = rider?.invitedBy ? memory.riders.find((item) => item.name === rider.invitedBy && item.id !== riderId) : undefined;
+    // invitedBy may be stored as "member:<id>", a 99 ID, or a plain name.
+    // App signups store the "member:<id>" form, so the old name-only match
+    // silently never fired — resolve every form here.
+    const ref = (rider?.invitedBy ?? "").replace(/^member:/, "").trim();
+    const inviter = ref && ref !== "Self-registration"
+      ? memory.riders.find((item) => (item.id === ref || item.ninetyNineId === ref || item.name === ref) && item.id !== riderId)
+      : undefined;
     const refId = `pts-ref-${riderId}`;
-    if (inviter && !memory.pointsLedgerEntries.some((entry) => entry.id === refId)) {
+    const legacyRefId = `ref-${riderId}`; // sourceId used by the old signup-time reward
+    // Single idempotency key per invited rider, across every path (first-order,
+    // manual awardReferral, and the legacy signup-time entry) — never double-pay.
+    const alreadyPaid = memory.pointsLedgerEntries.some(
+      (entry) => entry.reasonCode === "REFERRAL_REWARD" && (entry.id === refId || entry.sourceId === refId || entry.sourceId === legacyRefId),
+    );
+    if (inviter && !alreadyPaid) {
       memory.pointsLedgerEntries.unshift({
         id: refId,
         riderId: inviter.id,

@@ -2,9 +2,7 @@ import { jsonResponse, memory, makeServerId, appendServerAudit } from "../../lib
 import { refreshCollectionsFromDatabase, flushPendingToDatabase } from "../../lib/server/persistence";
 import { createSessionToken, sessionCookie, sessionFromRequest } from "../../lib/auth-session";
 import { getOtpChallenge, setOtpChallenge, deleteOtpChallenge, type OtpSignupData } from "../../lib/server/otp-store";
-import { getAvailablePoints, type PointsLedgerEntry } from "../../lib/points";
 import { normalizeBrPhone, phoneDigits, samePhone } from "../../lib/phone";
-import { defaultMallConfig } from "../../lib/mall";
 import type { Rider } from "../../lib/data";
 import { createHmac } from "node:crypto";
 
@@ -302,10 +300,11 @@ async function linkGoogleSubIfPresent(riderId: string, sub?: string) {
 }
 
 /**
- * Create a member from a verified phone-first signup (see request-otp) and
- * credit the inviter's referral points. Referral is paid HERE — after SMS
- * verification — never on the unverified /api/register call, so fake numbers
- * can't farm points.
+ * Create a member from a verified phone-first signup (see request-otp).
+ * The referral relationship is recorded here (invitedBy) but the reward is NOT
+ * paid at signup. It is credited only after the invited rider's FIRST completed
+ * order lands in the Eastwind T+1 import (see creditOrderPoints) — the strongest
+ * anti-fraud gate, keyed idempotently on pts-ref-<riderId>.
  */
 async function createVerifiedMember(signup: OtpSignupData, normalizedPhone: string): Promise<Rider> {
   await refreshCollectionsFromDatabase(["pointsLedgerEntries", "mallConfigs"]);
@@ -315,33 +314,9 @@ async function createVerifiedMember(signup: OtpSignupData, normalizedPhone: stri
   memory.riders.unshift(created);
   appendServerAudit({ actor: "Self-registration", action: "MEMBER_REGISTERED", entity: "Rider", entityId: created.id, detail: `${created.name} (membro público, telefone verificado)`, risk: "Low" });
 
-  // Accept any stable identifier as the referral ref: rider id, 99 ID or name
-  // (QR links in the wild may carry either — never drop a valid referral).
-  const ref = (signup.inviterId ?? "").trim();
-  const inviter = ref
-    ? memory.riders.find((r) => r.id === ref || r.ninetyNineId === ref || r.name === ref)
-    : undefined;
-  if (inviter && inviter.id !== created.id) {
-    const config = memory.mallConfigs.find((c) => c.id === "mall-config") ?? defaultMallConfig;
-    const points = config.referralPoints || 20;
-    const available = getAvailablePoints(memory.pointsLedgerEntries, inviter.id);
-    const entry: PointsLedgerEntry = {
-      id: makeServerId("pts", memory.pointsLedgerEntries.length + 1),
-      riderId: inviter.id,
-      accountId: `pts-${inviter.id}`,
-      type: "earn",
-      points,
-      status: "approved",
-      sourceType: "admin_adjustment",
-      sourceId: `ref-${created.id}`,
-      balanceAfter: available + points,
-      reasonCode: "REFERRAL_REWARD",
-      note: `Convidou ${created.name} para o PontoMall`,
-      createdBy: "PontoMall",
-      createdAt: new Date().toISOString().slice(0, 16).replace("T", " "),
-    };
-    memory.pointsLedgerEntries.unshift(entry);
-  }
+  // Referral reward is intentionally NOT paid at signup — only invitedBy is
+  // recorded (above). creditOrderPoints pays the inviter exactly once, after the
+  // new rider's first completed order in Eastwind, keyed on pts-ref-<riderId>.
   await flushPendingToDatabase();
   return created;
 }
