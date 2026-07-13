@@ -1,5 +1,7 @@
 package com.meponto.rider.ui.screens
 
+import android.content.Intent
+import android.net.Uri
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -37,6 +39,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -65,10 +68,20 @@ fun MallScreen() {
     val loc = LocalLoc.current
     val store = LocalStore.current
     val auth = LocalAuth.current
+    val context = LocalContext.current
     var toast by remember { mutableStateOf<String?>(null) }
     var showMyQR by remember { mutableStateOf(false) }
     var showInvite by remember { mutableStateOf(false) }
     var detail by remember { mutableStateOf<MallProduct?>(null) }
+
+    // "Contact your station" for points top-up questions — opens the live HQ
+    // support portal (web session), same route as the Support tab. Purely
+    // informational: it never mutates points (rider points stay ledger-owned).
+    fun openStationContact() {
+        val url = com.meponto.rider.BuildConfig.BASE_URL
+            .removeSuffix("api/").removeSuffix("api") + "rider-app/support"
+        runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url))) }
+    }
 
     fun redeem(product: MallProduct, pickupStoreId: String? = null) {
         if (auth.requireMember()) {
@@ -398,6 +411,25 @@ fun MallScreen() {
                         title = if (product.stock == 0) "—" else loc.t("mall.redeem"),
                         enabled = affordable && (!needsPickup || pickupId != null),
                     ) { redeem(product, pickupId) }
+                    // Points short and cash conversion is off → offer a way to
+                    // reach the station about topping up points, instead of a
+                    // dead-end disabled button.
+                    val cannotAfford = store.pointsBalance < product.points &&
+                        store.pointCashRateBRL <= 0.0 && product.stock > 0
+                    if (cannotAfford) {
+                        Text(loc.t("mall.needMorePoints"), color = me.muted, fontSize = 12.sp)
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(MeRadius.card))
+                                .border(1.dp, me.accent.copy(alpha = 0.5f), RoundedCornerShape(MeRadius.card))
+                                .clickable { openStationContact() }
+                                .padding(vertical = 12.dp),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Text(loc.t("mall.contactStation"), color = me.accent, fontWeight = FontWeight.SemiBold)
+                        }
+                    }
                 }
             }
         }

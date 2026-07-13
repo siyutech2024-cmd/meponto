@@ -56,6 +56,10 @@ import com.meponto.rider.ui.theme.LocalMe
 import com.meponto.rider.ui.theme.appBackground
 import com.meponto.rider.ui.theme.MeRadius
 import com.meponto.rider.ui.theme.Tone
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
+import java.util.TimeZone
 import kotlin.math.ceil
 
 @Composable
@@ -65,19 +69,33 @@ fun ShiftsScreen() {
     val store = LocalStore.current
     val auth = LocalAuth.current
 
-    var selectedWeek by remember { mutableIntStateOf(0) }
     var selectedDay by remember { mutableStateOf("") }
     var agendaPage by remember { mutableIntStateOf(0) }
     var detailId by remember { mutableStateOf<Int?>(null) }
     val agendaPageSize = 3
 
+    // Today in the operating timezone (São Paulo) — used to default the view to
+    // the current/next signable day and to grey out days that have passed.
+    val todayKey = remember {
+        SimpleDateFormat("yyyy-MM-dd", Locale.US)
+            .apply { timeZone = TimeZone.getTimeZone("America/Sao_Paulo") }
+            .format(Date())
+    }
+
     val weeks = store.riderWeeks
+    // Default to the first week that still has a non-past day; re-evaluates only
+    // when the number of loaded weeks changes, so manual navigation sticks.
+    var selectedWeek by remember(weeks.size) {
+        mutableIntStateOf(weeks.indexOfFirst { wk -> wk.any { it.id >= todayKey } }.coerceAtLeast(0))
+    }
     val weekIndex = selectedWeek.coerceIn(0, maxOf(weeks.size - 1, 0))
     val weekDays = if (weeks.isEmpty()) emptyList() else weeks[weekIndex]
+    // Default active day = today, else the nearest upcoming day in the week
+    // (never a past day); an explicit user tap still wins.
     val activeDay = if (selectedDay.isNotEmpty() && weekDays.any { it.id == selectedDay }) {
         selectedDay
     } else {
-        weekDays.firstOrNull()?.id ?: ""
+        (weekDays.firstOrNull { it.id >= todayKey } ?: weekDays.firstOrNull())?.id ?: ""
     }
     val dayShifts = store.shiftsOn(activeDay).sortedBy { it.window }
 
@@ -189,14 +207,19 @@ fun ShiftsScreen() {
         ) {
             weekDays.forEach { day ->
                 val isActive = day.id == activeDay
-                // Spec: selected day = INK block with the accent number popping.
+                val isPast = day.id < todayKey
+                val isToday = day.id == todayKey
+                // Spec: selected day = INK block with the accent number popping;
+                // past days are greyed out and non-tappable; today gets an accent
+                // outline so the current best-matching slot stands out by default.
                 Column(
                     modifier = Modifier
                         .width(56.dp)
                         .clip(RoundedCornerShape(MeRadius.card))
+                        .alpha(if (isPast && !isActive) 0.4f else 1f)
                         .background(if (isActive) me.text else me.surface)
-                        .then(if (isActive) Modifier else Modifier.border(1.dp, me.line, RoundedCornerShape(MeRadius.card)))
-                        .clickable { selectedDay = day.id }
+                        .then(if (isActive) Modifier else Modifier.border(1.dp, if (isToday) me.accent else me.line, RoundedCornerShape(MeRadius.card)))
+                        .clickable(enabled = !isPast) { selectedDay = day.id }
                         .padding(vertical = 12.dp),
                     horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.spacedBy(6.dp),

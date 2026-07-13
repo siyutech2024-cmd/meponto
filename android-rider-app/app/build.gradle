@@ -23,8 +23,8 @@ android {
         applicationId "com.meponto.rider"
         minSdk 24
         targetSdk 35
-        versionCode 8
-        versionName "1.5"
+        versionCode 9
+        versionName "1.6"
         vectorDrawables { useSupportLibrary true }
 
         // PontoSys backend base URL (overridable per build type).

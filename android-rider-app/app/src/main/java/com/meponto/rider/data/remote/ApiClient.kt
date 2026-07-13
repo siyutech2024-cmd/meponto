@@ -33,13 +33,31 @@ class ApiClient(context: Context) {
             }
             chain.proceed(out)
         }
+        // Cold-start safety net: a cold serverless function hydrates full tables
+        // and can blow the read timeout. Retry an idempotent GET once — by then
+        // the instance is usually warm — so the user sees a slight delay instead
+        // of an error. Writes are never auto-retried here (they carry an
+        // Idempotency-Key but we keep retries to safe reads).
+        .addInterceptor { chain ->
+            val request = chain.request()
+            try {
+                chain.proceed(request)
+            } catch (e: java.io.IOException) {
+                if (request.method == "GET") {
+                    chain.proceed(request.newBuilder().build())
+                } else {
+                    throw e
+                }
+            }
+        }
         .addInterceptor(
             HttpLoggingInterceptor().apply {
                 level = if (BuildConfig.DEBUG) HttpLoggingInterceptor.Level.BODY else HttpLoggingInterceptor.Level.NONE
             }
         )
         .connectTimeout(15, TimeUnit.SECONDS)
-        .readTimeout(20, TimeUnit.SECONDS)
+        // Tolerant of cold-start hydration (backend GETs can take ~6–10s cold).
+        .readTimeout(30, TimeUnit.SECONDS)
         .build()
 
     val service: ApiService = Retrofit.Builder()
