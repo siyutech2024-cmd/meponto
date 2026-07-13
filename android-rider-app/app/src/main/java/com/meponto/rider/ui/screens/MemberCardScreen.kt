@@ -71,9 +71,10 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
 
-private const val AVATAR_FILE = "member_avatar.jpg"
-// Untouched original kept alongside so "cartoonize" is reversible on-device.
-private const val AVATAR_ORIG_FILE = "member_avatar_orig.jpg"
+// Avatar files are namespaced per user (see avatarKey below) so a device shared
+// by different riders never leaks a previous user's photo. The untouched
+// original is kept alongside so "cartoonize" is reversible on-device.
+private const val AVATAR_PREFIX = "member_avatar"
 
 /**
  * Decode an image upright and near the avatar target size: many phones store
@@ -182,22 +183,28 @@ fun MemberCardScreen(onClose: () -> Unit) {
 
     val scope = rememberCoroutineScope()
 
-    // Avatar persistence: filesDir/member_avatar.jpg; version bumps recompose.
+    // Per-user avatar files (99 ID → phone → "guest"), so switching accounts on
+    // one device never shows the previous rider's photo.
+    val avatarKey = remember(store.profile.ninetyNineId, store.profile.phone) {
+        store.profile.ninetyNineId.ifBlank { store.profile.phone }.ifBlank { "guest" }
+            .filter { it.isLetterOrDigit() }.ifBlank { "guest" }
+    }
+    val avatarFile = remember(avatarKey) { File(context.filesDir, "${AVATAR_PREFIX}_$avatarKey.jpg") }
+    val avatarOrigFile = remember(avatarKey) { File(context.filesDir, "${AVATAR_PREFIX}_${avatarKey}_orig.jpg") }
     var avatarVersion by remember { mutableIntStateOf(0) }
     var cartoonBusy by remember { mutableStateOf(false) }
-    val avatarBitmap: Bitmap? = remember(avatarVersion) {
-        val f = File(context.filesDir, AVATAR_FILE)
-        if (f.exists()) runCatching { BitmapFactory.decodeFile(f.absolutePath) }.getOrNull() else null
+    val avatarBitmap: Bitmap? = remember(avatarVersion, avatarKey) {
+        if (avatarFile.exists()) runCatching { BitmapFactory.decodeFile(avatarFile.absolutePath) }.getOrNull() else null
     }
     // Cartoon mode is on when the untouched original is parked alongside.
-    val isCartoon = remember(avatarVersion) { File(context.filesDir, AVATAR_ORIG_FILE).exists() }
+    val isCartoon = remember(avatarVersion, avatarKey) { avatarOrigFile.exists() }
     fun saveAvatar(bmp: Bitmap) {
         runCatching {
             val scale = minOf(1f, 640f / maxOf(bmp.width, bmp.height))
             val out = if (scale < 1f) Bitmap.createScaledBitmap(bmp, (bmp.width * scale).toInt(), (bmp.height * scale).toInt(), true) else bmp
-            File(context.filesDir, AVATAR_FILE).outputStream().use { out.compress(Bitmap.CompressFormat.JPEG, 88, it) }
+            avatarFile.outputStream().use { out.compress(Bitmap.CompressFormat.JPEG, 88, it) }
             // A fresh photo resets cartoon mode.
-            File(context.filesDir, AVATAR_ORIG_FILE).delete()
+            avatarOrigFile.delete()
             avatarVersion += 1
         }
     }
@@ -207,8 +214,8 @@ fun MemberCardScreen(onClose: () -> Unit) {
         scope.launch {
             withContext(Dispatchers.Default) {
                 runCatching {
-                    val avatar = File(context.filesDir, AVATAR_FILE)
-                    val orig = File(context.filesDir, AVATAR_ORIG_FILE)
+                    val avatar = avatarFile
+                    val orig = avatarOrigFile
                     if (orig.exists()) {
                         // Restore: original back in place, drop the backup.
                         orig.copyTo(avatar, overwrite = true)

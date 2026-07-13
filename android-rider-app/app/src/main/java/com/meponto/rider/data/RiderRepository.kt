@@ -353,6 +353,7 @@ class RiderRepository(context: Context) {
             source = sourceType ?: "",
             points = signed,
             status = status ?: "",
+            createdAt = createdAt ?: "",
         )
     }
 

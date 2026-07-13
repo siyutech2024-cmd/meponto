@@ -41,7 +41,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.meponto.rider.data.LocalAuth
 import com.meponto.rider.data.LocalStore
+import com.meponto.rider.i18n.AppLanguage
 import com.meponto.rider.i18n.LocalLoc
+import com.meponto.rider.i18n.LocalizationManager
 import com.meponto.rider.ui.components.ActionRow
 import com.meponto.rider.ui.components.Badge
 import com.meponto.rider.ui.components.LedgerRow
@@ -202,9 +204,9 @@ fun HomeScreen(onScan: () -> Unit, onProfile: () -> Unit, onOpenMall: () -> Unit
                     }
                     Spacer(Modifier.size(10.dp))
                     Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                        perf.tshPercent?.let { KpiTile(loc.t("home.tshPct"), String.format("%.0f%%", it), me.surfaceRaised, me.text, Modifier.weight(1f)) }
-                        KpiTile(loc.t("home.caa"), String.format("%.1f%%", perf.cancelledOrders.toDouble()), me.surfaceRaised, me.text, Modifier.weight(1f))
-                        perf.weekOrders?.let { KpiTile(loc.t("home.week"), "$it", me.surfaceRaised, me.text, Modifier.weight(1f)) }
+                        perf.tshPercent?.let { KpiTile(loc.t("home.tshPct"), String.format("%.0f%%", it), me.ok, androidx.compose.ui.graphics.Color.White, Modifier.weight(1f)) }
+                        KpiTile(loc.t("home.caa"), String.format("%.1f%%", perf.cancelledOrders.toDouble()), me.danger, androidx.compose.ui.graphics.Color.White, Modifier.weight(1f))
+                        perf.weekOrders?.let { KpiTile(loc.t("home.week"), "$it", me.warning, androidx.compose.ui.graphics.Color.White, Modifier.weight(1f)) }
                     }
                     perf.weekOnlineHours?.let { wh ->
                         Spacer(Modifier.size(8.dp))
@@ -239,7 +241,7 @@ fun HomeScreen(onScan: () -> Unit, onProfile: () -> Unit, onOpenMall: () -> Unit
                         store.missions.forEach { m ->
                             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                                 Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Text(m.title, color = me.textSoft, fontSize = 14.sp, modifier = Modifier.weight(1f))
+                                    Text(localizeMissionTitle(m.title, loc), color = me.textSoft, fontSize = 14.sp, modifier = Modifier.weight(1f))
                                     when {
                                         m.claimed -> Badge(loc.t("mission.claimed"), Tone.OK)
                                         m.claimable -> Text(
@@ -416,4 +418,18 @@ private fun KpiTile(
             letterSpacing = androidx.compose.ui.unit.TextUnit(1.2f, androidx.compose.ui.unit.TextUnitType.Sp),
         )
     }
+}
+
+/** Localize backend mission titles (seeded in Chinese, shared with the zh
+ *  console) into the app language. Matches the known weekly-task patterns and
+ *  keeps the dynamic target number; unknown titles pass through unchanged. */
+private fun localizeMissionTitle(title: String, loc: LocalizationManager): String {
+    if (loc.language == AppLanguage.ZH) return title
+    Regex("""本周完单\s*(\d+)\s*单""").find(title)?.let {
+        return loc.t("mission.weekOrders").replace("{n}", it.groupValues[1])
+    }
+    Regex("""本周签到\s*(\d+)\s*天""").find(title)?.let {
+        return loc.t("mission.weekCheckin").replace("{n}", it.groupValues[1])
+    }
+    return title
 }

@@ -208,8 +208,16 @@ data class PointsLedgerEntry(
     val source: String,
     val points: Int,
     val status: String,
+    val createdAt: String = "",
 ) {
     val isEarn: Boolean get() = points >= 0
+
+    /** Sortable "event date" — prefers the yyyy-MM-dd embedded in the note
+     *  (the T+1 report date users actually see), falling back to createdAt.
+     *  Used to show the ledger newest-first. */
+    val sortKey: String
+        get() = Regex("""\d{4}-\d{2}-\d{2}""").find(note)?.value
+            ?: createdAt.take(10).ifBlank { "0000-00-00" }
 }
 
 data class HelpAction(

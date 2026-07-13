@@ -47,7 +47,9 @@ import coil.compose.AsyncImage
 import com.meponto.rider.data.LocalAuth
 import com.meponto.rider.data.LocalStore
 import com.meponto.rider.data.MallProduct
+import com.meponto.rider.i18n.AppLanguage
 import com.meponto.rider.i18n.LocalLoc
+import com.meponto.rider.i18n.LocalizationManager
 import com.meponto.rider.ui.components.Badge
 import com.meponto.rider.ui.components.Panel
 import com.meponto.rider.ui.components.PrimaryButton
@@ -290,11 +292,13 @@ fun MallScreen() {
                 SectionHeader(loc.t("points.statement"))
                 Spacer(Modifier.size(12.dp))
                 Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    store.pointsLedger.forEachIndexed { idx, e ->
+                    // Newest event first (by the report date in the note, else createdAt).
+                    val ledger = store.pointsLedger.sortedByDescending { it.sortKey }
+                    ledger.forEachIndexed { idx, e ->
                         Row(verticalAlignment = Alignment.Top) {
                             Column(Modifier.weight(1f)) {
-                                Text(e.note, color = me.text, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
-                                Text("${e.source} · ${e.status}", color = me.muted, fontSize = 12.sp)
+                                Text(localizePointsNote(e.note, loc), color = me.text, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                                Text("${localizeLedgerToken(e.source, loc)} · ${localizeLedgerToken(e.status, loc)}", color = me.muted, fontSize = 12.sp)
                             }
                             Text(
                                 "${if (e.isEarn) "+" else ""}${e.points} pts",
@@ -303,7 +307,7 @@ fun MallScreen() {
                                 fontSize = 14.sp,
                             )
                         }
-                        if (idx < store.pointsLedger.size - 1) {
+                        if (idx < ledger.size - 1) {
                             Box(Modifier.fillMaxWidth().height(1.dp).background(me.line))
                         }
                     }
@@ -547,4 +551,28 @@ private fun ProductCard(
             textAlign = androidx.compose.ui.text.style.TextAlign.Center,
         )
     }
+}
+
+/** Localize the backend's Chinese points-ledger note (e.g. "T+1 2026-06-20
+ *  完单 16 × 2分 × 1.05（Prata）") into the app language. The backend serves both
+ *  the zh console and the pt rider app from one record, so localization happens
+ *  here on the client rather than mutating shared data. */
+private fun localizePointsNote(note: String, loc: LocalizationManager): String {
+    if (loc.language == AppLanguage.ZH) return note
+    var s = note
+    s = Regex("""完单\s*(\d+)\s*[×xX]\s*(\d+)\s*分""").replace(s) { m ->
+        "${m.groupValues[1]} ${loc.t("ledger.orders")} × ${m.groupValues[2]} pts"
+    }
+    // Fullwidth tier parens → normal; normalize any leftover unit char.
+    s = s.replace("（", " (").replace("）", ")").replace("分", " pts")
+    return s.replace(Regex("""\s{2,}"""), " ").trim()
+}
+
+/** Localize a ledger source/status token ("delivery", "approved", …) via the
+ *  ledger.tok.* keys, falling back to the raw token when unmapped. */
+private fun localizeLedgerToken(token: String, loc: LocalizationManager): String {
+    if (token.isBlank()) return token
+    val key = "ledger.tok.${token.lowercase().replace(' ', '_')}"
+    val t = loc.t(key)
+    return if (t == key) token else t
 }
