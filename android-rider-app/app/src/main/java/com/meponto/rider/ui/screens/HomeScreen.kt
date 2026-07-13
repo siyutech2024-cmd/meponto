@@ -189,8 +189,12 @@ fun HomeScreen(onScan: () -> Unit, onProfile: () -> Unit, onOpenMall: () -> Unit
             // pink tinted tiles, one hero number each.
             store.performance?.let { perf ->
                 Panel {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        SectionHeader(loc.t("home.performance"))
+                    // NOTE: use a plain title Text here, NOT SectionHeader —
+                    // SectionHeader is already fillMaxWidth, so nesting it in this
+                    // Row left no width for the date, which then wrapped one char
+                    // per line and blew a tall empty gap open once logged in.
+                    Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        Text(loc.t("home.performance"), color = me.text, fontWeight = FontWeight.SemiBold, fontSize = 16.sp)
                         Spacer(Modifier.weight(1f))
                         if (perf.date.isNotBlank()) {
                             Text(perf.date, color = me.muted, fontSize = 11.sp, fontWeight = FontWeight.Bold)
