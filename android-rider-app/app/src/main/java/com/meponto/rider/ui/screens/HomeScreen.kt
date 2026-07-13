@@ -196,6 +196,25 @@ fun HomeScreen(onScan: () -> Unit, onProfile: () -> Unit, onOpenMall: () -> Unit
                             Text(perf.date, color = me.muted, fontSize = 11.sp, fontWeight = FontWeight.Bold)
                         }
                     }
+                    // Background block filling the header→tiles space: a tinted
+                    // 7-day summary banner so the panel top never looks empty.
+                    perf.weekOrders?.let { wk ->
+                        Spacer(Modifier.size(10.dp))
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(MeRadius.card))
+                                .background(me.accent.copy(alpha = 0.12f))
+                                .padding(horizontal = 14.dp, vertical = 12.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Text(
+                                "${loc.t("home.weekSummary")}: $wk ${loc.t("home.ordersUnit")}" +
+                                    (perf.weekOnlineHours?.let { " · ${String.format("%.1f", it)} h" } ?: ""),
+                                color = me.text, fontWeight = FontWeight.Bold, fontSize = 13.sp,
+                            )
+                        }
+                    }
                     Spacer(Modifier.size(12.dp))
                     Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                         KpiTile(loc.t("home.orders"), "${perf.orders}", me.accent, me.accentInk, Modifier.weight(1f))
@@ -207,15 +226,6 @@ fun HomeScreen(onScan: () -> Unit, onProfile: () -> Unit, onOpenMall: () -> Unit
                         perf.tshPercent?.let { KpiTile(loc.t("home.tshPct"), String.format("%.0f%%", it), me.ok, androidx.compose.ui.graphics.Color.White, Modifier.weight(1f)) }
                         KpiTile(loc.t("home.caa"), String.format("%.1f%%", perf.cancelledOrders.toDouble()), me.danger, androidx.compose.ui.graphics.Color.White, Modifier.weight(1f))
                         perf.weekOrders?.let { KpiTile(loc.t("home.week"), "$it", me.warning, androidx.compose.ui.graphics.Color.White, Modifier.weight(1f)) }
-                    }
-                    perf.weekOnlineHours?.let { wh ->
-                        Spacer(Modifier.size(8.dp))
-                        Text(
-                            "${loc.t("home.weekSummary")}: ${perf.weekOrders ?: 0} ${loc.t("home.ordersUnit")} · ${String.format("%.1f", wh)} h",
-                            color = me.muted,
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.SemiBold,
-                        )
                     }
                     // SECOND source — rider-status aggregate (lifetime), shown
                     // alongside the T+1 daily KPI so both systems stay visible.
@@ -274,13 +284,25 @@ fun HomeScreen(onScan: () -> Unit, onProfile: () -> Unit, onOpenMall: () -> Unit
                 }
             }
 
-            // Cash ledger
-            if (store.cashLedger.isNotEmpty()) {
-                Panel {
-                    SectionHeader(loc.t("home.cashLedger"))
-                    Spacer(Modifier.size(12.dp))
-                    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                        store.cashLedger.forEach { e -> LedgerRow(e) }
+            // Cash ledger — home shows ONLY T+1 settlement income (Repasse /
+            // "payout"), newest first, each with its date. Withdrawals, PontoMall
+            // cash and other movements stay in the Wallet tab.
+            run {
+                val income = store.cashLedger
+                    .filter { it.type == "payout" }
+                    .sortedByDescending { it.at }
+                if (income.isNotEmpty()) {
+                    Panel {
+                        SectionHeader(loc.t("home.cashLedger"))
+                        Spacer(Modifier.size(12.dp))
+                        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                            income.forEach { e ->
+                                val d = e.at.take(10)
+                                LedgerRow(
+                                    if (d.isNotBlank()) e.copy(detail = listOf(d, e.detail).filter { it.isNotBlank() }.joinToString(" · ")) else e
+                                )
+                            }
+                        }
                     }
                 }
             }

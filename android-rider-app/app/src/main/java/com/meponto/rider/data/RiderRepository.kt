@@ -339,7 +339,10 @@ class RiderRepository(context: Context) {
 
     private companion object {
         val EARN_TYPES = setOf("earn", "refund", "release", "adjust")
-        val APPROVED = setOf("hq_reviewed", "franchise_confirmed")
+        // Shift enrollment is "confirmed" for the rider once the Ponto approves;
+        // the franchise/HQ steps that follow keep it confirmed. Missing
+        // "ponto_approved" here left approved signups stuck showing "under review".
+        val APPROVED = setOf("ponto_approved", "franchise_confirmed", "hq_reviewed")
         val INACTIVE = setOf("rejected", "cancelled")
     }
 
@@ -375,6 +378,8 @@ class RiderRepository(context: Context) {
         value = amount ?: "",
         status = status ?: "",
         tone = parseTone(tone),
+        type = type ?: "",
+        at = at ?: "",
     )
 
     private fun PartnerDto.toDomain(idx: Int) = Partner(

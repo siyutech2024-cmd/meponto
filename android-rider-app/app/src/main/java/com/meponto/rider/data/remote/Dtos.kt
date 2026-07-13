@@ -336,6 +336,8 @@ data class LedgerDto(
     val amount: String? = null,
     val status: String? = null,
     val tone: String? = null,
+    val type: String? = null,   // withdrawal | payout | topup | spend | refund | adjust
+    val at: String? = null,     // event timestamp (for date + sorting)
 )
 
 data class PartnerDto(

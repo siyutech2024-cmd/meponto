@@ -67,6 +67,8 @@ data class LedgerEntry(
     val value: String,
     val status: String,
     val tone: Tone,
+    val type: String = "",
+    val at: String = "",
 )
 
 data class PartnerBenefit(

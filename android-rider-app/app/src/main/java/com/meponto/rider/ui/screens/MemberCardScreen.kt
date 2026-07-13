@@ -350,9 +350,11 @@ fun MemberCardScreen(onClose: () -> Unit) {
                     }
                 }
 
-                // Member QR — partners scan it to apply the rider discount.
+                // Invite QR — matches the caption below: scanning opens the
+                // rider's referral REGISTRATION link (/register?ref=…), not the
+                // partner-scan link, so new riders sign up under the inviter.
                 Box(Modifier.clip(RoundedCornerShape(14.dp)).background(Color.White).padding(10.dp)) {
-                    QRCodeView(value = store.myQRPayload, size = 150)
+                    QRCodeView(value = store.inviteQRPayload, size = 150)
                 }
                 Text(loc.t("card.showPartner"), color = Color.White.copy(alpha = 0.8f), fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
             }
