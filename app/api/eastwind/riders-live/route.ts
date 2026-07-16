@@ -96,7 +96,11 @@ export async function GET(request: Request) {
       (s.phone && byPhone.get(digits(s.phone)));
     if (known) continue;
     const rider: Rider = {
-      id: makeServerId("r", memory.riders.length + 1),
+      // DETERMINISTIC id derived from the 99 ID: concurrent instances that
+      // race to materialize the same rider produce the same record id, so the
+      // DB write-through upserts instead of creating duplicates (random ids
+      // split one rider's points across two profiles).
+      id: `r99-${String(s.rider_ext_id)}`,
       name: s.rider_name || `99 ${s.rider_ext_id}`,
       cpf: s.id_no ?? "",
       pix: "",
@@ -143,7 +147,10 @@ export async function GET(request: Request) {
       hotZone: s.hot_zone, vehicle: s.vehicle, onlineMins: s.online_mins, restMins: s.rest_mins,
       finishedCnt: s.finished_cnt, lat: s.lat, lng: s.lng,
       franchise: match?.franchise || "", ponto: match?.ponto || "", leader: match?.leader || "",
-      assigned: Boolean(match && match.franchise),
+      // "Unassigned" is the placeholder franchise for auto-materialized
+      // profiles — those riders are NOT assigned yet (the 只看未归属 filter
+      // was matching nobody because the placeholder string is truthy).
+      assigned: Boolean(match && match.franchise && match.franchise !== "Unassigned"),
       // No MePonto profile at all (99 ID / CPF / phone all unmatched) — the
       // riders page surfaces these so operations can onboard + assign.
       // (CPF deliberately NOT exposed here: list endpoints stay masked.)

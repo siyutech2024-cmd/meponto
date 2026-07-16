@@ -1,5 +1,5 @@
 import { acceptClientId, appendServerAudit, makeServerId, memory, jsonResponse } from "../../lib/server/memory";
-import { flushPendingToDatabase, refreshCollectionsFromDatabase } from "../../lib/server/persistence";
+import { flushPendingToDatabase, persistDeleteRecord, refreshCollectionsFromDatabase } from "../../lib/server/persistence";
 import { getAvailablePoints } from "../../lib/points";
 import { requirePermission, roleFromRequest, scopeFromRequest } from "../../lib/server/authz";
 import type { Rider, RiderStatus } from "../../lib/data";
@@ -11,6 +11,82 @@ const COLLECTIONS = ["riders", "riderDailyKpis", "pointsLedgerEntries"];
 // per instance instead of on every list request.
 const KPI_REFRESH_TTL_MS = 60_000;
 let kpiRefreshedAt = 0;
+
+/**
+ * Lazy self-heal: merge duplicate rider profiles that share one 99 ID.
+ * Cross-instance races in live-board auto-materialization created twins with
+ * random ids, splitting one rider's points across two profiles (and making
+ * the twin show a bogus "no PIX" badge). Idempotent; keeps the profile with
+ * the most ledger history, unions missing fields from the twin, remaps every
+ * rider-keyed record, then deletes the twin (with a delete record so it can't
+ * resurrect from the DB).
+ */
+async function mergeDuplicateRiderProfiles(): Promise<number> {
+  const groups = new Map<string, Rider[]>();
+  for (const rider of memory.riders) {
+    const key = String(rider.ninetyNineId ?? "").trim();
+    if (!key) continue;
+    const list = groups.get(key) ?? [];
+    list.push(rider);
+    groups.set(key, list);
+  }
+  if (![...groups.values()].some((list) => list.length > 1)) return 0;
+  // Duplicates found (rare): pull the rider-keyed collections fresh BEFORE
+  // remapping, so we never write stale copies of orders/cash rows back over
+  // newer DB state.
+  await refreshCollectionsFromDatabase(["marketplaceOrders", "cashLedgerEntries", "cashTopUps", "mallPayments", "memberMessages", "taskClaims"]);
+  let mergedCount = 0;
+  for (const [key, list] of groups) {
+    if (list.length < 2) continue;
+    const ledgerRefs = (id: string) => memory.pointsLedgerEntries.filter((entry) => entry.riderId === id).length;
+    const score = (rider: Rider) => ledgerRefs(rider.id) * 1000 + (String(rider.pix ?? "").trim() ? 100 : 0) + (rider.franchise && rider.franchise !== "Unassigned" ? 10 : 0);
+    const sorted = [...list].sort((a, b) => score(b) - score(a));
+    const primary = sorted[0];
+    for (const dup of sorted.slice(1)) {
+      // Remap every rider-keyed record to the surviving profile.
+      const remap = <T extends { riderId?: string }>(rows: T[]) => {
+        for (let index = 0; index < rows.length; index += 1) {
+          if (rows[index].riderId === dup.id) rows[index] = { ...rows[index], riderId: primary.id };
+        }
+      };
+      remap(memory.pointsLedgerEntries as Array<{ riderId?: string }>);
+      remap(memory.marketplaceOrders as Array<{ riderId?: string }>);
+      remap(memory.cashLedgerEntries as Array<{ riderId?: string }>);
+      remap(memory.cashTopUps as Array<{ riderId?: string }>);
+      remap(memory.mallPayments as Array<{ riderId?: string }>);
+      remap(memory.memberMessages as Array<{ riderId?: string }>);
+      // Task claims embed the rider id in their idempotency key — rebuild it.
+      for (let index = 0; index < memory.taskClaims.length; index += 1) {
+        const claim = memory.taskClaims[index] as { id: string; riderId?: string };
+        if (claim.riderId === dup.id) {
+          const rebuiltId = claim.id.includes(dup.id) ? claim.id.split(dup.id).join(primary.id) : claim.id;
+          memory.taskClaims[index] = { ...memory.taskClaims[index], riderId: primary.id, id: rebuiltId };
+          persistDeleteRecord("taskClaims", claim.id);
+        }
+      }
+      // Union missing profile fields from the twin into the survivor.
+      const primaryIndex = memory.riders.findIndex((rider) => rider.id === primary.id);
+      if (primaryIndex !== -1) {
+        const current = memory.riders[primaryIndex];
+        memory.riders[primaryIndex] = {
+          ...current,
+          pix: String(current.pix ?? "").trim() || dup.pix || "",
+          phone: String(current.phone ?? "").trim() || dup.phone || "",
+          cpf: String(current.cpf ?? "").trim() || dup.cpf || "",
+          bairro: String(current.bairro ?? "").trim() || dup.bairro || "",
+          franchise: current.franchise && current.franchise !== "Unassigned" ? current.franchise : dup.franchise ?? current.franchise,
+          ponto: current.ponto && current.ponto !== "Unassigned" ? current.ponto : dup.ponto ?? current.ponto,
+        };
+      }
+      const dupIndex = memory.riders.findIndex((rider) => rider.id === dup.id);
+      if (dupIndex !== -1) memory.riders.splice(dupIndex, 1);
+      persistDeleteRecord("riders", dup.id);
+      appendServerAudit({ actor: "System", action: "RIDER_DUPLICATE_MERGED", entity: "Rider", entityId: primary.id, detail: `99 ${key}: merged duplicate ${dup.id} into ${primary.id} (ledger/orders/cash/claims remapped).`, risk: "Medium" });
+      mergedCount += 1;
+    }
+  }
+  return mergedCount;
+}
 
 /** Legacy/self-signup rows used lowercase statuses — normalize for filters. */
 function normalizeStatus(status: string | undefined): RiderStatus {
@@ -36,6 +112,11 @@ export async function GET(request: Request) {
 
   const refreshKpis = Date.now() - kpiRefreshedAt > KPI_REFRESH_TTL_MS;
   await refreshCollectionsFromDatabase(refreshKpis ? COLLECTIONS : ["riders", "pointsLedgerEntries"]);
+
+  // Self-heal duplicate profiles (same 99 ID) before building the list —
+  // repairs the split-points twins created by earlier materialization races.
+  const mergedProfiles = await mergeDuplicateRiderProfiles();
+  if (mergedProfiles > 0) await flushPendingToDatabase();
   if (refreshKpis) kpiRefreshedAt = Date.now();
 
   // Points ledger for one rider (detail page 积分明细).
