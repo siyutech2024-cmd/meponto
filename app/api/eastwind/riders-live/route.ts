@@ -55,8 +55,23 @@ type SnapshotRow = {
 
 export async function GET(request: Request) {
   const url = new URL(request.url);
-  const franchise = url.searchParams.get("franchise")?.trim() || "";
-  const ponto = url.searchParams.get("ponto")?.trim() || "";
+  let franchise = url.searchParams.get("franchise")?.trim() || "";
+  let ponto = url.searchParams.get("ponto")?.trim() || "";
+
+  // ---- Session scope enforcement (same rule as /api/mall) -----------------
+  // The query params exist for the dashboards' convenience, but the SESSION
+  // decides what a caller may see: franchise sessions are pinned to their own
+  // franchise, station sessions to their own station — a caller-supplied
+  // param can never widen the view. HQ passes params through untouched.
+  const { scopeFromRequest } = await import("../../../lib/server/authz");
+  const sessionScope = await scopeFromRequest(request);
+  if (sessionScope.station) {
+    ponto = sessionScope.station;
+    franchise = "";
+  } else if (sessionScope.franchise) {
+    franchise = sessionScope.franchise;
+    ponto = ""; // station drill-down for franchise views stays client-side
+  }
 
   const client = getSupabaseServerClient();
   const { data: latest, error: latestErr } = await client
