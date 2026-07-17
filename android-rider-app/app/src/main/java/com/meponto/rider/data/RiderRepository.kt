@@ -14,6 +14,8 @@ import com.meponto.rider.data.remote.CouponDto
 import com.meponto.rider.data.remote.MallMarkReadRequest
 import com.meponto.rider.data.remote.ReviewCreateRequest
 import com.meponto.rider.data.remote.ReviewsData
+import com.meponto.rider.data.remote.SupportCreateRequest
+import com.meponto.rider.data.remote.SupportTicketDto
 import com.meponto.rider.data.remote.MallOrderDto
 import com.meponto.rider.data.remote.MallRedeemRequest
 import com.meponto.rider.data.remote.MemberLoginRequest
