@@ -11,20 +11,29 @@ import { maskAuthor, partnerRatingAggregate, type PartnerReview } from "../../..
  * Event: partner.review.created.v1.
  */
 
-const COLLECTIONS = ["partnerReviews", "crmPartners", "riders", "partnerServiceRecords"];
+const COLLECTIONS = ["partnerReviews", "crmPartners", "riders", "partnerServiceRecords", "pontos"];
 const nowStamp = () => new Date().toISOString().slice(0, 16).replace("T", " ");
 // Eligibility gate (only riders who used the partner can review) — off by default.
 const REQUIRE_REDEEM = process.env.PARTNER_REVIEW_REQUIRE_REDEEM === "1";
 
-function resolvePartner(code: string) {
-  const key = code.replace(/^(partner-|crm-)/i, "");
-  return memory.crmPartners.find((p) => p.id === code || p.id === key || p.name === code);
+/**
+ * A review target is a CRM partner OR a Ponto service station (app map sends
+ * its pin ids straight through: "partner-<id>" / "ponto-<id>"). Both kinds
+ * share the partnerReviews collection — `partnerId` holds the target id.
+ */
+function resolveTarget(code: string): { id: string; name: string; kind: "partner" | "ponto" } | undefined {
+  const key = code.replace(/^(partner-|crm-|ponto-)/i, "");
+  const partner = memory.crmPartners.find((p) => p.id === code || p.id === key || p.name === code);
+  if (partner) return { id: partner.id, name: partner.name, kind: "partner" };
+  const ponto = memory.pontos.find((p) => p.id === code || p.id === key || p.name === code);
+  if (ponto) return { id: ponto.id, name: ponto.name, kind: "ponto" };
+  return undefined;
 }
 
 export async function GET(request: Request) {
   await refreshCollectionsFromDatabase(COLLECTIONS);
   const url = new URL(request.url);
-  const partner = resolvePartner(String(url.searchParams.get("partnerCode") ?? "").trim());
+  const partner = resolveTarget(String(url.searchParams.get("partnerCode") ?? "").trim());
   if (!partner) return jsonResponse({ error: "Parceiro não encontrado.", code: "partner_not_found" }, { status: 404 });
 
   const agg = partnerRatingAggregate(memory.partnerReviews, partner.id);
@@ -55,10 +64,12 @@ async function handlePost(request: Request) {
   if (!Number.isFinite(rating) || rating < 1 || rating > 5) {
     return jsonResponse({ error: "Avaliação deve ser de 1 a 5.", code: "invalid_rating" }, { status: 400 });
   }
-  const partner = resolvePartner(String(body.partnerCode ?? "").trim());
+  const partner = resolveTarget(String(body.partnerCode ?? "").trim());
   if (!partner) return jsonResponse({ error: "Parceiro não encontrado.", code: "partner_not_found" }, { status: 404 });
 
-  if (REQUIRE_REDEEM && !memory.partnerServiceRecords.some((s) => s.riderId === rider.id && s.partnerId === partner.id && s.status !== "rejected")) {
+  // Usage gate only makes sense for partners (service records); station
+  // reviews are open to any logged-in rider.
+  if (REQUIRE_REDEEM && partner.kind === "partner" && !memory.partnerServiceRecords.some((s) => s.riderId === rider.id && s.partnerId === partner.id && s.status !== "rejected")) {
     return jsonResponse({ error: "Apenas quem usou o parceiro pode avaliar.", code: "not_eligible" }, { status: 403 });
   }
 
@@ -76,7 +87,14 @@ async function handlePost(request: Request) {
   }
 
   const agg = partnerRatingAggregate(memory.partnerReviews, partner.id);
-  appendServerAudit({ actor: rider.name, action: "partner.review.created.v1", entity: "PartnerReview", entityId: review.id, detail: `${rider.name} avaliou ${partner.name}: ${rating}★.`, risk: "Low" });
+  appendServerAudit({
+    actor: rider.name,
+    action: partner.kind === "ponto" ? "station.review.created.v1" : "partner.review.created.v1",
+    entity: "PartnerReview",
+    entityId: review.id,
+    detail: `${rider.name} avaliou ${partner.name}: ${rating}★.`,
+    risk: "Low",
+  });
   return jsonResponse({ data: { reviewId: review.id, partnerRatingAvg: agg.ratingAvg, partnerReviewCount: agg.reviewCount } }, { status: index !== -1 ? 200 : 201 });
 }
 

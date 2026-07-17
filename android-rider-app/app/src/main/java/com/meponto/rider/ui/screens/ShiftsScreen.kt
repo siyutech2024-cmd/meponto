@@ -46,7 +46,9 @@ import androidx.compose.ui.unit.sp
 import com.meponto.rider.data.LocalAuth
 import com.meponto.rider.data.LocalStore
 import com.meponto.rider.data.Shift
+import com.meponto.rider.i18n.AppLanguage
 import com.meponto.rider.i18n.LocalLoc
+import com.meponto.rider.i18n.LocalizationManager
 import com.meponto.rider.ui.components.Badge
 import com.meponto.rider.ui.components.OverlayTopBar
 import com.meponto.rider.ui.components.Panel
@@ -61,6 +63,25 @@ import java.util.Date
 import java.util.Locale
 import java.util.TimeZone
 import kotlin.math.ceil
+
+/**
+ * Weekday label derived from the yyyy-MM-dd key in the APP's language — the
+ * backend always sends Portuguese ("Seg"/"Ter"), which leaked into the EN/ZH
+ * UI (field feedback 2026-07-17 "排班页面翻译问题"). Falls back to the raw
+ * server string when the date doesn't parse.
+ */
+private fun weekdayLabel(dateKey: String, fallback: String, loc: LocalizationManager): String {
+    val date = runCatching {
+        SimpleDateFormat("yyyy-MM-dd", Locale.US).apply { isLenient = false }.parse(dateKey)
+    }.getOrNull() ?: return fallback
+    val idx = java.util.Calendar.getInstance(TimeZone.getTimeZone("America/Sao_Paulo"))
+        .apply { time = date }.get(java.util.Calendar.DAY_OF_WEEK) - 1 // 0=Sun
+    return when (loc.language) {
+        AppLanguage.ZH -> listOf("周日", "周一", "周二", "周三", "周四", "周五", "周六")[idx]
+        AppLanguage.EN -> listOf("Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat")[idx]
+        else -> listOf("Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb")[idx]
+    }
+}
 
 @Composable
 fun ShiftsScreen() {
@@ -141,7 +162,7 @@ fun ShiftsScreen() {
                             Icon(Icons.Filled.EventAvailable, contentDescription = null, tint = me.ok, modifier = Modifier.size(18.dp))
                             Spacer(Modifier.width(10.dp))
                             Column(Modifier.weight(1f)) {
-                                Text("${s.weekday} ${s.dayLabel} · ${s.window}", color = me.text, fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
+                                Text("${weekdayLabel(s.dateKey, s.weekday, loc)} ${s.dayLabel} · ${s.window}", color = me.text, fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
                                 Text(s.zone, color = me.muted, fontSize = 11.sp)
                             }
                             Badge(loc.t(s.status.key), s.status.tone)
@@ -224,7 +245,7 @@ fun ShiftsScreen() {
                     horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.spacedBy(6.dp),
                 ) {
-                    Text(day.weekday.uppercase(), color = if (isActive) me.background.copy(alpha = 0.75f) else me.muted, fontWeight = FontWeight.Bold, fontSize = 11.sp)
+                    Text(weekdayLabel(day.id, day.weekday, loc).uppercase(), color = if (isActive) me.background.copy(alpha = 0.75f) else me.muted, fontWeight = FontWeight.Bold, fontSize = 11.sp)
                     Text(day.dayLabel, color = if (isActive) me.accent else me.text, fontWeight = FontWeight.Black, fontSize = 14.sp)
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(3.dp)) {
                         Box(
@@ -330,7 +351,7 @@ private fun ShiftDetail(shiftId: Int, onBack: () -> Unit) {
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
             Column {
-                Text("${shift.weekday} ${shift.dayLabel} · ${shift.window}", color = me.text, fontWeight = FontWeight.Bold, fontSize = 20.sp)
+                Text("${weekdayLabel(shift.dateKey, shift.weekday, loc)} ${shift.dayLabel} · ${shift.window}", color = me.text, fontWeight = FontWeight.Bold, fontSize = 20.sp)
                 Text(shift.zone, color = me.muted, fontSize = 14.sp)
             }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {

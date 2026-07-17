@@ -17,6 +17,8 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.EmojiEvents
@@ -183,7 +185,13 @@ fun MallScreen() {
                             product = product,
                             modifier = Modifier.weight(1f),
                             onOpen = { detail = product },
-                            onRedeem = { redeem(product) },
+                            // Quick redeem only when points fully cover the price;
+                            // a shortfall (cash top-up) always goes through the
+                            // detail sheet so the rider SEES the R$ conversion
+                            // before committing — never a surprise charge.
+                            onRedeem = {
+                                if (store.pointsBalance >= product.points) redeem(product) else detail = product
+                            },
                         )
                     }
                     if (rowItems.size == 1) Spacer(Modifier.weight(1f))
@@ -191,19 +199,42 @@ fun MallScreen() {
             }
 
             // 商城消息 / arrival + pickup notices (auto-marks read on view).
-            if (store.mallMessages.isNotEmpty()) {
+            // Horizontal swipe cards + client-side 7-day expiry (belt-and-braces
+            // with the server filter) — field feedback 2026-07-17.
+            val freshMessages = remember(store.mallMessages) {
+                // ISO "yyyy-MM-dd…" prefixes compare correctly as strings (no
+                // java.time — that needs API 26+ and minSdk is 24).
+                val cutoffDay = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US)
+                    .format(java.util.Date(System.currentTimeMillis() - 7L * 24 * 3600_000))
+                store.mallMessages.filter { msg ->
+                    val day = msg.time.take(10)
+                    day.length < 10 || day >= cutoffDay
+                }
+            }
+            if (freshMessages.isNotEmpty()) {
                 LaunchedEffect(Unit) { store.markMessagesRead() }
                 Panel {
                     SectionHeader(loc.t("mall.messages"))
-                    Spacer(Modifier.size(12.dp))
-                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                        store.mallMessages.forEach { msg ->
-                            Row(verticalAlignment = Alignment.Top) {
-                                Column(Modifier.weight(1f)) {
-                                    Text(msg.title, color = me.text, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
-                                    Text(msg.body, color = me.muted, fontSize = 12.sp)
+                    Spacer(Modifier.size(10.dp))
+                    LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        items(freshMessages, key = { it.id }) { msg ->
+                            Column(
+                                modifier = Modifier
+                                    .width(240.dp)
+                                    .clip(RoundedCornerShape(MeRadius.card))
+                                    .background(me.surfaceRaised)
+                                    .border(1.dp, me.line, RoundedCornerShape(MeRadius.card))
+                                    .padding(12.dp),
+                                verticalArrangement = Arrangement.spacedBy(4.dp),
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Text(
+                                        msg.title, color = me.text, fontWeight = FontWeight.SemiBold,
+                                        fontSize = 13.sp, maxLines = 1, modifier = Modifier.weight(1f),
+                                    )
+                                    Text(msg.time.take(10), color = me.muted, fontSize = 10.sp)
                                 }
-                                Text(msg.time, color = me.muted, fontSize = 11.sp)
+                                Text(msg.body, color = me.muted, fontSize = 12.sp, maxLines = 3)
                             }
                         }
                     }

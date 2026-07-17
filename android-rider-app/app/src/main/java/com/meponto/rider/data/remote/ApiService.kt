@@ -83,6 +83,13 @@ interface ApiService {
     @GET("support")
     suspend fun myTickets(@Query("authorName") authorName: String): ApiEnvelope<List<SupportTicketDto>>
 
+    // ----- Station / partner reviews (rider map) -----
+    @GET("partner/reviews")
+    suspend fun reviews(@Query("partnerCode") partnerCode: String): ApiEnvelope<ReviewsData>
+
+    @POST("partner/reviews")
+    suspend fun submitReview(@Body body: ReviewCreateRequest): ApiEnvelope<Any>
+
     @POST("support")
     suspend fun createTicket(@Body body: SupportCreateRequest): ApiEnvelope<SupportTicketDto>
 

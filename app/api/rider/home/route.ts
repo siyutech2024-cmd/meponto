@@ -318,8 +318,15 @@ export async function GET(request: Request) {
   // chegou/retire notices, HQ direct messages). The ops notifications
   // collection (review nudges, incident alerts) is console-internal and is
   // NEVER surfaced in the rider app, whatever its source flag says.
+  // Auto-expire: notices older than 7 days disappear (field feedback
+  // 2026-07-17 — stale "welcome"/"test" notices were piling up on Início).
+  const inboxCutoff = Date.now() - 7 * 24 * 3600_000;
   const inbox = memory.memberMessages
     .filter((m) => m.riderName === rider.name || m.riderId === rider.id)
+    .filter((m) => {
+      const t = Date.parse(m.createdAt);
+      return Number.isNaN(t) || t >= inboxCutoff;
+    })
     .slice(0, 6)
     .map((m) => ({ title: m.title, detail: m.body, time: relativeTime(m.createdAt) }));
 
@@ -360,8 +367,13 @@ export async function GET(request: Request) {
   const badges = badgeMilestones.map((m) => ({ ...m, achieved: lifetimeOrders >= m.at }));
 
   // --- Mall messages (chegou/retire notices) + eligible coupons ---
+  // Same 7-day auto-expiry as the Início inbox.
   const messages = memory.memberMessages
     .filter((m) => m.riderName === rider.name || m.riderId === rider.id)
+    .filter((m) => {
+      const t = Date.parse(m.createdAt);
+      return Number.isNaN(t) || t >= inboxCutoff;
+    })
     .slice(0, 20)
     .map((m) => ({ id: m.id, title: m.title, body: m.body, createdAt: m.createdAt, read: !!m.readAt }));
   const unreadMessages = messages.filter((m) => !m.read).length;

@@ -273,9 +273,17 @@ fun MemberCardScreen(onClose: () -> Unit) {
                 val send = Intent(Intent.ACTION_SEND).apply {
                     type = "image/png"
                     putExtra(Intent.EXTRA_STREAM, uri)
+                    // ClipData is what the share sheet uses to render the image
+                    // preview — without it targets show a generic file icon and
+                    // some apps receive a cropped/failed image (field feedback
+                    // 2026-07-17 "分享没有显示完整图片").
+                    clipData = android.content.ClipData.newRawUri("member_card", uri)
                     addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                 }
-                context.startActivity(Intent.createChooser(send, shareTitle))
+                val chooser = Intent.createChooser(send, shareTitle).apply {
+                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                }
+                context.startActivity(chooser)
             }
             shareBusy = false
         }

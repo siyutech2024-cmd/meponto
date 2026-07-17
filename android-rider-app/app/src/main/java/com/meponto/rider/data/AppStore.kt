@@ -219,11 +219,21 @@ class AppStore {
         }
     }
 
-    /** Returns true if the redemption succeeded (enough points and stock). */
+    /**
+     * Returns true if the redemption succeeded. Affordability matches the
+     * SERVER'S rule, not the old points-only check: when shortfall→cash
+     * conversion is on (pointCashRateBRL > 0) the backend accepts orders with
+     * fewer points than the price and charges the difference in cash, so the
+     * client must not pre-reject them ("Pontos insuficientes" on a redeemable
+     * product — field feedback 2026-07-17). Server stays authoritative; the
+     * post-write re-sync reconciles the optimistic numbers.
+     */
     fun redeem(product: MallProduct, pickupStoreId: String? = null): Boolean {
         val i = products.indexOfFirst { it.id == product.id }
-        if (i < 0 || pointsBalance < product.points || products[i].stock <= 0) return false
-        pointsBalance -= product.points
+        if (i < 0 || products[i].stock <= 0) return false
+        val shortfallOk = pointCashRateBRL > 0
+        if (pointsBalance < product.points && !shortfallOk) return false
+        pointsBalance = (pointsBalance - product.points).coerceAtLeast(0)
         products[i] = products[i].copy(stock = products[i].stock - 1)
         product.apiId?.let { id -> scope.launch { report(repo?.redeem(id, riderId, pickupStoreId)); syncAfterWrite() } }
         return true
@@ -259,6 +269,13 @@ class AppStore {
         if (awarded != null) syncAfterWrite()
         return awarded
     }
+
+    /** Station / partner reviews for a map pin ("ponto-…" / "partner-…"). */
+    suspend fun reviewsFor(targetCode: String): com.meponto.rider.data.remote.ReviewsData? =
+        repo?.reviews(targetCode)
+
+    suspend fun submitReview(targetCode: String, rating: Int, comment: String): String? =
+        repo?.submitReview(targetCode, rating, comment) ?: "offline"
 
     suspend fun myTickets(): List<com.meponto.rider.data.remote.SupportTicketDto> =
         repo?.myTickets(profile.name.ifBlank { riderName }) ?: emptyList()

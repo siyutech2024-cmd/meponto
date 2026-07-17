@@ -13,6 +13,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -334,28 +336,39 @@ fun HomeScreen(onScan: () -> Unit, onProfile: () -> Unit, onOpenMall: () -> Unit
                 }
             }
 
-            // Inbox
+            // Inbox — horizontal swipe cards, NOT a long vertical list (field
+            // feedback 2026-07-17). The server already expires notices > 7 days.
             if (store.inbox.isNotEmpty()) {
                 Panel {
-                    SectionHeader(loc.t("home.inbox"))
-                    Spacer(Modifier.size(12.dp))
-                    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                        store.inbox.forEach { item ->
-                            Row(verticalAlignment = Alignment.Top) {
-                                Box(
-                                    Modifier
-                                        .padding(top = 6.dp)
-                                        .size(8.dp)
-                                        .clip(CircleShape)
-                                        .background(me.accent)
-                                )
-                                Spacer(Modifier.width(10.dp))
-                                Column(Modifier.weight(1f)) {
-                                    Text(item.title, color = me.text, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
-                                    Text(item.detail, color = me.muted, fontSize = 12.sp)
+                    // Plain title Text (NOT SectionHeader — it is fillMaxWidth and
+                    // would leave no room for the count, same trap as Performance).
+                    Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        Text(loc.t("home.inbox"), color = me.text, fontWeight = FontWeight.SemiBold, fontSize = 16.sp)
+                        Spacer(Modifier.weight(1f))
+                        Text("${store.inbox.size}", color = me.muted, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                    }
+                    Spacer(Modifier.size(10.dp))
+                    LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        items(store.inbox) { item ->
+                            Column(
+                                modifier = Modifier
+                                    .width(240.dp)
+                                    .clip(RoundedCornerShape(MeRadius.card))
+                                    .background(me.surfaceRaised)
+                                    .border(1.dp, me.line, RoundedCornerShape(MeRadius.card))
+                                    .padding(12.dp),
+                                verticalArrangement = Arrangement.spacedBy(4.dp),
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Box(Modifier.size(7.dp).clip(CircleShape).background(me.accent))
+                                    Spacer(Modifier.width(7.dp))
+                                    Text(
+                                        item.title, color = me.text, fontWeight = FontWeight.SemiBold,
+                                        fontSize = 13.sp, maxLines = 1, modifier = Modifier.weight(1f),
+                                    )
+                                    Text(item.time, color = me.muted, fontSize = 10.sp)
                                 }
-                                Spacer(Modifier.width(8.dp))
-                                Text(item.time, color = me.muted, fontSize = 11.sp)
+                                Text(item.detail, color = me.muted, fontSize = 12.sp, maxLines = 3)
                             }
                         }
                     }

@@ -26,6 +26,7 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -65,6 +66,7 @@ import com.meponto.rider.ui.theme.appBackground
 import com.meponto.rider.ui.theme.MeRadius
 import com.meponto.rider.ui.theme.Tone
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import org.osmdroid.config.Configuration
 import org.osmdroid.tileprovider.tilesource.TileSourceFactory
 import org.osmdroid.util.BoundingBox
@@ -290,7 +292,10 @@ fun MapScreen() {
             containerColor = me.background,
         ) {
             Column(
-                Modifier.fillMaxWidth().padding(start = 20.dp, end = 20.dp, bottom = 28.dp),
+                Modifier
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState())
+                    .padding(start = 20.dp, end = 20.dp, bottom = 28.dp),
                 verticalArrangement = Arrangement.spacedBy(14.dp),
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -305,7 +310,7 @@ fun MapScreen() {
                         Text(pin.subtitle.ifBlank { "—" }, color = me.muted, fontSize = 14.sp)
                     }
                 }
-                if (pin.address.isNotBlank()) {
+                if (pin.address.isNotBlank() && pin.address != pin.name) {
                     Text(pin.address, color = me.textSoft, fontSize = 15.sp)
                 }
                 if (pin.badge.isNotBlank()) {
@@ -314,8 +319,122 @@ fun MapScreen() {
                 PrimaryButton(title = loc.t("map.navigate"), icon = Icons.Filled.LocationOn) {
                     navigate(pin)
                 }
+                ReviewsSection(pinId = pin.id)
             }
         }
+    }
+}
+
+/**
+ * 站点/服务点评价 / Avaliações — aggregate stars, recent masked-author
+ * comments, and a 1–5★ + comment form (one review per rider per place;
+ * resubmitting updates it). Field feedback 2026-07-17.
+ */
+@Composable
+private fun ReviewsSection(pinId: String) {
+    val me = LocalMe.current
+    val loc = LocalLoc.current
+    val store = LocalStore.current
+    val auth = com.meponto.rider.data.LocalAuth.current
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
+
+    var data by remember(pinId) { mutableStateOf<com.meponto.rider.data.remote.ReviewsData?>(null) }
+    var myRating by remember(pinId) { mutableStateOf(0) }
+    var comment by remember(pinId) { mutableStateOf("") }
+    var sending by remember(pinId) { mutableStateOf(false) }
+    var feedback by remember(pinId) { mutableStateOf<String?>(null) }
+    var reloadKey by remember(pinId) { mutableStateOf(0) }
+    LaunchedEffect(pinId, reloadKey) { data = store.reviewsFor(pinId) }
+
+    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(loc.t("map.reviews"), color = me.text, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+            Spacer(Modifier.weight(1f))
+            val avg = data?.ratingAvg ?: 0.0
+            val count = data?.reviewCount ?: 0
+            if (count > 0) {
+                Text(
+                    "★ ${String.format("%.1f", avg)} · $count",
+                    color = me.accent, fontWeight = FontWeight.Bold, fontSize = 13.sp,
+                )
+            }
+        }
+
+        val items = data?.items.orEmpty()
+        if (items.isEmpty()) {
+            Text(loc.t("map.reviewEmpty"), color = me.muted, fontSize = 12.sp)
+        } else {
+            items.take(5).forEach { r ->
+                Column(
+                    Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(MeRadius.small))
+                        .background(me.surfaceRaised)
+                        .padding(10.dp),
+                    verticalArrangement = Arrangement.spacedBy(2.dp),
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(r.author ?: "—", color = me.text, fontWeight = FontWeight.SemiBold, fontSize = 12.sp, modifier = Modifier.weight(1f))
+                        Text("★".repeat((r.rating ?: 0).coerceIn(0, 5)), color = me.accent, fontSize = 12.sp)
+                    }
+                    if (!r.comment.isNullOrBlank()) {
+                        Text(r.comment, color = me.textSoft, fontSize = 12.sp)
+                    }
+                    Text((r.createdAt ?: "").take(10), color = me.muted, fontSize = 10.sp)
+                }
+            }
+        }
+
+        // ---- Write / update my review ----
+        Text(loc.t("map.reviewWrite"), color = me.text, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            for (i in 1..5) {
+                Text(
+                    if (i <= myRating) "★" else "☆",
+                    color = if (i <= myRating) me.accent else me.muted,
+                    fontSize = 26.sp,
+                    modifier = Modifier.clickable { myRating = i },
+                )
+            }
+        }
+        androidx.compose.material3.OutlinedTextField(
+            value = comment,
+            onValueChange = { comment = it.take(500) },
+            label = { Text(loc.t("map.reviewHint")) },
+            minLines = 2,
+            modifier = Modifier.fillMaxWidth(),
+        )
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(MeRadius.small))
+                .background(if (sending || myRating == 0) me.line else me.accent)
+                .clickable(enabled = !sending && myRating > 0) {
+                    if (auth.requireMember()) {
+                        sending = true
+                        feedback = null
+                        scope.launch {
+                            val error = store.submitReview(pinId, myRating, comment.trim())
+                            sending = false
+                            if (error == null) {
+                                comment = ""
+                                feedback = loc.t("map.reviewDone")
+                                reloadKey += 1
+                            } else {
+                                feedback = error
+                            }
+                        }
+                    }
+                }
+                .padding(vertical = 11.dp),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(
+                if (sending) "…" else loc.t("map.reviewSend"),
+                color = me.accentInk, fontWeight = FontWeight.Bold, fontSize = 13.sp,
+            )
+        }
+        feedback?.let { Text(it, color = me.muted, fontSize = 12.sp) }
     }
 }
 

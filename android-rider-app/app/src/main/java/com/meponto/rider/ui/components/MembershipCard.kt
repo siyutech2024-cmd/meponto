@@ -40,8 +40,6 @@ import com.meponto.rider.i18n.LocalLoc
 import com.meponto.rider.ui.theme.LocalMe
 import com.meponto.rider.ui.theme.MeRadius
 
-private fun brl(v: Double): String = "R$ " + String.format("%.2f", v).replace('.', ',')
-
 /**
  * 会员卡 / membership tier card — mirrors the hero card on the web rider home:
  * tier level + stars + score + next-target + benefit + available balance, plus
@@ -147,6 +145,8 @@ fun MembershipCard(onOpenStatement: (() -> Unit)? = null) {
 
         // AVAILABLE POINTS is the hero number (tap → full statement); the
         // next-tier line tracks CUMULATIVE earned points, decay-proof.
+        // NO money on the points card (field feedback 2026-07-17): cash lives
+        // in the Wallet tab only — the next-tier line gets the full width.
         Row(verticalAlignment = Alignment.Bottom) {
             Text("${store.pointsBalance}", color = me.accent, fontWeight = FontWeight.Black, fontSize = 52.sp)
             Spacer(Modifier.width(6.dp))
@@ -157,7 +157,7 @@ fun MembershipCard(onOpenStatement: (() -> Unit)? = null) {
                 fontSize = 11.sp,
                 modifier = Modifier.padding(bottom = 10.dp),
             )
-            Spacer(Modifier.width(8.dp))
+            Spacer(Modifier.width(10.dp))
             Text(
                 tier.nextTarget,
                 color = Color.White.copy(alpha = 0.85f),
@@ -165,10 +165,6 @@ fun MembershipCard(onOpenStatement: (() -> Unit)? = null) {
                 fontSize = 12.sp,
                 modifier = Modifier.weight(1f).padding(bottom = 6.dp),
             )
-            Column(horizontalAlignment = Alignment.End) {
-                Text(brl(store.wallet.available), color = Color.White, fontWeight = FontWeight.Bold, fontSize = 16.sp)
-                Text(loc.t("wallet.available"), color = Color.White.copy(alpha = 0.6f), fontSize = 11.sp)
-            }
         }
 
         // Progress toward the next tier (v4 hero track: yellow→orange fill).
@@ -201,11 +197,16 @@ fun MembershipCard(onOpenStatement: (() -> Unit)? = null) {
 
         // Identity rows — only the fields this rider actually has (public
         // members without a station/99 ID don't get four empty lines).
+        // "Unassigned"/"未分配" are backend placeholders, not real values — hide
+        // them like blanks (a PT-speaking rider shouldn't see English filler).
+        fun realValue(v: String) = v.takeUnless {
+            it.isBlank() || it.equals("unassigned", ignoreCase = true) || it == "未分配" || it == "-" || it == "—"
+        } ?: ""
         val idRows = listOf(
-            Triple(Icons.Filled.LocationOn, loc.t("member.ponto"), p.ponto),
-            Triple(Icons.Filled.Group, loc.t("member.leader"), p.leader),
-            Triple(Icons.Filled.Map, loc.t("member.bairro"), p.bairro),
-            Triple(Icons.Filled.Tag, loc.t("member.id99"), p.ninetyNineId),
+            Triple(Icons.Filled.LocationOn, loc.t("member.ponto"), realValue(p.ponto)),
+            Triple(Icons.Filled.Group, loc.t("member.leader"), realValue(p.leader)),
+            Triple(Icons.Filled.Map, loc.t("member.bairro"), realValue(p.bairro)),
+            Triple(Icons.Filled.Tag, loc.t("member.id99"), realValue(p.ninetyNineId)),
         ).filter { it.third.isNotBlank() }
         if (idRows.isNotEmpty()) {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {

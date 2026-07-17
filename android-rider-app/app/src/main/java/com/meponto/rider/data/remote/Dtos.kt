@@ -414,6 +414,29 @@ data class SupportTicketDto(
     val repliedAt: String? = null,
 )
 
+// GET /partner/reviews?partnerCode= — station / partner reviews (masked
+// authors); POST submits/updates the rider's own review. partnerCode accepts
+// the map pin id straight through ("ponto-<id>" / "partner-<id>").
+data class ReviewItemDto(
+    val id: String? = null,
+    val author: String? = null,
+    val rating: Int? = null,
+    val comment: String? = null,
+    val createdAt: String? = null,
+)
+
+data class ReviewsData(
+    val ratingAvg: Double? = null,
+    val reviewCount: Int? = null,
+    val items: List<ReviewItemDto>? = null,
+)
+
+data class ReviewCreateRequest(
+    val partnerCode: String,
+    val rating: Int,
+    val comment: String,
+)
+
 data class SupportCreateRequest(
     val action: String = "create",
     val channel: String = "rider",

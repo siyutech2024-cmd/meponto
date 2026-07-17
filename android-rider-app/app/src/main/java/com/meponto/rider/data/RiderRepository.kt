@@ -12,6 +12,8 @@ import com.meponto.rider.data.remote.InboxDto
 import com.meponto.rider.data.remote.LedgerDto
 import com.meponto.rider.data.remote.CouponDto
 import com.meponto.rider.data.remote.MallMarkReadRequest
+import com.meponto.rider.data.remote.ReviewCreateRequest
+import com.meponto.rider.data.remote.ReviewsData
 import com.meponto.rider.data.remote.MallOrderDto
 import com.meponto.rider.data.remote.MallRedeemRequest
 import com.meponto.rider.data.remote.MemberLoginRequest
@@ -331,6 +333,18 @@ class RiderRepository(context: Context) {
             subject = subject, message = message,
         ))
         if (resp.error != null) resp.error else null
+    } catch (e: Exception) {
+        errorOf(e)
+    }
+
+    /** GET /partner/reviews — aggregate + masked-author list for a map pin. */
+    suspend fun reviews(targetCode: String): ReviewsData? =
+        runCatching { service.reviews(targetCode) }.getOrNull()?.data
+
+    /** POST /partner/reviews → null on success, failure reason otherwise. */
+    suspend fun submitReview(targetCode: String, rating: Int, comment: String): String? = try {
+        val resp = service.submitReview(ReviewCreateRequest(partnerCode = targetCode, rating = rating, comment = comment))
+        resp.error
     } catch (e: Exception) {
         errorOf(e)
     }
