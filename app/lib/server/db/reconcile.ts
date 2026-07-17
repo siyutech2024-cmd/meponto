@@ -1,5 +1,5 @@
 import { fetchRows } from "../db-read";
-import { selectRows } from "./core";
+import { deleteRows, selectRows, upsertRows } from "./core";
 import { diffValues, reconcileSets, type FieldDiff } from "./diff";
 
 /**
@@ -73,4 +73,48 @@ export async function reconcileCollection(
     fieldDiffs,
     clean: sets.missingInTable.length === 0 && sets.extraInTable.length === 0 && fieldDiffs.length === 0,
   };
+}
+
+export type HealSummary = { deletedExtra: number; restored: number; error?: string };
+
+/**
+ * S4 self-heal: during dual-write the legacy JSONB mirror is the source of
+ * truth and every new table is a projection — so a dirty report is repaired
+ * mechanically instead of paging a human: rows the legacy side no longer has
+ * are deleted (e.g. the rider duplicate-profile self-heal removes twin KPI
+ * rows through a delete path the flush mirror never sees), and rows that are
+ * missing or field-different are re-upserted from legacy. Append-only tables
+ * (points_ledger) silently ignore deletes via their RULE, so an unhealable
+ * discrepancy still shows up dirty in the post-heal report — by design.
+ *
+ * Returns the POST-heal report; `healed` says what was repaired. The pre-heal
+ * dirt is preserved in `healed.preClean=false` + counters for observability.
+ */
+export async function reconcileAndHeal(
+  collection: string,
+  table: string,
+  options: Parameters<typeof reconcileCollection>[2] = {},
+): Promise<{ report: ReconcileReport; healed?: HealSummary }> {
+  const first = await reconcileCollection(collection, table, options);
+  if (first.clean) return { report: first };
+
+  const idColumn = options.idColumn ?? "id";
+  const healed: HealSummary = { deletedExtra: 0, restored: 0 };
+  try {
+    for (const id of first.extraInTable) {
+      await deleteRows(table, { [idColumn]: id });
+      healed.deletedExtra += 1;
+    }
+    const wanted = new Set([...first.missingInTable, ...first.fieldDiffs.map((diff) => diff.id)]);
+    if (wanted.size > 0) {
+      const legacyRows = (await fetchRows<Record<string, unknown>>(collection)).filter((row) => wanted.has(String(row.id)));
+      const rows = legacyRows.map((row) => (options.toTableShape ? options.toTableShape(row) : row));
+      await upsertRows(table, rows, idColumn);
+      healed.restored = rows.length;
+    }
+  } catch (error) {
+    healed.error = (error as Error).message; // best-effort: post-report stays honest
+  }
+  const report = await reconcileCollection(collection, table, options);
+  return { report, healed };
 }
