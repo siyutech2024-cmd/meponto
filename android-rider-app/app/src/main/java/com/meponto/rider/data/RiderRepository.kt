@@ -320,6 +320,21 @@ class RiderRepository(context: Context) {
     suspend fun checkin(pontoCode: String): Int? =
         runCatching { service.checkin(CheckinRequest(pontoCode)) }.getOrNull()?.data?.awarded
 
+    /** GET /support — the rider's own tickets (newest first). */
+    suspend fun myTickets(authorName: String): List<SupportTicketDto> =
+        runCatching { service.myTickets(authorName) }.getOrNull()?.data ?: emptyList()
+
+    /** POST /support create → null on success, failure reason otherwise. */
+    suspend fun createTicket(authorName: String, contact: String, organization: String?, subject: String, message: String): String? = try {
+        val resp = service.createTicket(SupportCreateRequest(
+            authorName = authorName, contact = contact, organization = organization,
+            subject = subject, message = message,
+        ))
+        if (resp.error != null) resp.error else null
+    } catch (e: Exception) {
+        errorOf(e)
+    }
+
     /** POST /rider/profile → null on success, failure reason otherwise. */
     suspend fun updateProfile(name: String, cpf: String, phone: String, pix: String, birthday: String? = null): String? = try {
         service.updateProfile(ProfileUpdateRequest(name, cpf, phone, pix, birthday))

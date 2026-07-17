@@ -80,6 +80,12 @@ interface ApiService {
     suspend fun checkin(@Body body: CheckinRequest): ApiEnvelope<CheckinDto>
 
     // ----- Push (FCM token registration) -----
+    @GET("support")
+    suspend fun myTickets(@Query("authorName") authorName: String): ApiEnvelope<List<SupportTicketDto>>
+
+    @POST("support")
+    suspend fun createTicket(@Body body: SupportCreateRequest): ApiEnvelope<SupportTicketDto>
+
     @POST("push")
     suspend fun registerPush(@Body body: PushTokenRequest): ApiEnvelope<AckDto>
 }

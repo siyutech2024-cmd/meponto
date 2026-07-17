@@ -260,6 +260,18 @@ class AppStore {
         return awarded
     }
 
+    suspend fun myTickets(): List<com.meponto.rider.data.remote.SupportTicketDto> =
+        repo?.myTickets(profile.name.ifBlank { riderName }) ?: emptyList()
+
+    suspend fun createTicket(subject: String, message: String): String? =
+        repo?.createTicket(
+            authorName = profile.name.ifBlank { riderName },
+            contact = profile.phone,
+            organization = profile.ponto.ifBlank { null },
+            subject = subject,
+            message = message,
+        ) ?: "offline"
+
     // MARK: - Live hydration (apply PontoSys API snapshot; nulls keep mock)
     fun apply(snapshot: RiderSnapshot) {
         snapshot.riderId?.takeIf { it.isNotBlank() }?.let { riderId = it }

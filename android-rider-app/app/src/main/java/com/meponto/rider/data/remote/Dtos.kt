@@ -402,3 +402,24 @@ data class SlotCancelRequest(
 )
 
 data class CheckinRequest(val pontoCode: String, val lat: Double? = null, val lng: Double? = null)
+
+// GET /support?authorName= — the rider's own tickets; POST /support create.
+data class SupportTicketDto(
+    val id: String? = null,
+    val subject: String? = null,
+    val message: String? = null,
+    val status: String? = null,      // open | answered | resolved
+    val reply: String? = null,
+    val createdAt: String? = null,
+    val repliedAt: String? = null,
+)
+
+data class SupportCreateRequest(
+    val action: String = "create",
+    val channel: String = "rider",
+    val authorName: String,
+    val contact: String,
+    val organization: String? = null,
+    val subject: String,
+    val message: String,
+)

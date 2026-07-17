@@ -1,9 +1,10 @@
 import { appendServerAudit, jsonResponse, makeServerId, memory } from "../../lib/server/memory";
 import { flushPendingToDatabase, refreshCollectionsFromDatabase } from "../../lib/server/persistence";
 import { requirePermission, roleFromRequest } from "../../lib/server/authz";
+import { sendPushToRider } from "../../lib/server/notify";
 import type { SupportChannel, SupportTicket } from "../../lib/support";
 
-const COLLECTIONS = ["supportTickets"];
+const COLLECTIONS = ["supportTickets", "memberMessages"];
 const nowStamp = () => new Date().toISOString().slice(0, 16).replace("T", " ");
 const CHANNELS: SupportChannel[] = ["rider", "franchise", "station", "partner", "web"];
 
@@ -92,6 +93,19 @@ async function handlePost(request: Request) {
         const reply = String((body as { reply?: string }).reply ?? "").trim().slice(0, 1000);
         if (!reply) return jsonResponse({ error: "empty reply" }, { status: 400 });
         memory.supportTickets[index] = { ...current, reply, repliedAt: stamp, repliedBy: actor, status: "answered" };
+        // Close the loop back to the rider: inbox message + push notification
+        // (previously replies sat unseen unless the rider re-opened the page).
+        if (current.channel === "rider") {
+          memory.memberMessages.unshift({
+            id: makeServerId("msg", memory.memberMessages.length + 1),
+            riderName: current.authorName,
+            title: `Central respondeu: ${current.subject}`.slice(0, 80),
+            body: reply.slice(0, 300),
+            href: "/rider-app/support",
+            createdAt: new Date().toISOString(),
+          });
+          void sendPushToRider(current.authorName, "Central MePonto respondeu 💬", reply.slice(0, 120), "/rider-app/support");
+        }
       } else {
         memory.supportTickets[index] = { ...current, status: "resolved", resolvedAt: stamp };
       }
