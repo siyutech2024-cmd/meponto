@@ -27,6 +27,7 @@ type AggRow = { name: string; total: number; finished: number } & Cats;
 type Payload = {
   capturedAt: string | null;
   kpi: { ar: number | null; caa: number | null; acceptCnt: number | null; overtime: number | null; tsh: number | null; finishedCnt: number | null } | null;
+  scopeKpi: { ar: number | null; caa: number | null; acceptCnt: number | null; overtime: number | null; tsh: number | null; finishedCnt: number | null } | null;
   riders: LiveRider[];
   summary: { total: number; assigned: number; unassigned: number; finishedTotal: number; cats: Cats; byFranchise: AggRow[]; byPonto: AggRow[] };
 };
@@ -251,17 +252,24 @@ export default function RiderMonitorPage() {
           : <StatCard label={t("rmFinishedTotal")} value={data?.summary.finishedTotal ?? 0} color={CAT_COLOR.delivering} />}
       </div>
 
-      {kpi ? (
-        <div className="mt-3 flex flex-wrap gap-2">
-          <KpiPill label="AR" value={pct(kpi.ar)} />
-          <KpiPill label="CAA" value={pct(kpi.caa)} />
-          <KpiPill label={t("rmAcceptCnt")} value={String(kpi.acceptCnt ?? "—")} />
-          <KpiPill label="Overtime" value={pct(kpi.overtime)} />
-          <KpiPill label="%TSH" value={pct(kpi.tsh)} />
-          <KpiPill label={t("rmFinishedCnt")} value={String(kpi.finishedCnt ?? "—")} />
-          <span className="ml-auto self-center text-[10px] text-[var(--muted)]">{t("rmKpiCityNote")}</span>
-        </div>
-      ) : null}
+      {(() => {
+        // Franchise/station sessions get THEIR OWN real-time KPI (aggregated
+        // per-rider with Eastwind's formulas); HQ keeps the city-wide row.
+        const scopeKpiRow = data?.scopeKpi ?? null;
+        const kpiRow = scopeKpiRow ?? kpi;
+        if (!kpiRow) return null;
+        return (
+          <div className="mt-3 flex flex-wrap gap-2">
+            <KpiPill label="AR" value={pct(kpiRow.ar)} />
+            <KpiPill label="CAA" value={pct(kpiRow.caa)} />
+            <KpiPill label={t("rmAcceptCnt")} value={String(kpiRow.acceptCnt ?? "—")} />
+            <KpiPill label="Overtime" value={pct(kpiRow.overtime)} />
+            <KpiPill label="%TSH" value={pct(kpiRow.tsh)} />
+            <KpiPill label={t("rmFinishedCnt")} value={String(kpiRow.finishedCnt ?? "—")} />
+            <span className="ml-auto self-center text-[10px] text-[var(--muted)]">{scopeKpiRow ? t("rmKpiScopeNote") : t("rmKpiCityNote")}</span>
+          </div>
+        );
+      })()}
 
       <div className="mt-5">
         <div className="mb-2 flex items-center gap-3">

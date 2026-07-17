@@ -184,10 +184,52 @@ export async function GET(request: Request) {
   const sortAgg = (agg: typeof frAgg) =>
     Object.entries(agg).map(([name, v]) => ({ name, ...v })).sort((a, b) => b.total - a.total);
 
+  // Scope-level KPI (franchise/station views): aggregate the per-rider
+  // "Performance in Current Shift" counters with Eastwind's OWN formulas —
+  //   AR = accepts / (accepts + declines)
+  //   CAA = cancels-after-accept / accepts
+  //   ATRASO(overtime) = delayed / finished
+  //   %TSH = online-minutes-weighted mean of per-rider TSH
+  // Count-based (exact) when the counters exist; falls back to the mean of
+  // per-rider percentages only where Eastwind omitted counters entirely.
+  const scopeKpi = (() => {
+    if (!franchise && !ponto) return null; // HQ keeps the city KPI row
+    if (scoped.length === 0) return null;
+    const r1 = (n: number) => Math.round(n * 10) / 10;
+    let accept = 0, declined = 0, cancelled = 0, delayed = 0, finished = 0;
+    let arSum = 0, arN = 0, caaSum = 0, caaN = 0, otSum = 0, otN = 0, tshWeighted = 0, tshWeight = 0;
+    for (const row of scoped) {
+      const p = row.perf;
+      if (typeof p.acceptCnt === "number") accept += p.acceptCnt;
+      if (typeof p.declinedCnt === "number") declined += p.declinedCnt;
+      if (typeof p.cancelledCnt === "number") cancelled += p.cancelledCnt;
+      if (typeof p.delayedCnt === "number") delayed += p.delayedCnt;
+      finished += row.finishedCnt || 0;
+      if (typeof p.ar === "number") { arSum += p.ar; arN += 1; }
+      if (typeof p.caa === "number") { caaSum += p.caa; caaN += 1; }
+      if (typeof p.overtime === "number") { otSum += p.overtime; otN += 1; }
+      if (typeof p.tsh === "number") {
+        const weight = row.onlineMins && row.onlineMins > 0 ? row.onlineMins : 1;
+        tshWeighted += p.tsh * weight;
+        tshWeight += weight;
+      }
+    }
+    const offers = accept + declined;
+    return {
+      ar: offers > 0 ? r1((accept / offers) * 100) : arN > 0 ? r1(arSum / arN) : null,
+      caa: accept > 0 ? r1((cancelled / accept) * 100) : caaN > 0 ? r1(caaSum / caaN) : null,
+      acceptCnt: offers > 0 || accept > 0 ? accept : null,
+      overtime: finished > 0 ? r1((delayed / finished) * 100) : otN > 0 ? r1(otSum / otN) : null,
+      tsh: tshWeight > 0 ? r1(tshWeighted / tshWeight) : null,
+      finishedCnt: finished,
+    };
+  })();
+
   return jsonResponse({
     data: {
       capturedAt,
       kpi: kpi ? { ar: kpi.ar, caa: kpi.caa, acceptCnt: kpi.accept_cnt, overtime: kpi.overtime, tsh: kpi.tsh, finishedCnt: kpi.finished_cnt } : null,
+      scopeKpi,
       riders: scoped,
       summary: {
         total: scoped.length,
