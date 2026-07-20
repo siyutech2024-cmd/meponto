@@ -136,6 +136,15 @@ async function handlePost(request: Request) {
   const body = (await request.json().catch(() => ({}))) as Partial<Body>;
   const actor = roleFromRequest(request);
 
+  // HQ sessions (PontoSys console) are NOT quota-capped — proxy signups,
+  // approvals and allocations are at HQ's discretion. The caps below apply to
+  // franchise / station / rider callers only.
+  const { sessionFromRequest } = await import("../../lib/auth-session");
+  const callerSession = await sessionFromRequest(request);
+  const isHqCaller = callerSession
+    ? callerSession.portal === "pontosys"
+    : ["Super Admin", "Regional Manager", "Finance", "Support"].includes(actor);
+
   // Work on the latest cross-instance state before mutating.
   await refreshCollectionsFromDatabase(DISPATCH_COLLECTIONS);
 
@@ -198,18 +207,11 @@ async function handlePost(request: Request) {
         return jsonResponse({ error: "shift not found" }, { status: 404 });
       }
 
-      // Allocation caps (不得超发): Σ franchise allocations ≤ the shift's 99
-      // headcount; Σ station splits within a franchise ≤ that franchise's
-      // allocation. The UI warns — the server now refuses.
+      // Allocation caps (不得超发) — franchise/station callers only; HQ
+      // allocates at its own discretion (总部不受限):
+      // Σ station splits within a franchise ≤ that franchise's allocation.
       const nextQuota = Math.floor(Number(quota));
-      if (level !== "station") {
-        const otherFranchiseTotal = memory.shiftQuotas
-          .filter((q) => q.shiftId === shiftId && q.level === "franchise" && q.franchise !== franchise)
-          .reduce((sum, q) => sum + q.quota, 0);
-        if (otherFranchiseTotal + nextQuota > quotaShift.plannedCount) {
-          return jsonResponse({ error: `分配总数将达 ${otherFranchiseTotal + nextQuota},超过班次 99 名额 ${quotaShift.plannedCount}。` }, { status: 409 });
-        }
-      } else {
+      if (!isHqCaller && level === "station") {
         const franchiseCap = memory.shiftQuotas.find((q) => q.shiftId === shiftId && q.level === "franchise" && q.franchise === franchise)?.quota ?? 0;
         const otherStationTotal = memory.shiftQuotas
           .filter((q) => q.shiftId === shiftId && q.level === "station" && q.franchise === franchise && q.station !== station)
@@ -245,12 +247,13 @@ async function handlePost(request: Request) {
       if (!shift) return jsonResponse({ error: "shift not found" }, { status: 404 });
 
       // ---- Quota caps (不得超过分配名额) --------------------------------
-      // Submissions are bounded by the allocation chain: the franchise may
-      // never hold more ACTIVE signups (submitted/approved/reported) than HQ
-      // allocated to it; a station with its own split is additionally bounded
-      // by that split. No franchise allocation → no submissions at all.
+      // Franchise/station/rider callers are bounded by the allocation chain:
+      // the franchise may never hold more ACTIVE signups (submitted/approved/
+      // reported) than HQ allocated; a station with its own split is
+      // additionally bounded by it. No allocation → no submissions. HQ proxy
+      // signups bypass the caps entirely (总部代录不受限).
       const franchiseCap = memory.shiftQuotas.find((q) => q.shiftId === shiftId && q.level === "franchise" && q.franchise === franchise)?.quota ?? 0;
-      if (franchiseCap <= 0) {
+      if (!isHqCaller && franchiseCap <= 0) {
         return jsonResponse({ error: `「${franchise}」本班次没有分配名额,无法提报。A matriz ainda não alocou vagas.` }, { status: 409 });
       }
       const stationCapRow = memory.shiftQuotas.find((q) => q.shiftId === shiftId && q.level === "station" && q.franchise === franchise && q.station === station);
@@ -276,11 +279,11 @@ async function handlePost(request: Request) {
           skipped.push(`${riderName || rider99Id} (duplicado)`);
           continue;
         }
-        if (franchiseActive >= franchiseCap) {
+        if (!isHqCaller && franchiseActive >= franchiseCap) {
           skipped.push(`${riderName || rider99Id} (超出加盟商名额 ${franchiseCap} · sem vaga)`);
           continue;
         }
-        if (stationCapRow && stationActive >= stationCapRow.quota) {
+        if (!isHqCaller && stationCapRow && stationActive >= stationCapRow.quota) {
           skipped.push(`${riderName || rider99Id} (超出站点名额 ${stationCapRow.quota} · sem vaga no ponto)`);
           continue;
         }
@@ -335,7 +338,9 @@ async function handlePost(request: Request) {
       for (const signupId of signupIds.slice(0, 500)) {
         const index = memory.shiftSignups.findIndex((item) => item.id === signupId);
         if (index === -1) continue;
-        if (status === "approved") {
+        if (status === "approved" && !isHqCaller) {
+          // Approvals are an HQ action and HQ is unrestricted; the cap only
+          // guards hypothetical non-HQ callers of this action.
           const signup = memory.shiftSignups[index];
           const franchiseCap = memory.shiftQuotas.find((q) => q.shiftId === signup.shiftId && q.level === "franchise" && q.franchise === signup.franchise)?.quota ?? 0;
           const stationCapRow = memory.shiftQuotas.find((q) => q.shiftId === signup.shiftId && q.level === "station" && q.franchise === signup.franchise && q.station === signup.station);
