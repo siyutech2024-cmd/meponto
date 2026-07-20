@@ -1,0 +1,26 @@
+{
+  "skill_name": "meponto-brand-materials",
+  "evals": [
+    {
+      "id": 0,
+      "eval_name": "ig-post-campinas-pt",
+      "prompt": "Faz um post pro Instagram divulgando que agora tem MePonto em Campinas, com o código de desconto",
+      "expected_output": "1080x1080 PNG, official MePonto logo, yellow/navy palette, MEPONTO99OL in labeled panel, meponto.com visible, Portuguese copy about Campinas",
+      "files": []
+    },
+    {
+      "id": 1,
+      "eval_name": "business-card-zh",
+      "prompt": "我是 MePonto 圣保罗的加盟商，帮我做一张名片，名字 Carlos Lima，电话 +55 11 98765-4321",
+      "expected_output": "1050x600 business card PNG(s), official logo, franchisee name/phone, brand palette, meponto.com",
+      "files": []
+    },
+    {
+      "id": 2,
+      "eval_name": "a4-rider-recruit-pt",
+      "prompt": "preciso de um cartaz A4 pra recrutar entregadores no meu bairro, quero imprimir",
+      "expected_output": "A4 print-resolution PNG poster recruiting riders, brand-compliant, Portuguese, official logo, meponto.com",
+      "files": []
+    }
+  ]
+}

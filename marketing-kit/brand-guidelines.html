@@ -1,0 +1,197 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MePonto · Manual de Marca / 品牌视觉规范</title>
+<style>
+  :root{
+    --amarelo:#FFD400; --amarelo-3:#D9AE1F;
+    --tinta:#12172A; --tinta-2:#1B2138; --canvas:#0F1424;
+    --cinza:#9AA1B2; --cinza-2:#C8CCD8; --linha:#262E44; --branco:#FFFFFF;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--canvas);color:var(--branco);
+    font-family:'Helvetica Neue',Arial,'PingFang SC','Microsoft YaHei',sans-serif;line-height:1.55;-webkit-font-smoothing:antialiased}
+  .wrap{max-width:960px;margin:0 auto;padding:0 28px}
+  header.top{background:var(--amarelo);color:var(--tinta);padding:56px 0 48px}
+  header.top .wrap{display:flex;align-items:center;gap:28px;flex-wrap:wrap}
+  header.top img{height:120px}
+  header.top h1{font-size:30px;margin:0;font-weight:800}
+  .lead{color:#3a3208;max-width:620px;font-size:16px;font-weight:600}
+  .zh{color:var(--cinza);font-size:14px;font-weight:400}
+  header .zh{color:#5b4f13}
+  section{padding:50px 0;border-bottom:1px solid var(--linha)}
+  .eyebrow{color:var(--amarelo);font-weight:800;letter-spacing:4px;font-size:12px;text-transform:uppercase}
+  h2{font-size:27px;font-weight:800;margin:8px 0 4px}
+  h3{font-size:18px;margin:24px 0 8px}
+  p{color:var(--cinza-2)}
+  .grid{display:grid;gap:18px}
+  .g2{grid-template-columns:1fr 1fr}.g3{grid-template-columns:1fr 1fr 1fr}.g4{grid-template-columns:repeat(4,1fr)}
+  .card{background:var(--tinta-2);border:1px solid var(--linha);border-radius:12px;padding:20px}
+  .sw{border-radius:12px;overflow:hidden;border:1px solid var(--linha)}
+  .sw .chip{height:92px}.sw .meta{padding:12px 14px;background:var(--tinta-2)}
+  .sw .name{font-weight:800;font-size:14px}.sw .hex{color:var(--cinza);font-size:12px;letter-spacing:1px;font-family:Consolas,monospace}
+  .logobox{border-radius:12px;padding:24px;display:flex;align-items:center;justify-content:center;min-height:150px}
+  .lb-yellow{background:var(--amarelo)}.lb-dark{background:var(--tinta)}.lb-light{background:#F2F2EF}
+  .logobox img{max-width:100%;max-height:150px;height:auto}
+  .do,.dont{border-radius:10px;padding:14px 16px;font-size:14px;font-weight:700}
+  .do{background:rgba(63,185,132,.13);color:#7DE39B;border:1px solid rgba(63,185,132,.32)}
+  .dont{background:rgba(229,72,77,.11);color:#F4A6A6;border:1px solid rgba(229,72,77,.3)}
+  .codebox{background:var(--tinta);border-radius:14px;padding:20px 26px;display:inline-block}
+  .codebox .lbl{color:var(--cinza);font-weight:800;letter-spacing:3px;font-size:12px}
+  .codebox .code{color:var(--amarelo);font-weight:900;font-size:38px;letter-spacing:1px;font-style:italic}
+  .pill{display:inline-block;background:var(--amarelo);color:var(--tinta);font-weight:900;border-radius:999px;padding:10px 22px;text-decoration:none}
+  table{width:100%;border-collapse:collapse;margin-top:10px}
+  th,td{text-align:left;padding:11px 12px;border-bottom:1px solid var(--linha);font-size:14px}
+  th{color:var(--cinza);font-weight:700;font-size:12px;letter-spacing:1px;text-transform:uppercase}
+  td.c{font-family:Consolas,monospace;color:var(--amarelo)}
+  footer{padding:36px 0 70px;color:var(--cinza);display:flex;align-items:center;gap:16px}
+  footer img{height:54px}
+  a{color:var(--amarelo)}
+  @media(max-width:720px){.g2,.g3,.g4{grid-template-columns:1fr 1fr}}
+</style>
+</head>
+<body>
+
+<header class="top">
+  <div class="wrap">
+    <img src="01-logo/official/meponto-logo-transparent.png" alt="MePonto logo">
+    <div>
+      <h1>Manual de Marca · <span style="font-weight:500">品牌视觉规范</span></h1>
+      <p class="lead">Base visual para o time de marketing e franqueados: logo, cor, tipografia, uso do código e do site.
+      <br><span class="zh">市场部与加盟商品牌基础:Logo、配色、字体、code 与官网使用规范。</span></p>
+    </div>
+  </div>
+</header>
+
+<div class="wrap">
+
+<!-- 1. LOGO -->
+<section>
+  <div class="eyebrow">01 · Logotipo / 标志</div>
+  <h2>Versões oficiais do logo</h2>
+  <p>Use sempre os arquivos oficiais em <b>/01-logo/official</b>. Não recrie, não distorça, não altere as cores. O logo colorido vive sobre <b>amarelo</b>; sobre fundos escuros use o ícone. <span class="zh">始终使用 01-logo/official 官方文件,勿重绘/拉伸/改色。彩色 logo 用于黄底;深色背景用图标版。</span></p>
+
+  <div class="grid g3" style="margin-top:22px">
+    <div>
+      <div class="logobox lb-yellow"><img src="01-logo/official/meponto-logo-transparent.png" alt=""></div>
+      <h3>Principal / 主标</h3>
+      <p class="zh" style="margin:0">彩色横版(黄底)· meponto-logo-yellow / -transparent</p>
+    </div>
+    <div>
+      <div class="logobox lb-dark"><img src="01-logo/official/meponto-icon-rounded.png" alt="" style="max-height:120px;border-radius:24px"></div>
+      <h3>Ícone / 应用图标</h3>
+      <p class="zh" style="margin:0">圆角图标(深色/头像用)· meponto-icon-rounded</p>
+    </div>
+    <div>
+      <div class="logobox lb-light"><img src="01-logo/official/meponto-mark-transparent.png" alt="" style="max-height:120px"></div>
+      <h3>Símbolo / 图形符号</h3>
+      <p class="zh" style="margin:0">「M」速度符号(浅底)· meponto-mark-transparent</p>
+    </div>
+  </div>
+
+  <h3 style="margin-top:34px">Área de proteção &amp; tamanho mínimo / 安全边距与最小尺寸</h3>
+  <div class="grid g2">
+    <div class="card"><b>Margem de segurança</b><p style="margin:6px 0 0">Deixe um espaço livre igual à altura do "M" ao redor do logo. <span class="zh">四周留白 ≥「M」高度。</span></p></div>
+    <div class="card"><b>Tamanho mínimo</b><p style="margin:6px 0 0">Ícone: 24&nbsp;px (digital) / 10&nbsp;mm (impresso). Logo horizontal: 140&nbsp;px de largura. <span class="zh">图标最小 24px/10mm;横版最小宽 140px。</span></p></div>
+  </div>
+
+  <div class="grid g2" style="margin-top:18px">
+    <div class="do">✔ FAZER: usar arquivos oficiais, manter proporção e contraste. <span class="zh">用官方文件、保持比例与对比。</span></div>
+    <div class="dont">✘ NÃO FAZER: girar, esticar, recolorir, aplicar sombra/gradiente, colocar o logo colorido sobre fundo escuro. <span class="zh">禁止旋转/拉伸/改色/加阴影;彩色 logo 勿放深色底。</span></div>
+  </div>
+</section>
+
+<!-- 2. CORES -->
+<section>
+  <div class="eyebrow">02 · Cores / 色彩</div>
+  <h2>Paleta da marca</h2>
+  <p>Amarelo MePonto é a base; Tinta (navy) dá contraste ao texto e aos blocos. <span class="zh">MePonto 黄为底色,墨蓝用于文字与色块对比。</span></p>
+
+  <div class="grid g4" style="margin-top:20px">
+    <div class="sw"><div class="chip" style="background:#FFD400"></div><div class="meta"><div class="name">MePonto Amarelo</div><div class="hex">#FFD400</div></div></div>
+    <div class="sw"><div class="chip" style="background:#D9AE1F"></div><div class="meta"><div class="name">Amarelo forte</div><div class="hex">#D9AE1F</div></div></div>
+    <div class="sw"><div class="chip" style="background:#12172A"></div><div class="meta"><div class="name">Tinta (Navy)</div><div class="hex">#12172A</div></div></div>
+    <div class="sw"><div class="chip" style="background:#1B2138"></div><div class="meta"><div class="name">Superfície</div><div class="hex">#1B2138</div></div></div>
+    <div class="sw"><div class="chip" style="background:#C8CCD8"></div><div class="meta"><div class="name">Texto claro</div><div class="hex">#C8CCD8</div></div></div>
+    <div class="sw"><div class="chip" style="background:#FFFFFF"></div><div class="meta"><div class="name">Branco</div><div class="hex">#FFFFFF</div></div></div>
+    <div class="sw"><div class="chip" style="background:#3FB984"></div><div class="meta"><div class="name">OK / Sucesso</div><div class="hex">#3FB984</div></div></div>
+    <div class="sw"><div class="chip" style="background:#E5484D"></div><div class="meta"><div class="name">Risco / Erro</div><div class="hex">#E5484D</div></div></div>
+  </div>
+  <p style="margin-top:14px" class="zh">状态色(绿/红)仅用于系统内提示,宣传物料以黄+墨蓝为主。</p>
+</section>
+
+<!-- 3. TIPOGRAFIA -->
+<section>
+  <div class="eyebrow">03 · Tipografia / 字体</div>
+  <h2>Fontes</h2>
+  <div class="grid g2">
+    <div class="card">
+      <div style="font-size:44px;font-weight:800;font-style:italic;line-height:1">SEJA UM</div>
+      <h3 style="margin-top:14px">Títulos / 标题</h3>
+      <p style="margin:0"><b>Arial Black / Helvetica Bold</b>, peso 800–900, caixa alta para chamadas. <span class="zh">标题用 Arial Black/Helvetica 粗体,字重 800–900,主标题大写。</span></p>
+    </div>
+    <div class="card">
+      <div style="font-size:20px">Texto de apoio e corpo. <b>Negrito para ênfase.</b></div>
+      <h3 style="margin-top:14px">Corpo / 正文</h3>
+      <p style="margin:0"><b>Arial / Helvetica Regular &amp; Bold</b>. Chinês: PingFang SC / 微软雅黑. Web grátis: <b>Inter</b> + <b>Archivo</b>. <span class="zh">正文 Arial/Helvetica;中文苹方/微软雅黑;免费替代 Inter+Archivo。</span></p>
+    </div>
+  </div>
+</section>
+
+<!-- 4. CODIGO -->
+<section>
+  <div class="eyebrow">04 · Código promocional / 推广码</div>
+  <h2>Uso do código MEPONTO99OL</h2>
+  <p>Aparece sempre em bloco de destaque, com o rótulo "CÓDIGO DE VANTAGEM" acima. <span class="zh">推广码固定用突出色块展示,上方加「CÓDIGO DE VANTAGEM」标签。</span></p>
+  <div style="margin:22px 0">
+    <div class="codebox"><div class="lbl">CÓDIGO DE VANTAGEM</div><div class="code">MEPONTO99OL</div></div>
+  </div>
+  <div class="grid g2">
+    <div class="do">✔ Sempre em MAIÚSCULAS, sem espaços: <b>MEPONTO99OL</b>. <span class="zh">全大写、无空格。</span></div>
+    <div class="dont">✘ Nunca: meponto99ol · MEPONTO 99 OL · alterar dígitos. <span class="zh">禁止小写/加空格/改字符。</span></div>
+  </div>
+  <table>
+    <tr><th>Onde usar / 使用场景</th><th>Ação / 动作</th></tr>
+    <tr><td>Post social / 社媒图</td><td class="c">Bloco de código + CTA</td></tr>
+    <tr><td>Poster de franquia / 招商海报</td><td class="c">Bloco navy + "Use ao se cadastrar"</td></tr>
+    <tr><td>Site / 官网</td><td class="c">Campo de cupom no cadastro</td></tr>
+  </table>
+</section>
+
+<!-- 5. SITE -->
+<section>
+  <div class="eyebrow">05 · Site &amp; canais / 官网与渠道</div>
+  <h2>Endereços oficiais</h2>
+  <table>
+    <tr><th>Canal / 渠道</th><th>Endereço</th></tr>
+    <tr><td>Site principal / 主站</td><td class="c">meponto.com</td></tr>
+    <tr><td>Loja de pontos / 积分商城</td><td class="c">mall.meponto.com</td></tr>
+    <tr><td>Redes sociais / 社媒</td><td class="c">@meponto</td></tr>
+    <tr><td>Contato / 联系</td><td class="c">contato@meponto.com</td></tr>
+  </table>
+  <p style="margin-top:16px">Domínio sempre em minúsculas, sem "https://" nos materiais impressos. <span class="zh">域名一律小写,印刷品不带 https://。</span></p>
+  <div style="margin-top:20px"><a class="pill" href="https://meponto.com">meponto.com</a></div>
+</section>
+
+<!-- 6. VOZ -->
+<section>
+  <div class="eyebrow">06 · Voz &amp; idiomas / 语气与语言</div>
+  <h2>Tom de voz</h2>
+  <p>Direto, confiante e prático. Falamos com quem quer <b>empreender e entregar</b>. Frases curtas, verbos de ação: <i>Cadastre-se, Comece, Ganhe, Troque.</i> <span class="zh">直接、自信、务实。面向想创业与配送的人,短句+行动动词。</span></p>
+  <div class="card" style="margin-top:16px">
+    <b>Regra tri-língue / 三语规则</b>
+    <p style="margin:8px 0 0">Materiais para o Brasil: <b>Português</b>. Textos de produto/sistema seguem o padrão do repositório com <b>zh · en · pt</b>. Nunca misture idiomas no mesmo rótulo. <span class="zh">巴西物料用葡语;产品/系统文案遵循仓库 zh·en·pt 三语标准,单标签不混语言。</span></p>
+  </div>
+</section>
+
+<footer>
+  <img src="01-logo/official/meponto-icon-rounded.png" alt="" style="border-radius:14px">
+  <div>MePonto · Manual de Marca v1 · <span class="zh">品牌视觉规范 v1</span><br>
+  <span style="font-size:13px">meponto.com · contato@meponto.com</span></div>
+</footer>
+
+</div>
+</body>
+</html>
