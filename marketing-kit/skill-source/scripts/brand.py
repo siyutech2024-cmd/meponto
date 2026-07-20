@@ -22,7 +22,8 @@ CODE = "MEPONTO99OL"
 SITE = "meponto.com"
 SITE2 = "mall.meponto.com"
 HANDLE = "@meponto"
-EMAIL = "contato@meponto.com"
+EMAIL = "marketing@meponto.com"
+SLOGAN = "Um MePonto para cada motoboy"  # already baked into the logo lockup — don't retype next to it
 
 _ASSETS = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "assets")
 

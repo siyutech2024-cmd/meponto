@@ -10,9 +10,9 @@
 Base visual para franqueados, redes sociais e divulgação — usando o **logo oficial** MePonto.
 面向加盟商、社媒与宣传的品牌基础物料 —— 采用**官方 logo**。
 
-- **Marca / 品牌:** MePonto — *CONECTAR · APOIAR · ENTREGAR*
+- **Marca / 品牌:** MePonto — *UM MEPONTO PARA CADA MOTOBOY*
 - **Código / 推广码:** `MEPONTO99OL`
-- **Site / 官网:** meponto.com · mall.meponto.com · @meponto · contato@meponto.com
+- **Site / 官网:** meponto.com · mall.meponto.com · @meponto · marketing@meponto.com
 - **Cores / 主色:** Amarelo `#FFD400` · Tinta/Navy `#12172A`
 
 ## Estrutura / 目录

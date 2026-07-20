@@ -62,9 +62,9 @@ rejected, so treat them as hard constraints:
   "CÓDIGO DE VANTAGEM" above it. If a material has a call to action,
   the code and the website should both be visible.
 - **Website & channels**: `meponto.com` (main), `mall.meponto.com`
-  (points mall), `@meponto` (social), `contato@meponto.com`. Domains in
+  (points mall), `@meponto` (social), `marketing@meponto.com`. Domains in
   lowercase, no "https://" on printed/visual materials.
-- **Slogan**: `CONECTAR · APOIAR · ENTREGAR` — it is already part of the
+- **Slogan**: `Um MePonto para cada motoboy` — it is already part of the
   logo lockup; don't retype it next to the logo (that duplicates it).
 - **Names**: MePonto, PontoSys, PontoMall — never renamed or respelled
   (not "Me Ponto", "meponto" in prose, "Ponto Mall").
@@ -90,7 +90,7 @@ radius ≤ 20 px on panels.
 ## Contact defaults
 
 If the user doesn't supply contact info, use headquarters defaults:
-`meponto.com`, `mall.meponto.com`, `@meponto`, `contato@meponto.com`.
+`meponto.com`, `mall.meponto.com`, `@meponto`, `marketing@meponto.com`.
 If the franchisee gives their own phone/WhatsApp/city, add it in the
 footer area but keep the official website visible.
 

@@ -58,7 +58,7 @@ benefit claims qualitative unless headquarters supplies numbers.
 | `meponto-icon-flat.png` | Square icon — print corners, watermarks |
 | `meponto-mark-transparent.png` | Bare "M" speed mark — light backgrounds only, decorative use |
 
-The lockup already contains the slogan CONECTAR · APOIAR · ENTREGAR —
+The lockup already contains the slogan Um MePonto para cada motoboy —
 don't repeat it adjacent to the logo.
 
 ## Compliance checklist (run before delivering)
