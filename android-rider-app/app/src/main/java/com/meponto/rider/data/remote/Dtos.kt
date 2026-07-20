@@ -318,15 +318,21 @@ data class PartnerBenefitDto(
 )
 
 data class PerformanceDto(
-    val orders: Int? = null,
+    // NOTE: numeric fields are Double? even where the value is conceptually an
+    // integer. The backend serves one KPI record to both the zh console and
+    // the app, and rate fields (caa/ar) can arrive fractional; a fractional
+    // value landing in an Int field makes Moshi throw and discards the WHOLE
+    // /rider/home response (the KPI panel + every home section vanish — field
+    // report 2026-07-20). Double? accepts both, and toDomain rounds to Int.
+    val orders: Double? = null,
     val tshHours: Double? = null,
     val onlineHours: Double? = null,
     val tshPercent: Double? = null,
-    val acceptanceRate: Int? = null,
-    val cancelledOrders: Int? = null,
+    val acceptanceRate: Double? = null,
+    val cancelledOrders: Double? = null,
     val caaPercent: Double? = null,
     val date: String? = null,
-    val weekOrders: Int? = null,
+    val weekOrders: Double? = null,
     val weekOnlineHours: Double? = null,
 )
 

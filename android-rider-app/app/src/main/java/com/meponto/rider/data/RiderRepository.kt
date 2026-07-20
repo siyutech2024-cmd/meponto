@@ -393,13 +393,13 @@ class RiderRepository(context: Context) {
 
     // ----- Home aggregate mappers (GET /rider/home) -----
     private fun PerformanceDto.toDomain() = Performance(
-        orders = orders ?: 0,
+        orders = (orders ?: 0.0).toInt(),
         tshHours = onlineHours ?: tshHours ?: 0.0,
-        acceptanceRate = acceptanceRate ?: 0,
-        cancelledOrders = cancelledOrders ?: 0,
+        acceptanceRate = (acceptanceRate ?: 0.0).toInt(),
+        cancelledOrders = (cancelledOrders ?: 0.0).toInt(),
         date = date ?: "",
         tshPercent = tshPercent,
-        weekOrders = weekOrders,
+        weekOrders = weekOrders?.toInt(),
         weekOnlineHours = weekOnlineHours,
     )
 

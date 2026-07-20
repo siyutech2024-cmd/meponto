@@ -176,7 +176,12 @@ export async function GET(request: Request) {
         onlineHours: latest.onlineHours ?? 0,
         tshPercent: latest.tsh,
         acceptanceRate: Math.round(latest.ar ?? 0),
-        cancelledOrders: latest.caa ?? 0,
+        // cancelledOrders is typed Int on the app (Moshi): a fractional caa
+        // (e.g. 5.9) made the WHOLE /rider/home parse throw, so the KPI panel —
+        // and every home section — vanished on any rider whose latest CAA was
+        // not a whole number (field report 2026-07-20). The exact decimal is
+        // carried by caaPercent; keep this one integer for legacy clients.
+        cancelledOrders: Math.round(latest.caa ?? 0),
         caaPercent: latest.caa,
         overtimePercent: latest.overtime,
         weekOrders: week.reduce((s2, k) => s2 + (k.completedOrders ?? 0), 0),
