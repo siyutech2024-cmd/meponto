@@ -193,8 +193,30 @@ async function handlePost(request: Request) {
       if (level === "station" && !station) {
         return jsonResponse({ error: "station is required for station-level quota" }, { status: 400 });
       }
-      if (!memory.dispatchShifts.some((shift) => shift.id === shiftId)) {
+      const quotaShift = memory.dispatchShifts.find((shift) => shift.id === shiftId);
+      if (!quotaShift) {
         return jsonResponse({ error: "shift not found" }, { status: 404 });
+      }
+
+      // Allocation caps (不得超发): Σ franchise allocations ≤ the shift's 99
+      // headcount; Σ station splits within a franchise ≤ that franchise's
+      // allocation. The UI warns — the server now refuses.
+      const nextQuota = Math.floor(Number(quota));
+      if (level !== "station") {
+        const otherFranchiseTotal = memory.shiftQuotas
+          .filter((q) => q.shiftId === shiftId && q.level === "franchise" && q.franchise !== franchise)
+          .reduce((sum, q) => sum + q.quota, 0);
+        if (otherFranchiseTotal + nextQuota > quotaShift.plannedCount) {
+          return jsonResponse({ error: `分配总数将达 ${otherFranchiseTotal + nextQuota},超过班次 99 名额 ${quotaShift.plannedCount}。` }, { status: 409 });
+        }
+      } else {
+        const franchiseCap = memory.shiftQuotas.find((q) => q.shiftId === shiftId && q.level === "franchise" && q.franchise === franchise)?.quota ?? 0;
+        const otherStationTotal = memory.shiftQuotas
+          .filter((q) => q.shiftId === shiftId && q.level === "station" && q.franchise === franchise && q.station !== station)
+          .reduce((sum, q) => sum + q.quota, 0);
+        if (otherStationTotal + nextQuota > franchiseCap) {
+          return jsonResponse({ error: `站点拆分总数将达 ${otherStationTotal + nextQuota},超过「${franchise}」的名额 ${franchiseCap}。` }, { status: 409 });
+        }
       }
 
       const id = `q-${shiftId}-${level}-${franchise}${station ? `-${station}` : ""}`.replace(/\s+/g, "_");
@@ -222,6 +244,20 @@ async function handlePost(request: Request) {
       const shift = memory.dispatchShifts.find((item) => item.id === shiftId);
       if (!shift) return jsonResponse({ error: "shift not found" }, { status: 404 });
 
+      // ---- Quota caps (不得超过分配名额) --------------------------------
+      // Submissions are bounded by the allocation chain: the franchise may
+      // never hold more ACTIVE signups (submitted/approved/reported) than HQ
+      // allocated to it; a station with its own split is additionally bounded
+      // by that split. No franchise allocation → no submissions at all.
+      const franchiseCap = memory.shiftQuotas.find((q) => q.shiftId === shiftId && q.level === "franchise" && q.franchise === franchise)?.quota ?? 0;
+      if (franchiseCap <= 0) {
+        return jsonResponse({ error: `「${franchise}」本班次没有分配名额,无法提报。A matriz ainda não alocou vagas.` }, { status: 409 });
+      }
+      const stationCapRow = memory.shiftQuotas.find((q) => q.shiftId === shiftId && q.level === "station" && q.franchise === franchise && q.station === station);
+      const isActive = (s: ShiftSignup) => s.status === "submitted" || s.status === "approved" || s.status === "reported";
+      let franchiseActive = memory.shiftSignups.filter((s) => s.shiftId === shiftId && s.franchise === franchise && isActive(s)).length;
+      let stationActive = memory.shiftSignups.filter((s) => s.shiftId === shiftId && s.franchise === franchise && s.station === station && isActive(s)).length;
+
       const createdAt = nowStamp();
       const createdRecords: ShiftSignup[] = [];
       const skipped: string[] = [];
@@ -240,6 +276,16 @@ async function handlePost(request: Request) {
           skipped.push(`${riderName || rider99Id} (duplicado)`);
           continue;
         }
+        if (franchiseActive >= franchiseCap) {
+          skipped.push(`${riderName || rider99Id} (超出加盟商名额 ${franchiseCap} · sem vaga)`);
+          continue;
+        }
+        if (stationCapRow && stationActive >= stationCapRow.quota) {
+          skipped.push(`${riderName || rider99Id} (超出站点名额 ${stationCapRow.quota} · sem vaga no ponto)`);
+          continue;
+        }
+        franchiseActive += 1;
+        stationActive += 1;
 
         const record: ShiftSignup = {
           id: acceptClientId(undefined) ?? makeServerId("sgn", memory.shiftSignups.length + 1 + createdRecords.length),
@@ -279,9 +325,25 @@ async function handlePost(request: Request) {
       let changed = 0;
       const stamp = nowStamp();
       const approvedRiders: Array<{ name: string; shiftId: string }> = [];
+      const blocked: string[] = [];
+      // Approval cap (不得超过分配名额): approved+reported within a franchise
+      // may never exceed HQ's allocation for that shift; a station split adds
+      // its own bound. Counted live across the batch so a bulk approve can't
+      // blow past the cap either.
+      const approvedCount = (shiftId: string, franchise: string, station?: string) =>
+        memory.shiftSignups.filter((s) => s.shiftId === shiftId && s.franchise === franchise && (station === undefined || s.station === station) && (s.status === "approved" || s.status === "reported")).length;
       for (const signupId of signupIds.slice(0, 500)) {
         const index = memory.shiftSignups.findIndex((item) => item.id === signupId);
         if (index === -1) continue;
+        if (status === "approved") {
+          const signup = memory.shiftSignups[index];
+          const franchiseCap = memory.shiftQuotas.find((q) => q.shiftId === signup.shiftId && q.level === "franchise" && q.franchise === signup.franchise)?.quota ?? 0;
+          const stationCapRow = memory.shiftQuotas.find((q) => q.shiftId === signup.shiftId && q.level === "station" && q.franchise === signup.franchise && q.station === signup.station);
+          if (approvedCount(signup.shiftId, signup.franchise) >= franchiseCap || (stationCapRow && approvedCount(signup.shiftId, signup.franchise, signup.station) >= stationCapRow.quota)) {
+            blocked.push(`${signup.riderName}（${signup.franchise} 名额 ${franchiseCap}）`);
+            continue;
+          }
+        }
         memory.shiftSignups[index] = {
           ...memory.shiftSignups[index],
           status,
@@ -306,7 +368,7 @@ async function handlePost(request: Request) {
         risk: status === "rejected" ? "Medium" : "Low",
       });
 
-      return jsonResponse({ data: { changed } });
+      return jsonResponse({ data: { changed, blocked } });
     }
 
     case "nudge": {

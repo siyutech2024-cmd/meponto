@@ -813,7 +813,13 @@ function ReviewTab({ board, onAction, setMessage, network }: { board: Board; onA
     setMessage(null);
     const result = await onAction({ action: "review", signupIds: [...selected], status });
     if (result) {
-      setMessage({ tone: "ok", text: t("dpReviewOk", { verb: status === "approved" ? t("dpStApproved") : t("dpStRejected"), n: String(result.changed) }) });
+      const blocked = Array.isArray(result.blocked) ? (result.blocked as string[]) : [];
+      const okText = t("dpReviewOk", { verb: status === "approved" ? t("dpStApproved") : t("dpStRejected"), n: String(result.changed) });
+      setMessage(
+        blocked.length > 0
+          ? { tone: "warn", text: `${okText} · ${t("dpQuotaBlocked", { n: blocked.length })}：${blocked.slice(0, 5).join("、")}${blocked.length > 5 ? "…" : ""}` }
+          : { tone: "ok", text: okText },
+      );
       setSelected(new Set());
     }
   }
