@@ -40,6 +40,9 @@ const emptyForm = {
   services: "",
   lat: -23.5505,
   lng: -46.6333,
+  // 骑手权益(APP 展示,逐户可配)
+  riderDiscountBRL: 0,
+  riderRewardPoints: 0,
 };
 
 type AccountInfo = { identifier: string; status: string; portal: string; total: number; active: number };
@@ -67,6 +70,9 @@ export default function CrmPanel() {
     catConfig.find((c) => c.label === label)?.accountType ?? (["Supplier", "供应商", "Fornecedor"].includes(label) ? "supplier" : "partner");
   const [query, setQuery] = useState("");
   const [categoryFilter, setCategoryFilter] = useState("All Categories");
+  // 供应商与服务伙伴是两类主体:CRM 名录默认只看合作方,供应商段单独看
+  // (供应链经营在商城后台「供应商」Tab,这里只管准入档案)。
+  const [typeSegment, setTypeSegment] = useState<"partner" | "supplier" | "all">("partner");
   const [statusFilter, setStatusFilter] = useState("All Status");
   const [riskFilter, setRiskFilter] = useState("All Risk");
   const [page, setPage] = useState(1);
@@ -87,6 +93,8 @@ export default function CrmPanel() {
       bairro: partner.bairro, owner: partner.owner, status: partner.status, tier: partner.tier, risk: partner.risk,
       monthlyVolume: partner.monthlyVolume, vehiclesAvailable: partner.vehiclesAvailable,
       services: partner.services.join(", "), lat: partner.lat, lng: partner.lng,
+      riderDiscountBRL: partner.riderDiscountBRL ?? 0,
+      riderRewardPoints: partner.riderRewardPoints ?? 0,
     });
     setEditingId(partner.id);
     setFormOpen(true);
@@ -161,9 +169,11 @@ export default function CrmPanel() {
       const matchesCategory = categoryFilter === "All Categories" || partner.category === categoryFilter;
       const matchesStatus = statusFilter === "All Status" || partner.status === statusFilter;
       const matchesRisk = riskFilter === "All Risk" || partner.risk === riskFilter;
-      return matchesTerm && matchesCategory && matchesStatus && matchesRisk;
+      const matchesType = typeSegment === "all" || accountTypeOf(partner.category) === typeSegment;
+      return matchesTerm && matchesCategory && matchesStatus && matchesRisk && matchesType;
     });
-  }, [categoryFilter, partners, query, riskFilter, statusFilter]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [categoryFilter, partners, query, riskFilter, statusFilter, typeSegment, catConfig]);
 
   // ---- 名录分页（20/页；搜索或任一筛选变化重置页码） ----
   const PAGE_SIZE = 20;
@@ -418,6 +428,13 @@ export default function CrmPanel() {
             </div>
           }
         >
+          <div className="flex overflow-hidden rounded-[8px] border border-[var(--line)]">
+            {([["partner", "合作方"], ["supplier", "供应商"], ["all", "全部"]] as const).map(([key, label]) => (
+              <button key={key} type="button" onClick={() => { setTypeSegment(key); setPage(1); }} className={`h-10 px-3.5 text-xs font-black ${typeSegment === key ? "bg-[var(--accent)] text-[var(--accent-ink)]" : "text-[var(--muted-strong)] hover:bg-[var(--surface-hover)]"}`}>
+                {label}
+              </button>
+            ))}
+          </div>
           <SearchInput value={query} onChange={(value) => { setQuery(value); setPage(1); }} placeholder="Search partners, contacts, phone, bairro" className="w-72" />
           <select value={categoryFilter} onChange={(event) => { setCategoryFilter(event.target.value); setPage(1); }} className={filterSelect}>
             <option value="All Categories">All Categories</option>
@@ -486,6 +503,17 @@ export default function CrmPanel() {
           <input type="number" min="0" value={form.monthlyVolume} onChange={(event) => setForm({ ...form, monthlyVolume: Number(event.target.value) })} className={input} placeholder="Monthly cases" />
           <input type="number" min="0" value={form.vehiclesAvailable} onChange={(event) => setForm({ ...form, vehiclesAvailable: Number(event.target.value) })} className={input} placeholder="Vehicles" />
           <input value={form.services} onChange={(event) => setForm({ ...form, services: event.target.value })} className={input} placeholder="Services, comma separated" />
+          <div className="rounded-[10px] border border-dashed border-[var(--accent)]/50 p-3 sm:col-span-2">
+            <div className="mb-2 text-[11px] font-black uppercase text-[var(--accent)]">骑手权益(APP「合作权益」按此逐户显示;两项都为 0 = 不展示优惠)</div>
+            <div className="grid gap-2 sm:grid-cols-2">
+              <label className="text-[11px] font-bold text-[var(--muted)]">骑手优惠 R$/次
+                <input type="number" min="0" step="0.5" value={form.riderDiscountBRL} onChange={(event) => setForm({ ...form, riderDiscountBRL: Number(event.target.value) })} className={input} />
+              </label>
+              <label className="text-[11px] font-bold text-[var(--muted)]">核销赠积分/次
+                <input type="number" min="0" value={form.riderRewardPoints} onChange={(event) => setForm({ ...form, riderRewardPoints: Number(event.target.value) })} className={input} />
+              </label>
+            </div>
+          </div>
           <div className="sm:col-span-2">
             <div className="mb-1 text-[11px] font-black uppercase text-[var(--muted)]">服务点位置（点地图或拖图钉 · 骑手 App 地图按此显示）</div>
             <div ref={mapDiv} className="h-56 w-full overflow-hidden rounded-[10px] border border-[var(--line)]" style={{ background: "#dfe7ef" }} />

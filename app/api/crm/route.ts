@@ -283,6 +283,11 @@ export async function PATCH(request: Request) {
       ...(body.lng !== undefined ? { lng: Number(body.lng) } : {}),
       ...(body.address !== undefined ? { address: String(body.address) } : {}),
       ...(body.mapUrl !== undefined ? { mapUrl: String(body.mapUrl) } : {}),
+      // Rider-facing benefit (per-partner, shown in the rider app) — the
+      // fields existed but were never accepted here, so every partner showed
+      // the same empty offer.
+      ...(body.riderDiscountBRL !== undefined ? { riderDiscountBRL: Math.max(0, Math.round(Number(body.riderDiscountBRL) * 100) / 100) } : {}),
+      ...(body.riderRewardPoints !== undefined ? { riderRewardPoints: Math.max(0, Math.floor(Number(body.riderRewardPoints))) } : {}),
     };
     memory.crmPartners[index] = next;
     appendServerAudit({ actor: "Mall Console", action: "CRM_PARTNER_UPDATED", entity: "CrmPartner", entityId: partner.id, detail: `${partner.name} atualizado (loc ${next.lat},${next.lng})`, risk: "Low" });
