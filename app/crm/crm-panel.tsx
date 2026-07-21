@@ -58,7 +58,11 @@ export default function CrmPanel() {
   const [catForm, setCatForm] = useState<{ id: string | null; label: string; accountType: "supplier" | "partner" }>({ id: null, label: "", accountType: "partner" });
 
   // Active category labels for the dropdowns (config first, seeded fallback).
-  const categories = catConfig.length ? catConfig.filter((c) => c.active).map((c) => c.label) : DEFAULT_CATEGORIES;
+  // Filter options = configured categories ∪ categories actually present on
+  // records — legacy/drifted labels (e.g. "供应商" instead of "Supplier") must
+  // stay filterable even when they're not in the config table.
+  const configCategories = catConfig.length ? catConfig.filter((c) => c.active).map((c) => c.label) : DEFAULT_CATEGORIES;
+  const categories = [...new Set([...configCategories, ...partners.map((p) => p.category).filter(Boolean)])];
   const accountTypeOf = (label: string): "supplier" | "partner" =>
     catConfig.find((c) => c.label === label)?.accountType ?? (["Supplier", "供应商", "Fornecedor"].includes(label) ? "supplier" : "partner");
   const [query, setQuery] = useState("");

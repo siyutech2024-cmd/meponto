@@ -30,6 +30,8 @@ type SupplierRow = {
   pendingPricing: number;
   distributionOpen: number;
   payable: number;
+  /** CRM 准入档案状态: in=有档案, missing=有货无档案, unknown=CRM 未加载 */
+  crmStatus: "in" | "missing" | "unknown";
 };
 
 /** Editable company-profile fields (subset of SupplierProfile, all strings). */
@@ -65,6 +67,30 @@ export default function SuppliersTab() {
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
 
+  // ---- CRM supplier records (准入档案) — merged into this view so both
+  // definitions meet in one place: CRM-registered suppliers without products
+  // yet still show up (未供货), and product-side names without a CRM record
+  // get flagged (无CRM档案).
+  const [crmSupplierNames, setCrmSupplierNames] = useState<string[] | null>(null);
+  useEffect(() => {
+    (async () => {
+      try {
+        const response = await fetch("/api/crm", { cache: "no-store" });
+        if (!response.ok) return;
+        const payload = (await response.json()).data ?? {};
+        const partners = Array.isArray(payload) ? payload : payload.partners ?? [];
+        const cats = Array.isArray(payload) ? [] : payload.categories ?? [];
+        const supplierLabels = new Set([
+          "Supplier", "供应商", "Fornecedor",
+          ...cats.filter((c: { accountType?: string }) => c.accountType === "supplier").map((c: { label: string }) => c.label),
+        ]);
+        setCrmSupplierNames(partners.filter((p: { category?: string }) => supplierLabels.has(String(p.category ?? ""))).map((p: { name: string }) => p.name));
+      } catch {
+        // CRM unavailable — the view degrades to the product-side list only.
+      }
+    })();
+  }, []);
+
   // ---- Office support mode: hydrate profile/team/orders per supplier -------
   const loadDetail = useCallback(async (org: string) => {
     const response = await fetch(`/api/supplier?org=${encodeURIComponent(org)}`, { cache: "no-store" }).catch(() => null);
@@ -81,7 +107,11 @@ export default function SuppliersTab() {
   const rows = useMemo<SupplierRow[]>(() => {
     const payableBySupplier = new Map((mall?.supplierSettlement ?? []).map((row) => [row.supplier, row.payable]));
     const term = q.trim().toLowerCase();
-    return suppliers
+    // Union of both definitions: product-side supplier names + CRM supplier
+    // records (准入档案) that have no products yet.
+    const allNames = [...new Set([...suppliers, ...(crmSupplierNames ?? [])])];
+    const inCrm = new Set(crmSupplierNames ?? []);
+    return allNames
       .map((name) => {
         const own = products.filter((product) => product.supplierName === name);
         return {
@@ -90,6 +120,7 @@ export default function SuppliersTab() {
           pendingPricing: own.filter((product) => product.status === "pending_pricing").length,
           distributionOpen: (procure?.products ?? []).filter((product) => product.supplierName === name && product.procurementConsent === "approved" && product.procurementMode !== "off").length,
           payable: payableBySupplier.get(name) ?? 0,
+          crmStatus: (crmSupplierNames === null ? "unknown" : inCrm.has(name) ? "in" : "missing") as SupplierRow["crmStatus"],
         };
       })
       .filter((row) => {
@@ -98,7 +129,7 @@ export default function SuppliersTab() {
         return [row.name, detail?.profile.brand ?? "", detail?.profile.cnpj ?? "", detail?.profile.contactName ?? ""].some((text) => text.toLowerCase().includes(term));
       })
       .sort((a, b) => b.payable - a.payable || b.productCount - a.productCount);
-  }, [suppliers, products, mall, procure, details, q]);
+  }, [suppliers, products, mall, procure, details, q, crmSupplierNames]);
 
   // ---- Pagination (20/page; search resets to page 1) -----------------------
   const pages = Math.max(1, Math.ceil(rows.length / SUPPLIER_PAGE_SIZE));
@@ -110,8 +141,12 @@ export default function SuppliersTab() {
   const columns: Array<DataColumn<SupplierRow>> = [
     { key: "name", label: "供应商", render: (row) => (
       <div className="min-w-0">
-        <div className="max-w-[200px] truncate font-black">{details[row.name]?.profile.companyName ?? row.name}</div>
-        <div className="max-w-[200px] truncate text-[11px] font-bold text-[var(--muted)]">{row.name}</div>
+        <div className="flex max-w-[240px] items-center gap-1.5">
+          <span className="truncate font-black">{details[row.name]?.profile.companyName ?? row.name}</span>
+          {row.productCount === 0 && <StatusBadge tone="info" label="未供货" />}
+          {row.crmStatus === "missing" && <StatusBadge tone="warn" label="无CRM档案" />}
+        </div>
+        <div className="max-w-[240px] truncate text-[11px] font-bold text-[var(--muted)]">{row.name}</div>
       </div>
     ) },
     { key: "brand", label: "品牌", render: (row) => details[row.name]?.profile.brand || "—" },

@@ -47,6 +47,21 @@ export function ensureDefaultCrmCategories(): Promise<void> {
       existing.add(seed.label.trim().toLowerCase());
       added = true;
     }
+    // Field-repair pass: rows saved BEFORE the accountType field existed have
+    // it undefined — which silently emptied every "supplier"-type filter and
+    // broke CRM supplier filtering. Fill from the seed by label; supplier
+    // aliases are always forced to route to the supply chain.
+    const seedByLabel = new Map(seededCrmCategories.map((seed) => [seed.label.trim().toLowerCase(), seed]));
+    for (let index = 0; index < memory.crmCategories.length; index += 1) {
+      const row = memory.crmCategories[index];
+      const seed = seedByLabel.get(row.label.trim().toLowerCase());
+      const wantSupplier = SUPPLIER_ALIASES.has(row.label.trim());
+      const nextType = wantSupplier ? "supplier" : !row.accountType && seed ? seed.accountType : row.accountType;
+      if (nextType && nextType !== row.accountType) {
+        memory.crmCategories[index] = { ...row, accountType: nextType };
+        added = true;
+      }
+    }
     // Serverless safety: flush before the instance can freeze.
     if (added) await flushPendingToDatabase();
   })().catch(() => {
