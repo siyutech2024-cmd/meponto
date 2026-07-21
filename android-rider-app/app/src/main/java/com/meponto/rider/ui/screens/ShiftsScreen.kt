@@ -53,11 +53,13 @@ import com.meponto.rider.ui.components.Badge
 import com.meponto.rider.ui.components.OverlayTopBar
 import com.meponto.rider.ui.components.Panel
 import com.meponto.rider.ui.components.PrimaryButton
+import com.meponto.rider.ui.components.RefreshableScreen
 import com.meponto.rider.ui.components.Screen
 import com.meponto.rider.ui.theme.LocalMe
 import com.meponto.rider.ui.theme.appBackground
 import com.meponto.rider.ui.theme.MeRadius
 import com.meponto.rider.ui.theme.Tone
+import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -90,6 +92,8 @@ fun ShiftsScreen() {
     val store = LocalStore.current
     val auth = LocalAuth.current
 
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
+    var refreshing by remember { mutableStateOf(false) }
     var selectedDay by remember { mutableStateOf("") }
     var agendaPage by remember { mutableIntStateOf(0) }
     var detailId by remember { mutableStateOf<Int?>(null) }
@@ -134,7 +138,14 @@ fun ShiftsScreen() {
         return
     }
 
-    Screen(title = loc.t("shifts.title")) {
+    RefreshableScreen(
+        title = loc.t("shifts.title"),
+        refreshing = refreshing,
+        onRefresh = {
+            refreshing = true
+            scope.launch { store.refresh(); refreshing = false }
+        },
+    ) {
         // 网点 header
         Panel {
             Row(verticalAlignment = Alignment.CenterVertically) {

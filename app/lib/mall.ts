@@ -114,7 +114,37 @@ export const badgeMilestones = [
   { at: 100, icon: "💪", label: "100 pedidos" },
   { at: 300, icon: "🏅", label: "300 pedidos" },
   { at: 600, icon: "👑", label: "600 pedidos" },
+  { at: 1000, icon: "🏆", label: "1000 pedidos" },
+  { at: 2000, icon: "💎", label: "2000 pedidos" },
+  { at: 5000, icon: "🌟", label: "Lenda 5000" },
 ];
+
+/**
+ * Achievement badges beyond the lifetime-orders track — computed from the
+ * rider's real metrics (hours online, acceptance rate, tenure, night shifts).
+ * Keeps the same {at, icon, label, achieved} shape the app renders. `at` is a
+ * nominal sort weight for non-order badges. (More badges — 2026-07-21.)
+ */
+export function extraBadges(m: {
+  onlineHours: number;
+  acceptanceRate: number; // 0..100
+  tenureDays: number;
+  nightShifts: number;
+  weekOrders: number;
+}) {
+  return [
+    { at: 100, icon: "⏱️", label: "100h online", achieved: m.onlineHours >= 100 },
+    { at: 500, icon: "🕐", label: "500h online", achieved: m.onlineHours >= 500 },
+    { at: 1000, icon: "⚡", label: "1000h online", achieved: m.onlineHours >= 1000 },
+    { at: 90, icon: "🎯", label: "Aceite 90%+", achieved: m.acceptanceRate >= 90 },
+    { at: 98, icon: "✅", label: "Aceite 98%+", achieved: m.acceptanceRate >= 98 },
+    { at: 30, icon: "📅", label: "1 mês na base", achieved: m.tenureDays >= 30 },
+    { at: 180, icon: "🗓️", label: "6 meses na base", achieved: m.tenureDays >= 180 },
+    { at: 365, icon: "🎖️", label: "1 ano na base", achieved: m.tenureDays >= 365 },
+    { at: 10, icon: "🌙", label: "10 turnos noturnos", achieved: m.nightShifts >= 10 },
+    { at: 40, icon: "📦", label: "40 pedidos/semana", achieved: m.weekOrders >= 40 },
+  ];
+}
 
 export type MembershipTier = "member" | "bronze" | "prata" | "ouro" | "diamante";
 

@@ -2,6 +2,7 @@ package com.meponto.rider.data
 
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.staticCompositionLocalOf
@@ -77,6 +78,18 @@ class AppStore {
     }
 
     /**
+     * Manual re-pull for pull-to-refresh (排班/首页下拉刷新): re-applies the
+     * latest server snapshot without needing to relaunch the app. No-op for
+     * guests (no login name yet). Suspends until the refresh completes so the
+     * pull-to-refresh spinner can await it.
+     */
+    suspend fun refresh() {
+        val r = repo ?: return
+        val n = loginName ?: return
+        runCatching { apply(r.loadSnapshot(n)) }
+    }
+
+    /**
      * Re-sync with the backend after any write. Local mutations are optimistic;
      * the backend is the ledger of record (it may reject: insufficient balance,
      * already-checked-in, non-cancellable enrollment…), so we always reconcile.
@@ -122,6 +135,12 @@ class AppStore {
         private set
     var statusTotals by mutableStateOf<StatusTotals?>(null)
         private set
+
+    // Bumped whenever the on-device avatar photo changes (Member Card), so the
+    // Home header re-reads the new photo without a relaunch.
+    var avatarVersion by mutableIntStateOf(0)
+        private set
+    fun bumpAvatar() { avatarVersion += 1 }
 
     // One-shot user-facing notice (why a write was refused). Screens toast it.
     var notice by mutableStateOf<String?>(null)

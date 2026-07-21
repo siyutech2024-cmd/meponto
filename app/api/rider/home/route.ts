@@ -1,7 +1,7 @@
 import { jsonResponse, memory } from "../../../lib/server/memory";
 import { refreshCollectionsFromDatabase } from "../../../lib/server/persistence";
 import { sessionFromRequest } from "../../../lib/auth-session";
-import { badgeMilestones, defaultMallConfig, eligibleCoupons, resolveRiderTierStatus, tierThresholds } from "../../../lib/mall";
+import { badgeMilestones, defaultMallConfig, eligibleCoupons, extraBadges, resolveRiderTierStatus, tierThresholds } from "../../../lib/mall";
 import { applyInactivityDecay, getAvailablePoints, type PointsLedgerEntry } from "../../../lib/points";
 import { taskProgress } from "../../../lib/tasks";
 import { isSupplierCategory } from "../../../lib/server/crm-categories";
@@ -367,9 +367,23 @@ export async function GET(request: Request) {
       voucherCode: order.voucherCode ?? "",
     }));
 
-  // --- Achievement badges (lifetime completed orders) ---
+  // --- Achievement badges: lifetime-orders track + hours / acceptance /
+  // tenure / night-shift / weekly badges, all from the rider's real metrics. ---
   const lifetimeOrders = kpis.reduce((s2, k) => s2 + (k.completedOrders ?? 0), 0);
-  const badges = badgeMilestones.map((m) => ({ ...m, achieved: lifetimeOrders >= m.at }));
+  const lifetimeHours = Math.round(kpis.reduce((s2, k) => s2 + (k.onlineHours ?? 0), 0));
+  const bestAr = kpis.reduce((mx, k) => Math.max(mx, k.ar ?? 0), 0);
+  const tenureDays = rider.joinDate ? Math.max(0, Math.floor((Date.now() - Date.parse(rider.joinDate)) / 864e5)) : 0;
+  const weekOrdersForBadge = week.reduce((s2, k) => s2 + (k.completedOrders ?? 0), 0);
+  const badges = [
+    ...badgeMilestones.map((m) => ({ ...m, achieved: lifetimeOrders >= m.at })),
+    ...extraBadges({
+      onlineHours: lifetimeHours,
+      acceptanceRate: bestAr,
+      tenureDays,
+      nightShifts: rider.nightShiftCount ?? 0,
+      weekOrders: weekOrdersForBadge,
+    }),
+  ];
 
   // --- Mall messages (chegou/retire notices) + eligible coupons ---
   // Same 7-day auto-expiry as the Início inbox.

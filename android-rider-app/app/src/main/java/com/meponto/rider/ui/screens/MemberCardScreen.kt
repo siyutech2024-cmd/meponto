@@ -193,8 +193,12 @@ fun MemberCardScreen(onClose: () -> Unit) {
     val avatarOrigFile = remember(avatarKey) { File(context.filesDir, "${AVATAR_PREFIX}_${avatarKey}_orig.jpg") }
     var avatarVersion by remember { mutableIntStateOf(0) }
     var cartoonBusy by remember { mutableStateOf(false) }
+    // Show the primary file if present, else fall back to ANY candidate key
+    // (self-heals the key-drift bug where a photo saved before the 99 ID
+    // hydrated became invisible — field report 2026-07-21).
     val avatarBitmap: Bitmap? = remember(avatarVersion, avatarKey) {
-        if (avatarFile.exists()) runCatching { BitmapFactory.decodeFile(avatarFile.absolutePath) }.getOrNull() else null
+        if (avatarFile.exists()) runCatching { BitmapFactory.decodeFile(avatarFile.absolutePath) }.getOrNull()
+        else com.meponto.rider.data.AvatarStore.load(context, store.profile)
     }
     // Cartoon mode is on when the untouched original is parked alongside.
     val isCartoon = remember(avatarVersion, avatarKey) { avatarOrigFile.exists() }
@@ -206,6 +210,7 @@ fun MemberCardScreen(onClose: () -> Unit) {
             // A fresh photo resets cartoon mode.
             avatarOrigFile.delete()
             avatarVersion += 1
+            store.bumpAvatar() // Home header re-reads the new photo.
         }
     }
     fun toggleCartoon() {
@@ -229,6 +234,7 @@ fun MemberCardScreen(onClose: () -> Unit) {
                 }
             }
             avatarVersion += 1
+            store.bumpAvatar()
             cartoonBusy = false
         }
     }

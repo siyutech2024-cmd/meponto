@@ -25,6 +25,7 @@ import com.meponto.rider.data.LocalStore
 import com.meponto.rider.i18n.LocalLoc
 import com.meponto.rider.ui.components.LedgerRow
 import com.meponto.rider.ui.components.LoginPromptCard
+import com.meponto.rider.ui.components.PagedSection
 import com.meponto.rider.ui.components.Panel
 import com.meponto.rider.ui.components.PrimaryButton
 import com.meponto.rider.ui.components.ProgressBar
@@ -83,16 +84,19 @@ fun WalletScreen() {
             }
         }
 
-        // Statement
+        // Statement — newest first (by event time), entries WITHOUT a real
+        // amount are hidden ("没有金额的日期就不显示"), and the list is paged so
+        // a long history doesn't become an endless wall (每天 T+1 同步累积).
         Panel {
             SectionHeader(loc.t("wallet.statement"))
             Spacer(Modifier.size(12.dp))
-            if (store.cashLedger.isEmpty()) {
+            val entries = store.cashLedger
+                .filter { it.value.isNotBlank() && it.value.any { c -> c.isDigit() } && it.value.trimStart('+', '-', 'R', '$', ' ') != "0,00" }
+                .sortedByDescending { it.at.ifBlank { it.detail } }
+            if (entries.isEmpty()) {
                 Text(loc.t("empty.generic"), color = me.muted, fontSize = 13.sp)
             } else {
-                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    store.cashLedger.forEach { e -> LedgerRow(e) }
-                }
+                PagedSection(items = entries, pageSize = 8) { e -> LedgerRow(e) }
             }
         }
     }

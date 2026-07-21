@@ -53,6 +53,7 @@ import com.meponto.rider.i18n.AppLanguage
 import com.meponto.rider.i18n.LocalLoc
 import com.meponto.rider.i18n.LocalizationManager
 import com.meponto.rider.ui.components.Badge
+import com.meponto.rider.ui.components.PagedSection
 import com.meponto.rider.ui.components.Panel
 import com.meponto.rider.ui.components.PrimaryButton
 import com.meponto.rider.ui.components.QRSheet
@@ -77,6 +78,7 @@ fun MallScreen() {
     var showMyQR by remember { mutableStateOf(false) }
     var showInvite by remember { mutableStateOf(false) }
     var detail by remember { mutableStateOf<MallProduct?>(null) }
+    var msgDetail by remember { mutableStateOf<com.meponto.rider.data.MemberMessage?>(null) }
 
     // "Contact your station" for points top-up questions — opens the live HQ
     // support portal (web session), same route as the Support tab. Purely
@@ -224,6 +226,7 @@ fun MallScreen() {
                                     .clip(RoundedCornerShape(MeRadius.card))
                                     .background(me.surfaceRaised)
                                     .border(1.dp, me.line, RoundedCornerShape(MeRadius.card))
+                                    .clickable { msgDetail = msg }
                                     .padding(12.dp),
                                 verticalArrangement = Arrangement.spacedBy(4.dp),
                             ) {
@@ -318,27 +321,29 @@ fun MallScreen() {
                 }
             }
 
-            // 积分流水 / points statement
+            // 积分流水 / points statement — newest first, PAGED so a long
+            // history stays scannable (清单太长了); rows follow the app style.
             Panel {
                 SectionHeader(loc.t("points.statement"))
                 Spacer(Modifier.size(12.dp))
-                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    // Newest event first (by the report date in the note, else createdAt).
-                    val ledger = store.pointsLedger.sortedByDescending { it.sortKey }
-                    ledger.forEachIndexed { idx, e ->
-                        Row(verticalAlignment = Alignment.Top) {
-                            Column(Modifier.weight(1f)) {
-                                Text(localizePointsNote(e.note, loc), color = me.text, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
-                                Text("${localizeLedgerToken(e.source, loc)} · ${localizeLedgerToken(e.status, loc)}", color = me.muted, fontSize = 12.sp)
+                val ledger = store.pointsLedger.sortedByDescending { it.sortKey }
+                if (ledger.isEmpty()) {
+                    Text(loc.t("empty.generic"), color = me.muted, fontSize = 13.sp)
+                } else {
+                    PagedSection(items = ledger, pageSize = 8) { e ->
+                        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            Row(verticalAlignment = Alignment.Top) {
+                                Column(Modifier.weight(1f)) {
+                                    Text(localizePointsNote(e.note, loc), color = me.text, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                                    Text("${localizeLedgerToken(e.source, loc)} · ${localizeLedgerToken(e.status, loc)}", color = me.muted, fontSize = 12.sp)
+                                }
+                                Text(
+                                    "${if (e.isEarn) "+" else ""}${e.points} pts",
+                                    color = if (e.isEarn) me.ok else me.danger,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 14.sp,
+                                )
                             }
-                            Text(
-                                "${if (e.isEarn) "+" else ""}${e.points} pts",
-                                color = if (e.isEarn) me.ok else me.danger,
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 14.sp,
-                            )
-                        }
-                        if (idx < ledger.size - 1) {
                             Box(Modifier.fillMaxWidth().height(1.dp).background(me.line))
                         }
                     }
@@ -467,6 +472,16 @@ fun MallScreen() {
                     }
                 }
             }
+        }
+
+        // Message detail — app-styled dialog (#3), tap a notice card to read full.
+        msgDetail?.let { msg ->
+            com.meponto.rider.ui.components.DetailDialog(
+                title = msg.title,
+                body = msg.body,
+                meta = msg.time.take(16).replace("T", " "),
+                onDismiss = { msgDetail = null },
+            )
         }
 
         // Toast

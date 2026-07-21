@@ -35,6 +35,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
@@ -68,6 +69,16 @@ fun HomeScreen(onScan: () -> Unit, onProfile: () -> Unit, onOpenMall: () -> Unit
     val store = LocalStore.current
     val auth = LocalAuth.current
     var showInvite by remember { mutableStateOf(false) }
+    var inboxDetail by remember { mutableStateOf<com.meponto.rider.data.InboxItem?>(null) }
+
+    inboxDetail?.let { item ->
+        com.meponto.rider.ui.components.DetailDialog(
+            title = item.title,
+            body = item.detail,
+            meta = item.time,
+            onDismiss = { inboxDetail = null },
+        )
+    }
 
     if (showInvite) {
         QRSheet(
@@ -100,6 +111,13 @@ fun HomeScreen(onScan: () -> Unit, onProfile: () -> Unit, onOpenMall: () -> Unit
                     fontSize = 16.sp,
                 )
                 Spacer(Modifier.weight(1f))
+                // Avatar disc: show the rider's on-device photo if set (same
+                // photo as the Member Card — field report 2026-07-21), else the
+                // yellow initial, else a generic icon.
+                val avatarCtx = androidx.compose.ui.platform.LocalContext.current
+                val avatarBmp = remember(store.profile.ninetyNineId, store.profile.phone, store.avatarVersion) {
+                    com.meponto.rider.data.AvatarStore.load(avatarCtx, store.profile)
+                }
                 Box(
                     modifier = Modifier
                         .size(36.dp)
@@ -109,10 +127,15 @@ fun HomeScreen(onScan: () -> Unit, onProfile: () -> Unit, onOpenMall: () -> Unit
                     contentAlignment = Alignment.Center,
                 ) {
                     val initial = store.riderName.trim().take(1).uppercase()
-                    if (initial.isNotEmpty()) {
-                        Text(initial, color = me.accent, fontWeight = FontWeight.Black, fontSize = 13.sp)
-                    } else {
-                        Icon(
+                    when {
+                        avatarBmp != null -> androidx.compose.foundation.Image(
+                            bitmap = avatarBmp.asImageBitmap(),
+                            contentDescription = loc.t("profile.title"),
+                            contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                            modifier = Modifier.fillMaxSize().clip(CircleShape),
+                        )
+                        initial.isNotEmpty() -> Text(initial, color = me.accent, fontWeight = FontWeight.Black, fontSize = 13.sp)
+                        else -> Icon(
                             Icons.Filled.AccountCircle,
                             contentDescription = loc.t("profile.title"),
                             tint = me.accent,
@@ -356,6 +379,7 @@ fun HomeScreen(onScan: () -> Unit, onProfile: () -> Unit, onOpenMall: () -> Unit
                                     .clip(RoundedCornerShape(MeRadius.card))
                                     .background(me.surfaceRaised)
                                     .border(1.dp, me.line, RoundedCornerShape(MeRadius.card))
+                                    .clickable { inboxDetail = item }
                                     .padding(12.dp),
                                 verticalArrangement = Arrangement.spacedBy(4.dp),
                             ) {

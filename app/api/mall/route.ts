@@ -1038,7 +1038,7 @@ async function handlePost(request: Request) {
       const orderId = makeServerId("mko", memory.marketplaceOrders.length + 1);
       if (enforceStationStock) {
         if (stationAvailable(memory.stationStockLedgerEntries, pickupStore.id, product.id) < 1) {
-          return jsonResponse({ error: `「${product.name}」está sem estoque em ${pickupStore.name}. Escolha outro ponto ou tente mais tarde.` }, { status: 409 });
+          return jsonResponse({ error: `"${product.name}" está temporariamente esgotado em ${pickupStore.name}. Escolha outro ponto de retirada ou tente novamente mais tarde.` }, { status: 409 });
         }
         // Reserve one unit — consignment pool first, buyout as fallback.
         const reserved = (["consignment", "buyout"] as const).some((mode) =>
@@ -1056,7 +1056,7 @@ async function handlePost(request: Request) {
           }).ok,
         );
         if (!reserved) {
-          return jsonResponse({ error: `「${product.name}」acabou de esgotar em ${pickupStore.name}.` }, { status: 409 });
+          return jsonResponse({ error: `"${product.name}" acabou de esgotar em ${pickupStore.name}. Tente outro ponto de retirada.` }, { status: 409 });
         }
       }
 
