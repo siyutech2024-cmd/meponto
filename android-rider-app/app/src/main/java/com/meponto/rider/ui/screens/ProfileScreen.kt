@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -96,14 +97,28 @@ fun ProfileScreen(onClose: () -> Unit) {
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
-            // Header — member avatar, or guest CTA opening the auth sheet.
+            // Header — member avatar (photo if set — same file as the Member
+            // Card / Home header), or guest CTA opening the auth sheet.
             if (auth.isMember) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
+                    val avatarCtx = androidx.compose.ui.platform.LocalContext.current
+                    val avatarBmp = remember(store.profile.ninetyNineId, store.profile.phone, store.avatarVersion) {
+                        com.meponto.rider.data.AvatarStore.load(avatarCtx, store.profile)
+                    }
                     Box(
                         Modifier.size(56.dp).clip(CircleShape).background(me.text),
                         contentAlignment = Alignment.Center,
                     ) {
-                        Text(store.riderName.take(1).uppercase(), color = me.accent, fontWeight = FontWeight.Black, fontSize = 22.sp)
+                        if (avatarBmp != null) {
+                            androidx.compose.foundation.Image(
+                                bitmap = avatarBmp.asImageBitmap(),
+                                contentDescription = store.riderName,
+                                contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                                modifier = Modifier.fillMaxSize().clip(CircleShape),
+                            )
+                        } else {
+                            Text(store.riderName.take(1).uppercase(), color = me.accent, fontWeight = FontWeight.Black, fontSize = 22.sp)
+                        }
                     }
                     Spacer(Modifier.width(14.dp))
                     Column {
@@ -199,13 +214,27 @@ fun ProfileScreen(onClose: () -> Unit) {
                 }
             }
 
-            // Conquistas — lifetime-order achievement badges.
+            // Conquistas — achievement badges. Collapsed by default (first two
+            // rows, achieved first); "expand" reveals the full set (清单太长).
             if (auth.isMember && store.badges.isNotEmpty()) {
+                var badgesExpanded by remember { mutableStateOf(false) }
+                val orderedBadges = remember(store.badges) {
+                    store.badges.sortedByDescending { it.achieved }
+                }
+                val achievedCount = orderedBadges.count { it.achieved }
+                val visibleBadges = if (badgesExpanded) orderedBadges else orderedBadges.take(6)
                 Panel {
-                    SectionHeader(loc.t("profile.badges"))
+                    Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        Text(loc.t("profile.badges"), color = me.text, fontWeight = FontWeight.SemiBold, fontSize = 16.sp)
+                        Spacer(Modifier.weight(1f))
+                        Text(
+                            "$achievedCount/${orderedBadges.size}",
+                            color = me.muted, fontWeight = FontWeight.Bold, fontSize = 12.sp,
+                        )
+                    }
                     Spacer(Modifier.size(12.dp))
                     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                        store.badges.chunked(3).forEach { rowBadges ->
+                        visibleBadges.chunked(3).forEach { rowBadges ->
                             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                                 rowBadges.forEach { b ->
                                     Column(
@@ -229,6 +258,22 @@ fun ProfileScreen(onClose: () -> Unit) {
                                 }
                                 repeat(3 - rowBadges.size) { Spacer(Modifier.weight(1f)) }
                             }
+                        }
+                        if (orderedBadges.size > 6) {
+                            Text(
+                                if (badgesExpanded) loc.t("profile.badgesCollapse")
+                                else "${loc.t("profile.badgesExpand")} (${orderedBadges.size - 6})",
+                                color = me.accent,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 13.sp,
+                                textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(MeRadius.small))
+                                    .background(me.surfaceRaised)
+                                    .clickable { badgesExpanded = !badgesExpanded }
+                                    .padding(vertical = 9.dp),
+                            )
                         }
                     }
                 }

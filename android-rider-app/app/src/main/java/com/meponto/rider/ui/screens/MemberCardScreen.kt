@@ -271,7 +271,13 @@ fun MemberCardScreen(onClose: () -> Unit) {
         scope.launch {
             runCatching {
                 val bmp = cardLayer.toImageBitmap().asAndroidBitmap()
-                val file = File(File(context.cacheDir, "share").apply { mkdirs() }, "member_card.png")
+                // UNIQUE filename per share: receiving apps (WhatsApp/WeChat…)
+                // cache content by URI, so a fixed "member_card.png" kept
+                // showing the OLD card after the photo changed (field report
+                // 2026-07-21). Old share files are swept to keep cache tidy.
+                val shareDir = File(context.cacheDir, "share").apply { mkdirs() }
+                shareDir.listFiles()?.forEach { old -> if (old.name.startsWith("member_card")) old.delete() }
+                val file = File(shareDir, "member_card_${System.currentTimeMillis()}.png")
                 withContext(Dispatchers.IO) {
                     file.outputStream().use { bmp.compress(Bitmap.CompressFormat.PNG, 100, it) }
                 }

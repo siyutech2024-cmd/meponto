@@ -58,16 +58,20 @@ import com.meponto.rider.ui.components.QRSheet
 import com.meponto.rider.ui.components.SectionHeader
 import com.meponto.rider.ui.components.StatTile
 import com.meponto.rider.ui.theme.LocalMe
+import kotlinx.coroutines.launch
 import com.meponto.rider.ui.theme.appBackground
 import com.meponto.rider.ui.theme.MeRadius
 import com.meponto.rider.ui.theme.Tone
 
-@Composable
+@androidx.compose.runtime.Composable
+@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 fun HomeScreen(onScan: () -> Unit, onProfile: () -> Unit, onOpenMall: () -> Unit) {
     val me = LocalMe.current
     val loc = LocalLoc.current
     val store = LocalStore.current
     val auth = LocalAuth.current
+    val refreshScope = androidx.compose.runtime.rememberCoroutineScope()
+    var refreshing by remember { mutableStateOf(false) }
     var showInvite by remember { mutableStateOf(false) }
     var inboxDetail by remember { mutableStateOf<com.meponto.rider.data.InboxItem?>(null) }
 
@@ -90,10 +94,19 @@ fun HomeScreen(onScan: () -> Unit, onProfile: () -> Unit, onOpenMall: () -> Unit
     }
 
     Column(Modifier.fillMaxSize().appBackground(me)) {
+        // Pull-to-refresh: re-pull the home snapshot (cash ledger, KPI,
+        // notices…) without relaunching the app.
+        androidx.compose.material3.pulltorefresh.PullToRefreshBox(
+            isRefreshing = refreshing,
+            onRefresh = {
+                refreshing = true
+                refreshScope.launch { store.refresh(); refreshing = false }
+            },
+            modifier = Modifier.weight(1f).fillMaxWidth(),
+        ) {
         Column(
             modifier = Modifier
-                .weight(1f)
-                .fillMaxWidth()
+                .fillMaxSize()
                 .verticalScroll(rememberScrollState())
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),
@@ -442,6 +455,7 @@ fun HomeScreen(onScan: () -> Unit, onProfile: () -> Unit, onOpenMall: () -> Unit
             }
 
             Spacer(Modifier.size(8.dp))
+        }
         }
     }
 }
