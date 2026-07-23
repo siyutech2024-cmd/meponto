@@ -46,6 +46,14 @@ type PersistenceState = {
   lastRefreshedAt: Map<string, number>;
   /** In-flight refresh promises so concurrent requests share one fetch. */
   refreshInFlight: Map<string, Promise<void>>;
+  /**
+   * Per-record serialized snapshot of what the database last saw
+   * (collection → record id → JSON). Lets the flusher upsert ONLY records
+   * that actually changed instead of mirroring whole collections — the
+   * full-collection upsert was the single most expensive query in
+   * production (mean ~0.9s on ledger-sized collections).
+   */
+  lastFlushed: Map<string, Map<string, string>>;
   flushTimer: ReturnType<typeof setTimeout> | null;
   warned: boolean;
   client: SupabaseClient | null;
@@ -69,6 +77,7 @@ const state: PersistenceState =
     suspendTracking: false,
     lastRefreshedAt: new Map(),
     refreshInFlight: new Map(),
+    lastFlushed: new Map(),
     flushTimer: null,
     warned: false,
     client: null,
@@ -83,6 +92,7 @@ state.localNew ??= new Map();
 state.suspendTracking ??= false;
 state.lastRefreshedAt ??= new Map();
 state.refreshInFlight ??= new Map();
+state.lastFlushed ??= new Map();
 
 function markLocalNew(name: string, value: unknown) {
   const id = (value as AnyRecord | null)?.id;
@@ -155,6 +165,8 @@ async function flushDirtyCollections() {
         const { error: purgeError } = await supabase.from(TABLE).delete().eq("collection", name);
         if (purgeError) throw new Error(purgeError.message);
         state.pendingPurges.delete(name);
+        // Database rows are gone — every in-memory record must be re-upserted.
+        state.lastFlushed.get(name)?.clear();
       }
 
       // Explicit single-record deletes (DELETE routes). WRITE WINS: a record
@@ -179,6 +191,9 @@ async function flushDirtyCollections() {
           // Clear even on failure — endlessly retrying stale deletes risks
           // destroying rows written by sibling instances in the meantime.
           state.pendingDeletes.delete(name);
+          // Forget the snapshots so a same-id re-creation is flushed again.
+          const flushed = state.lastFlushed.get(name);
+          if (flushed) for (const id of ids) flushed.delete(id);
           if (deleteError) throw new Error(deleteError.message);
         } else {
           state.pendingDeletes.delete(name);
@@ -196,7 +211,26 @@ async function flushDirtyCollections() {
       for (const record of collection) {
         if (record && typeof record.id === "string") byId.set(record.id, record);
       }
-      const rows = Array.from(byId, ([recordId, record]) => ({
+
+      // Incremental flush: only upsert records whose serialized form differs
+      // from what the database last saw. Array reindexing (unshift/splice)
+      // trips the proxy traps for every element, so without this diff a
+      // single prepend re-uploaded the entire collection (the dominant DB
+      // cost in production: mean ~0.9s per flush on large collections).
+      const flushedMap =
+        state.lastFlushed.get(name) ??
+        (() => {
+          const created = new Map<string, string>();
+          state.lastFlushed.set(name, created);
+          return created;
+        })();
+      const changed: Array<{ recordId: string; record: AnyRecord; serialized: string }> = [];
+      for (const [recordId, record] of byId) {
+        const serialized = JSON.stringify(record);
+        if (flushedMap.get(recordId) === serialized) continue;
+        changed.push({ recordId, record, serialized });
+      }
+      const rows = changed.map(({ recordId, record }) => ({
         collection: name,
         record_id: recordId,
         data: record,
@@ -208,6 +242,8 @@ async function flushDirtyCollections() {
           .from(TABLE)
           .upsert(rows, { onConflict: "collection,record_id" });
         if (upsertError) throw new Error(upsertError.message);
+        // Snapshot AFTER the upsert succeeded (all-or-nothing per collection).
+        for (const item of changed) flushedMap.set(item.recordId, item.serialized);
         // These records are in the database now — they no longer need the
         // local-only protection during read-through refreshes.
         const localNewSet = state.localNew.get(name);
@@ -419,15 +455,45 @@ async function refreshOneCollection(supabase: SupabaseClient, name: string): Pro
         localNewSet.has(record.id),
     );
 
+    // WRITE WINS for locally MODIFIED records too: a record that exists in
+    // the database but carries unflushed local edits (its JSON differs from
+    // the last flushed/refreshed snapshot) must NOT be replaced by the stale
+    // database copy. Without this, a poll-driven refresh racing the debounced
+    // flush silently reverted saved edits (e.g. a rider's franchise/station
+    // assignment snapping back to Unassigned). The local object is kept and
+    // the re-scheduled flush writes it out; the stale snapshot left in
+    // lastFlushed is what makes the incremental flusher detect the diff.
+    const flushedSnap = state.lastFlushed.get(name);
+    const localModified = new Map<string, AnyRecord>();
+    if (flushedSnap && flushedSnap.size > 0) {
+      for (const record of collection) {
+        if (!record || typeof record.id !== "string" || !dbIds.has(record.id)) continue;
+        const snap = flushedSnap.get(record.id);
+        if (snap !== undefined && snap !== JSON.stringify(record)) localModified.set(record.id, record);
+      }
+    }
+
     state.suspendTracking = true;
     try {
-      collection.splice(0, collection.length, ...localOnly, ...dbRows.filter((row) => !pendingDeletes.has(row.id)));
+      collection.splice(
+        0,
+        collection.length,
+        ...localOnly,
+        ...dbRows.filter((row) => !pendingDeletes.has(row.id)).map((row) => localModified.get(row.id) ?? row),
+      );
     } finally {
       state.suspendTracking = false;
     }
     // Ids now present in the database no longer count as local-only.
     for (const id of dbIds) localNewSet.delete(id);
-    if (localOnly.length > 0) {
+    // The collection now holds the exact objects the database returned —
+    // rebuild the flush snapshots from them so the incremental flusher
+    // skips DB-sourced records. Rebuilding (not merging) also drops stale
+    // snapshots of rows a sibling instance deleted.
+    const flushedMap = new Map<string, string>();
+    for (const row of dbRows) flushedMap.set(row.id, JSON.stringify(row));
+    state.lastFlushed.set(name, flushedMap);
+    if (localOnly.length > 0 || localModified.size > 0) {
       state.dirty.add(name);
       scheduleFlush();
     }
@@ -539,6 +605,10 @@ export function hydrateFromDatabase(): Promise<void> {
         const persisted = byCollection.get(name);
         const wasDirty = state.dirty.has(name);
         if (persisted && persisted.length > 0) {
+          // Seed flush snapshots from the database rows (see refresh).
+          const flushedMap = new Map<string, string>();
+          for (const record of persisted) flushedMap.set(record.id, JSON.stringify(record));
+          state.lastFlushed.set(name, flushedMap);
           if (wasDirty) {
             // The collection was mutated before hydration finished (cold-start
             // race): keep records that aren't in the database yet on top of
