@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react
 import { RefreshCcw, Search, Bike, X, MapPin, Phone } from "lucide-react";
 import { AppShell, DataTable, PageTitle } from "../components/ui";
 import RiderMap, { type MapRider } from "./RiderMap";
+import MonitorTabs from "./MonitorTabs";
 import { HOT_ZONES } from "./hot-zones";
 import { readSession } from "../lib/session";
 import { useVentoStore } from "../lib/store";
@@ -213,6 +214,7 @@ export default function RiderMonitorPage() {
 
   return (
     <AppShell>
+      <MonitorTabs />
       <PageTitle
         title={t("rmTitle")}
         eyebrow={`Eastwind · ${scopeLabel}`}
