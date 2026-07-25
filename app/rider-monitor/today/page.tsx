@@ -100,7 +100,7 @@ export default function RiderTodayPage() {
         eyebrow={`${data?.date ?? ""} · ${scopeLabel} · ${t("rtReadOnly")}`}
         action={
           <div className="flex items-center gap-3 text-xs text-[var(--muted)]">
-            <span>{data?.latestBatch ? `${t("rtLastBatch")} ${hhmm(data.latestBatch)} · ${data.batches} ${t("rtBatchesUnit")}` : ""}</span>
+            <span>{data?.latestBatch ? `${t("rtLastBatch")} ${hhmm(data.latestBatch)}` : ""}</span>
             <button onClick={() => void load()} disabled={loading}
               className="inline-flex h-9 items-center gap-2 rounded-[6px] border border-[var(--line)] px-3 font-bold text-[var(--muted-strong)] transition-colors hover:border-[var(--accent)] hover:text-[var(--accent)] disabled:opacity-50">
               <RefreshCcw size={15} /> {t("rmRefresh")}

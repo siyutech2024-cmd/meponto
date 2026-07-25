@@ -62,29 +62,38 @@ export async function GET(request: Request) {
     if (data.length < pageSize) break;
   }
 
-  // Latest row per rider (key: ext id, else phone, else name). Scan is DESC,
-  // so the first occurrence IS the latest.
-  const latest = new Map<string, ScanRow>();
+  // IMPORTANT — slot semantics: Eastwind RESETS every counter at the start of
+  // each shift slot (11:00-14:00 / 14:00-18:00 / 18:00-22:00). A snapshot is
+  // therefore SLOT-cumulative, not day-cumulative. Full-day totals = for each
+  // rider, take the LAST snapshot of EACH slot they worked, then SUM across
+  // slots. Keyed by rider + slot label; scan is DESC so first hit per key is
+  // that slot's final state.
+  const riderKeyOf = (r: { rider_ext_id: string | null; phone: string | null; rider_name: string | null }) =>
+    r.rider_ext_id || digits(r.phone) || r.rider_name || "";
+  const slotOf = (r: { shift_start: string | null; shift_end: string | null }) =>
+    [r.shift_start, r.shift_end].filter(Boolean).join("-") || "?";
+  const latestBySlot = new Map<string, ScanRow>(); // `${riderKey}|${slot}` → final row of that slot
   for (const row of scan) {
-    const key = row.rider_ext_id || digits(row.phone) || row.rider_name || "";
-    if (!key || latest.has(key)) continue;
-    latest.set(key, row);
+    const key = riderKeyOf(row);
+    if (!key) continue;
+    const slotKey = `${key}|${slotOf(row)}`;
+    if (!latestBySlot.has(slotKey)) latestBySlot.set(slotKey, row);
   }
 
-  // Pass 2: fetch raw (per-rider perf) only for the batches that actually
-  // hold someone's latest row — usually just the newest few.
-  const batches = [...new Set([...latest.values()].map((r) => r.captured_at))].sort().reverse();
-  const perfByKey = new Map<string, RiderShiftPerf>();
+  // Pass 2: fetch raw (per-rider slot perf) only for the batches that hold a
+  // slot-final row — the tail batch of each slot plus the newest one.
+  const batches = [...new Set([...latestBySlot.values()].map((r) => r.captured_at))].sort().reverse();
+  const perfBySlotKey = new Map<string, RiderShiftPerf>();
   for (const batch of batches) {
     const { data } = await client
       .from("rider_status_snapshots")
-      .select("captured_at, rider_ext_id, phone, rider_name, raw")
+      .select("captured_at, rider_ext_id, phone, rider_name, shift_start, shift_end, raw")
       .eq("captured_at", batch);
-    for (const row of (data ?? []) as Array<{ rider_ext_id: string | null; phone: string | null; rider_name: string | null; raw: unknown }>) {
-      const key = row.rider_ext_id || digits(row.phone) || row.rider_name || "";
-      const mine = latest.get(key);
+    for (const row of (data ?? []) as Array<{ captured_at: string; rider_ext_id: string | null; phone: string | null; rider_name: string | null; shift_start: string | null; shift_end: string | null; raw: unknown }>) {
+      const slotKey = `${riderKeyOf(row)}|${slotOf(row)}`;
+      const mine = latestBySlot.get(slotKey);
       if (!mine || mine.captured_at !== batch) continue;
-      perfByKey.set(key, extractRiderPerf(row.raw));
+      perfBySlotKey.set(slotKey, extractRiderPerf(row.raw));
     }
   }
 
@@ -99,29 +108,73 @@ export async function GET(request: Request) {
   }
   const isPlaceholder = (v: string | undefined | null) => !v || v === "Unassigned" || v === "未归属" || v === "未关联";
 
-  const rows = [...latest.entries()].map(([key, s]) => {
+  // Aggregate slot-final rows into per-rider DAY totals.
+  type SlotEntry = { slot: string; row: ScanRow; perf: RiderShiftPerf | null };
+  const byRider = new Map<string, SlotEntry[]>();
+  for (const [slotKey, row] of latestBySlot) {
+    const [key] = [slotKey.slice(0, slotKey.lastIndexOf("|"))];
+    const slot = slotKey.slice(slotKey.lastIndexOf("|") + 1);
+    const list = byRider.get(key) ?? [];
+    list.push({ slot, row, perf: perfBySlotKey.get(slotKey) ?? null });
+    byRider.set(key, list);
+  }
+
+  const sumOrNull = (vals: Array<number | null | undefined>) => {
+    const known = vals.filter((v): v is number => v != null);
+    return known.length ? known.reduce((a, b) => a + b, 0) : null;
+  };
+
+  const rows = [...byRider.entries()].map(([key, slots]) => {
+    // Newest slot row carries identity/status; counters are summed over slots.
+    slots.sort((a, b) => b.row.captured_at.localeCompare(a.row.captured_at));
+    const s = slots[0].row;
     const match =
       (s.rider_ext_id && by99.get(String(s.rider_ext_id))) ||
       (s.id_no && byCpf.get(digits(s.id_no))) ||
       (s.phone && byPhone.get(digits(s.phone))) || null;
     const fr = match && !isPlaceholder(match.franchise) ? match.franchise : "";
     const pt = match && !isPlaceholder(match.ponto) ? match.ponto : "";
+    const onlineMins = sumOrNull(slots.map((x) => x.row.online_mins));
+    const acceptCnt = sumOrNull(slots.map((x) => x.perf?.acceptCnt));
+    const declinedCnt = sumOrNull(slots.map((x) => x.perf?.declinedCnt));
+    // Day-level AR is recomputed from the summed counts (rates can't be
+    // averaged across slots); %TSH is online-minutes-weighted.
+    const ar = acceptCnt != null && declinedCnt != null && acceptCnt + declinedCnt > 0
+      ? Math.round((acceptCnt / (acceptCnt + declinedCnt)) * 1000) / 10
+      : null;
+    const tshParts = slots.filter((x) => x.perf?.tsh != null && x.row.online_mins != null && x.row.online_mins > 0);
+    const tshWeight = tshParts.reduce((a, x) => a + (x.row.online_mins as number), 0);
+    const tsh = tshWeight > 0
+      ? Math.round((tshParts.reduce((a, x) => a + (x.perf!.tsh as number) * (x.row.online_mins as number), 0) / tshWeight) * 10) / 10
+      : null;
     return {
       key,
       riderExtId: s.rider_ext_id,
       name: match?.name || s.rider_name,
       phone: s.phone,
       status: s.status,
-      shift: [s.shift_start, s.shift_end].filter(Boolean).join("-"),
+      // All slots worked today, oldest first (e.g. "11:00-14:00 · 14:00-18:00").
+      shift: slots.map((x) => x.slot).filter((x) => x !== "?").reverse().join(" · ") || "—",
       hotZone: s.hot_zone,
       vehicle: s.vehicle,
-      onlineMins: s.online_mins,
-      restMins: s.rest_mins,
-      finishedCnt: s.finished_cnt,
+      onlineMins,
+      restMins: sumOrNull(slots.map((x) => x.row.rest_mins)),
+      finishedCnt: sumOrNull(slots.map((x) => x.row.finished_cnt)),
       franchise: fr,
       ponto: pt,
       lastSeenAt: s.captured_at,
-      perf: perfByKey.get(key) ?? null,
+      slots: slots.length,
+      perf: {
+        ar,
+        caa: null,
+        overtime: null,
+        tsh,
+        acceptCnt,
+        declinedCnt,
+        cancelledCnt: sumOrNull(slots.map((x) => x.perf?.cancelledCnt)),
+        delayedCnt: sumOrNull(slots.map((x) => x.perf?.delayedCnt)),
+        joinTime: null,
+      } as RiderShiftPerf,
     };
   });
 
