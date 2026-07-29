@@ -5,6 +5,7 @@ import { badgeMilestones, defaultMallConfig, eligibleCoupons, extraBadges, resol
 import { applyInactivityDecay, getAvailablePoints, type PointsLedgerEntry } from "../../../lib/points";
 import { taskProgress } from "../../../lib/tasks";
 import { isSupplierCategory } from "../../../lib/server/crm-categories";
+import { maskAuthor } from "../../../lib/partner-reviews";
 import { dbDirectReadEnabled, fetchRows } from "../../../lib/server/db-read";
 import type { RiderDailyKpi } from "../../../lib/performance";
 import { kpisByRider99, kpisByRiderName, perfMode } from "../../../lib/server/db/performance-repo";
@@ -216,11 +217,23 @@ export async function GET(request: Request) {
         sourceId: w.id,
       };
     });
+  // Payment notes are written by the zh console (e.g. the franchise-cascade
+  // note "随加盟商付款 pay-…") and were shown RAW to pt-BR riders — Chinese
+  // characters in the Brazilian cash statement. Localize on the way out so
+  // every already-stored record renders correctly on every app version.
+  const localizePaymentNote = (note: string): string => {
+    const n = (note ?? "").trim();
+    if (!n) return "Repasse de corridas";
+    if (n.startsWith("随加盟商付款")) return "Repasse via franquia";
+    if (n.startsWith("周结算") || n.startsWith("周结")) return "Repasse semanal";
+    // Any other Chinese-only note → neutral label instead of raw characters.
+    return /[一-鿿]/.test(n) ? "Repasse de corridas" : n;
+  };
   const payments = memory.walletPayments
     .filter((p) => p.target === "rider" && p.refName === name)
     .map((p) => ({
       title: "Repasse",
-      subtitle: p.note || "Repasse de corridas",
+      subtitle: localizePaymentNote(p.note ?? ""),
       amount: `+${brl(p.amount)}`,
       status: "Disponível",
       tone: "OK",
@@ -385,6 +398,27 @@ export async function GET(request: Request) {
     }),
   ];
 
+  // --- Referral progress (邀请进度): riders THIS rider invited + whether the
+  // one-time reward already landed (paid on the invitee's first verified
+  // orders — see /api/performance). Names are masked; closes the "invited and
+  // never heard back" loop that killed sharing motivation. ---
+  const referrals = memory.riders
+    .filter((r) => {
+      if (r.id === rider.id) return false;
+      const ref = (r.invitedBy ?? "").replace(/^member:/, "").trim();
+      return !!ref && (ref === rider.id || ref === rider.name || (!!nineId && ref === nineId));
+    })
+    .map((r) => ({
+      name: maskAuthor(r.name),
+      joinedAt: r.joinDate ?? "",
+      rewarded: memory.pointsLedgerEntries.some(
+        (e) => e.reasonCode === "REFERRAL_REWARD" && e.riderId === rider.id &&
+          (e.id === `pts-ref-${r.id}` || e.sourceId === `pts-ref-${r.id}` || e.sourceId === `ref-${r.id}`),
+      ),
+    }))
+    .sort((a, b) => b.joinedAt.localeCompare(a.joinedAt))
+    .slice(0, 20);
+
   // --- Mall messages (chegou/retire notices) + eligible coupons ---
   // Same 7-day auto-expiry as the Início inbox.
   const messages = memory.memberMessages
@@ -438,6 +472,7 @@ export async function GET(request: Request) {
       unreadMessages,
       coupons,
       badges,
+      referrals,
     },
   });
 }

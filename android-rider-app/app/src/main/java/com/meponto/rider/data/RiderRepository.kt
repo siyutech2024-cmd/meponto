@@ -11,7 +11,9 @@ import com.meponto.rider.data.remote.GoogleLoginRequest
 import com.meponto.rider.data.remote.InboxDto
 import com.meponto.rider.data.remote.LedgerDto
 import com.meponto.rider.data.remote.CouponDto
+import com.meponto.rider.data.remote.MallCancelRequest
 import com.meponto.rider.data.remote.MallMarkReadRequest
+import com.meponto.rider.data.remote.ReferralDto
 import com.meponto.rider.data.remote.ReviewCreateRequest
 import com.meponto.rider.data.remote.ReviewsData
 import com.meponto.rider.data.remote.SupportCreateRequest
@@ -78,6 +80,7 @@ data class RiderSnapshot(
     val unreadMessages: Int? = null,
     val coupons: List<MallCoupon>? = null,
     val badges: List<RiderBadge>? = null,
+    val referrals: List<ReferralDto>? = null,
     val pointCashRateBRL: Double? = null,
     val statusTotals: StatusTotals? = null,
 )
@@ -244,6 +247,7 @@ class RiderRepository(context: Context) {
                 val lb = b.label ?: return@mapNotNull null
                 RiderBadge(b.at ?: 0, b.icon ?: "", lb, b.achieved == true)
             },
+            referrals = home?.referrals,
             pointCashRateBRL = home?.pointCashRateBRL,
             statusTotals = home?.statusTotals?.let { t ->
                 StatusTotals(t.totalOrders ?: 0, t.onlineHours ?: 0.0, t.ar ?: 0.0, t.lastReportDate ?: "")
@@ -335,6 +339,14 @@ class RiderRepository(context: Context) {
             subject = subject, message = message,
         ))
         if (resp.error != null) resp.error else null
+    } catch (e: Exception) {
+        errorOf(e)
+    }
+
+    /** POST /mall cancelOrder → null on success, failure reason otherwise. */
+    suspend fun cancelOrder(orderId: String, riderId: String?): String? = try {
+        val resp = service.cancelOrder(MallCancelRequest(orderId = orderId, riderId = riderId))
+        resp.error
     } catch (e: Exception) {
         errorOf(e)
     }

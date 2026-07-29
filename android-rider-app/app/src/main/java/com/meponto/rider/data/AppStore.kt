@@ -130,6 +130,9 @@ class AppStore {
         private set
     var badges by mutableStateOf<List<RiderBadge>>(emptyList())
         private set
+    // Referral progress (masked invitee names + reward status).
+    var referrals by mutableStateOf<List<com.meponto.rider.data.remote.ReferralDto>>(emptyList())
+        private set
     // R$ per point when a redemption's shortfall converts to cash (0 = off).
     var pointCashRateBRL by mutableStateOf(0.0)
         private set
@@ -289,6 +292,17 @@ class AppStore {
         return awarded
     }
 
+    /**
+     * Cancel an in-transit redemption (server refunds points + prepaid cash and
+     * restocks). Returns null on success, else the pt-BR refusal reason.
+     */
+    suspend fun cancelOrder(orderId: String): String? {
+        val r = repo ?: return "offline"
+        val error = r.cancelOrder(orderId, riderId)
+        if (error == null) syncAfterWrite()
+        return error
+    }
+
     /** Station / partner reviews for a map pin ("ponto-…" / "partner-…"). */
     suspend fun reviewsFor(targetCode: String): com.meponto.rider.data.remote.ReviewsData? =
         repo?.reviews(targetCode)
@@ -361,6 +375,7 @@ class AppStore {
         snapshot.unreadMessages?.let { unreadMessages = it }
         snapshot.coupons?.let { coupons = it }
         snapshot.badges?.let { badges = it }
+        snapshot.referrals?.let { referrals = it }
         snapshot.pointCashRateBRL?.let { pointCashRateBRL = it }
         snapshot.statusTotals?.let { statusTotals = it }
     }

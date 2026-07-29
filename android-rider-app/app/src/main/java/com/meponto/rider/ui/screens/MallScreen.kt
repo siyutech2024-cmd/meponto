@@ -65,6 +65,7 @@ import com.meponto.rider.ui.theme.LocalMe
 import com.meponto.rider.ui.theme.MeRadius
 import com.meponto.rider.ui.theme.Tone
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -79,6 +80,9 @@ fun MallScreen() {
     var showInvite by remember { mutableStateOf(false) }
     var detail by remember { mutableStateOf<MallProduct?>(null) }
     var msgDetail by remember { mutableStateOf<com.meponto.rider.data.MemberMessage?>(null) }
+    var cancelTarget by remember { mutableStateOf<com.meponto.rider.data.MallOrder?>(null) }
+    var cancelBusy by remember { mutableStateOf(false) }
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
 
     // "Contact your station" for points top-up questions — opens the live HQ
     // support portal (web session), same route as the Support tab. Purely
@@ -311,6 +315,21 @@ fun MallScreen() {
                                             else -> Tone.WARNING
                                         },
                                     )
+                                    // Self-service cancel — only while in transit
+                                    // (server refuses arrived/fulfilled anyway).
+                                    if (order.status == "created") {
+                                        Text(
+                                            loc.t("order.cancel"),
+                                            color = me.danger,
+                                            fontWeight = FontWeight.Bold,
+                                            fontSize = 11.sp,
+                                            modifier = Modifier
+                                                .clip(RoundedCornerShape(MeRadius.small))
+                                                .border(1.dp, me.danger.copy(alpha = 0.4f), RoundedCornerShape(MeRadius.small))
+                                                .clickable { cancelTarget = order }
+                                                .padding(horizontal = 10.dp, vertical = 4.dp),
+                                        )
+                                    }
                                 }
                             }
                             if (idx < store.mallOrders.size - 1) {
@@ -469,6 +488,63 @@ fun MallScreen() {
                         ) {
                             Text(loc.t("mall.contactStation"), color = me.accent, fontWeight = FontWeight.SemiBold)
                         }
+                    }
+                }
+            }
+        }
+
+        // Cancel-order confirmation — app-styled dialog; the SERVER refunds
+        // points/prepaid cash and restocks (only "created" orders qualify).
+        cancelTarget?.let { order ->
+            androidx.compose.ui.window.Dialog(onDismissRequest = { if (!cancelBusy) cancelTarget = null }) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(MeRadius.card))
+                        .background(me.surface)
+                        .border(1.dp, me.line, RoundedCornerShape(MeRadius.card))
+                        .padding(20.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    Text(loc.t("order.cancelTitle"), color = me.text, fontWeight = FontWeight.Black, fontSize = 18.sp)
+                    Text(
+                        loc.t("order.cancelBody")
+                            .replace("{product}", order.productName)
+                            .replace("{pts}", "${order.pointsSpent}"),
+                        color = me.textSoft, fontSize = 14.sp,
+                    )
+                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Text(
+                            loc.t("common.close"),
+                            color = me.text, fontWeight = FontWeight.Bold, fontSize = 14.sp,
+                            textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                            modifier = Modifier
+                                .weight(1f)
+                                .clip(RoundedCornerShape(MeRadius.small))
+                                .border(1.dp, me.line, RoundedCornerShape(MeRadius.small))
+                                .clickable(enabled = !cancelBusy) { cancelTarget = null }
+                                .padding(vertical = 11.dp),
+                        )
+                        Text(
+                            if (cancelBusy) "…" else loc.t("order.cancelConfirm"),
+                            color = androidx.compose.ui.graphics.Color.White,
+                            fontWeight = FontWeight.Bold, fontSize = 14.sp,
+                            textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                            modifier = Modifier
+                                .weight(1f)
+                                .clip(RoundedCornerShape(MeRadius.small))
+                                .background(me.danger)
+                                .clickable(enabled = !cancelBusy) {
+                                    cancelBusy = true
+                                    scope.launch {
+                                        val error = store.cancelOrder(order.id)
+                                        cancelBusy = false
+                                        cancelTarget = null
+                                        toast = error ?: loc.t("order.cancelDone")
+                                    }
+                                }
+                                .padding(vertical = 11.dp),
+                        )
                     }
                 }
             }

@@ -202,6 +202,7 @@ data class RiderHomeDto(
     val unreadMessages: Int? = null,
     val coupons: List<CouponDto>? = null,
     val badges: List<BadgeDto>? = null,
+    val referrals: List<ReferralDto>? = null,
     val pointCashRateBRL: Double? = null,
     val statusTotals: StatusTotalsDto? = null,
 )
@@ -418,6 +419,21 @@ data class SupportTicketDto(
     val reply: String? = null,
     val createdAt: String? = null,
     val repliedAt: String? = null,
+)
+
+// POST /mall {action:"cancelOrder"} — rider self-service cancellation of an
+// in-transit redemption (refund points + prepaid cash, restock).
+data class MallCancelRequest(
+    val action: String = "cancelOrder",
+    val orderId: String,
+    val riderId: String? = null,
+)
+
+// GET /rider/home → referrals[] — riders this rider invited (masked names).
+data class ReferralDto(
+    val name: String? = null,
+    val joinedAt: String? = null,
+    val rewarded: Boolean? = null,
 )
 
 // GET /partner/reviews?partnerCode= — station / partner reviews (masked

@@ -211,15 +211,25 @@ fun HomeScreen(onScan: () -> Unit, onProfile: () -> Unit, onOpenMall: () -> Unit
                 icon = Icons.Filled.QrCodeScanner,
                 tone = Tone.ACCENT,
                 title = loc.t("home.scan"),
-                detail = "Ponto · Repasse · Parceiro",
+                // Honest copy: the scanner does STATION CHECK-IN only (the old
+                // "Ponto · Repasse · Parceiro" promised flows that don't exist).
+                detail = loc.t("home.scanHint"),
                 trailing = Icons.Filled.ChevronRight,
             ) { if (auth.requireMember()) onScan() }
 
+            // Invite friends — the detail line now shows LIVE referral progress
+            // (invited / rewarded), closing the "shared and never heard back" gap.
             ActionRow(
                 icon = Icons.Filled.GroupAdd,
                 tone = Tone.OK,
                 title = loc.t("points.invite"),
-                detail = loc.t("points.inviteHint"),
+                detail = if (store.referrals.isEmpty()) {
+                    loc.t("points.inviteHint")
+                } else {
+                    loc.t("points.inviteProgress")
+                        .replace("{n}", "${store.referrals.size}")
+                        .replace("{m}", "${store.referrals.count { it.rewarded == true }}")
+                },
                 trailing = Icons.Filled.QrCode2,
             ) { if (auth.requireMember()) showInvite = true }
 
