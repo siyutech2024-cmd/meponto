@@ -29,10 +29,17 @@ export function canRevealRiderSensitive(request: Request) {
 /**
  * Sensitive fields (CPF/PIX) are shown BY DEFAULT to roles that manage riders
  * or finance — pass the session-resolved role in production.
+ *
+ * The x-vento-role header fallback is honored ONLY outside production (local
+ * tooling / tests), mirroring roleFromRequest in server/authz. Production
+ * callers must pass `resolvedRole` from the signed session.
  */
 export function getRiderSensitiveRevealDecision(request: Request, resolvedRole?: Role) {
-  const roleHeader = request.headers.get("x-vento-role");
-  const role = resolvedRole ?? (roleHeader && roles.includes(roleHeader as Role) ? (roleHeader as Role) : undefined);
+  let role = resolvedRole;
+  if (!role && process.env.NODE_ENV !== "production") {
+    const roleHeader = request.headers.get("x-vento-role");
+    if (roleHeader && roles.includes(roleHeader as Role)) role = roleHeader as Role;
+  }
   const allowed = Boolean(role && (can(role, "manage_riders") || can(role, "view_finance")));
   return { requested: allowed, allowed, role };
 }

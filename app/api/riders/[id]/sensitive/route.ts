@@ -1,5 +1,7 @@
-import { can, roles, type Role } from "../../../../lib/rbac";
+import { can } from "../../../../lib/rbac";
 import { appendServerAudit, jsonResponse, memory } from "../../../../lib/server/memory";
+import { roleFromRequest } from "../../../../lib/server/authz";
+import { sessionFromRequestSync } from "../../../../lib/auth-session";
 
 const requiredPermission = "manage_riders_or_view_finance";
 
@@ -8,19 +10,31 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
   const rider = memory.riders.find((item) => item.id === id);
   if (!rider) return jsonResponse({ error: "Rider not found" }, { status: 404 });
 
-  const roleHeader = request.headers.get("x-vento-role");
-  const role = roleHeader && roles.includes(roleHeader as Role) ? (roleHeader as Role) : undefined;
-  const allowed = role ? can(role, "manage_riders") || can(role, "view_finance") : false;
-
-  if (!role || !allowed) {
+  // Production: a valid signed session is mandatory. The legacy x-vento-role
+  // header must never grant access to CPF/PIX in production — roleFromRequest
+  // only honors it outside production (local tooling / tests).
+  if (process.env.NODE_ENV === "production" && !sessionFromRequestSync(request)) {
     appendServerAudit({
-      actor: role ?? "Unknown",
+      actor: "Unknown",
       action: "REVEAL_RIDER_SENSITIVE_ENDPOINT_DENIED",
       entity: "Rider",
       entityId: id,
-      detail: roleHeader
-        ? "Sensitive rider endpoint denied because the role lacks permission."
-        : "Sensitive rider endpoint denied because x-vento-role was not provided.",
+      detail: "Sensitive rider endpoint denied: no authenticated session.",
+      risk: "High",
+    });
+    return jsonResponse({ error: "Unauthorized", requiredPermission }, { status: 401 });
+  }
+
+  const role = roleFromRequest(request);
+  const allowed = can(role, "manage_riders") || can(role, "view_finance");
+
+  if (!allowed) {
+    appendServerAudit({
+      actor: role,
+      action: "REVEAL_RIDER_SENSITIVE_ENDPOINT_DENIED",
+      entity: "Rider",
+      entityId: id,
+      detail: "Sensitive rider endpoint denied because the role lacks permission.",
       risk: "High",
     });
 
@@ -28,8 +42,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
       {
         error: "Forbidden",
         requiredPermission,
-        requiredHeader: "x-vento-role",
-        role: roleHeader ?? null,
+        role,
       },
       { status: 403 },
     );
