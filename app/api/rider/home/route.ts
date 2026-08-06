@@ -481,6 +481,9 @@ export async function GET(request: Request) {
       coupons,
       badges,
       referrals,
+      // 模式二: pool membership drives the PRO badge / Agenda PRO on v2.6+
+      // clients; older clients ignore the extra field (additive-only API).
+      pool: rider.pool ?? "standard",
     },
   });
 }
