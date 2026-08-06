@@ -83,6 +83,8 @@ data class RiderSnapshot(
     val badges: List<RiderBadge>? = null,
     val referrals: List<ReferralDto>? = null,
     val pool: String? = null,
+    /** A4 · 活动入口卡。服务端已判定受众与生效窗口,null = 不展示。 */
+    val activityCard: com.meponto.rider.data.remote.ActivityCardDto? = null,
     val pointCashRateBRL: Double? = null,
     val statusTotals: StatusTotals? = null,
 )
@@ -251,6 +253,7 @@ class RiderRepository(context: Context) {
             },
             referrals = home?.referrals,
             pool = home?.pool,
+            activityCard = home?.activityCard,
             pointCashRateBRL = home?.pointCashRateBRL,
             statusTotals = home?.statusTotals?.let { t ->
                 StatusTotals(t.totalOrders ?: 0, t.onlineHours ?: 0.0, t.ar ?: 0.0, t.lastReportDate ?: "")

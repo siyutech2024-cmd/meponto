@@ -51,15 +51,20 @@ export default function RootLayout({
               "if('serviceWorker' in navigator){window.addEventListener('load',function(){navigator.serviceWorker.register('/sw.js').catch(function(){})})}",
           }}
         />
-        {/* GA4 — stream "MePonto Web" (property descuai). Loaded after
-            hydration so it never blocks first paint; GA4 enhanced measurement
-            tracks SPA route changes via the History API automatically. */}
-        <Script src="https://www.googletagmanager.com/gtag/js?id=G-SKT4QZV5RV" strategy="afterInteractive" />
+        {/* GA4 — property "MePonto" (own property since 2026-08-06; it used to
+            share the "descuai" property with DESCU, which blended two products'
+            users and sessions into one set of reports). Stream "MePonto Web",
+            meponto.com — GA4 web streams cover subdomains automatically, so
+            mall./franchise./app. all report here without extra tags.
+            Timezone São Paulo, currency BRL.
+            Loaded after hydration so it never blocks first paint; enhanced
+            measurement tracks SPA route changes via the History API. */}
+        <Script src="https://www.googletagmanager.com/gtag/js?id=G-2F6D6V9CK8" strategy="afterInteractive" />
         <Script id="ga4-init" strategy="afterInteractive">
           {`window.dataLayer = window.dataLayer || [];
 function gtag(){dataLayer.push(arguments);}
 gtag('js', new Date());
-gtag('config', 'G-SKT4QZV5RV');`}
+gtag('config', 'G-2F6D6V9CK8');`}
         </Script>
       </body>
     </html>

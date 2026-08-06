@@ -423,7 +423,11 @@ export function maybeAutoReplenishDraft(productId: string, actor: string): Purch
 
 export function appendServerAudit(entry: Omit<ServerAuditEntry, "id" | "createdAt">) {
   const auditEntry: ServerAuditEntry = {
-    id: makeServerId("aud", memory.auditEntries.length + 1),
+    // ⚠️ 不能用 memory.auditEntries.length —— 审计已从冷启动水合里排除
+    // (persistence.ts: HYDRATION_EXCLUDED),内存长度只反映本实例,每次冷启动
+    // 都会从 aud-1 重新数,upsert 时就会**覆盖数据库里的历史审计**。
+    // 时间戳(36 进制)+ 随机后缀:单调递增、跨实例不撞、也不依赖任何计数。
+    id: `aud-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
     createdAt: new Date().toISOString().slice(0, 16).replace("T", " "),
     ...entry,
   };

@@ -32,7 +32,21 @@ type GroupActual = {
 };
 
 /** Orders-weighted weekly averages per group, evaluated against the rule. */
-function buildBoard(rule: AssessmentRule, from: string, to: string, level: "franchise" | "station", onlyFranchise?: string): GroupActual[] {
+function buildBoard(
+  rule: AssessmentRule,
+  from: string,
+  to: string,
+  level: "franchise" | "station",
+  onlyFranchise?: string,
+  /**
+   * 模式二 R10 · 周考核分池. "" = 全部(与现在完全一致), "pro" / "standard" =
+   * 只统计该池的骑手日报。PRO 与普通两套单量/AR 混在一起会让任何一边的考核
+   * 结论失真,所以按池分开看是必要的;不分池时行为一字未改。
+   * 新 OL 报表若缺 AR(N7),对应 metric 的 actual 自然为 null,规则评估已按
+   * "无数据不加不减"处理 —— 自动降级为出勤 + 完单口径,无需额外分支。
+   */
+  pool?: string,
+): GroupActual[] {
   const byNinetyNine = new Map(memory.riders.filter((r) => r.ninetyNineId).map((r) => [r.ninetyNineId!, r]));
   // Weekly aggregation of REAL daily data per franchise (display only):
   //  - %TSH / %TSH critical: reconstructed from real hours (Σ in-shift online ÷
@@ -49,6 +63,7 @@ function buildBoard(rule: AssessmentRule, from: string, to: string, level: "fran
   for (const row of memory.riderDailyKpis) {
     if (row.date < from || row.date > to) continue;
     const rider = byNinetyNine.get(row.rider99Id);
+    if (pool && (rider?.pool ?? "standard") !== pool) continue;
     const franchise = rider?.franchise ?? "未关联";
     if (onlyFranchise && franchise !== onlyFranchise) continue;
     const key = level === "franchise" ? franchise : rider?.ponto ?? "未关联";
@@ -115,21 +130,24 @@ export async function GET(request: Request) {
   const win = weekWindow(anchor);
   const rule = activeRule();
   const scope = await scopeFromRequest(request);
+  // 模式二 R10: pool chip on the existing assessment page — no new menu.
+  const poolParam = url.searchParams.get("pool") ?? "";
+  const pool = poolParam === "pro" || poolParam === "standard" ? poolParam : "";
 
   if (scope.station) {
     // Station portal: only its own row.
-    const stationBoard = buildBoard(rule, win.from, win.to, "station").filter((row) => row.name === scope.station);
+    const stationBoard = buildBoard(rule, win.from, win.to, "station", undefined, pool).filter((row) => row.name === scope.station);
     return jsonResponse({ data: { rule, week: win, scoped: true, franchises: [], stations: stationBoard } });
   }
   if (scope.franchise) {
     // Franchise portal: own franchise summary + per-station split.
-    const franchiseBoard = buildBoard(rule, win.from, win.to, "franchise", scope.franchise);
-    const stationBoard = buildBoard(rule, win.from, win.to, "station", scope.franchise);
+    const franchiseBoard = buildBoard(rule, win.from, win.to, "franchise", scope.franchise, pool);
+    const stationBoard = buildBoard(rule, win.from, win.to, "station", scope.franchise, pool);
     return jsonResponse({ data: { rule, week: win, scoped: true, franchises: franchiseBoard, stations: stationBoard } });
   }
 
-  const franchiseBoard = buildBoard(rule, win.from, win.to, "franchise");
-  const stationBoard = buildBoard(rule, win.from, win.to, "station");
+  const franchiseBoard = buildBoard(rule, win.from, win.to, "franchise", undefined, pool);
+  const stationBoard = buildBoard(rule, win.from, win.to, "station", undefined, pool);
   return jsonResponse({ data: { rule, week: win, scoped: false, franchises: franchiseBoard, stations: stationBoard } });
 }
 

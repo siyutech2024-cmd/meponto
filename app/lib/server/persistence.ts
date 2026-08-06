@@ -24,6 +24,26 @@ const FLUSH_DELAY_MS = 0; // flush immediately — serverless instances may free
  */
 const REFRESH_TTL_MS = Number(process.env.PERSISTENCE_REFRESH_TTL_MS ?? 5000);
 
+/**
+ * 不参与内存水合的集合(write-only in memory, read straight from the DB).
+ *
+ * 起因:每个 serverless 冷实例启动都会把整张 app_state_records 拉进内存。
+ * 实测 auditEntries 有 39,888 行 / 10 MB,占全部行数的 74% —— 也就是说,
+ * 要查一个骑手今天的 KPI,先得把三年的审计日志搬一遍。而审计日志除了事后
+ * 排查,从不参与任何业务计算。
+ *
+ * 排除后的行为:
+ *  · 写:appendServerAudit 照旧 push 到 memory.auditEntries,flush 按"变更
+ *    记录逐条 upsert",不会碰数据库里的历史行 —— 追加语义不变。
+ *  · 读:审计页改为直读数据库(见 app/api/audit/route.ts),分页+倒序,
+ *    比在内存里存 4 万行再切片更准也更省。
+ *
+ * 想临时关掉(排查用):HYDRATE_AUDIT_ENTRIES=true
+ */
+const HYDRATION_EXCLUDED = new Set(
+  process.env.HYDRATE_AUDIT_ENTRIES === "true" ? [] : ["auditEntries"],
+);
+
 type AnyRecord = { id: string } & Record<string, unknown>;
 
 type PersistenceState = {
@@ -380,6 +400,8 @@ export async function refreshCollectionsFromDatabase(collectionNames: string[]):
   const now = Date.now();
   const due = collectionNames.filter((name) => {
     if (!state.tracked.has(name)) return false;
+    // 排除的集合不进内存 —— 谁都别顺手把 4 万行审计日志拉回来。
+    if (HYDRATION_EXCLUDED.has(name)) return false;
     const last = state.lastRefreshedAt.get(name);
     return last === undefined || now - last >= REFRESH_TTL_MS;
   });
@@ -580,11 +602,14 @@ export function hydrateFromDatabase(): Promise<void> {
 
       // Page through everything (collections are demo-scale, but be safe).
       for (;;) {
-        const { data, error } = await supabase
+        let query = supabase
           .from(TABLE)
           .select("collection, record_id, data")
           .order("updated_at", { ascending: false })
           .range(from, from + pageSize - 1);
+        // 在数据库侧就滤掉,连传输都省了(不是拉回来再丢)。
+        for (const excluded of HYDRATION_EXCLUDED) query = query.neq("collection", excluded);
+        const { data, error } = await query;
 
         if (error) throw new Error(error.message);
         if (!data || data.length === 0) break;
@@ -602,6 +627,9 @@ export function hydrateFromDatabase(): Promise<void> {
       }
 
       for (const [name, collection] of state.tracked) {
+        // 排除的集合完全跳过 —— 特别注意不能落到下面"数据库没有就推种子"的
+        // 分支,那会把空内存当成真相写回去。
+        if (HYDRATION_EXCLUDED.has(name)) continue;
         const persisted = byCollection.get(name);
         const wasDirty = state.dirty.has(name);
         if (persisted && persisted.length > 0) {
