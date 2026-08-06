@@ -16,6 +16,10 @@ export type AppSplashConfig = {
   accentHex: string; // "#ffd100"
   imageURL: string; // optional remote banner/ad image (empty → bundled logo)
   linkURL: string; // optional tap-through for the banner
+  /** 模式二 S3: "pro" = only PRO-pool riders receive this splash (server-gated
+   *  by session, so even old clients can't show it to the wrong audience);
+   *  absent/"all" = everyone. */
+  audience?: "all" | "pro";
   /** Bumped on every save; clients can use it to detect a fresh config. */
   version: number;
   updatedAt?: string;

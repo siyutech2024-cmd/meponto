@@ -220,7 +220,7 @@ export async function GET(request: Request) {
   return jsonResponse({ data: [...data, ...reportOnly] });
 }
 
-type AssignBody = { action: "assign" | "updateProfile"; riderId: string; ponto?: string; franchise?: string; status?: string };
+type AssignBody = { action: "assign" | "updateProfile"; riderId: string; ponto?: string; franchise?: string; status?: string; pool?: "standard" | "pro" };
 
 async function handlePost(request: Request) {
   const forbidden = requirePermission(request, "manage_riders");
@@ -318,13 +318,22 @@ async function handlePost(request: Request) {
       if (station?.franchise && station.franchise !== nextFranchise) nextPonto = "Unassigned";
     }
 
+    // 模式二: pool changes are audited SEPARATELY (who moved whom in/out of
+    // the PRO pool must always be answerable — plan doc §3-S0 / M1).
+    const prevPool = memory.riders[index].pool ?? "standard";
+    const nextPool = body.pool === "pro" || body.pool === "standard" ? body.pool : undefined;
+
     memory.riders[index] = {
       ...memory.riders[index],
       ponto: nextPonto,
       franchise: nextFranchise,
+      ...(nextPool !== undefined ? { pool: nextPool } : {}),
       ...(body.status !== undefined ? { status: normalizeStatus(String(body.status)) } : {}),
     };
     appendServerAudit({ actor, action: "RIDER_ASSIGNED", entity: "Rider", entityId: riderId, detail: `${memory.riders[index].name} → ponto ${memory.riders[index].ponto} / franchise ${memory.riders[index].franchise} / ${memory.riders[index].status}.`, risk: "Low" });
+    if (nextPool !== undefined && nextPool !== prevPool) {
+      appendServerAudit({ actor, action: "RIDER_POOL_CHANGED", entity: "Rider", entityId: riderId, detail: `${memory.riders[index].name}: pool ${prevPool} → ${nextPool}.`, risk: "Medium" });
+    }
     return jsonResponse({ data: memory.riders[index] });
   }
 

@@ -74,19 +74,34 @@ export async function GET(request: Request) {
   }
 
   const client = getSupabaseServerClient();
-  const { data: latest, error: latestErr } = await client
-    .from("rider_status_snapshots").select("captured_at").order("captured_at", { ascending: false }).limit(1);
+  // TWO feeds write here (main VPS + PRO VPS, disjoint rider sets). Each
+  // source keeps its own 5-min cadence, so the live board is the UNION of
+  // each source's LATEST batch — one lagging feed must not hide the other.
+  const { data: latestRows, error: latestErr } = await client
+    .from("rider_status_snapshots")
+    .select("captured_at, source")
+    .order("captured_at", { ascending: false })
+    .limit(60);
   if (latestErr) return jsonResponse({ error: latestErr.message }, { status: 500 });
-  const capturedAt = latest?.[0]?.captured_at ?? null;
+  const latestBySource = new Map<string, string>();
+  for (const row of (latestRows ?? []) as Array<{ captured_at: string; source?: string }>) {
+    const src = row.source ?? "main";
+    if (!latestBySource.has(src)) latestBySource.set(src, row.captured_at);
+  }
+  const capturedAt = [...latestBySource.values()].sort().reverse()[0] ?? null;
 
   let snapshots: SnapshotRow[] = [];
   let kpi: Record<string, unknown> | null = null;
   if (capturedAt) {
-    const [{ data: snaps }, { data: kpis }] = await Promise.all([
-      client.from("rider_status_snapshots").select("*").eq("captured_at", capturedAt),
-      client.from("rider_kpi_snapshots").select("*").eq("captured_at", capturedAt).limit(1),
-    ]);
-    snapshots = (snaps ?? []) as SnapshotRow[];
+    const batches = await Promise.all(
+      [...latestBySource.entries()].map(([src, at]) =>
+        client.from("rider_status_snapshots").select("*").eq("captured_at", at).eq("source", src).then((r) => (r.data ?? []) as SnapshotRow[]),
+      ),
+    );
+    snapshots = batches.flat();
+    // City KPI row: prefer the main feed's latest, fall back to any.
+    const kpiAt = latestBySource.get("main") ?? capturedAt;
+    const { data: kpis } = await client.from("rider_kpi_snapshots").select("*").eq("captured_at", kpiAt).limit(1);
     kpi = (kpis?.[0] as Record<string, unknown>) ?? null;
   }
 
@@ -119,6 +134,9 @@ export async function GET(request: Request) {
       hotZone: s.hot_zone, vehicle: s.vehicle, onlineMins: s.online_mins, restMins: s.rest_mins,
       finishedCnt: s.finished_cnt, lat: s.lat, lng: s.lng,
       franchise: match?.franchise || "", ponto: match?.ponto || "", leader: match?.leader || "",
+      // 模式二: pool membership for the PRO realtime monitor view (VPS
+      // scraper feeds the snapshots; this joins them to the rider's pool).
+      pool: match?.pool === "pro" ? "pro" : "standard",
       // "Unassigned" is the placeholder franchise for auto-materialized
       // profiles — those riders are NOT assigned yet (the 只看未归属 filter
       // was matching nobody because the placeholder string is truthy).
@@ -133,7 +151,12 @@ export async function GET(request: Request) {
     };
   });
 
+  // 模式二: optional pool filter (?pool=pro) — the PRO realtime monitor view.
+  // Orthogonal to the session scope pinning above (a franchise session asking
+  // for pool=pro sees only ITS OWN pro riders).
+  const poolParam = url.searchParams.get("pool")?.trim() || "";
   const scoped = rows.filter((r) => {
+    if (poolParam && r.pool !== poolParam) return false;
     if (franchise) return r.franchise === franchise;
     if (ponto) return r.ponto === ponto;
     return true;

@@ -47,13 +47,20 @@ export async function GET(request: Request) {
   // slot feed (hotzone shown as the ponto column) and the rider's own
   // dispatch signups ride along as enrollments.
   if (session.portal === "rider" || session.role === "Rider") {
-    await refreshCollectionsFromDatabase(["dispatchShifts", "shiftSignups"]);
+    await refreshCollectionsFromDatabase(["dispatchShifts", "shiftSignups", "riders"]);
     const today = new Date(Date.now() - 864e5).toISOString().slice(0, 10);
     const WD_PT = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"];
     const DK = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"];
+    // 模式二 S1 (flag MODE2_POOL=on, default off): riders only see shifts of
+    // their own pool — PRO riders get the PRO plan, standard riders never see
+    // it. With the flag off behaviour is exactly as before (all shifts).
+    const poolFilterOn = process.env.MODE2_POOL === "on";
+    const me = memory.riders.find((r) => r.name === session.name || r.id === session.userId);
+    const myPool = me?.pool === "pro" ? "pro" : "standard";
     const mySignups = memory.shiftSignups.filter((g) => g.riderName === session.name);
     for (const shift of memory.dispatchShifts) {
       if (shift.status !== "scheduling" || shift.date < today) continue;
+      if (poolFilterOn && (shift.pool === "pro" ? "pro" : "standard") !== myPool) continue;
       const [startTime = "", endTime = ""] = String(shift.timeRange ?? "").split("~");
       const active = memory.shiftSignups.filter((g) => g.shiftId === shift.id && g.status !== "rejected" && g.status !== "cancelled").length;
       const dow = new Date(`${shift.date}T12:00:00Z`).getUTCDay();

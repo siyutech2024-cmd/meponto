@@ -24,17 +24,30 @@ import {
 
 const DEFAULT_CITY = "55000199";
 
-function authorized(request: Request): boolean {
-  const expected = process.env.EASTWIND_INGEST_TOKEN;
-  if (!expected) return true; // unset → open (local/dev); set it in production
+/**
+ * Two realtime scrapers feed this endpoint (two VPSes, two Eastwind accounts):
+ *  - EASTWIND_INGEST_TOKEN      → source "main" (the original all-riders board)
+ *  - EASTWIND_INGEST_TOKEN_PRO  → source "pro"  (the PRO-pool monitoring VPS)
+ * The SOURCE comes from which token matched — scrapers need zero code changes,
+ * the new VPS just uses the PRO token in its .env. Batches are delete-then-
+ * insert scoped to (captured_at, source), so the two feeds never wipe each
+ * other. Returns the resolved source, or null when unauthorized.
+ */
+function resolveSource(request: Request): "main" | "pro" | null {
+  const main = process.env.EASTWIND_INGEST_TOKEN;
+  const pro = process.env.EASTWIND_INGEST_TOKEN_PRO;
+  if (!main && !pro) return "main"; // unset → open (local/dev)
   const token =
     request.headers.get("x-ingest-token") ??
     (request.headers.get("authorization") ?? "").replace(/^Bearer\s+/i, "");
-  return token === expected;
+  if (pro && token === pro) return "pro";
+  if (main && token === main) return "main";
+  return null;
 }
 
 export async function POST(request: Request) {
-  if (!authorized(request)) {
+  const source = resolveSource(request);
+  if (!source) {
     return jsonResponse({ error: "Unauthorized" }, { status: 401 });
   }
 
@@ -63,19 +76,21 @@ export async function POST(request: Request) {
     const { snapshots, kpi } = parseRiders(body.riderList, body.kpi, capturedAt, cityId, body.riderFeatures ?? null);
     const batch = alignTo5Min(capturedAt);
 
-    // Idempotent batch: remove any prior rows for this exact batch first.
-    await client.from("rider_status_snapshots").delete().eq("captured_at", batch);
+    // Idempotent batch PER SOURCE: only this feed's prior rows for the batch
+    // are replaced — the other VPS's rows in the same 5-min bucket survive.
+    await client.from("rider_status_snapshots").delete().eq("captured_at", batch).eq("source", source);
     if (snapshots.length) {
-      const { error } = await client.from("rider_status_snapshots").insert(snapshots);
+      const { error } = await client.from("rider_status_snapshots").insert(snapshots.map((s) => ({ ...s, source })));
       if (error) return jsonResponse({ error: `rider_status_snapshots: ${error.message}` }, { status: 500 });
     }
 
-    await client.from("rider_kpi_snapshots").delete().eq("captured_at", batch);
-    const { error: kErr } = await client.from("rider_kpi_snapshots").insert(kpi);
+    await client.from("rider_kpi_snapshots").delete().eq("captured_at", batch).eq("source", source);
+    const { error: kErr } = await client.from("rider_kpi_snapshots").insert({ ...kpi, source });
     if (kErr) return jsonResponse({ error: `rider_kpi_snapshots: ${kErr.message}` }, { status: 500 });
 
     result.ridersInserted = snapshots.length;
     result.kpiCaptured = true;
+    result.source = source;
   }
 
   // --- delivery → upsert by order_no (waybill board; disabled for now) -----

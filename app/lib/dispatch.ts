@@ -21,6 +21,8 @@ export type DispatchShift = {
   plannedCount: number;
   filled99Count: number; // riders already scheduled on Eastwind (at import time)
   isCritical: boolean;
+  /** 模式二: "pro" = PRO-pool-only shift; absent/"standard" = open to standard riders. */
+  pool?: "standard" | "pro";
   status: DispatchShiftStatus;
   reportedAt?: string; // when operations submitted the roster to Eastwind
   importedAt: string;

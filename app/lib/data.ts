@@ -31,6 +31,8 @@ export type Rider = {
   ninetyNineId?: string;
   /** Franchise that owns the rider's station. */
   franchise?: string;
+  /** 模式二 pool membership: "pro" = PRO 池(专属班表+薪酬保密), absent/"standard" = 普通. */
+  pool?: "standard" | "pro";
   /** Birth date collected at registration (YYYY-MM-DD). */
   birthday?: string;
   /** Google account id (sub) linked for "Sign in with Google" → same rider.id. */

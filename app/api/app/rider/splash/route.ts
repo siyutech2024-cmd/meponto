@@ -1,6 +1,7 @@
 import { appendServerAudit, jsonResponse, memory } from "../../../../lib/server/memory";
 import { flushPendingToDatabase, refreshCollectionsFromDatabase } from "../../../../lib/server/persistence";
 import { requirePermission, roleFromRequest } from "../../../../lib/server/authz";
+import { sessionFromRequest } from "../../../../lib/auth-session";
 import { defaultSplashConfig, type AppSplashRecord } from "../../../../lib/app-config";
 
 /**
@@ -23,9 +24,23 @@ function publicView(record: AppSplashRecord) {
   return config;
 }
 
-export async function GET() {
+export async function GET(request: Request) {
   await refreshCollectionsFromDatabase(COLLECTIONS);
-  return jsonResponse({ data: publicView(current()) });
+  const record = current();
+  // 模式二 S3: audience-gated splash. Enforced SERVER-side so old clients
+  // (which don't know the audience field) can never show a PRO-only splash
+  // to a standard rider — they simply receive enabled=false.
+  if (record.audience === "pro") {
+    await refreshCollectionsFromDatabase(["riders"]);
+    const session = await sessionFromRequest(request);
+    const rider = session
+      ? memory.riders.find((r) => r.id === session.userId || r.name === session.name)
+      : undefined;
+    if ((rider?.pool ?? "standard") !== "pro") {
+      return jsonResponse({ data: { ...publicView(record), enabled: false } });
+    }
+  }
+  return jsonResponse({ data: publicView(record) });
 }
 
 type Body = { action?: string } & Partial<AppSplashRecord>;
@@ -52,6 +67,7 @@ async function handlePost(request: Request) {
     accentHex: body.accentHex !== undefined ? clampHex(body.accentHex, prev.accentHex) : prev.accentHex,
     imageURL: body.imageURL !== undefined ? String(body.imageURL).trim().slice(0, 500) : prev.imageURL,
     linkURL: body.linkURL !== undefined ? String(body.linkURL).trim().slice(0, 500) : prev.linkURL,
+    audience: body.audience === "pro" ? "pro" : body.audience === "all" ? "all" : prev.audience,
     version: (prev.version ?? 0) + 1,
     updatedAt: nowStamp(),
     updatedBy: actor,
