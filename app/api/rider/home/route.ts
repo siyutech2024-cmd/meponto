@@ -7,8 +7,8 @@ import { taskProgress } from "../../../lib/tasks";
 import { isSupplierCategory } from "../../../lib/server/crm-categories";
 import { maskAuthor } from "../../../lib/partner-reviews";
 import { dbDirectReadEnabled, fetchRows } from "../../../lib/server/db-read";
-import type { RiderDailyKpi } from "../../../lib/performance";
-import { kpisByRider99, kpisByRiderName, perfMode } from "../../../lib/server/db/performance-repo";
+import type { RiderDailyEarning, RiderDailyKpi } from "../../../lib/performance";
+import { earningsByRider99, kpisByRider99, kpisByRiderName, perfMode } from "../../../lib/server/db/performance-repo";
 
 /**
  * Rider Home dashboard aggregate (session-scoped). One read powering the
@@ -217,30 +217,38 @@ export async function GET(request: Request) {
         sourceId: w.id,
       };
     });
-  // Payment notes are written by the zh console (e.g. the franchise-cascade
-  // note "随加盟商付款 pay-…") and were shown RAW to pt-BR riders — Chinese
-  // characters in the Brazilian cash statement. Localize on the way out so
-  // every already-stored record renders correctly on every app version.
-  const localizePaymentNote = (note: string): string => {
-    const n = (note ?? "").trim();
-    if (!n) return "Repasse de corridas";
-    if (n.startsWith("随加盟商付款")) return "Repasse via franquia";
-    if (n.startsWith("周结算") || n.startsWith("周结")) return "Repasse semanal";
-    // Any other Chinese-only note → neutral label instead of raw characters.
-    return /[一-鿿]/.test(n) ? "Repasse de corridas" : n;
-  };
-  const payments = memory.walletPayments
-    .filter((p) => p.target === "rider" && p.refName === name)
-    .map((p) => ({
+  // Repasse entries come straight from the IMPORTED daily settlement sheet
+  // (riderDailyEarnings) — decision 2026-08-06: settlement is paid out daily
+  // outside the system, so the statement must NOT depend on anyone recording
+  // a payment action. Import the sheet → the rider sees it, same day. One row
+  // per settled day: date · orders · settle amount. Rider-scoped direct read
+  // (L2 pattern), legacy refresh as fallback.
+  let earningRows: RiderDailyEarning[] | null = null;
+  if (direct && nineId) {
+    try {
+      earningRows = perfMode() === "read"
+        ? await earningsByRider99(nineId)
+        : await fetchRows<RiderDailyEarning>("riderDailyEarnings", [{ op: "eq", field: "rider99Id", value: nineId }]);
+    } catch (error) {
+      console.warn(`[rider/home] direct earnings read failed, legacy path. (${(error as Error).message})`);
+    }
+  }
+  if (!earningRows) {
+    await refreshCollectionsFromDatabase(["riderDailyEarnings"]);
+    earningRows = memory.riderDailyEarnings.filter((e) => e.rider99Id === nineId || e.riderName === name);
+  }
+  const payments = earningRows
+    .filter((e) => (e.settleAmount ?? 0) > 0)
+    .map((e) => ({
       title: "Repasse",
-      subtitle: localizePaymentNote(p.note ?? ""),
-      amount: `+${brl(p.amount)}`,
-      status: "Disponível",
+      subtitle: `${e.orders ?? 0} pedidos`,
+      amount: `+${brl(e.settleAmount)}`,
+      status: "Confirmado",
       tone: "OK",
-      at: p.paidAt ?? "",
+      at: e.date ?? "",
       type: "payout",
       balanceAfter: null as number | null,
-      sourceId: p.id,
+      sourceId: e.id,
     }));
   const cashTypeMeta: Record<string, { title: string; tone: string }> = {
     topup: { title: "Recarga", tone: "OK" },

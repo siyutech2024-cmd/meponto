@@ -2,7 +2,6 @@ import { appendServerAudit, jsonResponse, makeServerId, memory } from "../../lib
 import { flushPendingToDatabase, refreshCollectionsFromDatabase } from "../../lib/server/persistence";
 import { requirePermission, roleFromRequest } from "../../lib/server/authz";
 import { sendPushToRider } from "../../lib/server/notify";
-import { postFranchiseDeposit } from "../../lib/server/franchise-deposit";
 import { computeBalance, type RiderWithdrawal, type WalletPayment } from "../../lib/finance";
 import { scopeFromRequest } from "../../lib/server/authz";
 import { callRpc, dbDirectReadEnabled, fetchRows } from "../../lib/server/db-read";
@@ -432,17 +431,11 @@ async function handlePost(request: Request) {
       // window is marked paid for the remaining amount (单笔覆盖整周).
       let cascaded = 0;
       if (target === "franchise") {
-        // Ledger-first draw-down (may overdraw — franchise owes HQ a top-up).
-        postFranchiseDeposit({
-          franchise: refName.trim(),
-          type: "adjust",
-          amountBRL: -amount,
-          sourceType: "wallet",
-          sourceId: payment.id,
-          note: `HQ→franchise settlement ${payment.weekFrom}–${payment.weekTo}`,
-          createdBy: actor,
-          allowNegative: true,
-        });
+        // DECOUPLED (2026-08-06): recording a payment no longer draws down the
+        // franchise prepaid-deposit ledger. Settlement is paid daily outside
+        // the system; the auto-drawdown (with no top-ups ever recorded) was
+        // the sole cause of the phantom negative balances (-R$123k). Deposit
+        // movements now happen ONLY through explicit top-up/adjust entries.
         const byNinetyNine = new Map(memory.riders.filter((r) => r.ninetyNineId).map((r) => [r.ninetyNineId!, r]));
         const settleByRider = new Map<string, number>();
         for (const row of memory.riderDailyEarnings) {
@@ -562,31 +555,10 @@ async function handlePost(request: Request) {
       const stamp = nowStamp();
       if (body.action === "confirmPayment") {
         memory.riderWithdrawals[index] = { ...current, status: "paid", paidAt: stamp, paidBy: actor, note: String(note).slice(0, 200) };
-        // Auto-deduct the payout from the franchise's prepaid deposit (may go
-        // negative — a negative balance means the franchise owes HQ a top-up).
-        // Ledger-first: posted through the franchise deposit ledger.
-        const fIndex = memory.franchises.findIndex((f) => f.name === current.franchise);
-        if (fIndex !== -1) {
-          const posted = postFranchiseDeposit({
-            franchise: current.franchise,
-            type: "adjust",
-            amountBRL: -current.amount,
-            sourceType: "wallet",
-            sourceId: current.id,
-            note: `Payout ${current.riderName}`,
-            createdBy: actor,
-            allowNegative: true,
-          });
-          const nextBalance = posted.ok ? posted.entry.balanceAfter : Math.round((memory.franchises[fIndex].depositBalance ?? 0) * 100) / 100;
-          appendServerAudit({
-            actor,
-            action: "FRANCHISE_DEPOSIT_AUTO_DEDUCT",
-            entity: "Franchise",
-            entityId: memory.franchises[fIndex].id,
-            detail: `Payout ${current.riderName} R$${current.amount.toFixed(2)} → ${current.franchise} deposit R$${nextBalance.toFixed(2)}${nextBalance < 0 ? " (OVERDRAWN)" : ""}.`,
-            risk: nextBalance < 0 ? "High" : "Medium",
-          });
-        }
+        // DECOUPLED (2026-08-06): confirming a payout no longer auto-deducts
+        // the franchise prepaid-deposit ledger (daily out-of-system payouts +
+        // never-recorded top-ups made every balance spuriously negative).
+        // Deposit movements now happen only through explicit top-up/adjust.
         await sendPushToRider(current.riderName, "Pagamento enviado 💰", `Seu saque de R$ ${current.amount.toFixed(2)} foi pago via PIX. Confira seu extrato.`, "/rider-app/wallet");
       } else {
         memory.riderWithdrawals[index] = { ...current, status: "rejected", rejectedAt: stamp, note: String(note).slice(0, 200) };
