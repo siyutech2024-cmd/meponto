@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { RefreshCcw, Send, Star } from "lucide-react";
 import { AppShell, PageTitle } from "../../components/ui";
-import { DataTable, SectionCard, Stat, StatusBadge, TodoCard, type BadgeTone, type DataColumn } from "../../components/kit";
+import { DataTable, ProBadge, SectionCard, Stat, StatusBadge, TodoCard, type BadgeTone, type DataColumn } from "../../components/kit";
 import { readSession } from "../../lib/session";
 import type { DispatchShift, ShiftQuota, ShiftSignup } from "../../lib/dispatch";
 import { ShiftRiderPicker } from "../../components/shift-rider-picker";
@@ -131,6 +131,11 @@ export default function FranchiseDispatchPage() {
   // Stats row: quota vs split vs review progress across all my shifts.
   const totalQuota = myShifts.reduce((sum, row) => sum + (row.franchiseQuota?.quota ?? 0), 0);
   const totalSplit = myShifts.reduce((sum, row) => sum + row.stationQuotas.reduce((x, q) => x + q.quota, 0), 0);
+  // 模式二 T4: PRO quota is tracked separately from the standard one — the two
+  // pools have their own headcount and must never be traded against each other.
+  const proShifts = myShifts.filter((row) => row.shift.pool === "pro");
+  const proQuota = proShifts.reduce((sum, row) => sum + (row.franchiseQuota?.quota ?? 0), 0);
+  const proSplit = proShifts.reduce((sum, row) => sum + row.stationQuotas.reduce((x, q) => x + q.quota, 0), 0);
   const approvedTotal = board.signups.filter((s) => s.status === "approved" || s.status === "reported").length;
 
   const weekEnd = addDays(weekStart, 6);
@@ -201,6 +206,11 @@ export default function FranchiseDispatchPage() {
         <span className={`inline-flex items-center gap-1 font-black ${activeShiftId === shift.id ? "text-[var(--accent)]" : ""}`}>
           {shift.isCritical && <Star size={12} className="text-[var(--accent)]" />}
           {shift.timeRange}
+          {/* 模式二: PRO 专属班次 —— 配额拆分时不可与普通班混拆 */}
+          {shift.pool === "pro" && <ProBadge small />}
+          {/* 模式二 T5: locked = the roster is frozen; submissions will be
+              refused, so say it here instead of only on the error toast. */}
+          {shift.lockedAt && <span title={t("dpLocked", { x: shift.lockedAt })}>🔒</span>}
         </span>
       ),
     },
@@ -288,8 +298,16 @@ export default function FranchiseDispatchPage() {
 
       {/* Dispatch stats: split progress + review todo. */}
       <section className="mb-4 grid gap-3 md:grid-cols-4">
-        <Stat label={t("dfMyQuota")} value={String(totalQuota)} hint={t("dpWeekShifts", { n: myShifts.length })} />
-        <Stat label={t("dfAllocated")} value={String(totalSplit)} />
+        <Stat
+          label={t("dfMyQuota")}
+          value={String(totalQuota)}
+          /* 模式二 T4 · 两套名额独立: the PRO subtotal sits inside the SAME stat
+             card (设计铁律: no new menus, no new cards) so the franchise can see
+             at a glance how much of its quota is PRO and never splits a PRO
+             shift into a standard one by accident. */
+          hint={proQuota > 0 ? `${t("dpWeekShifts", { n: myShifts.length })} · PRO ${proQuota}` : t("dpWeekShifts", { n: myShifts.length })}
+        />
+        <Stat label={t("dfAllocated")} value={String(totalSplit)} hint={proSplit > 0 ? `PRO ${proSplit}` : undefined} />
         <Stat label={t("dpApprovedCnt")} value={String(approvedTotal)} />
         <TodoCard label={t("dpPendingCnt")} value={pending.length} tone={pending.length > 0 ? "warn" : "neutral"} hint={t("dfSubmittedHint")} />
       </section>

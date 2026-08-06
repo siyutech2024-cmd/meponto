@@ -636,7 +636,8 @@ async function handlePost(request: Request) {
   switch (body.action) {
     case "setConfig": {
       const config = { ...getConfig() };
-      const fields = ["perOrderPoints", "referralPoints", "partnerServicePoints", "partnerServiceCount", "pointsPerBrl", "birthdayBasePoints", "checkinPoints", "tierWindowDays", "decayGraceDays", "decayPointsPerDay", "tierPrataEarned", "tierOuroEarned", "tierDiamanteEarned", "dailyRedeemCount", "dailyRedeemPoints", "noShowPenaltyPoints", "monthlyRedeemPoints", "highValueReviewPoints", "newAccountWindowDays", "newAccountRedeemCap"] as const;
+      const prevProRate = Number(config.hqProRatePerOrder ?? 0);
+      const fields = ["perOrderPoints", "referralPoints", "partnerServicePoints", "partnerServiceCount", "pointsPerBrl", "birthdayBasePoints", "checkinPoints", "tierWindowDays", "hqProRatePerOrder", "decayGraceDays", "decayPointsPerDay", "tierPrataEarned", "tierOuroEarned", "tierDiamanteEarned", "dailyRedeemCount", "dailyRedeemPoints", "noShowPenaltyPoints", "monthlyRedeemPoints", "highValueReviewPoints", "newAccountWindowDays", "newAccountRedeemCap"] as const;
       for (const field of fields) {
         const value = Number(body[field]);
         if (Number.isFinite(value) && value >= 0) config[field] = value;
@@ -648,6 +649,20 @@ async function handlePost(request: Request) {
       if (index === -1) memory.mallConfigs.unshift(config);
       else memory.mallConfigs[index] = config;
       appendServerAudit({ actor, action: "MALL_CONFIG_UPDATED", entity: "MallConfig", entityId: "mall-config", detail: JSON.stringify(config), risk: "Medium" });
+      // 模式二 T3: HqProRate drives every PRO settlement amount — a change is a
+      // MONEY decision, so it gets its own High-risk audit line (who/when/from→to)
+      // instead of hiding inside the generic config blob.
+      const nextProRate = Number(config.hqProRatePerOrder ?? 0);
+      if (nextProRate !== prevProRate) {
+        appendServerAudit({
+          actor,
+          action: "HQ_PRO_RATE_CHANGED",
+          entity: "MallConfig",
+          entityId: "mall-config",
+          detail: `HqProRate: R$${prevProRate.toFixed(2)} → R$${nextProRate.toFixed(2)} per PRO order.`,
+          risk: "High",
+        });
+      }
       return jsonResponse({ data: config });
     }
 

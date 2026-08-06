@@ -133,6 +133,20 @@ class AppStore {
     // Referral progress (masked invitee names + reward status).
     var referrals by mutableStateOf<List<com.meponto.rider.data.remote.ReferralDto>>(emptyList())
         private set
+    // 模式二: PRO 池成员标记 —— 驱动 PRO 徽章 / 入池欢迎页 / 首页双口径卡.
+    var isPro by mutableStateOf(false)
+        private set
+    // 今日实时单量(估算,零金额);null = 不可用时界面隐藏该行.
+    var liveCount by mutableStateOf<com.meponto.rider.data.remote.LiveCountDto?>(null)
+        private set
+    // A4 · 活动入口卡。受众与生效窗口由服务端判定,这里 null 就是"不展示".
+    var activityCard by mutableStateOf<com.meponto.rider.data.remote.ActivityCardDto?>(null)
+        private set
+
+    /** 拉取今日实时单量(首页双口径卡下半部分). */
+    suspend fun refreshLiveCount() {
+        liveCount = repo?.liveCount()
+    }
     // R$ per point when a redemption's shortfall converts to cash (0 = off).
     var pointCashRateBRL by mutableStateOf(0.0)
         private set
@@ -383,6 +397,10 @@ class AppStore {
         snapshot.coupons?.let { coupons = it }
         snapshot.badges?.let { badges = it }
         snapshot.referrals?.let { referrals = it }
+        snapshot.pool?.let { isPro = it == "pro" }
+        // 注意:这里不能用 ?.let —— 活动结束时服务端下发 null,必须真的清掉,
+        // 否则卡片会一直挂在首页(只增不减是典型的下架失灵)。
+        activityCard = snapshot.activityCard
         snapshot.pointCashRateBRL?.let { pointCashRateBRL = it }
         snapshot.statusTotals?.let { statusTotals = it }
     }

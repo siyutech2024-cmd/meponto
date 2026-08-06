@@ -24,6 +24,11 @@ export type DispatchShift = {
   /** 模式二: "pro" = PRO-pool-only shift; absent/"standard" = open to standard riders. */
   pool?: "standard" | "pro";
   status: DispatchShiftStatus;
+  /** 模式二 T5 · 锁班: once locked the roster is frozen — no new signups,
+   *  no cancellations (except the HQ exception flow). Set by the 18:00 cron
+   *  or manually by HQ. */
+  lockedAt?: string;
+  lockedBy?: string;
   reportedAt?: string; // when operations submitted the roster to Eastwind
   importedAt: string;
 };

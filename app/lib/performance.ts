@@ -14,7 +14,9 @@
  */
 
 export type RiderDailyKpi = {
-  id: string; // kpi-<date>-<rider99Id>
+  id: string; // kpi-<date>-<rider99Id>  (PRO: kpi-pro-<date>-<rider99Id>)
+  /** 模式二 T2: source Eastwind OL account ("main" 旧OL / "pro" 新OL). */
+  account?: "main" | "pro";
   date: string; // YYYY-MM-DD
   rider99Id: string;
   riderName: string;
@@ -43,7 +45,10 @@ export const riderDailyKpis: RiderDailyKpi[] = [];
  * Settlement formula observed in the sheet: 金额 = 今日统计 + order × 2.5.
  */
 export type RiderDailyEarning = {
-  id: string; // earn-<date>-<rider99Id>
+  id: string; // earn-<date>-<rider99Id>  (PRO: earn-pro-<date>-<rider99Id>)
+  /** 模式二 T2: which Eastwind OL account this row was imported from.
+   *  absent/"main" = 旧 OL(普通池); "pro" = 新 OL(PRO 池,零金额). */
+  account?: "main" | "pro";
   date: string;
   rider99Id: string;
   riderName: string;
@@ -61,7 +66,20 @@ export type RiderDailyEarning = {
   referralBonus: number; // 推荐奖励(R$)
   pix: string;
   orders: number; // 完单（结算口径）
-  settleAmount: number; // 金额(R$) — 最终结算
+  settleAmount: number; // 金额(R$) — 最终结算(可能为负 = 当日倒扣)
+  /**
+   * 负数结算(倒扣)核销标记。
+   *
+   * 一天算下来是负数,意味着骑手当天不但没拿到钱,还欠了平台一笔(现金单欠款、
+   * 餐损等)。以前这种行只是被显示层过滤掉,系统里查不到"谁还欠多少",全靠
+   * 线下台账 —— 这就是遗留缺口。
+   *
+   * 做法遵守账本铁律:**原始导入行的金额一个字都不改**,核销只是在这一行上
+   * 追加一个标记(谁、什么时候核销的)。待扣余额 = 所有未标记负数行之和,是个
+   * 派生量,不另存一份可能对不上的数字。
+   */
+  deductionSettledAt?: string;
+  deductionSettledBy?: string;
   importedAt: string;
 };
 
@@ -238,4 +256,37 @@ export function aggregateKpis(rows: RiderDailyKpi[], key: string): KpiAggregate 
     caa: avg("caa"),
     overtime: avg("overtime"),
   };
+}
+
+
+/**
+ * 待扣汇总(派生量,不落库):按骑手归集所有"负数结算且未核销"的日行。
+ * 金额取绝对值,便于界面直接显示"还欠 R$X"。
+ */
+export type PendingDeduction = {
+  rider99Id: string;
+  riderName: string;
+  amount: number; // 正数 = 欠款金额
+  days: number;
+  rows: Array<{ id: string; date: string; amount: number }>;
+};
+
+export function pendingDeductions(rows: RiderDailyEarning[]): PendingDeduction[] {
+  const byRider = new Map<string, PendingDeduction>();
+  for (const row of rows) {
+    if (!(row.settleAmount < 0) || row.deductionSettledAt) continue;
+    const entry = byRider.get(row.rider99Id) ?? {
+      rider99Id: row.rider99Id,
+      riderName: row.riderName,
+      amount: 0,
+      days: 0,
+      rows: [],
+    };
+    const amount = Math.abs(row.settleAmount);
+    entry.amount = Math.round((entry.amount + amount) * 100) / 100;
+    entry.days += 1;
+    entry.rows.push({ id: row.id, date: row.date, amount });
+    byRider.set(row.rider99Id, entry);
+  }
+  return [...byRider.values()].sort((a, b) => b.amount - a.amount);
 }

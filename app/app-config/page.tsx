@@ -17,14 +17,31 @@ type SplashCfg = {
   accentHex: string;
   imageURL: string;
   linkURL: string;
+  /** 模式二 S3: "pro" = 只有 PRO 池骑手收到(服务端按会话门禁). */
+  audience?: "all" | "pro";
+  /** A4 · 活动入口卡(首页 banner)。与开屏同一条记录、同一个页面维护。 */
+  activityCard?: ActivityCard;
   version: number;
   updatedAt?: string;
   updatedBy?: string;
 };
 
+/** A4 · 活动入口卡。生效窗口与受众由服务端判定,前端只负责编辑。 */
+type ActivityCard = {
+  enabled: boolean; title: string; subtitle: string; badge: string;
+  imageURL: string; linkURL: string;
+  audience?: "all" | "pro"; startsAt?: string; endsAt?: string;
+};
+
+const DEFAULT_CARD: ActivityCard = {
+  enabled: false, title: "", subtitle: "", badge: "", imageURL: "", linkURL: "",
+  audience: "all", startsAt: "", endsAt: "",
+};
+
 const DEFAULT_CFG: SplashCfg = {
   enabled: true, headline: "MePonto", tagline: "", durationMs: 2200,
-  backgroundHex: "#07090d", accentHex: "#ffd100", imageURL: "", linkURL: "", version: 1,
+  backgroundHex: "#07090d", accentHex: "#ffd100", imageURL: "", linkURL: "", audience: "all",
+  activityCard: DEFAULT_CARD, version: 1,
 };
 
 export default function AppConfigPage() {
@@ -98,6 +115,11 @@ export default function AppConfigPage() {
   }
 
   const set = <K extends keyof SplashCfg>(k: K, v: SplashCfg[K]) => setCfg((c) => ({ ...c, [k]: v }));
+  // A4: the activity card is a nested object on the same record — patch it
+  // field by field so an unrelated splash edit can never blank the campaign.
+  const card = cfg.activityCard ?? DEFAULT_CARD;
+  const setCard = (patch: Partial<ActivityCard>) =>
+    setCfg((c) => ({ ...c, activityCard: { ...DEFAULT_CARD, ...c.activityCard, ...patch } }));
 
   async function saveSplash() {
     const r = await fetch("/api/app/rider/splash", { method: "POST", headers, body: JSON.stringify(cfg) }).catch(() => null);
@@ -211,6 +233,15 @@ export default function AppConfigPage() {
             <label><span className={label}>停留时长 (ms)</span><input inputMode="numeric" value={String(cfg.durationMs)} onChange={(e) => set("durationMs", Number(e.target.value.replace(/[^\d]/g, "")) || 0)} className={field} /></label>
           </div>
           <label className="mt-3 block"><span className={label}>副标题 Tagline（骑手可见，建议葡语）</span><input value={cfg.tagline} onChange={(e) => set("tagline", e.target.value)} className={field} /></label>
+          {/* 模式二 S3: 定向受众 —— 服务端按会话门禁,非 PRO 骑手(含所有老版本 APP)直接收到 enabled=false */}
+          <label className="mt-3 block">
+            <span className={label}>投放对象 Audiência</span>
+            <select value={cfg.audience ?? "all"} onChange={(e) => set("audience", e.target.value as "all" | "pro")} className={field}>
+              <option value="all">全部骑手 Todos</option>
+              <option value="pro">仅 PRO 池 Somente PRO</option>
+            </select>
+            <span className="mt-1 block text-[11px] text-[var(--muted)]">选“仅 PRO”后，普通骑手（含老版本 App）在服务端就被拦掉，不会看到该开屏。</span>
+          </label>
           <div className="mt-3">
             <span className={label}>开屏广告图（本地上传或粘贴 URL，可空）</span>
             <div className="flex gap-2">
@@ -226,6 +257,39 @@ export default function AppConfigPage() {
           <div className="mt-3 grid gap-3 sm:grid-cols-2">
             <label><span className={label}>背景色 Hex</span><div className="flex gap-2"><input type="color" value={cfg.backgroundHex} onChange={(e) => set("backgroundHex", e.target.value)} className="h-11 w-12 rounded-[8px] border border-[var(--line)] bg-transparent" /><input value={cfg.backgroundHex} onChange={(e) => set("backgroundHex", e.target.value)} className={field} /></div></label>
             <label><span className={label}>强调色 Hex</span><div className="flex gap-2"><input type="color" value={cfg.accentHex} onChange={(e) => set("accentHex", e.target.value)} className="h-11 w-12 rounded-[8px] border border-[var(--line)] bg-transparent" /><input value={cfg.accentHex} onChange={(e) => set("accentHex", e.target.value)} className={field} /></div></label>
+          </div>
+
+          {/* A4 · 活动入口卡 —— 与开屏同一条记录、同一个保存按钮,不另开菜单。
+              生效窗口和受众都在服务端判定,过期的卡不依赖手机时钟。 */}
+          <div className="mt-5 border-t border-[var(--line)] pt-4">
+            <label className="flex items-center gap-2">
+              <input type="checkbox" checked={card.enabled} onChange={(e) => setCard({ enabled: e.target.checked })} />
+              <span className="text-sm font-black">首页活动入口卡 / Card de campanha</span>
+            </label>
+            <div className="mt-3 grid gap-3 sm:grid-cols-2">
+              <label><span className={label}>标题</span><input value={card.title} onChange={(e) => setCard({ title: e.target.value })} placeholder="Campanha Realme" className={field} /></label>
+              <label><span className={label}>角标(可空)</span><input value={card.badge} onChange={(e) => setCard({ badge: e.target.value })} placeholder="NOVO" className={field} /></label>
+            </div>
+            <label className="mt-3 block"><span className={label}>副标题</span><input value={card.subtitle} onChange={(e) => setCard({ subtitle: e.target.value })} className={field} /></label>
+            <label className="mt-3 block"><span className={label}>图片 URL(可空)</span><input value={card.imageURL} onChange={(e) => setCard({ imageURL: e.target.value })} placeholder="https://…" className={field} /></label>
+            <label className="mt-3 block">
+              <span className={label}>点击跳转 URL</span>
+              <input value={card.linkURL} onChange={(e) => setCard({ linkURL: e.target.value })} placeholder="https://mall.meponto.com/…" className={field} />
+              {/* A5 白名单:APP 只在 *.meponto.com 内嵌打开,其余一律跳系统浏览器 */}
+              <span className="mt-1 block text-[11px] font-bold text-[var(--muted)]">
+                只有 *.meponto.com 会在 APP 内打开;其他域名会跳到系统浏览器。
+              </span>
+            </label>
+            <div className="mt-3 grid gap-3 sm:grid-cols-3">
+              <label><span className={label}>受众</span>
+                <select value={card.audience ?? "all"} onChange={(e) => setCard({ audience: e.target.value as "all" | "pro" })} className={field}>
+                  <option value="all">全部骑手</option>
+                  <option value="pro">仅 PRO 池</option>
+                </select>
+              </label>
+              <label><span className={label}>开始日期(可空)</span><input type="date" value={card.startsAt ?? ""} onChange={(e) => setCard({ startsAt: e.target.value })} className={field} /></label>
+              <label><span className={label}>结束日期(可空)</span><input type="date" value={card.endsAt ?? ""} onChange={(e) => setCard({ endsAt: e.target.value })} className={field} /></label>
+            </div>
           </div>
 
           <div className="mt-4 flex items-center gap-3">

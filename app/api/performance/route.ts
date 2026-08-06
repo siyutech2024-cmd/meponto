@@ -499,9 +499,13 @@ function evaluateNoShows(date: string) {
 
 type Body =
   | { action: "import"; raw: string; date: string }
-  | { action: "importKpiRecords"; date: string; records: Array<Record<string, unknown>> }
-  | { action: "importEarnings"; date: string; records: Array<Record<string, unknown>> }
+  // 模式二 T2: `account` selects the source Eastwind OL account
+  // ("main" 旧OL 默认 / "pro" 新OL — PRO rows land with zero money).
+  | { action: "importKpiRecords"; date: string; records: Array<Record<string, unknown>>; account?: "main" | "pro" }
+  | { action: "importEarnings"; date: string; records: Array<Record<string, unknown>>; account?: "main" | "pro" }
   | { action: "purgeDate"; date: string }
+  /** 倒扣核销:把指定的负数结算行标记为已了结(金额不改,只加标记)。 */
+  | { action: "settleDeduction"; earningIds: string[] }
   | { action: "recreditPoints" };
 
 async function handlePost(request: Request) {
@@ -593,6 +597,9 @@ async function handlePost(request: Request) {
     const achievements: Array<{ riderName: string; label: string }> = [];
     let noShowNotices = 0;
     if (body.action === "importKpiRecords") {
+      // 模式二 T2: same dual-source rule as earnings — the account is part of
+      // the idempotency key so 旧 OL / 新 OL sheets never overwrite each other.
+      const kpiAccount: "main" | "pro" = body.account === "pro" ? "pro" : "main";
       for (const raw of records) {
         const rider99Id = String(raw.rider99Id ?? "").trim();
         if (!/^\d{6,}$/.test(rider99Id)) continue;
@@ -603,7 +610,8 @@ async function handlePost(request: Request) {
           return Number.isFinite(parsed) ? parsed : null;
         };
         const record: RiderDailyKpi = {
-          id: `kpi-${date}-${rider99Id}`,
+          id: kpiAccount === "pro" ? `kpi-pro-${date}-${rider99Id}` : `kpi-${date}-${rider99Id}`,
+          account: kpiAccount,
           date,
           rider99Id,
           riderName: String(raw.riderName ?? "").trim() || "Desconhecido",
@@ -657,16 +665,26 @@ async function handlePost(request: Request) {
         }
       }
     } else {
+      // 模式二 T2 · dual-source import. `account` says which Eastwind OL
+      // account the sheet came from: "main" (旧 OL, 普通池) or "pro" (新 OL,
+      // PRO 池). PRO rows are stored with ZERO money — the settlement price is
+      // agreed offline between franchise and rider, and per v3.0 R6 it must
+      // never enter the system (so no client, and no future report, can ever
+      // derive the per-order rate). Idempotency key includes the account, so
+      // the two feeds can never overwrite each other.
+      const account: "main" | "pro" = body.account === "pro" ? "pro" : "main";
+      const isPro = account === "pro";
       for (const raw of records) {
         const rider99Id = String(raw.rider99Id ?? "").trim();
         if (!/^\d{6,}$/.test(rider99Id)) continue;
-        const total = num(raw.total);
+        const total = isPro ? 0 : num(raw.total);
         // Raw Eastwind export has no order column: orders come from the
         // same-day KPI sheet. 金额 is NEVER computed — sheet column only.
         const kpiSameDay = memory.riderDailyKpis.find((row) => row.date === date && row.rider99Id === rider99Id);
         const orders = raw.orders !== undefined ? num(raw.orders) : kpiSameDay?.completedOrders ?? 0;
         const record: RiderDailyEarning = {
-          id: `earn-${date}-${rider99Id}`,
+          id: isPro ? `earn-pro-${date}-${rider99Id}` : `earn-${date}-${rider99Id}`,
+          account,
           date,
           rider99Id,
           riderName: String(raw.riderName ?? "").trim() || "Desconhecido",
@@ -674,20 +692,21 @@ async function handlePost(request: Request) {
           cpf: String(raw.cpf ?? "").trim(),
           city: String(raw.city ?? "").trim(),
           total,
-          tripIncome: num(raw.tripIncome),
-          cashDebt: num(raw.cashDebt),
-          mealDeduction: num(raw.mealDeduction),
-          bonus: num(raw.bonus),
-          other: num(raw.other),
-          tips: num(raw.tips),
-          manualAdjust: num(raw.manualAdjust),
-          referralBonus: num(raw.referralBonus),
+          // PRO rows: every money column is forced to 0 at the door.
+          tripIncome: isPro ? 0 : num(raw.tripIncome),
+          cashDebt: isPro ? 0 : num(raw.cashDebt),
+          mealDeduction: isPro ? 0 : num(raw.mealDeduction),
+          bonus: isPro ? 0 : num(raw.bonus),
+          other: isPro ? 0 : num(raw.other),
+          tips: isPro ? 0 : num(raw.tips),
+          manualAdjust: isPro ? 0 : num(raw.manualAdjust),
+          referralBonus: isPro ? 0 : num(raw.referralBonus),
           pix: String(raw.pix ?? "").trim(),
           orders,
           // Settlement amount: use the sheet's explicit 金额 column when present;
           // otherwise fall back to 行程收入 / Total diário (tripIncome), per the
-          // confirmed business rule (最终金额 = 行程收入).
-          settleAmount: raw.settleAmount !== undefined ? num(raw.settleAmount) : num(raw.tripIncome),
+          // confirmed business rule (最终金额 = 行程收入). PRO = always 0.
+          settleAmount: isPro ? 0 : (raw.settleAmount !== undefined ? num(raw.settleAmount) : num(raw.tripIncome)),
           importedAt,
         };
         const index = memory.riderDailyEarnings.findIndex((row) => row.id === record.id);
@@ -711,14 +730,34 @@ async function handlePost(request: Request) {
       }
     }
 
+    const importAccount: "main" | "pro" = body.account === "pro" ? "pro" : "main";
     appendServerAudit({
       actor,
       action: body.action === "importEarnings" ? "EARNINGS_IMPORTED" : "KPI_IMPORTED",
       entity: body.action === "importEarnings" ? "RiderDailyEarning" : "RiderDailyKpi",
       entityId: date,
-      detail: `${body.action} for ${date}: ${created} created, ${updated} updated.`,
+      detail: `[${importAccount}] ${body.action} for ${date}: ${created} created, ${updated} updated.`,
       risk: "Low",
     });
+
+    // 模式二 T2 · 缺源告警: both OL accounts must be imported for the same day.
+    // After one lands, report whether the other is still missing so operations
+    // notices a half-imported day immediately (v3.0 T2 acceptance).
+    const otherAccount = importAccount === "pro" ? "main" : "pro";
+    const hasOther = body.action === "importEarnings"
+      ? memory.riderDailyEarnings.some((row) => row.date === date && (row.account ?? "main") === otherAccount)
+      : memory.riderDailyKpis.some((row) => row.date === date && (row.account ?? "main") === otherAccount);
+    const missingSource = hasOther ? null : otherAccount;
+    if (missingSource) {
+      appendServerAudit({
+        actor,
+        action: "IMPORT_SOURCE_MISSING",
+        entity: body.action === "importEarnings" ? "RiderDailyEarning" : "RiderDailyKpi",
+        entityId: date,
+        detail: `${date}: "${missingSource}" OL sheet not imported yet (only "${importAccount}" present).`,
+        risk: "Medium",
+      });
+    }
 
     // Signed-up-but-absent riders: warn / deduct (idempotent per shift).
     if (body.action === "importKpiRecords") {
@@ -736,11 +775,49 @@ async function handlePost(request: Request) {
 
     // KPI imports may also backfill the same day's earnings orders → replay both.
     await dualWritePerfDay(date, body.action === "importEarnings" ? "earnings" : "both");
-    return jsonResponse({ data: { created, updated, parsed: created + updated, achievements: achievements.length, noShowNotices } }, { status: 201 });
+    return jsonResponse({ data: { created, updated, parsed: created + updated, achievements: achievements.length, noShowNotices, account: importAccount, missingSource } }, { status: 201 });
   }
 
   // Remove ONE business day's imported rows (both T+1 tables) — for fixing
   // mistaken uploads; re-import afterwards to restore correct data.
+  /**
+   * 倒扣核销 (settleDeduction).
+   *
+   * 负数结算行 = 骑手当天倒欠平台(现金单欠款、餐损…)。账本铁律:**原始导入
+   * 行的金额一个字都不改** —— 核销只是在这一行上追加"谁、什么时候核销的"。
+   * 待扣余额永远由未标记的负数行现算,不另存一个可能对不上的数字。
+   * 仅总部可核销(这是一笔钱的了结),每次都写 Medium 风险审计。
+   */
+  if (body.action === "settleDeduction") {
+    const hqScope = await scopeFromRequest(request);
+    if (hqScope.franchise || hqScope.station) return jsonResponse({ error: "仅总部可执行此操作" }, { status: 403 });
+    const ids = Array.isArray(body.earningIds) ? body.earningIds.map(String) : [];
+    if (ids.length === 0) return jsonResponse({ error: "earningIds is required" }, { status: 400 });
+    const stamp = new Date().toISOString().slice(0, 16).replace("T", " ");
+    let done = 0;
+    let total = 0;
+    for (const id of ids) {
+      const index = memory.riderDailyEarnings.findIndex((row) => row.id === id);
+      if (index === -1) continue;
+      const row = memory.riderDailyEarnings[index];
+      // 只有"负数且未核销"的行才可核销 —— 重复点击、或误传正数行都是空操作。
+      if (!(row.settleAmount < 0) || row.deductionSettledAt) continue;
+      memory.riderDailyEarnings[index] = { ...row, deductionSettledAt: stamp, deductionSettledBy: actor };
+      appendServerAudit({
+        actor,
+        action: "RIDER_DEDUCTION_SETTLED",
+        entity: "RiderDailyEarning",
+        entityId: row.id,
+        detail: `${row.riderName} (99 ${row.rider99Id}) ${row.date}: 倒扣 R$ ${Math.abs(row.settleAmount).toFixed(2)} 已核销。`,
+        risk: "Medium",
+      });
+      done += 1;
+      total += Math.abs(row.settleAmount);
+    }
+    await flushPendingToDatabase();
+    return jsonResponse({ data: { settled: done, amount: Math.round(total * 100) / 100 } });
+  }
+
   if (body.action === "purgeDate") {
     const hqScope = await scopeFromRequest(request);
     if (hqScope.franchise || hqScope.station) return jsonResponse({ error: "仅总部可执行此操作" }, { status: 403 });

@@ -5,7 +5,7 @@ import { sendPushToRider } from "../../lib/server/notify";
 import { computeBalance, type RiderWithdrawal, type WalletPayment } from "../../lib/finance";
 import { scopeFromRequest } from "../../lib/server/authz";
 import { callRpc, dbDirectReadEnabled, fetchRows } from "../../lib/server/db-read";
-import type { RiderDailyEarning, RiderDailyKpi } from "../../lib/performance";
+import { pendingDeductions, type RiderDailyEarning, type RiderDailyKpi } from "../../lib/performance";
 import {
   earningsByDateRange,
   earningsByRider99,
@@ -179,19 +179,34 @@ export async function GET(request: Request) {
     const byNinetyNine = new Map(memory.riders.filter((r) => r.ninetyNineId).map((r) => [r.ninetyNineId!, r]));
     const round = (n: number) => Math.round(n * 100) / 100;
 
+    // 模式二 T3 · HqProRate: PRO settlement is NOT read from the sheet (PRO
+    // rows carry zero money by design — v3.0 R6). The HQ→franchise amount is
+    // DERIVED: completed orders × rate (8月 = R$12/单). Both ends of the board
+    // compute it from the same config, so the two views can never disagree.
+    await refreshCollectionsFromDatabase(["mallConfigs"]);
+    const proRate = Number(
+      memory.mallConfigs.find((c) => c.id === "mall-config")?.hqProRatePerOrder ?? 12,
+    ) || 0;
+
     // Sum settle per rider within the window.
-    const riderAgg = new Map<string, { name: string; rider99Id: string; franchise: string; station: string; settle: number; orders: number; days: number }>();
+    const riderAgg = new Map<string, { name: string; rider99Id: string; franchise: string; station: string; settle: number; orders: number; days: number; pool: "standard" | "pro" }>();
     for (const row of weekEarnings) {
       if (row.date < win.from || row.date > win.to) continue;
       const rider = byNinetyNine.get(row.rider99Id);
       const franchise = rider?.franchise ?? "Unassigned";
       if (scope.franchise && franchise !== scope.franchise) continue;
       const key = row.rider99Id;
-      const cur = riderAgg.get(key) ?? { name: rider?.name ?? row.rider99Id, rider99Id: row.rider99Id, franchise, station: rider?.ponto ?? "Unassigned", settle: 0, orders: 0, days: 0 };
-      cur.settle += row.settleAmount ?? 0;
+      const pool: "standard" | "pro" = rider?.pool === "pro" ? "pro" : "standard";
+      const cur = riderAgg.get(key) ?? { name: rider?.name ?? row.rider99Id, rider99Id: row.rider99Id, franchise, station: rider?.ponto ?? "Unassigned", settle: 0, orders: 0, days: 0, pool };
+      // PRO: money comes from orders × rate, never from the sheet.
+      cur.settle += pool === "pro" ? 0 : (row.settleAmount ?? 0);
       cur.orders += row.orders ?? 0;
       cur.days += 1;
       riderAgg.set(key, cur);
+    }
+    // Apply the derived PRO amount once the order total is final.
+    for (const r of riderAgg.values()) {
+      if (r.pool === "pro") r.settle = round(r.orders * proRate);
     }
 
     // Payments recorded for this window (weekly entries match the window
@@ -215,23 +230,45 @@ export async function GET(request: Request) {
       paidToRider.set(w.riderName, (paidToRider.get(w.riderName) ?? 0) + w.amount);
     }
 
-    // Group into franchise → riders.
-    const groups = new Map<string, { franchise: string; settle: number; riders: Array<{ name: string; rider99Id: string; station: string; settle: number; orders: number; days: number; paid: number }> }>();
+    // Group into franchise → riders (each row carries its pool so the board
+    // can show a PRO sub-total next to the standard one — 分池对账).
+    const groups = new Map<string, { franchise: string; settle: number; proSettle: number; proOrders: number; riders: Array<{ name: string; rider99Id: string; station: string; settle: number; orders: number; days: number; paid: number; pool: "standard" | "pro" }> }>();
     for (const r of riderAgg.values()) {
       // Round each rider's settle FIRST, then sum, so the franchise total always
       // equals the sum of the displayed rider rows (no cent drift).
       const riderSettle = round(r.settle);
-      const g = groups.get(r.franchise) ?? { franchise: r.franchise, settle: 0, riders: [] };
+      const g = groups.get(r.franchise) ?? { franchise: r.franchise, settle: 0, proSettle: 0, proOrders: 0, riders: [] };
       g.settle = round(g.settle + riderSettle);
-      g.riders.push({ name: r.name, rider99Id: r.rider99Id, station: r.station, settle: riderSettle, orders: r.orders, days: r.days, paid: round(paidToRider.get(r.name) ?? 0) });
+      if (r.pool === "pro") {
+        g.proSettle = round(g.proSettle + riderSettle);
+        g.proOrders += r.orders;
+      }
+      g.riders.push({ name: r.name, rider99Id: r.rider99Id, station: r.station, settle: riderSettle, orders: r.orders, days: r.days, paid: round(paidToRider.get(r.name) ?? 0), pool: r.pool });
       groups.set(r.franchise, g);
     }
     const franchises = [...groups.values()]
       .map((g) => ({ ...g, riders: g.riders.sort((a, b) => b.settle - a.settle), franchisePaid: round(paidToFranchise.get(g.franchise) ?? 0) }))
       .sort((a, b) => b.settle - a.settle);
     const grandTotal = round(franchises.reduce((s, g) => s + g.settle, 0));
+    const proTotal = round(franchises.reduce((s, g) => s + g.proSettle, 0));
+    const proOrdersTotal = franchises.reduce((s, g) => s + g.proOrders, 0);
 
-    return jsonResponse({ data: { week: win, franchises, grandTotal, payments: paymentsInWindow, scoped: Boolean(scope.franchise) } });
+    // 倒扣待扣:某天算下来是负数 = 骑手当天不但没拿到钱,还欠了一笔。
+    // 以前这种行只在显示层被过滤掉,系统里查不到"谁还欠多少"。这里按窗口外
+    // 的全量算(欠款不会因为翻到下一周就消失),未核销的才算。
+    const deductions = pendingDeductions(memory.riderDailyEarnings);
+    const deductionTotal = round(deductions.reduce((sum, d) => sum + d.amount, 0));
+
+    return jsonResponse({
+      data: {
+        week: win, franchises, grandTotal,
+        // 模式二: PRO 小计 + 费率(两端同源,永远一致)
+        proTotal, proOrdersTotal, proRate,
+        // 倒扣待扣(派生量,全量口径)
+        deductions, deductionTotal,
+        payments: paymentsInWindow, scoped: Boolean(scope.franchise),
+      },
+    });
   }
 
   // Single-rider wallet (rider app).

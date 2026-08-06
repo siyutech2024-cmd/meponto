@@ -22,6 +22,8 @@ type LiveRider = {
   hotZone: string | null; vehicle: string | null; onlineMins: number | null;
   restMins: number | null; finishedCnt: number | null; lat: number | null; lng: number | null;
   franchise: string; ponto: string; leader: string; assigned: boolean; perf?: Perf | null;
+  /** 模式二: 骑手所属池(PRO 实时监控用). */
+  pool?: "standard" | "pro";
 };
 type Cats = { delivering: number; online: number; notOnline: number; below: number; outArea: number; other: number };
 type AggRow = { name: string; total: number; finished: number } & Cats;
@@ -96,6 +98,8 @@ export default function RiderMonitorPage() {
   const [query, setQuery] = useState("");
   const [catFilter, setCatFilter] = useState<Cat | "">("");
   const [onlyUnassigned, setOnlyUnassigned] = useState(false);
+  // 模式二: "" 全部 / "pro" 仅 PRO 池 / "standard" 仅普通池.
+  const [poolFilter, setPoolFilter] = useState("");
   const [updatedAt, setUpdatedAt] = useState("");
   const [detailKey, setDetailKey] = useState<string | null>(null);
   // Hot zone → franchise assignments (HQ assigns; franchise portals are
@@ -103,8 +107,46 @@ export default function RiderMonitorPage() {
   // { [zoneId]: franchiseNames[] }
   const [zoneAssign, setZoneAssign] = useState<Record<string, string[]>>({});
   const [showZonePanel, setShowZonePanel] = useState(false);
+  /**
+   * 模式二 T6 · 应岗未上 (rostered but not online).
+   * The locked roster of TODAY is the only trustworthy "who was supposed to
+   * work" list — before the roster is locked people are still being added and
+   * removed, so comparing against it would produce noise. Therefore:
+   * roster未锁 → 整块隐藏(降级,不误报);roster已锁 → 名册 ∩ 不在实时快照里
+   * = 应岗未上,红色列出,运营可以直接打电话。
+   */
+  const [noShow, setNoShow] = useState<Array<{ name: string; rider99Id: string; station: string; timeRange: string }> | null>(null);
 
   const headers = useMemo(() => ({ "Content-Type": "application/json", "x-vento-role": session?.role ?? "Super Admin" }), [session]);
+
+  /** 模式二 T6 · 应岗未上. Reads today's dispatch board and keeps only the
+   *  LOCKED shifts — see the state declaration for why unlocked is skipped. */
+  const loadNoShow = useCallback(async (live: Payload | null) => {
+    const today = new Date(Date.now() - 3 * 3600_000).toISOString().slice(0, 10); // BRT
+    const params = new URLSearchParams({ from: today, to: today });
+    if (scopeFranchise) params.set("franchise", scopeFranchise);
+    if (scopeStation) params.set("station", scopeStation);
+    const res = await fetch(`/api/dispatch?${params}`, { headers, cache: "no-store" });
+    if (!res.ok) {
+      setNoShow(null);
+      return;
+    }
+    const board = (await res.json()).data as {
+      shifts: Array<{ id: string; lockedAt?: string; timeRange: string }>;
+      signups: Array<{ shiftId: string; riderName: string; rider99Id: string; station: string; status: string }>;
+    };
+    const lockedShifts = new Map(board.shifts.filter((s) => s.lockedAt).map((s) => [s.id, s]));
+    if (lockedShifts.size === 0) {
+      setNoShow(null); // roster not frozen yet → the panel stays hidden
+      return;
+    }
+    const onlineIds = new Set((live?.riders ?? []).map((r) => String(r.riderExtId ?? "")).filter(Boolean));
+    const missing = board.signups
+      .filter((s) => lockedShifts.has(s.shiftId) && (s.status === "approved" || s.status === "reported"))
+      .filter((s) => !onlineIds.has(String(s.rider99Id)))
+      .map((s) => ({ name: s.riderName, rider99Id: s.rider99Id, station: s.station, timeRange: lockedShifts.get(s.shiftId)?.timeRange ?? "" }));
+    setNoShow(missing);
+  }, [headers, scopeFranchise, scopeStation]);
 
   const load = useCallback(async () => {
     const params = new URLSearchParams();
@@ -112,10 +154,12 @@ export default function RiderMonitorPage() {
     if (scopeStation) params.set("ponto", scopeStation);
     const res = await fetch(`/api/eastwind/riders-live?${params}`, { headers, cache: "no-store" });
     if (res.ok) {
-      setData((await res.json()).data);
+      const live = (await res.json()).data as Payload;
+      setData(live);
       setUpdatedAt(new Date().toLocaleTimeString("pt-BR", { timeZone: "America/Sao_Paulo" }));
+      void loadNoShow(live); // 模式二 T6: recompute against the same snapshot
     }
-  }, [headers, scopeFranchise, scopeStation]);
+  }, [headers, scopeFranchise, scopeStation, loadNoShow]);
 
   const loadZoneAssignments = useCallback(async () => {
     const res = await fetch("/api/eastwind/zone-assignments", { headers, cache: "no-store" });
@@ -153,9 +197,14 @@ export default function RiderMonitorPage() {
 
   const riders = data?.riders ?? [];
   const cats = data?.summary.cats;
+  // 模式二 T6: how many of the riders on shift right now come from the PRO
+  // source — shown as a subtitle on the existing "on shift" card.
+  const proOnline = riders.filter((r) => r.pool === "pro").length;
 
   const filtered = riders.filter((r) => {
     if (catFilter && r.cat !== catFilter) return false;
+    // 模式二: PRO / 普通 池筛选(两个 OL 抓取源在同一看板上并存)
+    if (poolFilter && (r.pool === "pro" ? "pro" : "standard") !== poolFilter) return false;
     if (onlyUnassigned && r.assigned) return false;
     if (query) {
       const q = query.toLowerCase();
@@ -243,8 +292,31 @@ export default function RiderMonitorPage() {
         )
       ) : null}
 
+      {/* 模式二 T6 · 应岗未上:锁定名册里的人没出现在实时快照 → 红色列出,
+          运营可以直接按名单打电话。名册未锁定时整块不渲染(不误报)。 */}
+      {noShow && noShow.length > 0 && (
+        <div className="mb-3 rounded-[8px] border border-[var(--danger)] bg-[var(--danger-bg)] px-4 py-3">
+          <div className="text-[11px] font-black uppercase text-[var(--danger-ink)]">{t("rmNoShow", { n: noShow.length })}</div>
+          <div className="mt-1.5 flex flex-wrap gap-x-4 gap-y-1 text-[12px] font-bold text-[var(--danger-ink)]">
+            {noShow.slice(0, 30).map((row) => (
+              <span key={`${row.rider99Id}-${row.timeRange}`} translate="no">
+                {row.name} · {row.timeRange} · {row.station}
+              </span>
+            ))}
+            {noShow.length > 30 && <span>… +{noShow.length - 30}</span>}
+          </div>
+        </div>
+      )}
+
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
-        <StatCard label={t("rmOnShift")} value={data?.summary.total ?? 0} color="var(--accent)" big />
+        {/* 模式二 T6: PRO 在线数不另开卡片,直接作为"在岗"卡的副标题——
+            设计铁律:不新增菜单也不堆卡片。PRO 数为 0 时完全不显示。 */}
+        <StatCard
+          label={proOnline > 0 ? `${t("rmOnShift")} · PRO ${proOnline}` : t("rmOnShift")}
+          value={data?.summary.total ?? 0}
+          color="var(--accent)"
+          big
+        />
         <StatCard label={t("rmDelivering")} value={cats?.delivering ?? 0} color={CAT_COLOR.delivering} />
         <StatCard label={t("rmOnline")} value={cats?.online ?? 0} color={CAT_COLOR.online} />
         <StatCard label={t("rmNotOnline")} value={cats?.notOnline ?? 0} color={CAT_COLOR.notOnline} />
@@ -395,6 +467,21 @@ export default function RiderMonitorPage() {
             {label}
           </button>
         ))}
+        {/* 模式二: 池筛选 chip —— 三级后台共用,加盟商/站点会话自动只见自己域内 */}
+        {(["", "pro", "standard"] as const).map((p) => (
+          <button
+            key={p || "all"}
+            type="button"
+            onClick={() => setPoolFilter(p)}
+            className={`rounded-full px-2.5 py-1 text-[11px] font-black transition ${
+              poolFilter === p
+                ? p === "pro" ? "bg-[#eda100] text-[#171b33]" : "bg-[var(--text)] text-[var(--bg)]"
+                : "border border-[var(--line)] text-[var(--muted-strong)]"
+            }`}
+          >
+            {p === "" ? t("rmPoolAll") : p === "pro" ? "PRO" : t("rmPoolStandard")}
+          </button>
+        ))}
         {isHQ ? (
           <label className="flex items-center gap-2 text-xs font-bold text-[var(--muted-strong)]">
             <input type="checkbox" checked={onlyUnassigned} onChange={(e) => setOnlyUnassigned(e.target.checked)} /> {t("rmOnlyUnassigned")}
@@ -407,7 +494,12 @@ export default function RiderMonitorPage() {
         headers={[t("rmColRider"), t("rmColStatus"), t("rmColShift"), t("rmColZone"), t("rmColVehicle"), t("rmColOnlineMin"), t("rmColFinished"), t("rmScopeFranchise"), t("rmScopePonto")]}
         rows={filtered.map((r) => [
           <button key="n" onClick={() => setDetailKey(riderKey(r))} className="flex flex-col text-left" title={t("rmDetailTitle")}>
-            <span className="font-bold text-[var(--text)] underline decoration-[var(--line)] decoration-dotted underline-offset-4 transition-colors hover:text-[var(--accent)] hover:decoration-[var(--accent)]">{r.name || "—"}</span>
+            <span className="flex items-center gap-1.5">
+              <span className="font-bold text-[var(--text)] underline decoration-[var(--line)] decoration-dotted underline-offset-4 transition-colors hover:text-[var(--accent)] hover:decoration-[var(--accent)]">{r.name || "—"}</span>
+              {r.pool === "pro" && (
+                <span className="shrink-0 rounded-full bg-[#eda100] px-1.5 py-[1px] text-[9px] font-black text-[#171b33]">PRO</span>
+              )}
+            </span>
             <span className="text-[11px] text-[var(--muted)]">{r.phone || "—"}</span>
           </button>,
           <span key="s" className="inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-[11px] font-bold" style={{ borderColor: CAT_COLOR[r.cat], color: CAT_COLOR[r.cat] }}>

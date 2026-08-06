@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { ClipboardList, RefreshCcw, Star } from "lucide-react";
 import { AppShell, PageTitle } from "../../components/ui";
-import { SectionCard, Stat, StatusBadge, TodoCard, type BadgeTone } from "../../components/kit";
+import { ProBadge, SectionCard, Stat, StatusBadge, TodoCard, type BadgeTone } from "../../components/kit";
 import { readSession } from "../../lib/session";
 import type { DispatchShift, ShiftQuota, ShiftSignup } from "../../lib/dispatch";
 import { ShiftRiderPicker } from "../../components/shift-rider-picker";
@@ -245,6 +245,10 @@ export default function StationDispatchPage() {
                                   <span className={`inline-flex items-center gap-1 text-[13px] font-black ${selected ? "text-[var(--accent)]" : ""}`} translate="no">
                                     {row.shift.isCritical && <Star size={12} className="text-[var(--accent)]" />}
                                     {row.shift.timeRange}
+                                    {/* 模式二: PRO 班次 —— 只能填 PRO 骑手 */}
+                                    {row.shift.pool === "pro" && <ProBadge small />}
+                                    {/* 模式二 T5: 已锁班 —— 名单冻结,不能再提报/取消 */}
+                                    {row.shift.lockedAt && <span title={t("dpLocked", { x: row.shift.lockedAt })}>🔒</span>}
                                   </span>
                                   <span className="truncate text-[11px] font-bold text-[var(--muted)]">{row.shift.hotzone}</span>
                                   <StatusBadge tone={SHIFT_TONE[row.shift.status] ?? "info"} label={shiftStatusKey[row.shift.status] ? t(shiftStatusKey[row.shift.status]) : row.shift.status} />

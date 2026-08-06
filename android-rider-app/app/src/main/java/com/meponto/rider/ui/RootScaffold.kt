@@ -62,6 +62,8 @@ fun RootScaffold() {
     val store = LocalStore.current
     var tab by remember { mutableStateOf(0) }
     var overlay by remember { mutableStateOf(Overlay.NONE) }
+    // A5: 内嵌 WebView 目标 (url to title);null = 未打开。
+    var webTarget by remember { mutableStateOf<Pair<String, String>?>(null) }
 
     // Notification tap → jump to the tab matching the pushed URL.
     val pushedUrl = PushNavigator.pendingUrl.value
@@ -151,11 +153,21 @@ fun RootScaffold() {
                         onScan = { overlay = Overlay.SCAN },
                         onProfile = { overlay = Overlay.PROFILE },
                         onOpenMall = { tab = 2 }, // points statement lives on the Mall tab
+                        // A4/A5: 活动卡点击。站内 (*.meponto.com) 进内嵌容器,
+                        // 站外交给系统浏览器 —— 判定只有 WebLinks 一处。
+                        onOpenWeb = { url, title -> webTarget = url to title },
                     )
                     1 -> ShiftsScreen()
                     2 -> MallScreen()
                     else -> MapScreen()
                 }
+            }
+        }
+
+        // A5 · 活动 WebView 容器(全屏覆盖,系统返回键先在 H5 内后退)。
+        webTarget?.let { (url, title) ->
+            Box(Modifier.fillMaxSize().appBackground(me)) {
+                com.meponto.rider.ui.screens.WebViewScreen(url = url, title = title, onClose = { webTarget = null })
             }
         }
 

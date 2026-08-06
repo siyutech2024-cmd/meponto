@@ -86,6 +86,10 @@ interface ApiService {
     @POST("mall")
     suspend fun cancelOrder(@Body body: MallCancelRequest): ApiEnvelope<Any>
 
+    // 模式二 A3: 骑手自查今日实时单量(只回本人一行,无金额字段)
+    @GET("rider/live-count")
+    suspend fun liveCount(): ApiEnvelope<LiveCountDto>
+
     // ----- Station / partner reviews (rider map) -----
     @GET("partner/reviews")
     suspend fun reviews(@Query("partnerCode") partnerCode: String): ApiEnvelope<ReviewsData>

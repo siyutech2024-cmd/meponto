@@ -2,7 +2,7 @@ import { appendServerAudit, jsonResponse, memory } from "../../../../lib/server/
 import { flushPendingToDatabase, refreshCollectionsFromDatabase } from "../../../../lib/server/persistence";
 import { requirePermission, roleFromRequest } from "../../../../lib/server/authz";
 import { sessionFromRequest } from "../../../../lib/auth-session";
-import { defaultSplashConfig, type AppSplashRecord } from "../../../../lib/app-config";
+import { defaultActivityCard, defaultSplashConfig, type AppSplashRecord } from "../../../../lib/app-config";
 
 /**
  * App launch (启动页) config — one endpoint shared by every rider client.
@@ -68,6 +68,24 @@ async function handlePost(request: Request) {
     imageURL: body.imageURL !== undefined ? String(body.imageURL).trim().slice(0, 500) : prev.imageURL,
     linkURL: body.linkURL !== undefined ? String(body.linkURL).trim().slice(0, 500) : prev.linkURL,
     audience: body.audience === "pro" ? "pro" : body.audience === "all" ? "all" : prev.audience,
+    // A4 · 活动入口卡. Sent as a whole object; absent → untouched, so saving
+    // the splash alone can never wipe a running campaign.
+    activityCard: body.activityCard !== undefined
+      ? {
+          ...defaultActivityCard,
+          ...prev.activityCard,
+          ...body.activityCard,
+          enabled: body.activityCard.enabled === true,
+          title: String(body.activityCard.title ?? "").slice(0, 60),
+          subtitle: String(body.activityCard.subtitle ?? "").slice(0, 120),
+          badge: String(body.activityCard.badge ?? "").slice(0, 12),
+          imageURL: String(body.activityCard.imageURL ?? "").trim().slice(0, 500),
+          linkURL: String(body.activityCard.linkURL ?? "").trim().slice(0, 500),
+          audience: body.activityCard.audience === "pro" ? "pro" : "all",
+          startsAt: String(body.activityCard.startsAt ?? "").slice(0, 10),
+          endsAt: String(body.activityCard.endsAt ?? "").slice(0, 10),
+        }
+      : prev.activityCard,
     version: (prev.version ?? 0) + 1,
     updatedAt: nowStamp(),
     updatedBy: actor,
@@ -76,6 +94,18 @@ async function handlePost(request: Request) {
   else memory.appSplashConfigs[0] = next;
 
   appendServerAudit({ actor, action: "APP_SPLASH_UPDATED", entity: "AppSplashConfig", entityId: "app-splash", detail: `v${next.version} · enabled=${next.enabled} · "${next.headline}"`, risk: "Low" });
+  // A4: a campaign banner going live/dark is its own operational event —
+  // don't bury it inside the splash line.
+  if (JSON.stringify(prev.activityCard ?? null) !== JSON.stringify(next.activityCard ?? null)) {
+    appendServerAudit({
+      actor,
+      action: "APP_ACTIVITY_CARD_UPDATED",
+      entity: "AppSplashConfig",
+      entityId: "app-splash",
+      detail: `enabled=${next.activityCard?.enabled === true} · "${next.activityCard?.title ?? ""}" · audience=${next.activityCard?.audience ?? "all"} · ${next.activityCard?.startsAt || "—"}~${next.activityCard?.endsAt || "—"} · ${next.activityCard?.linkURL ?? ""}`,
+      risk: "Low",
+    });
+  }
   return jsonResponse({ data: publicView(next) });
 }
 

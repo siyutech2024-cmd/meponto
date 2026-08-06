@@ -21,7 +21,10 @@
     "docker:up": "sh scripts/docker-start.sh",
     "docker:down": "sh scripts/docker-stop.sh",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "migrate": "node scripts/migrate.mjs",
+    "migrate:baseline": "node scripts/migrate.mjs --baseline",
+    "migrate:dry": "node scripts/migrate.mjs --dry"
   },
   "keywords": [],
   "author": "",
@@ -46,6 +49,7 @@
     "@types/react-dom": "^19.2.3",
     "eslint": "^9.39.4",
     "eslint-config-next": "^16.2.6",
+    "pg": "^8.22.0",
     "postcss": "^8.5.14",
     "tailwindcss": "^4.3.0",
     "typescript": "^6.0.3"

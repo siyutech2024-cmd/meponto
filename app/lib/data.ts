@@ -349,3 +349,46 @@ export const ledgerEntries: LedgerEntry[] = [
     createdAt: "2026-05-15 08:30",
   },
 ];
+
+/**
+ * 模式二 · PRO 名单导入解析 (closure matrix §9).
+ *
+ * Riders on the NEW Eastwind account never appear in the old OL daily report,
+ * so nothing auto-materializes their profile — without this the live snapshot
+ * matches nobody and the settlement sheet can't be tied to a person. HQ pastes
+ * the new-account roster once and every rider lands as pool="pro".
+ *
+ * Tolerant column parsing (one rider per line, cells split on tab/;/, or 2+
+ * spaces):
+ *   · a 12+ digit cell   → 99 ID (Eastwind ids are 15+; 12 keeps a margin)
+ *   · a cell with letters → name (multi-word names join back together)
+ *   · remaining digit cells, in order → CPF, then phone
+ * Order-free by design: ops copies straight out of Eastwind and the column
+ * layout there is not stable. A row without a 99 ID is skipped rather than
+ * creating a profile that can never be matched to live data or a report.
+ */
+export type ParsedProRider = { rider99Id: string; name: string; cpf: string; phone: string };
+
+export function parseProRoster(raw: string): ParsedProRider[] {
+  const out: ParsedProRider[] = [];
+  for (const line of raw.split(/\r?\n/)) {
+    const cells = line.split(/[\t;,]|\s{2,}/).map((cell) => cell.trim()).filter(Boolean);
+    if (cells.length === 0) continue;
+    let rider99Id = "";
+    let name = "";
+    const digits: string[] = [];
+    for (const cell of cells) {
+      const bare = cell.replace(/\D/g, "");
+      if (!rider99Id && /^\d{12,}$/.test(cell)) {
+        rider99Id = cell;
+      } else if (/[A-Za-zÀ-ÿ]{2,}/.test(cell)) {
+        name = name ? `${name} ${cell}` : cell;
+      } else if (bare.length >= 8) {
+        digits.push(bare);
+      }
+    }
+    if (!rider99Id) continue;
+    out.push({ rider99Id, name, cpf: digits[0] ?? "", phone: digits[1] ?? "" });
+  }
+  return out;
+}

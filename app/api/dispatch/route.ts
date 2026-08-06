@@ -121,7 +121,12 @@ type DeleteShiftBody = { action: "deleteShift"; shiftId: string };
 
 type NudgeBody = { action: "nudge"; scope: "franchise" | "station"; name: string };
 
-type Body = ImportBody | QuotaBody | SignupBody | ReviewBody | ReportBody | SetWeekBody | DeleteShiftBody | NudgeBody;
+/** 模式二 T5 · 锁班: freeze one shift (shiftId) or every open shift of a day
+ *  (date, the evening-sweep shape). `unlock: true` reopens it — HQ only, and
+ *  always audited. */
+type LockBody = { action: "lock"; shiftId?: string; date?: string; unlock?: boolean };
+
+type Body = ImportBody | QuotaBody | SignupBody | ReviewBody | ReportBody | SetWeekBody | DeleteShiftBody | NudgeBody | LockBody;
 
 async function handlePost(request: Request) {
   const peek = (await request.clone().json().catch(() => ({}))) as { action?: string };
@@ -246,6 +251,16 @@ async function handlePost(request: Request) {
       const shift = memory.dispatchShifts.find((item) => item.id === shiftId);
       if (!shift) return jsonResponse({ error: "shift not found" }, { status: 404 });
 
+      // 模式二 T5: a LOCKED shift's roster is frozen. Only HQ may still add
+      // (the exception flow) — franchise/station submissions are refused with
+      // a clear reason so the rule "锁定后不能随便改" is enforced, not just told.
+      if (shift.lockedAt && !isHqCaller) {
+        return jsonResponse(
+          { error: `本班次已于 ${shift.lockedAt} 锁定,无法再提报。A escala foi travada — fale com a matriz.`, code: "shift_locked" },
+          { status: 409 },
+        );
+      }
+
       // ---- Quota caps (不得超过分配名额) --------------------------------
       // Franchise/station/rider callers are bounded by the allocation chain:
       // the franchise may never hold more ACTIVE signups (submitted/approved/
@@ -265,11 +280,28 @@ async function handlePost(request: Request) {
       const createdRecords: ShiftSignup[] = [];
       const skipped: string[] = [];
 
+      // 模式二 T4 · 池校验: a PRO shift may ONLY be filled with PRO-pool riders
+      // (and a standard shift only with standard riders). Enforced server-side
+      // so no portal — nor a stale client — can mix the two rosters.
+      const shiftPool: "standard" | "pro" = shift.pool === "pro" ? "pro" : "standard";
+      const poolOf = (nineId: string) => {
+        const found = memory.riders.find((r) => r.ninetyNineId === nineId);
+        return found?.pool === "pro" ? "pro" : "standard";
+      };
+
       for (const rider of riders.slice(0, 200)) {
         const rider99Id = String(rider.rider99Id ?? "").trim();
         const riderName = String(rider.riderName ?? "").trim();
         if (!rider99Id || !/^\d{6,}$/.test(rider99Id)) {
           skipped.push(`${riderName || "?"} (99ID inválido)`);
+          continue;
+        }
+        if (poolOf(rider99Id) !== shiftPool) {
+          skipped.push(
+            shiftPool === "pro"
+              ? `${riderName || rider99Id} (não é PRO · 非 PRO 骑手不可填入 PRO 班)`
+              : `${riderName || rider99Id} (é PRO · PRO 骑手只能填 PRO 班)`,
+          );
           continue;
         }
         const duplicate = memory.shiftSignups.some(
@@ -397,6 +429,84 @@ async function handlePost(request: Request) {
       });
       appendServerAudit({ actor, action: "REVIEW_NUDGED", entity: scope === "franchise" ? "Franchise" : "Ponto", entityId: name, detail: `${pendingCount} pending signups reminder sent.`, risk: "Low" });
       return jsonResponse({ data: { ok: true, pendingCount } });
+    }
+
+    /**
+     * 模式二 T5 · 锁班. Freezes the roster of one shift (or every scheduling
+     * shift of a date when `date` is given — the 18:00 sweep). Locked shifts
+     * refuse new signups and cancellations; HQ can unlock for the exception
+     * flow. Every lock/unlock is audited.
+     */
+    case "lock": {
+      const { shiftId, date, unlock } = body as LockBody;
+      // Locking is a HQ decision (v3.0 R4) — a franchise must not be able to
+      // freeze (or worse, reopen) a roster that the matriz already submitted.
+      if (!isHqCaller) return jsonResponse({ error: "Somente a matriz pode travar/destravar a escala." }, { status: 403 });
+      const stamp = nowStamp();
+      const targets = shiftId
+        ? memory.dispatchShifts.filter((s) => s.id === shiftId)
+        : date
+          ? memory.dispatchShifts.filter((s) => s.date === date && s.status === "scheduling")
+          : [];
+      if (targets.length === 0) return jsonResponse({ error: "shiftId or date is required (no matching shift)" }, { status: 400 });
+
+      /**
+       * H4 · 锁班前的二次池校验. Between the moment a station submits a PRO
+       * roster and the moment it is locked, a rider can be moved OUT of the
+       * PRO pool — the roster would then carry a non-PRO name into 99. Freezing
+       * such a roster is worse than not freezing it, so the lock is refused and
+       * the offending rows are named back to the caller (?force=1 overrides for
+       * the rare deliberate case, and the override is audited).
+       */
+      const force = new URL(request.url).searchParams.get("force") === "1";
+      if (!unlock && !force) {
+        await refreshCollectionsFromDatabase(["riders", "shiftSignups"]);
+        const poolOf = (rider99Id: string) => memory.riders.find((r) => r.ninetyNineId === rider99Id)?.pool ?? "standard";
+        const offenders: string[] = [];
+        for (const shift of targets) {
+          if (shift.pool !== "pro") continue;
+          for (const signup of memory.shiftSignups) {
+            if (signup.shiftId !== shift.id) continue;
+            if (signup.status !== "approved" && signup.status !== "submitted") continue;
+            if (poolOf(signup.rider99Id) !== "pro") offenders.push(`${signup.riderName} (99 ${signup.rider99Id}) · ${shift.date} ${shift.timeRange}`);
+          }
+        }
+        if (offenders.length > 0) {
+          return jsonResponse(
+            {
+              error: `名单中有 ${offenders.length} 人已不在 PRO 池,锁定被拦截。A lista tem ${offenders.length} entregador(es) fora do time PRO.`,
+              code: "pool_mismatch",
+              offenders: offenders.slice(0, 20),
+            },
+            { status: 409 },
+          );
+        }
+      }
+
+      let changed = 0;
+      for (const shift of targets) {
+        const index = memory.dispatchShifts.findIndex((s) => s.id === shift.id);
+        if (index === -1) continue;
+        if (unlock) {
+          if (!shift.lockedAt) continue;
+          const { lockedAt: _a, lockedBy: _b, ...rest } = memory.dispatchShifts[index];
+          void _a; void _b;
+          memory.dispatchShifts[index] = rest;
+        } else {
+          if (shift.lockedAt) continue;
+          memory.dispatchShifts[index] = { ...memory.dispatchShifts[index], lockedAt: stamp, lockedBy: actor };
+        }
+        changed += 1;
+      }
+      appendServerAudit({
+        actor,
+        action: unlock ? "DISPATCH_SHIFT_UNLOCKED" : "DISPATCH_SHIFT_LOCKED",
+        entity: "DispatchShift",
+        entityId: shiftId ?? date ?? "",
+        detail: `${changed} shift(s) ${unlock ? "unlocked (exception flow)" : "locked — roster frozen"}${date ? ` for ${date}` : ""}${force && !unlock ? " [FORCED past the PRO pool check]" : ""}.`,
+        risk: unlock || force ? "Medium" : "Low",
+      });
+      return jsonResponse({ data: { changed, lockedAt: unlock ? null : stamp } });
     }
 
     case "report": {

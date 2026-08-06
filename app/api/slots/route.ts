@@ -152,6 +152,13 @@ export async function POST(request: Request) {
         if (memory.shiftSignups[index].status !== "submitted") {
           return jsonResponse({ error: "Inscrição já confirmada — fale com o suporte para cancelar." }, { status: 409 });
         }
+        // 模式二 T5: after the roster is locked the rider can no longer drop
+        // out on their own — the name is already committed for the day.
+        await refreshCollectionsFromDatabase(["dispatchShifts"]);
+        const lockedShift = memory.dispatchShifts.find((s) => s.id === memory.shiftSignups[index].shiftId);
+        if (lockedShift?.lockedAt) {
+          return jsonResponse({ error: "A escala já foi travada para hoje — fale com o seu ponto.", code: "shift_locked" }, { status: 409 });
+        }
         memory.shiftSignups[index] = { ...memory.shiftSignups[index], status: "cancelled", updatedAt: new Date().toISOString().slice(0, 16).replace("T", " ") };
         await flushPendingToDatabase();
         return jsonResponse({ data: { id: body.enrollmentId, status: "cancelled" } });
@@ -171,6 +178,10 @@ export async function POST(request: Request) {
     if (dispatchShift) {
       if (dispatchShift.status !== "scheduling") {
         return jsonResponse({ error: "Este turno não está mais aberto para inscrições." }, { status: 409 });
+      }
+      // 模式二 T5: locked roster → no more self-signups either.
+      if (dispatchShift.lockedAt) {
+        return jsonResponse({ error: "A escala deste turno já foi travada.", code: "shift_locked" }, { status: 409 });
       }
       const rider = memory.riders.find((item) => item.name === session.name);
       if (!rider?.ninetyNineId) {

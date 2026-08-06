@@ -27,6 +27,8 @@ type RiderRow = {
   lastReportDate: string;
   reportAr: number | null;
   source: "profile" | "report";
+  /** 模式二: "pro" = PRO 池骑手(专属班表+薪酬线下自结). */
+  pool?: "standard" | "pro";
 };
 
 type Network = { franchises: Array<{ id: string; name: string }>; stations: Array<{ id: string; name: string; franchise?: string }> };
@@ -53,6 +55,16 @@ export default function RidersPage() {
   const [franchiseFilter, setFranchiseFilter] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
   const [onlyUnassigned, setOnlyUnassigned] = useState(false);
+  // 模式二: pool filter — "" 全部 / "pro" 仅 PRO / "standard" 仅普通.
+  const [poolFilter, setPoolFilter] = useState("");
+  // 模式二 §9: optional defaults applied to every rider created by the PRO
+  // roster import (leave blank → Unassigned, assign later as usual).
+  const [proImportFranchise, setProImportFranchise] = useState("");
+  const [proImportPonto, setProImportPonto] = useState("");
+  // Bulk PRO marking: 99 ID list pasted by HQ (T1).
+  const [poolBulkOpen, setPoolBulkOpen] = useState(false);
+  const [poolBulkText, setPoolBulkText] = useState("");
+  const [poolBulkBusy, setPoolBulkBusy] = useState(false);
   const [addOpen, setAddOpen] = useState(false);
   const [message, setMessage] = useState<{ tone: "ok" | "err"; text: string } | null>(null);
   const [busyId, setBusyId] = useState("");
@@ -143,6 +155,86 @@ export default function RidersPage() {
     });
   }
 
+  /**
+   * 模式二 T1 · 批量标记 PRO 池.
+   * HQ pastes the 99 filtered name list (99 IDs, one per line / comma / space
+   * separated). Each match is flipped via the normal assign endpoint, so every
+   * change lands an individual RIDER_POOL_CHANGED audit entry. Unknown IDs are
+   * reported back instead of silently ignored.
+   */
+  async function applyPoolBulk(target: "pro" | "standard") {
+    const ids = poolBulkText.split(/[\s,;]+/).map((s) => s.replace(/\D/g, "")).filter((s) => s.length >= 6);
+    const unique = [...new Set(ids)];
+    if (unique.length === 0) {
+      setMessage({ tone: "err", text: t("rdPoolBulkEmpty") });
+      return;
+    }
+    const byNine = new Map(riders.filter((r) => r.ninetyNineId).map((r) => [String(r.ninetyNineId), r]));
+    const matched = unique.map((id) => byNine.get(id)).filter((r): r is RiderRow => !!r);
+    const missing = unique.filter((id) => !byNine.has(id));
+    if (!(await dialog.confirm(t("rdPoolBulkConfirmQ", { n: matched.length, pool: target === "pro" ? "PRO" : t("rdPoolStandard") }), {
+      message: [
+        matched.slice(0, 20).map((r) => `· ${r.name} (${r.ninetyNineId})`).join("\n"),
+        matched.length > 20 ? `… +${matched.length - 20}` : "",
+        missing.length ? `\n${t("rdPoolBulkMissing", { n: missing.length })}: ${missing.slice(0, 10).join(", ")}` : "",
+      ].filter(Boolean).join("\n"),
+      confirmText: t("rdConfirmSave"),
+    }))) return;
+
+    setPoolBulkBusy(true);
+    let ok = 0;
+    let failed = 0;
+    for (const rider of matched) {
+      const response = await fetch("/api/riders", {
+        method: "POST",
+        headers: HEADERS,
+        body: JSON.stringify({ action: "assign", riderId: rider.id, pool: target }),
+      });
+      if (response.ok) ok += 1; else failed += 1;
+    }
+    setPoolBulkBusy(false);
+    setPoolBulkOpen(false);
+    setPoolBulkText("");
+    setMessage({
+      tone: failed ? "err" : "ok",
+      text: t("rdPoolBulkDone", { ok, failed, missing: missing.length }),
+    });
+    void load();
+  }
+
+  /**
+   * 模式二 §9 · PRO 名单建档.
+   * Same textarea as the bulk re-pool above, but each line may carry the full
+   * row (99 ID / name / CPF / phone) — riders that don't exist yet are CREATED
+   * in the PRO pool, riders that already exist are just moved into it. Without
+   * this, new-account riders have no profile at all: the live snapshot matches
+   * nobody and the settlement sheet can't be tied to a person.
+   */
+  async function importProRoster() {
+    if (!poolBulkText.trim()) {
+      setMessage({ tone: "err", text: t("rdPoolBulkEmpty") });
+      return;
+    }
+    const lines = poolBulkText.split(/\r?\n/).filter((line) => line.trim()).length;
+    if (!(await dialog.confirm(t("rdProImportConfirmQ", { n: lines }), { message: t("rdProImportConfirmMsg"), confirmText: t("rdConfirmSave") }))) return;
+    setPoolBulkBusy(true);
+    const response = await fetch("/api/riders", {
+      method: "POST",
+      headers: HEADERS,
+      body: JSON.stringify({ action: "importPro", text: poolBulkText, franchise: proImportFranchise, ponto: proImportPonto }),
+    });
+    const payload = await response.json().catch(() => ({}));
+    setPoolBulkBusy(false);
+    if (!response.ok) {
+      setMessage({ tone: "err", text: String(payload.error ?? `HTTP ${response.status}`) });
+      return;
+    }
+    setPoolBulkOpen(false);
+    setPoolBulkText("");
+    setMessage({ tone: "ok", text: t("rdProImportDone", { created: payload.data.created, promoted: payload.data.promoted, skipped: payload.data.skipped }) });
+    void load();
+  }
+
   async function savePending() {
     const entries = Object.entries(pending);
     if (entries.length === 0) return;
@@ -175,6 +267,7 @@ export default function RidersPage() {
         if (stationFilter && rider.ponto !== stationFilter) return false;
         if (franchiseFilter && rider.franchise !== franchiseFilter) return false;
         if (statusFilter && rider.status !== statusFilter) return false;
+        if (poolFilter && (rider.pool === "pro" ? "pro" : "standard") !== poolFilter) return false;
         if (onlyUnassigned && !(isUnassigned(rider.ponto) || isUnassigned(rider.franchise))) return false;
         return true;
       })
@@ -184,7 +277,7 @@ export default function RidersPage() {
         const bUn = isUnassigned(b.ponto) || isUnassigned(b.franchise) ? 0 : 1;
         return aUn - bUn || b.totalOrders - a.totalOrders;
       });
-  }, [riders, query, stationFilter, franchiseFilter, statusFilter, onlyUnassigned]);
+  }, [riders, query, stationFilter, franchiseFilter, statusFilter, poolFilter, onlyUnassigned]);
 
   // Stats use the SAME base as the table (99ID-bearing riders + report rows),
   // otherwise the "unassigned" card counts hidden no-99ID profiles and the
@@ -199,7 +292,7 @@ export default function RidersPage() {
   const pageRows = filtered.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
   useEffect(() => {
     setPage(1);
-  }, [query, stationFilter, franchiseFilter, statusFilter, onlyUnassigned]);
+  }, [query, stationFilter, franchiseFilter, statusFilter, poolFilter, onlyUnassigned]);
 
   const input = "h-10 rounded-[8px] border border-[var(--line)] bg-[var(--surface-raised)] px-3 text-sm font-bold text-[var(--text)] outline-none focus:border-[var(--accent)]";
 
@@ -212,7 +305,13 @@ export default function RidersPage() {
         const noPix = rider.source === "profile" && String(rider.pix ?? "").trim() === "";
         return (
           <div>
-            <div className={`truncate font-black ${noPix ? "text-[var(--warning-ink)]" : ""}`}>{rider.name}</div>
+            <div className={`flex items-center gap-1.5 truncate font-black ${noPix ? "text-[var(--warning-ink)]" : ""}`}>
+              <span className="truncate">{rider.name}</span>
+              {/* 模式二: PRO 徽章 — 三级后台共用(加盟商/站点只读) */}
+              {rider.pool === "pro" && (
+                <span className="shrink-0 rounded-full bg-[#eda100] px-1.5 py-[1px] text-[9px] font-black text-[#171b33]">PRO</span>
+              )}
+            </div>
             <div className="flex flex-wrap items-center gap-1.5">
               {noPix && (
                 <button
@@ -323,10 +422,14 @@ export default function RidersPage() {
         eyebrow={t("rdEyebrow", { n: visibleBase.length })}
         action={
           <div className="flex gap-2">
+            {/* 模式二 T1: 批量标记 PRO 池(总部专属;粘贴 99 名单) */}
+            <button type="button" className="tag" onClick={() => setPoolBulkOpen(true)}>
+              {t("rdPoolBulk")}
+            </button>
             <button
               type="button"
               className="tag"
-              onClick={() => downloadCsv(`riders-${new Date().toISOString().slice(0, 10)}`, [t("rdColRider"), "99ID", "CPF", t("rdPhPhone"), t("rdColFranchise"), t("rdColStation"), t("rdColStatus"), t("rdColOrders"), t("rdColLastReport"), t("rdColPoints")], filtered.map((r) => [r.name, r.ninetyNineId ?? "", r.cpf, r.phone, r.franchise ?? "", r.ponto, r.status, String(r.totalOrders), r.lastReportDate, String(r.pointsBalance)]))}
+              onClick={() => downloadCsv(`riders-${new Date().toISOString().slice(0, 10)}`, [t("rdColRider"), "99ID", "CPF", t("rdPhPhone"), t("rdColFranchise"), t("rdColStation"), t("rdColStatus"), "Pool", t("rdColOrders"), t("rdColLastReport"), t("rdColPoints")], filtered.map((r) => [r.name, r.ninetyNineId ?? "", r.cpf, r.phone, r.franchise ?? "", r.ponto, r.status, r.pool === "pro" ? "PRO" : "", String(r.totalOrders), r.lastReportDate, String(r.pointsBalance)]))}
             >
               {t("rdExport")}
             </button>
@@ -368,6 +471,12 @@ export default function RidersPage() {
             <option value="">{t("rdAllFranchise")}</option>
             <option value="Unassigned">{t("rdUnassignedOpt")}</option>
             {network.franchises.map((f) => <option key={f.id} value={f.name}>{f.name}</option>)}
+          </select>
+          {/* 模式二: 池筛选 — 选 PRO 即单独查看全部 PRO 骑手(零新增菜单) */}
+          <select value={poolFilter} onChange={(e) => setPoolFilter(e.target.value)} className={input}>
+            <option value="">{t("rdAllPool")}</option>
+            <option value="pro">PRO</option>
+            <option value="standard">{t("rdPoolStandard")}</option>
           </select>
           <Chip active={statusFilter === ""} onClick={() => setStatusFilter("")}>{t("rdAllStatus")}</Chip>
           {STATUS_OPTIONS.map((status) => (
@@ -416,6 +525,42 @@ export default function RidersPage() {
           <Pager page={safePage} pages={totalPages} total={filtered.length} onPage={setPage} />
         </div>
       )}
+
+      {/* 模式二 T1: 批量标记 PRO 池 — 粘贴 99 名单,逐条留审计 */}
+      <Drawer open={poolBulkOpen} onClose={() => setPoolBulkOpen(false)} title={<div className="text-sm font-black uppercase">{t("rdPoolBulk")}</div>} ariaLabel={t("rdPoolBulk")}>
+        <div className="grid gap-2">
+          <div className="text-[11px] font-bold text-[var(--muted)]">{t("rdPoolBulkHint")}</div>
+          <textarea
+            className={`${input} min-h-40 font-mono`}
+            placeholder={"650911814078352\n650912021349691\n…"}
+            value={poolBulkText}
+            onChange={(e) => setPoolBulkText(e.target.value)}
+          />
+          <div className="flex gap-2">
+            <button type="button" className="btn-primary flex-1" disabled={poolBulkBusy} onClick={() => void applyPoolBulk("pro")}>
+              {poolBulkBusy ? "…" : t("rdPoolBulkToPro")}
+            </button>
+            <button type="button" className="tag" disabled={poolBulkBusy} onClick={() => void applyPoolBulk("standard")}>
+              {t("rdPoolBulkToStandard")}
+            </button>
+          </div>
+
+          {/* 模式二 §9 · PRO 名单建档 —— 新 Eastwind 账号的骑手不会出现在旧
+              OL 日报里,系统不会自动建档;总部把新账号名单粘进来一次,直接
+              建档为 PRO。同一个抽屉两种用法:上面是"已有骑手改池",这里是
+              "新骑手建档",不新增菜单。 */}
+          <div className="mt-2 border-t border-[var(--line)] pt-3">
+            <div className="text-[11px] font-bold text-[var(--muted)]">{t("rdProImportHint")}</div>
+            <div className="mt-2 grid grid-cols-2 gap-2">
+              <input className={input} placeholder={t("rdProImportFranchise")} value={proImportFranchise} onChange={(e) => setProImportFranchise(e.target.value)} />
+              <input className={input} placeholder={t("rdProImportPonto")} value={proImportPonto} onChange={(e) => setProImportPonto(e.target.value)} />
+            </div>
+            <button type="button" className="tag mt-2 w-full" disabled={poolBulkBusy} onClick={() => void importProRoster()}>
+              {poolBulkBusy ? "…" : t("rdProImport")}
+            </button>
+          </div>
+        </div>
+      </Drawer>
 
       {/* New rider drawer */}
       <Drawer open={addOpen} onClose={() => setAddOpen(false)} title={<div className="text-sm font-black uppercase">{t("rdAddRider")}</div>} ariaLabel={t("rdAddRider")}>

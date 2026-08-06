@@ -6,6 +6,7 @@ import { applyInactivityDecay, getAvailablePoints, type PointsLedgerEntry } from
 import { taskProgress } from "../../../lib/tasks";
 import { isSupplierCategory } from "../../../lib/server/crm-categories";
 import { maskAuthor } from "../../../lib/partner-reviews";
+import { activityCardVisible } from "../../../lib/app-config";
 import { dbDirectReadEnabled, fetchRows } from "../../../lib/server/db-read";
 import type { RiderDailyEarning, RiderDailyKpi } from "../../../lib/performance";
 import { earningsByRider99, kpisByRider99, kpisByRiderName, perfMode } from "../../../lib/server/db/performance-repo";
@@ -44,6 +45,8 @@ const COLLECTIONS = [
   "mallCoupons",
   "cashLedgerEntries",
   "slotEnrollments",
+  // A4 · 活动入口卡 lives inside the app-splash record (see lib/app-config.ts).
+  "appSplashConfigs",
 ];
 
 // GET-path split (perf(riders api) pattern): tiny actively-mutated collections
@@ -484,6 +487,16 @@ export async function GET(request: Request) {
       // 模式二: pool membership drives the PRO badge / Agenda PRO on v2.6+
       // clients; older clients ignore the extra field (additive-only API).
       pool: rider.pool ?? "standard",
+      // A4 · 活动入口卡. Windowing + audience are decided HERE, never on the
+      // client — an expired or PRO-only banner must not depend on the phone's
+      // clock or on the client knowing what a pool is. Null when there is
+      // nothing to show, so old clients (which ignore the field) and new ones
+      // behave identically.
+      activityCard: (() => {
+        const card = memory.appSplashConfigs[0]?.activityCard;
+        const today = new Date(Date.now() - 3 * 3600_000).toISOString().slice(0, 10); // BRT
+        return activityCardVisible(card, rider.pool ?? "standard", today) ? card : null;
+      })(),
     },
   });
 }

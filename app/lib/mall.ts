@@ -31,6 +31,10 @@ export type MallConfig = {
   checkinPoints?: number;
   /** Tier window in days; 0 = lifetime cumulative (the default). */
   tierWindowDays?: number;
+  /** 模式二 T3 · HqProRate: R$ per PRO completed order for the HQ→franchise
+   *  settlement (v3.0 R5: 8月=12/单, monthly config, corrections roll into the
+   *  next month's adjustment line). Changing it is money-sensitive → audited. */
+  hqProRatePerOrder?: number;
   /** Inactivity decay: after [decayGraceDays] with no earning, available
    *  points shrink by [decayPointsPerDay] per idle day (ledgered, tier-safe). */
   decayGraceDays?: number;
@@ -82,6 +86,7 @@ export const defaultMallConfig: MallConfig = {
   pixKey: "",
   checkinPoints: 10,
   tierWindowDays: 0,
+  hqProRatePerOrder: 12, // 模式二 8月费率:R$12 / PRO 完单
   decayGraceDays: 30,
   decayPointsPerDay: 5,
   tierPrataEarned: 2000,

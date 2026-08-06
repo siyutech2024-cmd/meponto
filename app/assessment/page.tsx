@@ -163,11 +163,18 @@ export default function AssessmentPage() {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState<AssessmentRule | null>(null);
   const [message, setMessage] = useState<{ tone: "ok" | "err"; text: string } | null>(null);
+  /**
+   * 模式二 R10 · 周考核分池. Same page, same rule, same tables — one chip that
+   * narrows the weekly numbers to a single pool. Mixing PRO full-timers with
+   * standard riders skews the weekly averages for both sides, so ops needs to
+   * be able to look at them apart. Default "" keeps today's behaviour exactly.
+   */
+  const [pool, setPool] = useState("");
 
   const load = useCallback(async () => {
-    const response = await fetch(`/api/assessment?week=${anchor}`, { headers: HEADERS, cache: "no-store" });
+    const response = await fetch(`/api/assessment?week=${anchor}${pool ? `&pool=${pool}` : ""}`, { headers: HEADERS, cache: "no-store" });
     if (response.ok) setData((await response.json()).data);
-  }, [anchor]);
+  }, [anchor, pool]);
 
   useEffect(() => {
     void load();
@@ -267,6 +274,12 @@ export default function AssessmentPage() {
           <Chip onClick={() => shiftWeek(-7)}>{t("asPrevWeek")}</Chip>
           <div className="text-sm font-black">{data ? `${md(data.week.from)} – ${md(data.week.to)}` : "—"}</div>
           <Chip onClick={() => shiftWeek(7)}>{t("asNextWeek")}</Chip>
+          {/* 模式二 R10: 分池考核 chip —— 不新增菜单,就在周切换旁边 */}
+          {(["", "pro", "standard"] as const).map((value) => (
+            <Chip key={value || "all"} active={pool === value} onClick={() => setPool(value)}>
+              {value === "" ? t("fmChipAll") : value === "pro" ? "PRO" : t("rdPoolStandard")}
+            </Chip>
+          ))}
           <span className="text-[11px] font-bold text-[var(--muted)]">{t("asDailyAuto")}</span>
         </Toolbar>
       </div>

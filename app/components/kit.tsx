@@ -24,6 +24,21 @@ const BADGE_TONE_CLASS: Record<BadgeTone, string> = {
   neutral: "border-[var(--line)] bg-[var(--surface-raised)] text-[var(--muted)]",
 };
 
+/**
+ * 模式二 · PRO 徽章 — 骑手/班次属于 PRO 池时的统一金色标识。
+ * 三级后台(总部/加盟商/站点)共用同一个组件,颜色与 App 端 A1 一致(#eda100)。
+ */
+export function ProBadge({ small }: { small?: boolean }) {
+  return (
+    <span
+      className={`shrink-0 rounded-full bg-[#eda100] font-black text-[#171b33] ${small ? "px-1.5 py-[1px] text-[9px]" : "px-2 py-0.5 text-[10px]"}`}
+      title="PRO pool"
+    >
+      PRO
+    </span>
+  );
+}
+
 export function StatusBadge({ tone, label }: { tone: BadgeTone; label: string }) {
   return (
     <span className={`inline-flex whitespace-nowrap rounded-[6px] border px-2 py-0.5 text-[11px] font-bold ${BADGE_TONE_CLASS[tone]}`}>

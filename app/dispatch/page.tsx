@@ -1,9 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { CalendarDays, CheckCircle2, ClipboardCopy, ClipboardList, Download, Plus, RefreshCcw, Send, Star, Upload, Users, X } from "lucide-react";
+import { CalendarDays, CheckCircle2, ClipboardCopy, ClipboardList, Download, Lock, Plus, RefreshCcw, Send, Star, Unlock, Upload, Users, X } from "lucide-react";
 import { AppShell, PageTitle } from "../components/ui";
-import { Chip, DataTable, Drawer, SectionCard, Stat, StatusBadge, TodoCard, Toolbar, type BadgeTone, type DataColumn } from "../components/kit";
+import { Chip, DataTable, Drawer, ProBadge, SectionCard, Stat, StatusBadge, TodoCard, Toolbar, type BadgeTone, type DataColumn } from "../components/kit";
 import type { DispatchShift, ShiftQuota, ShiftSignup } from "../lib/dispatch";
 import { downloadCsv } from "../lib/csv";
 import { useDialog } from "../components/dialog";
@@ -131,9 +131,20 @@ export default function DispatchPage() {
   }, []);
 
   async function post(body: Record<string, unknown>) {
-    const response = await fetch("/api/dispatch", { method: "POST", headers, body: JSON.stringify(body) });
+    // 模式二 H4: the "lock anyway" override travels as a query flag so the
+    // request body stays a clean domain payload.
+    const { __force, ...payloadBody } = body as { __force?: boolean };
+    const url = __force ? "/api/dispatch?force=1" : "/api/dispatch";
+    const response = await fetch(url, { method: "POST", headers, body: JSON.stringify(payloadBody) });
     const payload = await response.json().catch(() => ({}));
     if (!response.ok) {
+      // 模式二 H4: the lock action can fail on purpose (roster carries riders
+      // who left the PRO pool). That caller needs the offender list to offer
+      // the forced override, so hand the failure back INSTEAD of only toasting
+      // it. Every other action keeps the old "null means failed" contract.
+      if (body.action === "lock" && payload.code === "pool_mismatch") {
+        return { __failed: true, ...payload } as Record<string, unknown>;
+      }
       setMessage({ tone: "err", text: payload.error ?? t("dpReqFail", { status: response.status }) });
       return null;
     }
@@ -277,6 +288,7 @@ function BoardTab({ board, byShift, loading, onAction, setMessage }: { board: Bo
           <span className="inline-flex items-center gap-1 text-[13px] font-black" translate="no">
             {shift.isCritical && <Star size={11} className="text-[var(--accent)]" />}
             {shift.timeRange}
+            {shift.pool === "pro" && <ProBadge small />}
           </span>
           <button
             type="button"
@@ -1005,6 +1017,7 @@ function ReviewTab({ board, onAction, setMessage, network }: { board: Board; onA
 
 function ReportTab({ board, byShift, onAction, setMessage }: { board: Board; byShift: { signupMap: Map<string, ShiftSignup[]> }; onAction: (body: Record<string, unknown>) => Promise<Record<string, unknown> | null>; setMessage: (m: { tone: "ok" | "warn" | "err"; text: string } | null) => void }) {
   const t = useT();
+  const dialog = useDialog();
   // Week-scoped + day-grouped + whole-day batch actions. The old flat list
   // mixed every week since June into one strip with per-row buttons only.
   const [weekStart, setWeekStart] = useState(() => mondayOf(0));
@@ -1044,6 +1057,48 @@ function ReportTab({ board, byShift, onAction, setMessage }: { board: Board; byS
   async function markReported(shiftId: string) {
     const result = await onAction({ action: "report", shiftId, confirm: true });
     if (result) setMessage({ tone: "ok", text: t("dpMarkReportedOk", { n: String(result.count) }) });
+  }
+
+  /**
+   * 模式二 T5 · 锁班 — manual lock/unlock from the reporting desk (no new menu:
+   * the desk is exactly where ops freezes a roster before submitting it).
+   * The 18:00 cron does the same thing automatically for the next day; this is
+   * the "lock it now" / "I need to fix one name" escape hatch. Unlocking asks
+   * for confirmation because it reopens a roster that may already be at 99.
+   */
+  async function toggleLock(shift: DispatchShift) {
+    const unlock = Boolean(shift.lockedAt);
+    if (unlock && !(await dialog.confirm(t("dpUnlockTitle"), { message: t("dpUnlockMsg"), tone: "danger", confirmText: t("dpUnlock") }))) return;
+    const result = await runLock({ action: "lock", shiftId: shift.id, unlock });
+    if (result) setMessage({ tone: "ok", text: unlock ? t("dpUnlockOk", { n: String(result.changed ?? 1) }) : t("dpLockOk", { n: String(result.changed ?? 1) }) });
+  }
+
+  /** Lock every still-open shift of one day in a single click (the manual
+   *  equivalent of the evening sweep). */
+  async function lockDay(date: string) {
+    setBusyDay(date);
+    const result = await runLock({ action: "lock", date });
+    setBusyDay("");
+    if (result) setMessage({ tone: "ok", text: t("dpLockOk", { n: String(result.changed ?? 0) }) });
+  }
+
+  /**
+   * 模式二 H4 · 锁班前池校验的前端半边. The server refuses to freeze a PRO
+   * roster that contains riders who have since left the pool, and returns the
+   * names. We show them and let HQ either fix the roster (default) or lock
+   * anyway — the forced lock is audited as Medium risk on the server.
+   */
+  async function runLock(body: Record<string, unknown>): Promise<Record<string, unknown> | null> {
+    const result = await onAction(body);
+    if (!result?.__failed) return result;
+    const offenders = (result.offenders as string[] | undefined) ?? [];
+    const forced = await dialog.confirm(t("dpPoolMismatchTitle", { n: offenders.length }), {
+      message: `${offenders.map((line) => `· ${line}`).join("\n")}\n\n${t("dpPoolMismatchMsg")}`,
+      tone: "danger",
+      confirmText: t("dpPoolMismatchForce"),
+    });
+    if (!forced) return null;
+    return onAction({ ...body, __force: true });
   }
 
   /** Copy the WHOLE day's rosters in one clipboard write. */
@@ -1125,7 +1180,14 @@ function ReportTab({ board, byShift, onAction, setMessage }: { board: Board; byS
     {
       key: "status",
       label: t("dpStatus"),
-      render: (shift) => (shift.reportedAt ? <StatusBadge tone="success" label={t("dpReportedAt", { x: shift.reportedAt })} /> : <StatusBadge tone="warn" label={t("dpNotReported")} />),
+      render: (shift) => (
+        <div className="flex flex-wrap items-center gap-1">
+          {shift.reportedAt ? <StatusBadge tone="success" label={t("dpReportedAt", { x: shift.reportedAt })} /> : <StatusBadge tone="warn" label={t("dpNotReported")} />}
+          {/* 模式二 T5: locked roster is the strongest signal on this row — a
+              locked shift can no longer change under ops' feet. */}
+          {shift.lockedAt && <StatusBadge tone="neutral" label={`🔒 ${t("dpLocked", { x: shift.lockedAt })}`} />}
+        </div>
+      ),
     },
     {
       key: "action",
@@ -1138,6 +1200,9 @@ function ReportTab({ board, byShift, onAction, setMessage }: { board: Board; byS
           </button>
           <button type="button" onClick={() => void markReported(shift.id)} className="tag inline-flex items-center gap-1">
             <Download size={13} /> {t("dpMarkReported")}
+          </button>
+          <button type="button" onClick={() => void toggleLock(shift)} className="tag inline-flex items-center gap-1" title={shift.lockedBy ? t("dpLockedBy", { who: shift.lockedBy }) : t("dpLockHint")}>
+            {shift.lockedAt ? <><Unlock size={13} /> {t("dpUnlock")}</> : <><Lock size={13} /> {t("dpLock")}</>}
           </button>
         </div>
       ),
@@ -1170,6 +1235,9 @@ function ReportTab({ board, byShift, onAction, setMessage }: { board: Board; byS
         const dayApproved = shifts.reduce((sum, shift) => sum + approvedOf(shift), 0);
         const dayGap = Math.max(0, dayPlanned - dayApproved);
         const dayPending = shifts.filter((shift) => !shift.reportedAt).length;
+        // 模式二 T5: how many shifts of this day are still unlocked — the whole
+        // day is either "lockable" or already frozen.
+        const dayUnlocked = shifts.filter((shift) => !shift.lockedAt && shift.status === "scheduling").length;
         return (
           <SectionCard
             key={date}
@@ -1180,6 +1248,11 @@ function ReportTab({ board, byShift, onAction, setMessage }: { board: Board; byS
                 <button type="button" disabled={busyDay === date} onClick={() => void copyDay(date, shifts)} className="tag inline-flex items-center gap-1 disabled:opacity-50">
                   <ClipboardCopy size={13} /> {t("dpCopyRoster")}
                 </button>
+                {dayUnlocked > 0 && (
+                  <button type="button" disabled={busyDay === date} onClick={() => void lockDay(date)} className="tag inline-flex items-center gap-1 disabled:opacity-50" title={t("dpLockHint")}>
+                    <Lock size={13} /> {t("dpLockDay")} ×{dayUnlocked}
+                  </button>
+                )}
                 {dayPending > 0 && (
                   <button type="button" disabled={busyDay === date} onClick={() => void markDay(date, shifts)} className="inline-flex h-9 items-center gap-1 rounded-[8px] bg-[var(--accent)] px-3.5 text-xs font-black uppercase text-[var(--accent-ink)] hover:bg-[var(--accent-strong)] disabled:opacity-50">
                     <Download size={13} /> {t("dpMarkReported")} ×{dayPending}

@@ -11,6 +11,7 @@ import com.meponto.rider.data.remote.GoogleLoginRequest
 import com.meponto.rider.data.remote.InboxDto
 import com.meponto.rider.data.remote.LedgerDto
 import com.meponto.rider.data.remote.CouponDto
+import com.meponto.rider.data.remote.LiveCountDto
 import com.meponto.rider.data.remote.MallCancelRequest
 import com.meponto.rider.data.remote.MallMarkReadRequest
 import com.meponto.rider.data.remote.ReferralDto
@@ -81,6 +82,7 @@ data class RiderSnapshot(
     val coupons: List<MallCoupon>? = null,
     val badges: List<RiderBadge>? = null,
     val referrals: List<ReferralDto>? = null,
+    val pool: String? = null,
     val pointCashRateBRL: Double? = null,
     val statusTotals: StatusTotals? = null,
 )
@@ -248,6 +250,7 @@ class RiderRepository(context: Context) {
                 RiderBadge(b.at ?: 0, b.icon ?: "", lb, b.achieved == true)
             },
             referrals = home?.referrals,
+            pool = home?.pool,
             pointCashRateBRL = home?.pointCashRateBRL,
             statusTotals = home?.statusTotals?.let { t ->
                 StatusTotals(t.totalOrders ?: 0, t.onlineHours ?: 0.0, t.ar ?: 0.0, t.lastReportDate ?: "")
@@ -350,6 +353,10 @@ class RiderRepository(context: Context) {
     } catch (e: Exception) {
         errorOf(e)
     }
+
+    /** GET /rider/live-count — 今日实时单量(不可用时返回 null,界面隐藏该行). */
+    suspend fun liveCount(): LiveCountDto? =
+        runCatching { service.liveCount() }.getOrNull()?.data?.takeIf { it.available == true }
 
     /** GET /partner/reviews — aggregate + masked-author list for a map pin. */
     suspend fun reviews(targetCode: String): ReviewsData? =

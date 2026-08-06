@@ -47,6 +47,12 @@ export default function RiderWalletPage() {
   const [withdrawals, setWithdrawals] = useState<RiderWithdrawal[]>([]);
   const [cashLedger, setCashLedger] = useState<CashItem[] | null>(null);
   const [cashBalance, setCashBalance] = useState<number | null>(null);
+  // 模式二 T7/N1: PRO riders are settled OFFLINE by the franchise (v3.0 R5) —
+  // no balance, no withdrawal, no money at all on the rider surface. The PWA
+  // has to honour the same rule as the Android app, otherwise a PRO rider sees
+  // a permanent "R$ 0,00" and thinks the system swallowed their pay.
+  const [pool, setPool] = useState<string | null>(null);
+  const isPro = pool === "pro";
   const [amount, setAmount] = useState("");
   const [message, setMessage] = useState<{ tone: "ok" | "err"; text: string } | null>(null);
   const [busy, setBusy] = useState(false);
@@ -60,14 +66,19 @@ export default function RiderWalletPage() {
       .then(async (response) => {
         if (!response.ok) {
           setCashLedger([]); // no session/profile — hide the section instead of a stuck skeleton
+          setPool("standard");
           return;
         }
         const payload = await response.json();
         setCashLedger((payload.data?.cashLedger ?? []) as CashItem[]);
         const saldo = payload.data?.cashBalance;
         setCashBalance(typeof saldo === "number" ? saldo : null);
+        setPool(typeof payload.data?.pool === "string" ? payload.data.pool : "standard");
       })
-      .catch(() => setCashLedger([]));
+      .catch(() => {
+        setCashLedger([]);
+        setPool("standard");
+      });
     const response = await fetch(`/api/wallet?${params}`, { headers, cache: "no-store" });
     const payload = await response.json();
     setLoading(false);
@@ -104,7 +115,9 @@ export default function RiderWalletPage() {
             Entrar ou criar conta
           </Link>
         </div>
-      ) : loading ? (
+      ) : loading || pool === null ? (
+        // Wait for the pool flag too — otherwise a PRO rider sees the balance
+        // card flash for a moment before the PRO notice replaces it.
         // First-paint skeleton: the balance card shows immediately as a
         // placeholder instead of blocking the page (or flashing the
         // "cadastro não vinculado" notice) while the wallet loads.
@@ -120,6 +133,21 @@ export default function RiderWalletPage() {
       ) : !me ? (
         <div className="panel p-5 text-sm font-bold text-[var(--muted)]">
           Cadastro não vinculado — fale com o gestor da estação para liberar sua carteira.
+        </div>
+      ) : isPro ? (
+        // PRO pool: settlement happens between the rider and the franchise
+        // outside the system (v3.0 R5). Show counts-only guidance instead of a
+        // misleading R$ 0,00 balance, and no withdrawal button at all.
+        <div className="panel space-y-3 p-5 text-center">
+          <span className="inline-flex items-center rounded-[6px] bg-[#eda100] px-2 py-[2px] text-[10px] font-black uppercase text-[#171b33]">PRO</span>
+          <div className="text-sm font-black">Pagamento direto com a franquia</div>
+          <div className="text-[12px] font-bold text-[var(--muted)]">
+            No time PRO o repasse é feito pela sua franquia fora do aplicativo.
+            Aqui você acompanha os pedidos confirmados — confira o valor direto com a franquia.
+          </div>
+          <Link href="/" className="inline-flex h-11 w-full items-center justify-center rounded-[8px] bg-[var(--accent)] px-4 text-sm font-black text-[var(--accent-ink)]">
+            Ver meus pedidos confirmados
+          </Link>
         </div>
       ) : (
         <>

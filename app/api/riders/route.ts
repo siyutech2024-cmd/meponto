@@ -2,7 +2,7 @@ import { acceptClientId, appendServerAudit, makeServerId, memory, jsonResponse }
 import { flushPendingToDatabase, persistDeleteRecord, refreshCollectionsFromDatabase } from "../../lib/server/persistence";
 import { getAvailablePoints } from "../../lib/points";
 import { requirePermission, roleFromRequest, scopeFromRequest } from "../../lib/server/authz";
-import type { Rider, RiderStatus } from "../../lib/data";
+import { parseProRoster, type Rider, type RiderStatus } from "../../lib/data";
 import { getRiderSensitiveRevealDecision, maskRiderSensitive } from "../../lib/masking";
 
 const COLLECTIONS = ["riders", "riderDailyKpis", "pointsLedgerEntries"];
@@ -222,12 +222,16 @@ export async function GET(request: Request) {
 
 type AssignBody = { action: "assign" | "updateProfile"; riderId: string; ponto?: string; franchise?: string; status?: string; pool?: "standard" | "pro" };
 
+/** 模式二 · PRO 名单导入 (closure matrix §9) — parser lives in lib/data.ts. */
+type ProImportBody = { action: "importPro"; text: string; ponto?: string; franchise?: string };
+
+
 async function handlePost(request: Request) {
   const forbidden = requirePermission(request, "manage_riders");
   if (forbidden) return forbidden;
 
   await refreshCollectionsFromDatabase(COLLECTIONS);
-  const body = (await request.json()) as Partial<Rider> & Partial<AssignBody> & { action?: string };
+  const body = (await request.json()) as Partial<Rider> & Partial<AssignBody> & Partial<ProImportBody> & { action?: string };
   const actor = roleFromRequest(request);
 
   // Update editable profile fields (detail page form).
@@ -246,6 +250,81 @@ async function handlePost(request: Request) {
     appendServerAudit({ actor, action: "RIDER_PROFILE_UPDATED", entity: "Rider", entityId: riderId, detail: `${memory.riders[index].name}: ${Object.keys(patch).join(", ")} updated.`, risk: "Low" });
     await flushPendingToDatabase();
     return jsonResponse({ data: memory.riders[index] });
+  }
+
+  // 模式二 · PRO 名单批量建档 (closure matrix §9). HQ only — the pool gate is
+  // "入池权收口在总部", and this creates riders, not just tags them.
+  if (body.action === "importPro") {
+    const scope = await scopeFromRequest(request);
+    if (scope.franchise || scope.station) {
+      return jsonResponse({ error: "Somente a matriz pode importar a lista PRO." }, { status: 403 });
+    }
+    const { text, ponto, franchise } = body as unknown as ProImportBody;
+    const parsed = parseProRoster(String(text ?? ""));
+    if (parsed.length === 0) {
+      return jsonResponse({ error: "没有识别到任何骑手行(每行需含 99 ID)" }, { status: 400 });
+    }
+
+    const created: string[] = [];
+    const promoted: string[] = [];
+    const skipped: string[] = [];
+    for (const row of parsed) {
+      const existing = memory.riders.find((item) => item.ninetyNineId === row.rider99Id);
+      if (existing) {
+        // Already on file (e.g. moved over from the standard pool) — never
+        // duplicate a profile, just move it into the PRO pool.
+        if ((existing.pool ?? "standard") === "pro") {
+          skipped.push(row.rider99Id);
+          continue;
+        }
+        const index = memory.riders.findIndex((item) => item.id === existing.id);
+        memory.riders[index] = { ...memory.riders[index], pool: "pro" };
+        appendServerAudit({ actor, action: "RIDER_POOL_CHANGED", entity: "Rider", entityId: existing.id, detail: `${existing.name}: pool standard → pro (PRO roster import).`, risk: "Medium" });
+        promoted.push(row.rider99Id);
+        continue;
+      }
+      const rider: Rider = {
+        id: makeServerId("r", memory.riders.length + 1 + created.length),
+        name: row.name || `99 ${row.rider99Id}`,
+        cpf: row.cpf,
+        pix: "",
+        phone: row.phone,
+        bairro: "",
+        ponto: ponto?.trim() || "Unassigned",
+        leader: "Unassigned",
+        invitedBy: "PRO roster import",
+        chatRoom: "MePonto Intake",
+        ar: 100,
+        status: "Active",
+        vehicleType: "Motorcycle",
+        brand: "Unknown",
+        model: "To confirm",
+        rentalStatus: "Unknown",
+        isMottu: false,
+        onlineHours: 0,
+        nightShiftCount: 0,
+        incidentCount: 0,
+        joinDate: new Date().toISOString().slice(0, 10),
+        ninetyNineId: row.rider99Id,
+        franchise: franchise?.trim() || "Unassigned",
+        pool: "pro",
+        birthday: "",
+      };
+      memory.riders.unshift(rider);
+      created.push(row.rider99Id);
+      appendServerAudit({ actor, action: "RIDER_POOL_CHANGED", entity: "Rider", entityId: rider.id, detail: `${rider.name} (99 ${row.rider99Id}) created directly in the PRO pool (roster import).`, risk: "Medium" });
+    }
+
+    appendServerAudit({
+      actor,
+      action: "RIDER_PRO_ROSTER_IMPORTED",
+      entity: "Rider",
+      entityId: new Date().toISOString().slice(0, 10),
+      detail: `PRO roster import: ${created.length} created, ${promoted.length} promoted, ${skipped.length} already PRO (${parsed.length} rows parsed).`,
+      risk: "Medium",
+    });
+    await flushPendingToDatabase();
+    return jsonResponse({ data: { parsed: parsed.length, created: created.length, promoted: promoted.length, skipped: skipped.length } });
   }
 
   // Assign station/franchise/status — also materializes report-only riders.

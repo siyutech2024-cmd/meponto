@@ -203,8 +203,22 @@ data class RiderHomeDto(
     val coupons: List<CouponDto>? = null,
     val badges: List<BadgeDto>? = null,
     val referrals: List<ReferralDto>? = null,
+    /** 模式二: "pro" = PRO 池骑手(徽章/欢迎页/双口径卡由它驱动). */
+    val pool: String? = null,
+    /** A4 · 活动入口卡。服务端已判定过受众与生效窗口:非 null 就直接渲染,
+     *  客户端不再自己判断日期(手机时钟不可信)。 */
+    val activityCard: ActivityCardDto? = null,
     val pointCashRateBRL: Double? = null,
     val statusTotals: StatusTotalsDto? = null,
+)
+
+/** A4 · 活动入口卡(全部字段可空 —— 老客户端忽略,新客户端容错). */
+data class ActivityCardDto(
+    val title: String? = null,
+    val subtitle: String? = null,
+    val badge: String? = null,
+    val imageURL: String? = null,
+    val linkURL: String? = null,
 )
 
 // Rider-status scraper aggregate — the SECOND performance source (lifetime
@@ -427,6 +441,16 @@ data class MallCancelRequest(
     val action: String = "cancelOrder",
     val orderId: String,
     val riderId: String? = null,
+)
+
+// GET /rider/live-count — 模式二 A3 今日实时单量(估算值,零金额).
+data class LiveCountDto(
+    val available: Boolean? = null,
+    val capturedAt: String? = null,
+    val finishedToday: Int? = null,
+    val onlineMins: Int? = null,
+    val status: String? = null,
+    val shift: String? = null,
 )
 
 // GET /rider/home → referrals[] — riders this rider invited (masked names).

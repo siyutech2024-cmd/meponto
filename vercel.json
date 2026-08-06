@@ -4,6 +4,7 @@
   "installCommand": "npm install",
   "crons": [
     { "path": "/api/cron/birthday", "schedule": "0 9 * * *" },
-    { "path": "/api/cron/reconcile-perf", "schedule": "0 6 * * *" }
+    { "path": "/api/cron/reconcile-perf", "schedule": "0 6 * * *" },
+    { "path": "/api/cron/lock-shifts", "schedule": "0 21 * * *" }
   ]
 }

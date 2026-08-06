@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { Banknote, Building2, ChevronDown, Info, RefreshCcw, Store, Wallet } from "lucide-react";
 import { AppShell, PageTitle } from "../components/ui";
-import { DataTable, Drawer, SectionCard, Stat, StatusBadge, Toolbar, type BadgeTone, type DataColumn } from "../components/kit";
+import { DataTable, Drawer, ProBadge, SectionCard, Stat, StatusBadge, Toolbar, type BadgeTone, type DataColumn } from "../components/kit";
 import { downloadCsv } from "../lib/csv";
 import { readSession } from "../lib/session";
 import { mallHubPortals } from "../lib/portals";
@@ -12,9 +12,12 @@ import { useVentoStore } from "../lib/store";
 import { translate, type TranslationKey } from "../lib/i18n";
 import type { RiderWithdrawal } from "../lib/finance";
 
-type WeeklyRider = { name: string; rider99Id: string; station: string; settle: number; orders: number; days: number; paid: number };
-type WeeklyGroup = { franchise: string; settle: number; franchisePaid: number; riders: WeeklyRider[] };
-type Weekly = { week: { from: string; to: string }; franchises: WeeklyGroup[]; grandTotal: number; scoped: boolean };
+type WeeklyRider = { name: string; rider99Id: string; station: string; settle: number; orders: number; days: number; paid: number; pool?: "standard" | "pro" };
+type WeeklyGroup = { franchise: string; settle: number; franchisePaid: number; riders: WeeklyRider[]; proSettle?: number; proOrders?: number };
+// 模式二: proTotal = Σ(PRO 完单 × proRate) —— 与加盟商端同源计算,两端永远一致。
+/** 倒扣待扣(派生量):负数结算且未核销的日行,按骑手归集。 */
+type PendingDeduction = { rider99Id: string; riderName: string; amount: number; days: number; rows: Array<{ id: string; date: string; amount: number }> };
+type Weekly = { week: { from: string; to: string }; franchises: WeeklyGroup[]; grandTotal: number; scoped: boolean; proTotal?: number; proOrdersTotal?: number; proRate?: number; deductions?: PendingDeduction[]; deductionTotal?: number };
 
 const money = (v: number) => `R$ ${v.toFixed(2)}`;
 const md = (iso: string) => `${Number(iso.slice(5, 7))}.${Number(iso.slice(8, 10))}`;
@@ -73,6 +76,8 @@ function RiderPayrollWallet() {
   const [stationShare, setStationShare] = useState("");
   // Drawers hold references, not snapshots, so a reload refreshes their content.
   const [stmtDrawerId, setStmtDrawerId] = useState("");
+  // 倒扣待扣抽屉(总部专用)。
+  const [deductionOpen, setDeductionOpen] = useState(false);
   const [riderRef, setRiderRef] = useState<{ franchise: string; rider99Id: string } | null>(null);
   const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({});
 
@@ -98,6 +103,21 @@ function RiderPayrollWallet() {
     body.push([t("wlCsvTotal"), "", "", rows.reduce((a, e) => a + e.franchiseNetBRL, 0).toFixed(2), rows.reduce((a, e) => a + e.stationShareBRL, 0).toFixed(2)]);
     downloadCsv(`revshare-detail-${s.franchise}-${s.month}`, header, body);
     setMessage({ tone: "ok", text: t("wlDetailExported", { n: rows.length, m: s.month }) });
+  }
+
+  /**
+   * 倒扣核销。服务端只给"负数且未核销"的行加了结标记(金额不动),所以重复点击
+   * 是空操作,不会把同一笔扣两次。
+   */
+  async function settleDeduction(earningIds: string[], amount: number) {
+    if (!(await dialog.confirm(t("wlDeductionConfirmQ", { money: money(amount), n: earningIds.length }), { message: t("wlDeductionConfirmMsg"), confirmText: t("wlDeductionSettle") }))) return;
+    const response = await fetch("/api/performance", {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ action: "settleDeduction", earningIds }),
+    });
+    if (!response.ok) return;
+    void load();
   }
 
   const load = useCallback(async () => {
@@ -282,7 +302,17 @@ function RiderPayrollWallet() {
   ];
 
   const riderColumns = (g: WeeklyGroup): Array<DataColumn<WeeklyRider>> => [
-    { key: "name", label: t("wlColRider"), render: (r) => <span className="font-black">{r.name}</span> },
+    {
+      key: "name",
+      label: t("wlColRider"),
+      render: (r) => (
+        <span className="inline-flex items-center gap-1.5 font-black">
+          {r.name}
+          {/* 模式二: PRO 行的金额 = 完单 × 费率(非表格金额) */}
+          {(r as WeeklyRider).pool === "pro" && <ProBadge small />}
+        </span>
+      ),
+    },
     { key: "station", label: t("wlColStation"), render: (r) => <StatusBadge tone="neutral" label={r.station} /> },
     { key: "orders", label: t("wlColOrders"), align: "right", render: (r) => r.orders },
     { key: "days", label: t("wlColDays"), align: "right", render: (r) => r.days },
@@ -355,6 +385,23 @@ function RiderPayrollWallet() {
           <button type="button" className={btnGhost} onClick={() => shiftWeek(7)}>{t("wlNextWeek")}</button>
           <span className="text-[11px] font-bold text-[var(--muted)]">{t("wlNatWeek")}</span>
           <span className="text-sm font-black text-[var(--accent)]">{t("wlWeekTotal", { money: weekly ? money(weekly.grandTotal) : loading ? "…" : "—" })}</span>
+          {/* 模式二 T3: PRO 小计 = 完单 × 费率(总部/加盟商两端同源) */}
+          {weekly && (weekly.proOrdersTotal ?? 0) > 0 && (
+            <span className="rounded-full bg-[#eda100] px-2 py-0.5 text-[11px] font-black text-[#171b33]" title={`${weekly.proOrdersTotal} × R$${(weekly.proRate ?? 0).toFixed(2)}`}>
+              PRO {money(weekly.proTotal ?? 0)} · {weekly.proOrdersTotal} × R${(weekly.proRate ?? 0).toFixed(2)}
+            </span>
+          )}
+          {/* 倒扣待扣:整天算下来是负数的骑手,系统里第一次能看见"谁还欠多少"。
+              口径是全量(欠款不会因为翻到下一周就消失),点开逐条核销。 */}
+          {weekly && (weekly.deductionTotal ?? 0) > 0 && !scopeFranchise && (
+            <button
+              type="button"
+              onClick={() => setDeductionOpen(true)}
+              className="rounded-full border border-[var(--danger)] bg-[var(--danger-bg)] px-2 py-0.5 text-[11px] font-black text-[var(--danger-ink)]"
+            >
+              {t("wlDeductionChip", { money: money(weekly.deductionTotal ?? 0), n: weekly.deductions?.length ?? 0 })}
+            </button>
+          )}
         </Toolbar>
         {explainOpen && <div className="panel mt-2 p-3 text-xs font-bold leading-relaxed text-[var(--muted)]">{t("wlExplain")}</div>}
       </div>
@@ -472,6 +519,46 @@ function RiderPayrollWallet() {
             </div>
           </div>
         )}
+      </Drawer>
+
+      {/* 倒扣待扣抽屉 —— 逐条核销。金额永不修改,核销只是给那一行加个了结标记,
+          所以"待扣余额"永远是现算的,不会和另存的一个数字对不上。 */}
+      <Drawer
+        open={deductionOpen}
+        onClose={() => setDeductionOpen(false)}
+        width={460}
+        ariaLabel={t("wlDeductionTitle")}
+        title={<div className="text-sm font-black uppercase">{t("wlDeductionTitle")}</div>}
+      >
+        <div className="space-y-3">
+          <div className="text-[11px] font-bold leading-relaxed text-[var(--muted)]">{t("wlDeductionHint")}</div>
+          {(weekly?.deductions ?? []).map((d) => (
+            <div key={d.rider99Id} className="rounded-[8px] border border-[var(--line)] p-3">
+              <div className="flex items-center justify-between gap-2">
+                <div className="min-w-0">
+                  <div className="truncate text-sm font-black" translate="no">{d.riderName}</div>
+                  <div className="text-[11px] font-bold text-[var(--muted)]" translate="no">99 {d.rider99Id} · {d.days} 天</div>
+                </div>
+                <div className="text-sm font-black text-[var(--danger-ink)]">{money(d.amount)}</div>
+              </div>
+              <div className="mt-2 space-y-1">
+                {d.rows.map((row) => (
+                  <div key={row.id} className="flex items-center justify-between gap-2 text-[11px] font-bold">
+                    <span translate="no">{row.date}</span>
+                    <span className="text-[var(--danger-ink)]">{money(row.amount)}</span>
+                    <button type="button" className={btnGhost} onClick={() => void settleDeduction([row.id], row.amount)}>{t("wlDeductionSettle")}</button>
+                  </div>
+                ))}
+              </div>
+              <button type="button" className={`${btnGhost} mt-2 w-full`} onClick={() => void settleDeduction(d.rows.map((r) => r.id), d.amount)}>
+                {t("wlDeductionSettleAll")}
+              </button>
+            </div>
+          ))}
+          {(weekly?.deductions ?? []).length === 0 && (
+            <div className="text-sm font-bold text-[var(--muted)]">{t("wlDeductionNone")}</div>
+          )}
+        </div>
       </Drawer>
 
       {/* Revenue-share statement detail drawer */}

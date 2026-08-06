@@ -139,7 +139,8 @@ fun ShiftsScreen() {
     }
 
     RefreshableScreen(
-        title = loc.t("shifts.title"),
+        // 模式二 A1: PRO 骑手看到 "Turnos PRO" —— 提示这是 PRO 专属班表
+        title = if (store.isPro) "${loc.t("shifts.title")} PRO" else loc.t("shifts.title"),
         refreshing = refreshing,
         onRefresh = {
             refreshing = true
