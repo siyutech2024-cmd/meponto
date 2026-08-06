@@ -236,6 +236,7 @@ class AppStore {
                 // New signups enter the approval queue (Em análise), matching the
                 // web dispatch flow where the station/franchise reviews them.
                 shifts[i] = s.copy(status = ShiftSignupStatus.SUBMITTED, takenSpots = s.takenSpots + 1)
+                Analytics.log("shift_enroll", mapOf("window" to s.window))
                 s.apiId?.let { id -> scope.launch { report(repo?.enrollSlot(id)); syncAfterWrite() } }
             }
         }
@@ -257,6 +258,7 @@ class AppStore {
         if (pointsBalance < product.points && !shortfallOk) return false
         pointsBalance = (pointsBalance - product.points).coerceAtLeast(0)
         products[i] = products[i].copy(stock = products[i].stock - 1)
+        Analytics.log("redeem_order", mapOf("product" to product.name, "points" to "${product.points}"))
         product.apiId?.let { id -> scope.launch { report(repo?.redeem(id, riderId, pickupStoreId)); syncAfterWrite() } }
         return true
     }
@@ -288,7 +290,10 @@ class AppStore {
      */
     suspend fun checkIn(pontoCode: String): Int? {
         val awarded = repo?.checkin(pontoCode)
-        if (awarded != null) syncAfterWrite()
+        if (awarded != null) {
+            Analytics.log("station_check_in", mapOf("points" to "$awarded"))
+            syncAfterWrite()
+        }
         return awarded
     }
 
@@ -313,14 +318,16 @@ class AppStore {
     suspend fun myTickets(): List<com.meponto.rider.data.remote.SupportTicketDto> =
         repo?.myTickets(profile.name.ifBlank { riderName }) ?: emptyList()
 
-    suspend fun createTicket(subject: String, message: String): String? =
-        repo?.createTicket(
+    suspend fun createTicket(subject: String, message: String): String? {
+        Analytics.log("support_ticket")
+        return repo?.createTicket(
             authorName = profile.name.ifBlank { riderName },
             contact = profile.phone,
             organization = profile.ponto.ifBlank { null },
             subject = subject,
             message = message,
         ) ?: "offline"
+    }
 
     // MARK: - Live hydration (apply PontoSys API snapshot; nulls keep mock)
     fun apply(snapshot: RiderSnapshot) {

@@ -25,8 +25,8 @@ android {
         applicationId "com.meponto.rider"
         minSdk 24
         targetSdk 36
-        versionCode 17
-        versionName "2.4"
+        versionCode 18
+        versionName "2.5"
         vectorDrawables { useSupportLibrary true }
 
         // PontoSys backend base URL (overridable per build type).
@@ -126,6 +126,9 @@ dependencies {
     // Firebase Cloud Messaging (push) — project "descuai", google-services.json in app/
     implementation platform('com.google.firebase:firebase-bom:34.15.0')
     implementation 'com.google.firebase:firebase-messaging'
+    // Google Analytics (GA4) — feeds the existing "MePonto" Android stream in
+    // the descuai property (screen/session auto-collection + key events).
+    implementation 'com.google.firebase:firebase-analytics'
 
     // Networking — PontoSys API (Retrofit + Moshi + OkHttp)
     implementation 'com.squareup.retrofit2:retrofit:2.11.0'

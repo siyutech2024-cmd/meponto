@@ -50,6 +50,7 @@ import kotlinx.coroutines.delay
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        com.meponto.rider.data.Analytics.init(this) // GA4 (never throws)
         // Cold start from a notification tap: the FCM data payload (incl. "url")
         // arrives as intent extras. Hand it to the in-app navigator.
         PushNavigator.offer(intent?.getStringExtra("url"), intent?.getStringExtra("title"), intent?.getStringExtra("body"), intent?.getStringExtra("image"))
