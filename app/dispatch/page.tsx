@@ -103,6 +103,17 @@ export default function DispatchPage() {
   const t = useT();
   const [tab, setTab] = useState<TabId>("board");
   const [board, setBoard] = useState<Board>({ shifts: [], quotas: [], signups: [] });
+  /**
+   * 模式二 · PRO 排班表 = 独立工作区(业务方 2026-08-06 定:"单独的排班表")。
+   *
+   * 切到 PRO 后,四个 tab 看到的、以及新建出来的班次都属于 PRO 池 —— 视觉上
+   * 就是另一张排班表,底层仍是同一个 pool 字段,所以按池下发、跨池提报拦截、
+   * 锁班二次校验这些既有逻辑全部继续生效,不用另起一套数据。
+   *
+   * 注意配额和提报也一起过滤:PRO 班的配额拆分和名单绝不能混进普通池的视图,
+   * 否则加盟商会按错误的总数分配人头。
+   */
+  const [pool, setPool] = useState<"standard" | "pro">("standard");
   const [network, setNetwork] = useState<{ franchises: Franchise[]; stations: Ponto[] }>({ franchises: [], stations: [] });
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState<{ tone: "ok" | "warn" | "err"; text: string } | null>(null);
@@ -130,6 +141,17 @@ export default function DispatchPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // 当前池的视图:班次按池筛,配额和报名跟着班次走(避免跨池串台)。
+  const scopedBoard = useMemo<Board>(() => {
+    const shifts = board.shifts.filter((shift) => (shift.pool === "pro") === (pool === "pro"));
+    const ids = new Set(shifts.map((shift) => shift.id));
+    return {
+      shifts,
+      quotas: board.quotas.filter((quota) => ids.has(quota.shiftId)),
+      signups: board.signups.filter((signup) => ids.has(signup.shiftId)),
+    };
+  }, [board, pool]);
+
   async function post(body: Record<string, unknown>) {
     // 模式二 H4: the "lock anyway" override travels as a query flag so the
     // request body stays a clean domain payload.
@@ -154,21 +176,21 @@ export default function DispatchPage() {
 
   const byShift = useMemo(() => {
     const quotaMap = new Map<string, ShiftQuota[]>();
-    for (const quota of board.quotas) {
+    for (const quota of scopedBoard.quotas) {
       quotaMap.set(quota.shiftId, [...(quotaMap.get(quota.shiftId) ?? []), quota]);
     }
     const signupMap = new Map<string, ShiftSignup[]>();
-    for (const signup of board.signups) {
+    for (const signup of scopedBoard.signups) {
       signupMap.set(signup.shiftId, [...(signupMap.get(signup.shiftId) ?? []), signup]);
     }
     return { quotaMap, signupMap };
-  }, [board]);
+  }, [scopedBoard]);
 
   // Todo-driven header: pending review is the call to action.
-  const pendingCount = board.signups.filter((s) => s.status === "submitted").length;
-  const approvedCount = board.signups.filter((s) => s.status === "approved" || s.status === "reported").length;
-  const schedulingCount = board.shifts.filter((s) => s.status === "scheduling").length;
-  const notReportedCount = board.shifts.filter((s) => s.status !== "finished" && !s.reportedAt).length;
+  const pendingCount = scopedBoard.signups.filter((s) => s.status === "submitted").length;
+  const approvedCount = scopedBoard.signups.filter((s) => s.status === "approved" || s.status === "reported").length;
+  const schedulingCount = scopedBoard.shifts.filter((s) => s.status === "scheduling").length;
+  const notReportedCount = scopedBoard.shifts.filter((s) => s.status !== "finished" && !s.reportedAt).length;
 
   return (
     <AppShell>
@@ -188,6 +210,29 @@ export default function DispatchPage() {
         <Stat label={t("dpStScheduling")} value={String(schedulingCount)} />
         <Stat label={t("dpApprovedCnt")} value={String(approvedCount)} />
       </section>
+
+      {/* 模式二 · 排班表切换。放在 tab 之上 —— 先选"哪张表",再选"看这张表的哪个环节"。
+          PRO 高亮成金色,和全站 PRO 徽章同色,一眼能看出自己在哪张表上操作。 */}
+      <div className="mb-3 flex flex-wrap items-center gap-2">
+        <span className="text-[11px] font-black uppercase text-[var(--muted)]">{t("dpPoolTable")}</span>
+        <button
+          type="button"
+          onClick={() => setPool("standard")}
+          className={`inline-flex h-8 items-center rounded-full px-3 text-xs font-black ${pool === "standard" ? "bg-[var(--accent)] text-[var(--accent-ink)]" : "border border-[var(--line)] text-[var(--muted-strong)]"}`}
+        >
+          {t("dpPoolStandard")}
+        </button>
+        <button
+          type="button"
+          onClick={() => setPool("pro")}
+          className={`inline-flex h-8 items-center rounded-full px-3 text-xs font-black ${pool === "pro" ? "bg-[#eda100] text-[#171b33]" : "border border-[var(--line)] text-[var(--muted-strong)]"}`}
+        >
+          PRO
+        </button>
+        {pool === "pro" && (
+          <span className="text-[11px] font-bold text-[var(--muted)]">{t("dpPoolProHint")}</span>
+        )}
+      </div>
 
       <div className="mb-4 flex flex-wrap gap-2">
         {tabs.map((item) => (
@@ -213,10 +258,10 @@ export default function DispatchPage() {
         </div>
       )}
 
-      {tab === "board" && <BoardTab board={board} byShift={byShift} loading={loading} onAction={post} setMessage={setMessage} />}
-      {tab === "quota" && <QuotaTab board={board} byShift={byShift} onSave={post} setMessage={setMessage} network={network} />}
-      {tab === "review" && <ReviewTab board={board} onAction={post} setMessage={setMessage} network={network} />}
-      {tab === "report" && <ReportTab board={board} byShift={byShift} onAction={post} setMessage={setMessage} />}
+      {tab === "board" && <BoardTab board={scopedBoard} byShift={byShift} loading={loading} onAction={post} setMessage={setMessage} pool={pool} />}
+      {tab === "quota" && <QuotaTab board={scopedBoard} byShift={byShift} onSave={post} setMessage={setMessage} network={network} />}
+      {tab === "review" && <ReviewTab board={scopedBoard} onAction={post} setMessage={setMessage} network={network} />}
+      {tab === "report" && <ReportTab board={scopedBoard} byShift={byShift} onAction={post} setMessage={setMessage} />}
     </AppShell>
   );
 }
@@ -232,7 +277,7 @@ function ShiftStatusBadge({ shift, label }: { shift: DispatchShift; label: strin
   return <StatusBadge tone={SHIFT_TONE[shift.status] ?? "info"} label={label} />;
 }
 
-function BoardTab({ board, byShift, loading, onAction, setMessage }: { board: Board; byShift: { quotaMap: Map<string, ShiftQuota[]>; signupMap: Map<string, ShiftSignup[]> }; loading: boolean; onAction: (body: Record<string, unknown>) => Promise<Record<string, unknown> | null>; setMessage: (m: { tone: "ok" | "warn" | "err"; text: string } | null) => void }) {
+function BoardTab({ board, byShift, loading, onAction, setMessage, pool }: { board: Board; byShift: { quotaMap: Map<string, ShiftQuota[]>; signupMap: Map<string, ShiftSignup[]> }; loading: boolean; onAction: (body: Record<string, unknown>) => Promise<Record<string, unknown> | null>; setMessage: (m: { tone: "ok" | "warn" | "err"; text: string } | null) => void; pool: "standard" | "pro" }) {
   const t = useT();
   const dialog = useDialog();
   const [weekStart, setWeekStart] = useState(() => mondayOf(0));
@@ -257,7 +302,8 @@ function BoardTab({ board, byShift, loading, onAction, setMessage }: { board: Bo
       setMessage({ tone: "warn", text: t("dpQaWarn") });
       return;
     }
-    const result = await onAction({ action: "setWeek", entries: [{ date, timeRange, plannedCount }] });
+    // 建在当前这张表里 —— 在 PRO 表上快速新增,建出来的就是 PRO 班。
+    const result = await onAction({ action: "setWeek", pool, entries: [{ date, timeRange, plannedCount }] });
     if (result) setMessage({ tone: "ok", text: t("dpQaOk", { date, range: timeRange, n: plannedCount }) });
   }
 
@@ -394,17 +440,17 @@ function BoardTab({ board, byShift, loading, onAction, setMessage }: { board: Bo
       )}
 
       <Drawer open={setupOpen} onClose={() => setSetupOpen(false)} width={860} ariaLabel={t("dpTabSetup")} title={<div className="text-sm font-black uppercase">{t("dpTabSetup")}</div>}>
-        <WeekSetupForm board={board} onSave={onAction} setMessage={setMessage} />
+        <WeekSetupForm board={board} onSave={onAction} setMessage={setMessage} pool={pool} />
       </Drawer>
 
       <Drawer open={importOpen} onClose={() => setImportOpen(false)} width={560} ariaLabel={t("dpTabImport")} title={<div className="text-sm font-black uppercase">{t("dpTabImport")}</div>}>
-        <ImportForm onImport={onAction} setMessage={setMessage} />
+        <ImportForm onImport={onAction} setMessage={setMessage} pool={pool} />
       </Drawer>
     </div>
   );
 }
 
-function WeekSetupForm({ board, onSave, setMessage }: { board: Board; onSave: (body: Record<string, unknown>) => Promise<Record<string, unknown> | null>; setMessage: (m: { tone: "ok" | "warn" | "err"; text: string } | null) => void }) {
+function WeekSetupForm({ board, onSave, setMessage, pool }: { board: Board; onSave: (body: Record<string, unknown>) => Promise<Record<string, unknown> | null>; setMessage: (m: { tone: "ok" | "warn" | "err"; text: string } | null) => void; pool: "standard" | "pro" }) {
   const t = useT();
   const [weekStart, setWeekStart] = useState(() => mondayOf(1));
   const [hotzone, setHotzone] = useState("Santo Amaro");
@@ -502,7 +548,7 @@ function WeekSetupForm({ board, onSave, setMessage }: { board: Board; onSave: (b
             setBusy(false);
             return;
           }
-          const result = await onSave({ action: "setWeek", hotzone: hotzone.trim() || "Santo Amaro", entries });
+          const result = await onSave({ action: "setWeek", pool, hotzone: hotzone.trim() || "Santo Amaro", entries });
           setBusy(false);
           if (result) setMessage({ tone: "ok", text: t("dpSetupOk", { created: String(result.created), updated: String(result.updated) }) });
         }}
@@ -514,7 +560,7 @@ function WeekSetupForm({ board, onSave, setMessage }: { board: Board; onSave: (b
   );
 }
 
-function ImportForm({ onImport, setMessage }: { onImport: (body: Record<string, unknown>) => Promise<Record<string, unknown> | null>; setMessage: (m: { tone: "ok" | "warn" | "err"; text: string } | null) => void }) {
+function ImportForm({ onImport, setMessage, pool }: { onImport: (body: Record<string, unknown>) => Promise<Record<string, unknown> | null>; setMessage: (m: { tone: "ok" | "warn" | "err"; text: string } | null) => void; pool: "standard" | "pro" }) {
   const t = useT();
   const [planId, setPlanId] = useState("");
   const [planName, setPlanName] = useState("");
@@ -542,7 +588,8 @@ function ImportForm({ onImport, setMessage }: { onImport: (body: Record<string, 
         onClick={async () => {
           setBusy(true);
           setMessage(null);
-          const result = await onImport({ action: "import", planId: planId.trim(), planName: planName.trim(), text });
+          // 在 PRO 表上导入 = 这批 Eastwind 班次(来自新 OL 账号)整批标为 PRO
+          const result = await onImport({ action: "import", pool, planId: planId.trim(), planName: planName.trim(), text });
           setBusy(false);
           if (result) {
             setMessage({ tone: "ok", text: t("dpImpOk", { created: String(result.created), updated: String(result.updated) }) });

@@ -257,6 +257,11 @@ export default function PerformancePage() {
   const [tab, setTab] = useState<TabId>(scopeStation ? "riders" : "franchises");
   const [data, setData] = useState<Payload | null>(null);
   const [date, setDate] = useState("");
+  /**
+   * 模式二 · KPI 看板分池。"" = 全部(与改动前完全一致)。
+   * PRO 行金额为 0,混在一起看会把加盟商/站点的人均收入拉垮 —— 分开看才是真数。
+   */
+  const [account, setAccount] = useState<"" | "main" | "pro">("");
   const [message, setMessage] = useState<{ tone: "ok" | "err"; text: string } | null>(null);
 
   const headers = useMemo(
@@ -270,6 +275,7 @@ export default function PerformancePage() {
       if (targetDate) params.set("date", targetDate);
       if (scopeFranchise) params.set("franchise", scopeFranchise);
       if (scopeStation) params.set("station", scopeStation);
+      if (account) params.set("account", account);
       const response = await fetch(`/api/performance?${params}`, { headers, cache: "no-store" });
       const payload = await response.json();
       if (response.ok) {
@@ -277,7 +283,7 @@ export default function PerformancePage() {
         setDate(payload.data.date ?? "");
       }
     },
-    [headers, scopeFranchise, scopeStation],
+    [headers, scopeFranchise, scopeStation, account],
   );
 
   useEffect(() => {
@@ -384,6 +390,17 @@ export default function PerformancePage() {
               <span className="inline-flex items-center gap-1.5"><Icon size={13} /> {t(labelKey)}</span>
             </Chip>
           ))}
+          {/* 模式二 · 分池看数。和 tab 同一行,不新增菜单也不新增卡片。
+              导入 tab 上没有意义(那里有自己的来源选择器),所以隐藏。 */}
+          {tab !== "import" && (
+            <span className="ml-2 inline-flex items-center gap-1.5 border-l border-[var(--line)] pl-3">
+              {([["", "fmChipAll"], ["pro", null], ["main", "rdPoolStandard"]] as const).map(([value, key]) => (
+                <Chip key={value || "all"} active={account === value} onClick={() => setAccount(value)}>
+                  {key ? t(key) : "PRO"}
+                </Chip>
+              ))}
+            </span>
+          )}
         </Toolbar>
       </div>
 
@@ -821,6 +838,17 @@ function ImportTab({ headers, onDone, onError }: { headers: Record<string, strin
   const [busy, setBusy] = useState(false);
   const [pixText, setPixText] = useState("");
   const [fileLog, setFileLog] = useState<string[]>([]);
+  /**
+   * 模式二 T2 · 报表来源账号。
+   *
+   * 两个 Eastwind OL 账号各出一份日报:旧账号 = 普通池(main),新账号 = PRO 池。
+   * 幂等键是「账号+日期+骑手」,所以选错来源会写进另一个池的行 —— 这个选择器
+   * 是唯一的判定入口,没有它运营在界面上根本导不了 PRO 报表(T2 的服务端早就
+   * 支持,缺的一直是这个开关)。
+   *
+   * PRO 行落库时所有金额字段强制为 0(v3.0 R6),单价永不进系统。
+   */
+  const [account, setAccount] = useState<"main" | "pro">("main");
 
   async function importFiles(files: FileList | null) {
     if (!files || files.length === 0) return;
@@ -881,7 +909,7 @@ function ImportTab({ headers, onDone, onError }: { headers: Record<string, strin
         const response = await fetch("/api/performance", {
           method: "POST",
           headers,
-          body: JSON.stringify({ action: isEarnings ? "importEarnings" : "importKpiRecords", date, records }),
+          body: JSON.stringify({ action: isEarnings ? "importEarnings" : "importKpiRecords", date, records, account }),
         });
         const payload = await response.json().catch(() => ({}));
         if (!response.ok) {
@@ -903,6 +931,31 @@ function ImportTab({ headers, onDone, onError }: { headers: Record<string, strin
     <div className="space-y-4">
       <SectionCard title={<span className="inline-flex items-center gap-2"><FileSpreadsheet size={15} /> {t("pfImpUploadTitle")}</span>} desc={t("pfImpDesc")}>
         <div className="space-y-3">
+          {/* 模式二 T2 · 报表来源账号 —— 必须在选文件之前选,放在上传框正上方。
+              选错池的后果不是报错而是「数据静静地进了另一个池」,所以 PRO 时
+              整块变金色高亮 + 明确写出零金额规则,让人不容易选错。 */}
+          <div className={`rounded-[8px] border p-3 ${account === "pro" ? "border-[#eda100] bg-[#eda100]/10" : "border-[var(--line)]"}`}>
+            <div className="text-[11px] font-black uppercase text-[var(--muted)]">{t("pfImpAccount")}</div>
+            <div className="mt-2 flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={() => setAccount("main")}
+                className={`inline-flex h-8 items-center rounded-full px-3 text-xs font-black ${account === "main" ? "bg-[var(--accent)] text-[var(--accent-ink)]" : "border border-[var(--line)] text-[var(--muted-strong)]"}`}
+              >
+                {t("pfImpAccountMain")}
+              </button>
+              <button
+                type="button"
+                onClick={() => setAccount("pro")}
+                className={`inline-flex h-8 items-center rounded-full px-3 text-xs font-black ${account === "pro" ? "bg-[#eda100] text-[#171b33]" : "border border-[var(--line)] text-[var(--muted-strong)]"}`}
+              >
+                {t("pfImpAccountPro")}
+              </button>
+            </div>
+            <div className="mt-2 text-[11px] font-bold text-[var(--muted)]">
+              {account === "pro" ? t("pfImpAccountProHint") : t("pfImpAccountMainHint")}
+            </div>
+          </div>
           <label className="flex h-28 cursor-pointer flex-col items-center justify-center gap-2 rounded-[8px] border-2 border-dashed border-[var(--line)] text-sm font-black text-[var(--muted)] hover:border-[var(--accent)] hover:text-[var(--accent)]">
             <Upload size={20} />
             {busy ? t("pfImpParsing") : t("pfImpPickFile")}

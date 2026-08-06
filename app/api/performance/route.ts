@@ -122,6 +122,8 @@ async function performanceDirect(url: URL): Promise<Response | null> {
     const date = url.searchParams.get("date");
     const franchise = url.searchParams.get("franchise");
     const station = url.searchParams.get("station");
+    const accountParam = url.searchParams.get("account");
+    const accountFilter = accountParam === "pro" || accountParam === "main" ? accountParam : null;
 
     const allDates = factRead ? await perfDatesT() : await callRpc<string[]>("perf_dates");
     const activeDate = date && allDates.includes(date) ? date : allDates[0] ?? null;
@@ -146,6 +148,7 @@ async function performanceDirect(url: URL): Promise<Response | null> {
     let rows = enrich(kpiRaw, riders);
     if (franchise) rows = rows.filter((row) => row.franchise === franchise);
     if (station) rows = rows.filter((row) => row.station === station);
+    if (accountFilter) rows = rows.filter((row) => accountOf(row) === accountFilter);
 
     const groupBy = (field: "station" | "franchise") => {
       const map = new Map<string, Enriched[]>();
@@ -168,6 +171,7 @@ async function performanceDirect(url: URL): Promise<Response | null> {
     });
     if (franchise) earningRows = earningRows.filter((row) => row.franchise === franchise);
     if (station) earningRows = earningRows.filter((row) => row.station === station);
+    if (accountFilter) earningRows = earningRows.filter((row) => accountOf(row) === accountFilter);
 
     const groupEarnings = (field: "station" | "franchise") => {
       const map = new Map<string, EnrichedEarning[]>();
@@ -282,6 +286,21 @@ function creditOrderPoints(riderId: string, rider99Id: string, date: string, com
   });
 }
 
+
+/**
+ * 模式二 · KPI 看板分池 (?account=main|pro)。
+ *
+ * 按行自带的 `account` 过滤,而不是回头 join 骑手当前的 pool —— 行上的账号
+ * 记录的是「这条数据出自哪份日报」,那才是 KPI 与结算的真实口径。骑手中途转池
+ * 时,历史行仍归属当时导入它的账号,不会被追溯改写。
+ *
+ * 为什么必须能分开看:PRO 行的金额一律为 0(v3.0 R6)。混在一起时,加盟商和
+ * 站点的人均收入会被这些零金额行直接拉垮 —— 那个数字会变成假的。
+ */
+function accountOf(row: { account?: string }): "main" | "pro" {
+  return row.account === "pro" ? "pro" : "main";
+}
+
 export async function GET(request: Request) {
   {
     const url0 = new URL(request.url);
@@ -346,6 +365,8 @@ export async function GET(request: Request) {
   const date = url.searchParams.get("date");
   const franchise = url.searchParams.get("franchise");
   const station = url.searchParams.get("station");
+  const accountParam2 = url.searchParams.get("account");
+  const accountFilter = accountParam2 === "pro" || accountParam2 === "main" ? accountParam2 : null;
 
   const dates = [...new Set(memory.riderDailyKpis.map((row) => row.date))].sort().reverse();
   const activeDate = date && dates.includes(date) ? date : dates[0] ?? null;
@@ -353,6 +374,7 @@ export async function GET(request: Request) {
   let rows = enrich(memory.riderDailyKpis.filter((row) => !activeDate || row.date === activeDate));
   if (franchise) rows = rows.filter((row) => row.franchise === franchise);
   if (station) rows = rows.filter((row) => row.station === station);
+  if (accountFilter) rows = rows.filter((row) => accountOf(row) === accountFilter);
 
   const groupBy = (field: "station" | "franchise") => {
     const map = new Map<string, Enriched[]>();
@@ -385,6 +407,7 @@ export async function GET(request: Request) {
     });
   if (franchise) earningRows = earningRows.filter((row) => row.franchise === franchise);
   if (station) earningRows = earningRows.filter((row) => row.station === station);
+  if (accountFilter) earningRows = earningRows.filter((row) => accountOf(row) === accountFilter);
 
   const groupEarnings = (field: "station" | "franchise") => {
     const map = new Map<string, EnrichedEarning[]>();

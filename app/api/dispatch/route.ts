@@ -77,6 +77,8 @@ type ImportBody = {
   planId?: string;
   planName?: string;
   city?: string;
+  /** 模式二: 这批 Eastwind 班次属于哪个池(新 OL 账号导入的即 PRO)。 */
+  pool?: "standard" | "pro";
   text: string;
 };
 
@@ -114,6 +116,8 @@ type SetWeekBody = {
   action: "setWeek";
   city?: string;
   hotzone?: string;
+  /** 模式二: 建在哪个池。PRO 排班表是独立的一张表(同日同时段可以两边各有一班)。 */
+  pool?: "standard" | "pro";
   entries: Array<{ date: string; timeRange: string; plannedCount: number; isCritical?: boolean }>;
 };
 
@@ -155,7 +159,10 @@ async function handlePost(request: Request) {
 
   switch (body.action) {
     case "import": {
-      const { text, planId = "", planName = "", city = "圣保罗" } = body as ImportBody;
+      const { text, planId = "", planName = "", city = "圣保罗", pool: importPool } = body as ImportBody;
+      // 模式二: 新 OL 账号导入的整批班次都属于 PRO 池。Eastwind 的班次 id
+      // 本身全局唯一,不会和普通池撞,所以只需要打标记。
+      const shiftPool = importPool === "pro" ? "pro" : undefined;
       if (!text || typeof text !== "string") {
         return jsonResponse({ error: "text is required" }, { status: 400 });
       }
@@ -174,6 +181,7 @@ async function handlePost(request: Request) {
           city: shift.city || city,
           planId,
           planName,
+          ...(shiftPool ? { pool: shiftPool } : {}),
           importedAt,
         };
         const index = memory.dispatchShifts.findIndex((item) => item.id === record.id);
@@ -549,7 +557,12 @@ async function handlePost(request: Request) {
     }
 
     case "setWeek": {
-      const { entries, hotzone = "Santo Amaro", city = "圣保罗" } = body as SetWeekBody;
+      const { entries, hotzone = "Santo Amaro", city = "圣保罗", pool: weekPool } = body as SetWeekBody;
+      // 模式二: PRO 是一张独立排班表 —— 同一天、同一时段、同一热区,PRO 和普通
+      // 各自可以有一个班次。所以 id 必须带池后缀,否则两边会写进同一条记录、
+      // 互相覆盖 plannedCount(这是本次补漏发现的最隐蔽的一个坑)。
+      const isProWeek = weekPool === "pro";
+      const poolSuffix = isProWeek ? "-pro" : "";
       if (!Array.isArray(entries) || entries.length === 0) {
         return jsonResponse({ error: "entries are required" }, { status: 400 });
       }
@@ -567,7 +580,12 @@ async function handlePost(request: Request) {
         }
 
         const index = memory.dispatchShifts.findIndex(
-          (shift) => shift.date === date && shift.timeRange === timeRange && shift.hotzone === hotzone,
+          (shift) =>
+            shift.date === date &&
+            shift.timeRange === timeRange &&
+            shift.hotzone === hotzone &&
+            // 同池才算同一个班次
+            (shift.pool === "pro") === isProWeek,
         );
         if (index !== -1) {
           memory.dispatchShifts[index] = {
@@ -578,9 +596,9 @@ async function handlePost(request: Request) {
           updated += 1;
         } else if (plannedCount > 0) {
           const record: DispatchShift = {
-            id: `ms-${date}-${timeRange.replace(/[:~]/g, "")}-${hotzone.replace(/\s+/g, "")}`.toLowerCase(),
+            id: `ms-${date}-${timeRange.replace(/[:~]/g, "")}-${hotzone.replace(/\s+/g, "")}${poolSuffix}`.toLowerCase(),
             planId: "",
-            planName: "手动排班",
+            planName: isProWeek ? "PRO 排班" : "手动排班",
             city,
             hotzone,
             date,
@@ -588,6 +606,7 @@ async function handlePost(request: Request) {
             plannedCount,
             filled99Count: 0,
             isCritical: entry.isCritical ?? false,
+            ...(isProWeek ? { pool: "pro" as const } : {}),
             status: "scheduling",
             importedAt,
           };
