@@ -29,6 +29,13 @@
 #    "榜开了但卡没指过去",唯独漏了最关键的"卡本身开没开"。已补:
 #      · 排行榜区块 —— 逐条点名缺哪一步(URL没指 / 卡没启用 / 卡没标题)
 #      · 活动卡区块 —— URL 填好但没勾复选框,就地提示
+# ③ 【下发了但看不见】活动卡标题为空 → APP 里渲染成一个空白框
+#    实测 /api/app/rider/splash 返回 v5:卡 enabled=true、linkURL 也对了,
+#    但 title / imageURL / badge / subtitle 全是空字符串。
+#    HomeScreen 的卡片 = 标题 + 可选(图/角标/副标题),标题空 → 整张卡是空白 Panel。
+#    骑手看不出那是入口;运营更查不出来 —— 后台明明勾了、接口明明返回了。
+#    → activityCardVisible() 加一条:标题为空一律不下发。
+#      宁可不下发,也不要给一个看不见的入口。
 cd "$(dirname "$0")" || exit 1
 set -e
 rm -f .git/index.lock
@@ -37,7 +44,7 @@ echo "==> Web 预检"
 npm run codex:preflight
 
 echo "==> 提交并推送"
-git add proxy.ts app/app-config/page.tsx docs/activity-leaderboard-plan.md push-ranking-route-fix.command
+git add proxy.ts app/lib/app-config.ts app/app-config/page.tsx docs/activity-leaderboard-plan.md push-ranking-route-fix.command
 git commit -m "fix(proxy): register ranking in riderSections — a rider page missing from the whitelist is not rewritten to /rider-app, falls through the strict host-portal binding and bounces to /register, so the page looks broken when only its route was unregistered; the canonical rider domain is app.meponto.com (mall/rider-app/* merely 302s there), so the back office now fills the clean URL and warns on the mall form; also flag the activity card's own enable checkbox, the one switch the earlier cross-checks failed to cover"
 git push origin main
 
@@ -51,7 +58,8 @@ echo
 echo "  2) 后台 APP 配置页:"
 echo "     · 点「填入排行榜地址」→ URL 变成 https://app.meponto.com/ranking"
 echo "     · **勾上最上面的「首页活动入口卡」**   ← 这次没显示的直接原因"
-echo "     · 填一个葡语标题,例如 Ranking de pedidos 🏆"
+echo "     · **填一个葡语标题**,例如 Ranking de pedidos 🏆"
+echo "       (标题为空的卡从此不再下发 —— 空白框比没有更糟)"
 echo "     · 点「保存启动页」"
 echo
 echo "  3) 手机 APP 杀进程重开(首页配置是启动时拉的)"

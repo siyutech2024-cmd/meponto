@@ -51,6 +51,10 @@ export const defaultActivityCard: AppActivityCard = {
 /** Server-side window + audience check — never trust the client's clock. */
 export function activityCardVisible(card: AppActivityCard | undefined, pool: string, today: string): boolean {
   if (!card?.enabled) return false;
+  // 没有标题就不下发。APP 端的卡片是 title + 可选图/角标/副标题,标题为空时
+  // 整张卡渲染成一个**空白框** —— 骑手看不出那是入口,运营也看不出哪里错了
+  // (后台明明勾了、接口明明返回了)。宁可不下发,也不要给一个看不见的入口。
+  if (!card.title?.trim()) return false;
   if (card.audience === "pro" && pool !== "pro") return false;
   if (card.startsAt && today < card.startsAt) return false;
   if (card.endsAt && today > card.endsAt) return false;
