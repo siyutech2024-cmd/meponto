@@ -129,6 +129,17 @@ try {
 
   if (baseline) {
     // 只写版本表,不执行任何 SQL —— 用于把"历史上手动跑过"的迁移登记在案。
+    //
+    // ⚠️ 守卫(2026-08-07 事故后加):基线**只允许打一次**(版本表为空时)。
+    // db-migrate.command 每次都先跑 baseline —— 没有这个守卫,任何新增的
+    // 迁移文件都会被"登记为已应用"却从未执行:migrate 随后看到 0 待应用,
+    // 输出"schema 已是最新",而列/函数根本不存在。20260807150000 就是
+    // 这样被吞掉的(accept_cnt 列缺失、入库 500),事后只能在 SQL 编辑器
+    // 手工补跑。静默跳过比报错更危险 —— 这里必须硬拦。
+    if (applied.size > 0) {
+      console.log(`✓ 基线已打过(版本表已有 ${applied.size} 条),跳过 —— 新迁移交给 npm run migrate 执行`);
+      process.exit(0);
+    }
     if (pending.length === 0) {
       console.log("✓ 基线已存在,无需重复打");
       process.exit(0);
