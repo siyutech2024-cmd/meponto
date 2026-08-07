@@ -37,6 +37,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
@@ -298,9 +299,12 @@ fun HomeScreen(
                         }
                     },
                 ) {
-                    card.imageURL?.takeIf { it.isNotBlank() }?.let { image ->
+                    // 没配图时给一块默认渐变头图 —— 否则整张卡只剩一行字,
+                    // 在首页一堆面板里根本不像个"可点的活动入口"。
+                    val cardImage = card.imageURL?.takeIf { it.isNotBlank() }
+                    if (cardImage != null) {
                         coil.compose.AsyncImage(
-                            model = image,
+                            model = cardImage,
                             contentDescription = null,
                             contentScale = androidx.compose.ui.layout.ContentScale.Crop,
                             modifier = Modifier
@@ -308,8 +312,27 @@ fun HomeScreen(
                                 .height(120.dp)
                                 .clip(RoundedCornerShape(MeRadius.small)),
                         )
-                        Spacer(Modifier.size(10.dp))
+                    } else {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(84.dp)
+                                .clip(RoundedCornerShape(MeRadius.small))
+                                .background(
+                                    Brush.linearGradient(
+                                        listOf(me.accent, me.accent.copy(alpha = 0.55f)),
+                                    ),
+                                ),
+                            contentAlignment = Alignment.CenterStart,
+                        ) {
+                            Text(
+                                "🏆",
+                                fontSize = 34.sp,
+                                modifier = Modifier.padding(start = 16.dp),
+                            )
+                        }
                     }
+                    Spacer(Modifier.size(10.dp))
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(
                             card.title.orEmpty(),

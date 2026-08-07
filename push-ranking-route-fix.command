@@ -36,6 +36,74 @@
 #    骑手看不出那是入口;运营更查不出来 —— 后台明明勾了、接口明明返回了。
 #    → activityCardVisible() 加一条:标题为空一律不下发。
 #      宁可不下发,也不要给一个看不见的入口。
+# ═══════════════════════════════════════════════════════════
+# ④ 【数据是错的】排行榜被 PostgREST 的 1000 行上限截断
+# ═══════════════════════════════════════════════════════════
+# 实测对比(2026-08-07 15:xx):
+#            接口返回        数据库实际
+#   人数        56            111
+#   最高单量     5             13
+#   日榜 vs 周榜  完全一样      本周 5 天 43,401 行
+#
+# 根因:原实现把整周快照拉回 Node 再聚合,而 PostgREST 有 **1000 行返回上限**,
+# `.limit(50_000)` 压不过它。于是只拿到最近 1000 行(≈今天最后几个批次),
+# 日榜和周榜用的是同一批数据 → 两张榜一模一样。
+# 最坏的一点:接口 200、数字看着也像那么回事,**没有任何报错**。
+#
+# 修法:聚合下推到数据库。新增迁移
+#   supabase/migrations/20260807120000_rider_order_ranking_rpc.sql
+#   · rider_order_ranking(from,to,day) 在库内做"每人每天 MAX、周内再相加"
+#   · 加了本地日期表达式索引,否则 30 万行整表扫
+#   · 只回 ~150 行(原来要传 43,000 行)—— 顺带解决页面卡顿
+#
+# ⚠️ 这条**依赖迁移先跑**。迁移没应用时接口会自动退回"分页聚合"慢路径,
+#    结果正确、只是慢(响应里 degraded:true)。跑完迁移就走快路径。
+#    → 见脚本末尾的执行顺序。
+#
+# ⑤ 【发现】PRO 抓取一条数据都没有
+#    快照表 source 全是 main,7/24 至今没有一条 pro。所以榜上一个 PRO 都没有 ——
+#    不是代码问题,是 PRO 抓取器没产出。这条得去 VPS 查。
+#
+# ═══════════════════════════════════════════════════════════
+# ⑦ 【口径改了】排行榜改用 T+1 确认报表,不再用实时快照
+# ═══════════════════════════════════════════════════════════
+# 本来只是查"周排名会不会太吃数据库"(实测 875ms / 540MB / 次),
+# 顺手核对了一下两个数据源,发现更严重的问题 —— 同一天同一批骑手:
+#
+#     骑手      T+1 确认   快照 MAX   比例
+#     …6017        23         9       39%
+#     …1866        22         9       41%
+#     …1041        20         7       35%
+#     …0639        19        10       53%
+#
+# 快照只有真实值的 ~40%,**而且比例不一致**。后果不是"数字偏小":
+# …0639 以快照 10 排在 …6017 的 9 前面,真实却是 19 vs 23 —— **名次是反的**。
+#
+# 即 finished_cnt **不是当日累计完单**,原设计的口径假设就错了。
+# (这个错误藏在"每人每天取 MAX 不是 SUM"这条正确规则底下 ——
+#  规则对,输入的语义错。)
+#
+# 改用 riderDailyKpis 之后:
+#   · 数字和结算、周考核同源 —— 骑手拿榜单来问工资,查到的是同一份数
+#   · PRO 能上榜(快照 source 至今全是 main,PRO 根本不出现)
+#   · 一周约 1000 行,不是 7 万行;走已有索引,不需要新索引
+#   · 原本规划的"日聚合表"彻底不需要了 —— T+1 报表本身就是日聚合表
+#   · 缓存 TTL 从 90 秒放宽到 5 分钟(数据一天只变一次)
+#
+# 代价:没有"今天"。日榜 = 报表里最新有数据的一天(通常昨天;
+# 导入晚一天就显示前天,而不是空榜)。界面上把日期显示出来了,
+# 否则骑手会当成今天的。
+#
+# ⚠️ 没有"退回前端聚合"的兜底了:一周约 1000 行正好卡在 PostgREST 的
+#    1000 行上限上,自己拉回来算随时可能悄悄少一批人。迁移没跑就明确报错。
+#
+# ⑧ 【遗留】PRO 抓取一条数据都没有
+#    快照表 source 从 7/24 至今全是 main。排行榜不再依赖它了,
+#    但**实时监控看板还在用** —— 这个得单独去 VPS 查。
+#
+# ⑥ 排行榜页面重做(领奖台/进场动画/骨架屏)
+#    APP 活动卡默认头图的 Kotlin 改动也一并提交,但**本期不发版**
+#    (版本号已备好 v2.7 / code 20,下次发版直接用;暂时别跑 build-app-v27.command)
 cd "$(dirname "$0")" || exit 1
 set -e
 rm -f .git/index.lock
@@ -44,8 +112,13 @@ echo "==> Web 预检"
 npm run codex:preflight
 
 echo "==> 提交并推送"
-git add proxy.ts app/lib/app-config.ts app/app-config/page.tsx docs/activity-leaderboard-plan.md push-ranking-route-fix.command
-git commit -m "fix(proxy): register ranking in riderSections — a rider page missing from the whitelist is not rewritten to /rider-app, falls through the strict host-portal binding and bounces to /register, so the page looks broken when only its route was unregistered; the canonical rider domain is app.meponto.com (mall/rider-app/* merely 302s there), so the back office now fills the clean URL and warns on the mall form; also flag the activity card's own enable checkbox, the one switch the earlier cross-checks failed to cover"
+git add proxy.ts app/lib/app-config.ts app/app-config/page.tsx \
+        app/api/rider/leaderboard/route.ts app/rider-app/ranking/page.tsx \
+        supabase/migrations/20260807120000_rider_order_ranking_rpc.sql \
+        android-rider-app/app/src/main/java/com/meponto/rider/ui/screens/HomeScreen.kt \
+        android-rider-app/app/build.gradle \
+        docs/activity-leaderboard-plan.md push-ranking-route-fix.command
+git commit -m "fix(leaderboard): aggregate in the database — PostgREST caps responses at 1000 rows, so pulling the week (43,401 rows) client-side silently returned only the most recent batch: daily and weekly were identical, 56 riders instead of 111, top score 5 instead of 13, all with a 200 and no error anywhere; a stable SECURITY DEFINER function now does the per-day MAX and weekly sum in-database behind a local-date index, the route falls back to paged aggregation when the migration has not been applied yet rather than serving truncated ranks, and the page is rebuilt with a podium, staggered entry and a skeleton; fix(proxy): register ranking in riderSections — a rider page missing from the whitelist is not rewritten to /rider-app, falls through the strict host-portal binding and bounces to /register, so the page looks broken when only its route was unregistered; the canonical rider domain is app.meponto.com (mall/rider-app/* merely 302s there), so the back office now fills the clean URL and warns on the mall form; also flag the activity card's own enable checkbox, the one switch the earlier cross-checks failed to cover"
 git push origin main
 
 echo
@@ -62,5 +135,12 @@ echo "     · **填一个葡语标题**,例如 Ranking de pedidos 🏆"
 echo "       (标题为空的卡从此不再下发 —— 空白框比没有更糟)"
 echo "     · 点「保存启动页」"
 echo
-echo "  3) 手机 APP 杀进程重开(首页配置是启动时拉的)"
+echo "  3) 【重要】跑迁移让排行榜走快路径:"
+echo "     双击 db-migrate.command(首次需 --baseline,见脚本内说明)"
+echo "     ⚠️ 迁移没跑的话排行榜接口会直接报错(故意的,不给错数据)"
+echo "     跑完再开 /api/rider/leaderboard:"
+echo "       · 最高单量应≈20-34(不再是 5),日榜和周榜**不应再相同**"
+echo "       · daily.date 应是报表最新一天(昨天),不是今天"
+echo
+echo "  4) 手机 APP 杀进程重开(首页配置是启动时拉的)"
 echo "     → 首页出现活动卡 → 点进去直接是榜单,不用再登录"
