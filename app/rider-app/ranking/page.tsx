@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Trophy, ArrowLeft, Flame } from "lucide-react";
+import { Trophy, ArrowLeft, Home, Flame } from "lucide-react";
 
 /**
  * 骑手排行榜(每日 / 每周订单榜)。
@@ -36,7 +36,20 @@ type Board = { top: Entry[]; me: Entry | null; total: number; date?: string; fro
 type Payload = { enabled: boolean; updatedAt?: string | null; daily?: Board | null; weekly?: Board | null };
 
 const GOLD = "#eda100";
-const MEDAL = ["#d4af37", "#9fa6b2", "#c07f4a"] as const;
+const MEDAL = ["#f5b301", "#9fb3c8", "#d08b4f"] as const;
+
+/**
+ * 名次色带:第 1 名热橙,一路过渡到榜尾的紫。
+ *
+ * 为什么不用灰:灰色进度条只传达"长短",色相变化额外传达"你在哪个梯队" ——
+ * 骑手不用读数字就知道自己离前面有多远。而且一屏彩条比一屏灰条好看得多。
+ * 色相 14°(橙红) → 276°(紫),饱和度压在 78% 免得刺眼。
+ */
+function rankHue(rank: number, count: number): number {
+  const span = Math.max(1, Math.min(count, 30) - 1);
+  const t = Math.min(1, (rank - 1) / span);
+  return 14 + t * 262;
+}
 
 /** 巴西人名很长,领奖台上只放"名 + 姓首字" —— 全名会挤成三行。 */
 function shortName(name: string): string {
@@ -80,7 +93,7 @@ function Podium({ top }: { top: Entry[] }) {
               {initials(entry.name)}
               {champion && <span className="absolute -top-3 text-[18px] leading-none" style={{ animation: "bob 2.4s ease-in-out infinite" }}>👑</span>}
             </div>
-            <span className="mt-1.5 line-clamp-1 max-w-full text-center text-[11px] font-black" style={entry.pool === "pro" ? { color: GOLD } : undefined}>
+            <span className="mt-1.5 line-clamp-1 max-w-full text-center text-[11px] font-black text-white/90">
               {shortName(entry.name)}
             </span>
             <span className="text-[15px] font-black tabular-nums" style={{ color: medal }}>{entry.orders}</span>
@@ -88,7 +101,7 @@ function Podium({ top }: { top: Entry[] }) {
               className="mt-1 w-full rounded-t-[8px]"
               style={{
                 height: heights[index],
-                background: `linear-gradient(180deg, ${medal}44, ${medal}0d)`,
+                background: `linear-gradient(180deg, ${medal}66, ${medal}0a)`,
                 borderTop: `2px solid ${medal}`,
               }}
             >
@@ -101,37 +114,59 @@ function Podium({ top }: { top: Entry[] }) {
   );
 }
 
-/** 榜单行。max 用来画"进度条底纹",让单量差距一眼看出来,不用读数字。 */
-function Row({ entry, max, delay }: { entry: Entry; max: number; delay: number }) {
+/**
+ * 榜单行。
+ *
+ * 两处专门为滚动流畅做的处理:
+ *   1. `contentVisibility: auto` —— 滚出视口的行浏览器直接跳过渲染。
+ *      长列表滚动掉帧,九成是每行都在重复 paint;这一条最管用。
+ *      配 `containIntrinsicSize` 给个占位高度,否则滚动条会跳。
+ *   2. 进度条用 `transform: scaleX` 而不是 `width` —— width 每帧触发 layout,
+ *      scaleX 只走合成器。
+ */
+function Row({ entry, max, count, delay }: { entry: Entry; max: number; count: number; delay: number }) {
   const isPro = entry.pool === "pro";
-  const pct = max > 0 ? Math.max(6, Math.round((entry.orders / max) * 100)) : 0;
+  const ratio = max > 0 ? Math.max(0.06, entry.orders / max) : 0;
+  const hue = rankHue(entry.rank, count);
+  // PRO 保持金色身份;其余按名次取色带。
+  const c1 = isPro ? GOLD : `hsl(${hue} 78% 56%)`;
+  const c2 = isPro ? "#ffd97a" : `hsl(${hue + 18} 82% 66%)`;
   return (
     <div
       className="relative flex items-center gap-2.5 overflow-hidden rounded-[10px] px-2.5 py-2.5"
       style={{
-        background: entry.isMe ? "rgba(237,161,0,.14)" : isPro ? `${GOLD}0d` : "rgba(0,0,0,.03)",
-        boxShadow: entry.isMe ? `inset 0 0 0 1.5px ${GOLD}` : undefined,
+        background: entry.isMe ? "rgba(237,161,0,.16)" : "rgba(255,255,255,.72)",
+        outline: entry.isMe ? `1.5px solid ${GOLD}` : "1px solid rgba(23,27,51,.06)",
+        outlineOffset: -1,
+        contentVisibility: "auto",
+        containIntrinsicSize: "auto 52px",
         animation: delay >= 0 ? `slide .34s ${delay}s cubic-bezier(.2,.9,.3,1) both` : undefined,
       }}
     >
-      {/* 底纹条。绝对定位 + 只动 width,不影响文字排版。 */}
+      {/* 彩色进度底纹。绝对定位 + scaleX,不影响文字排版也不触发 layout。 */}
       <span
         aria-hidden
-        className="absolute inset-y-0 left-0 rounded-[10px]"
-        style={{ width: `${pct}%`, background: isPro ? `${GOLD}1f` : "rgba(23,27,51,.06)", transition: "width .6s cubic-bezier(.2,.9,.3,1)" }}
+        className="absolute inset-y-0 left-0 w-full origin-left rounded-[10px]"
+        style={{
+          background: `linear-gradient(90deg, ${c1}38, ${c2}14)`,
+          transform: `scaleX(${ratio})`,
+          transition: "transform .55s cubic-bezier(.2,.9,.3,1)",
+        }}
       />
-      <span className="relative w-6 shrink-0 text-center text-[13px] font-black text-[var(--muted)] tabular-nums">{entry.rank}</span>
+      {/* 左侧一道实色条 —— 名次色带的"锚点",一眼分辨梯队。 */}
+      <span aria-hidden className="absolute inset-y-0 left-0 w-[3px]" style={{ background: `linear-gradient(180deg, ${c1}, ${c2})` }} />
+      <span className="relative w-6 shrink-0 text-center text-[13px] font-black tabular-nums" style={{ color: c1 }}>{entry.rank}</span>
       <span
-        className="relative flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-[11px] font-black"
-        style={{ background: isPro ? GOLD : "rgba(23,27,51,.1)", color: isPro ? "#171b33" : "var(--muted-strong)" }}
+        className="relative flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-[11px] font-black text-white"
+        style={{ background: `linear-gradient(145deg, ${c1}, ${c2})` }}
       >
         {initials(entry.name)}
       </span>
-      <span className="relative min-w-0 flex-1 truncate text-[13px] font-black" style={isPro ? { color: GOLD } : undefined}>
+      <span className="relative min-w-0 flex-1 truncate text-[13px] font-black" style={isPro ? { color: "#8a5c00" } : undefined}>
         {entry.name}
         {isPro && <span className="ml-1.5 rounded-full px-1.5 py-[1px] text-[9px] font-black" style={{ background: GOLD, color: "#171b33" }}>PRO</span>}
       </span>
-      <span className="relative shrink-0 text-sm font-black tabular-nums">{entry.orders}</span>
+      <span className="relative shrink-0 text-sm font-black tabular-nums" style={{ color: c1 }}>{entry.orders}</span>
     </div>
   );
 }
@@ -161,20 +196,36 @@ function BoardView({ board, subtitle }: { board: Board | null | undefined; subti
   }
   return (
     <div className="space-y-3">
-      <div className="panel overflow-hidden p-3 pb-4">
-        <div className="mb-1 flex items-center justify-between px-1">
-          <span className="text-[11px] font-bold text-[var(--muted)]">{subtitle}</span>
-          <span className="text-[11px] font-bold text-[var(--muted)]">{board.total} entregadores</span>
+      {/* 领奖台放在深色"舞台"上 —— 和下面浅色的列表拉开层次,
+          前三名才有被单独打光的感觉。 */}
+      <div
+        className="relative overflow-hidden rounded-[14px] p-3 pb-4"
+        style={{
+          background: "linear-gradient(160deg, #1b1f36 0%, #2a2140 55%, #3a1f33 100%)",
+          // 提成独立合成层 + 隔离重绘:里面几层大渐变就不会跟着滚动一起重画。
+          transform: "translateZ(0)",
+          contain: "paint",
+        }}
+      >
+        {/* 顶部金色光晕。纯装饰,pointer-events 关掉。 */}
+        <span
+          aria-hidden
+          className="pointer-events-none absolute -top-16 left-1/2 h-40 w-40 -translate-x-1/2 rounded-full"
+          style={{ background: `radial-gradient(closest-side, ${GOLD}55, transparent)` }}
+        />
+        <div className="relative mb-1 flex items-center justify-between px-1">
+          <span className="text-[11px] font-bold text-white/55">{subtitle}</span>
+          <span className="text-[11px] font-bold text-white/55">{board.total} entregadores</span>
         </div>
         <Podium top={board.top} />
       </div>
 
       {rest.length > 0 && (
-        <div className="panel space-y-1.5 p-3">
+        <div className="panel space-y-1.5 p-2.5">
           {rest.map((entry, index) => (
             // 只有前 10 行做进场动画 —— 再往下用户滚到时早就渲染完了,
             // 给 30 行都挂动画在低端机上就是白白掉帧。
-            <Row key={entry.rider99Id} entry={entry} max={max} delay={index < 10 ? 0.03 * index : -1} />
+            <Row key={entry.rider99Id} entry={entry} max={max} count={board.top.length} delay={index < 10 ? 0.03 * index : -1} />
           ))}
         </div>
       )}
@@ -183,7 +234,7 @@ function BoardView({ board, subtitle }: { board: Board | null | undefined; subti
       {board.me && (
         <div className="panel p-3">
           <div className="mb-1.5 px-1 text-[10px] font-black uppercase tracking-wide text-[var(--muted)]">Sua posição</div>
-          <Row entry={board.me} max={max} delay={-1} />
+          <Row entry={board.me} max={max} count={board.top.length} delay={-1} />
         </div>
       )}
     </div>
@@ -212,6 +263,26 @@ export default function RiderRankingPage() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  /**
+   * 返回按钮:能不能 back 要在运行时判断,不能写死。
+   *
+   * 这页有两种进法:
+   *   · APP 活动卡 → WebView 新开一个页面,**没有上一页**(history.length === 1)。
+   *     无脑 history.back() 什么都不会发生 —— 按钮看着能点,点了没反应。
+   *   · 骑手端内部点进来 → 有上一页,back() 正常。
+   *
+   * 所以:有历史就返回,没历史就回骑手端首页,并且把按钮文案也换掉
+   * (写"Voltar"却跳首页会让人以为点错了)。
+   */
+  const [canGoBack, setCanGoBack] = useState(false);
+  useEffect(() => {
+    setCanGoBack(window.history.length > 1);
+  }, []);
+  const goBack = useCallback(() => {
+    if (window.history.length > 1) window.history.back();
+    else window.location.href = "/"; // app.meponto.com/ = 骑手端首页
+  }, []);
 
   // 打开率埋点。方案里要看"有多少人真的点进来" —— 没有这个数,
   // 就没法判断排行榜到底有没有用、要不要继续投入。
@@ -242,11 +313,15 @@ export default function RiderRankingPage() {
         @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important } }
       `}</style>
 
-      <div className="rider-light mx-auto min-h-screen w-full max-w-[430px] space-y-4 bg-[#f3f2ee] p-4 pb-10">
+      <div
+        className="rider-light mx-auto min-h-screen w-full max-w-[430px] space-y-4 p-4 pb-10"
+        style={{ background: "linear-gradient(180deg, #fff7e6 0%, #f3f2ee 22%, #f3f2ee 100%)" }}
+      >
         {/* 返回:WebView 顶部有关闭按钮,但在浏览器里打开就出不去了。 */}
         <div className="flex items-center gap-3">
-          <button type="button" onClick={() => window.history.back()} className="tag inline-flex items-center gap-1">
-            <ArrowLeft size={13} /> Voltar
+          <button type="button" onClick={goBack} className="tag inline-flex items-center gap-1">
+            {canGoBack ? <ArrowLeft size={13} /> : <Home size={13} />}
+            {canGoBack ? "Voltar" : "Início"}
           </button>
           <h1 className="flex items-center gap-2 text-lg font-black">
             <Trophy size={18} style={{ color: GOLD }} /> Ranking de pedidos
@@ -279,7 +354,7 @@ export default function RiderRankingPage() {
                     className="inline-flex h-9 flex-1 items-center justify-center gap-1.5 rounded-full text-xs font-black"
                     style={
                       tab === key
-                        ? { background: GOLD, color: "#171b33", boxShadow: `0 4px 14px ${GOLD}55` }
+                        ? { background: `linear-gradient(135deg, ${GOLD}, #ffc93c)`, color: "#171b33" }
                         : { border: "1px solid var(--line)", color: "var(--muted-strong)" }
                     }
                   >

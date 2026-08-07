@@ -101,7 +101,27 @@
 #    快照表 source 从 7/24 至今全是 main。排行榜不再依赖它了,
 #    但**实时监控看板还在用** —— 这个得单独去 VPS 查。
 #
-# ⑥ 排行榜页面重做(领奖台/进场动画/骨架屏)
+# ⑨ 【实测反馈】返回按钮点了没反应 + 进排行榜先糊一屏启动页
+#
+#    两个是同一类问题:这页会被**深链直接打开**,不是一步步点进来的。
+#
+#    · 返回按钮:活动卡 → WebView 是新开一个页面,history.length === 1,
+#      无脑 history.back() 什么都不会发生 —— 按钮看着能点,点了没反应。
+#      改成运行时判断:有历史就返回;没有就回骑手端首页,
+#      **并且把文案也换成 Início** —— 写着 Voltar 却跳首页会让人以为点错了。
+#
+#    · 启动页:RiderSplash 挂在 rider-app 的 layout 上,每个页面都会触发。
+#      首页进来没问题(一次会话只放一次),但 WebView 打开排行榜是**全新会话**,
+#      sessionStorage 是空的 → 点一次卡片就先看一屏启动页,放完才见榜单。
+#      启动页的语义是"打开 APP",不是"打开任意页面" —— 现在按路径卡死在首页。
+#
+# ⑥ 排行榜页面重做(领奖台/进场动画/骨架屏 + 名次色带 + 滚动优化)
+#    · 进度条按名次走色带:第 1 名热橙 → 榜尾紫。灰色只说明长短,
+#      色相额外说明"在哪个梯队";PRO 仍为金色(身份色优先)
+#    · 前三名放深色舞台 + 金色光晕,和下面浅色列表拉开层次
+#    · 滚动卡顿两个真凶:每行重复 paint(加 content-visibility: auto,
+#      滚出视口直接跳过渲染)、进度条用 width 每帧触发 layout(改 transform: scaleX)
+#    · 每行 box-shadow 换成 outline —— 阴影是移动端 WebView 滚动的经典杀手
 #    APP 活动卡默认头图的 Kotlin 改动也一并提交,但**本期不发版**
 #    (版本号已备好 v2.7 / code 20,下次发版直接用;暂时别跑 build-app-v27.command)
 cd "$(dirname "$0")" || exit 1
@@ -113,6 +133,7 @@ npm run codex:preflight
 
 echo "==> 提交并推送"
 git add proxy.ts app/lib/app-config.ts app/app-config/page.tsx \
+        app/rider-app/splash-gate.tsx \
         app/api/rider/leaderboard/route.ts app/rider-app/ranking/page.tsx \
         supabase/migrations/20260807120000_rider_order_ranking_rpc.sql \
         android-rider-app/app/src/main/java/com/meponto/rider/ui/screens/HomeScreen.kt \
@@ -143,4 +164,6 @@ echo "       · 最高单量应≈20-34(不再是 5),日榜和周榜**不应再�
 echo "       · daily.date 应是报表最新一天(昨天),不是今天"
 echo
 echo "  4) 手机 APP 杀进程重开(首页配置是启动时拉的)"
+echo "     → 点活动卡 → **不应再看到启动页**,直接就是榜单"
+echo "     → 左上角按钮:WebView 里没有上一页时应显示「Início」而不是「Voltar」"
 echo "     → 首页出现活动卡 → 点进去直接是榜单,不用再登录"
