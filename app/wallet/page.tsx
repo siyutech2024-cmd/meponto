@@ -306,7 +306,7 @@ function RiderPayrollWallet() {
       key: "name",
       label: t("wlColRider"),
       render: (r) => (
-        <span className="inline-flex items-center gap-1.5 font-black">
+        <span className={`inline-flex items-center gap-1.5 font-black ${(r as WeeklyRider).pool === "pro" ? "text-[#eda100]" : ""}`}>
           {r.name}
           {/* 模式二: PRO 行的金额 = 完单 × 费率(非表格金额) */}
           {(r as WeeklyRider).pool === "pro" && <ProBadge small />}
@@ -467,7 +467,7 @@ function RiderPayrollWallet() {
               }
             >
               {expanded && (
-                <DataTable columns={riderColumns(g)} rows={g.riders} rowKey={(r) => r.rider99Id} onRowClick={(r) => setRiderRef({ franchise: g.franchise, rider99Id: r.rider99Id })} minWidth={760} empty={t("wlNoWeekData")} />
+                <DataTable columns={riderColumns(g)} rows={g.riders} rowKey={(r) => r.rider99Id} rowAccent={(r) => (r as WeeklyRider).pool === "pro"} onRowClick={(r) => setRiderRef({ franchise: g.franchise, rider99Id: r.rider99Id })} minWidth={760} empty={t("wlNoWeekData")} />
               )}
             </SectionCard>
           );

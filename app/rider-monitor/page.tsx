@@ -495,7 +495,7 @@ export default function RiderMonitorPage() {
         rows={filtered.map((r) => [
           <button key="n" onClick={() => setDetailKey(riderKey(r))} className="flex flex-col text-left" title={t("rmDetailTitle")}>
             <span className="flex items-center gap-1.5">
-              <span className="font-bold text-[var(--text)] underline decoration-[var(--line)] decoration-dotted underline-offset-4 transition-colors hover:text-[var(--accent)] hover:decoration-[var(--accent)]">{r.name || "—"}</span>
+              <span className={`font-bold underline decoration-[var(--line)] decoration-dotted underline-offset-4 transition-colors hover:text-[var(--accent)] hover:decoration-[var(--accent)] ${r.pool === "pro" ? "text-[#eda100]" : "text-[var(--text)]"}`}>{r.name || "—"}</span>
               {r.pool === "pro" && (
                 <span className="shrink-0 rounded-full bg-[#eda100] px-1.5 py-[1px] text-[9px] font-black text-[#171b33]">PRO</span>
               )}
@@ -516,6 +516,7 @@ export default function RiderMonitorPage() {
             : <span key="u" className="inline-flex rounded-[6px] border border-[var(--danger)] bg-[var(--danger-bg)] px-2 py-0.5 text-[11px] font-bold text-[var(--danger-ink)]">{t("rmUnassigned")}</span>,
           r.ponto || "—",
         ])}
+        rowAccent={(index) => filtered[index]?.pool === "pro"}
       />
 
       {detail ? (

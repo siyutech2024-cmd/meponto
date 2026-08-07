@@ -303,9 +303,12 @@ export default function RidersPage() {
       className: "max-w-[220px]",
       render: (rider) => {
         const noPix = rider.source === "profile" && String(rider.pix ?? "").trim() === "";
+        const isPro = rider.pool === "pro";
         return (
           <div>
-            <div className={`flex items-center gap-1.5 truncate font-black ${noPix ? "text-[var(--warning-ink)]" : ""}`}>
+            {/* 缺 PIX 的警告色优先于 PRO 金色 —— 缺 PIX 是"要立刻处理",
+                PRO 只是"身份标识",不能让身份色盖掉待办色。 */}
+            <div className={`flex items-center gap-1.5 truncate font-black ${noPix ? "text-[var(--warning-ink)]" : isPro ? "text-[#eda100]" : ""}`}>
               <span className="truncate">{rider.name}</span>
               {/* 模式二: PRO 徽章 — 三级后台共用(加盟商/站点只读) */}
               {rider.pool === "pro" && (
@@ -514,6 +517,7 @@ export default function RidersPage() {
           columns={columns}
           rows={pageRows}
           rowKey={(rider) => rider.id}
+          rowAccent={(rider) => rider.pool === "pro"}
           minWidth={920}
           empty={t("rdNoResults")}
         />

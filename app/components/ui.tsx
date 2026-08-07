@@ -557,9 +557,13 @@ export function Badge({ value }: { value: string }) {
 export function DataTable({
   headers,
   rows,
+  rowAccent,
 }: {
   headers: string[];
   rows: React.ReactNode[][];
+  /** 模式二: 行级强调(按行下标)。金色左边框 + 极淡底色 = PRO。
+   *  与 components/kit 的 DataTable 保持同一套视觉,两张表看起来是一回事。 */
+  rowAccent?: (index: number) => boolean;
 }) {
   return (
     <div className="panel overflow-hidden">
@@ -576,7 +580,7 @@ export function DataTable({
           </thead>
           <tbody>
             {rows.map((row, index) => (
-              <tr key={index} className="border-b border-[var(--line-soft)] last:border-0 transition-colors hover:bg-[var(--surface-hover)]">
+              <tr key={index} className={`border-b border-[var(--line-soft)] last:border-0 transition-colors hover:bg-[var(--surface-hover)] ${rowAccent?.(index) ? "bg-[#eda100]/[0.06] shadow-[inset_3px_0_0_0_#eda100]" : ""}`}>
                 {row.map((cell, cellIndex) => (
                   <td key={cellIndex} className="whitespace-nowrap px-4 py-3 align-middle text-[var(--text-soft)]">
                     {cell}

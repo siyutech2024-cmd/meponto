@@ -480,7 +480,12 @@ function RiderTable({ rows }: { rows: EnrichedKpi[] }) {
       className: "max-w-[220px]",
       render: (row) => (
         <span className="inline-flex items-center gap-1.5">
-          <span className="truncate font-black">{row.riderName}</span>
+          {/* 模式二: PRO 行按行自带的 account 判定 —— 这条数据出自哪份日报,
+              而不是骑手"现在"属于哪个池(转池后历史行不该被追溯改色)。 */}
+          <span className={`truncate font-black ${row.account === "pro" ? "text-[#eda100]" : ""}`}>{row.riderName}</span>
+          {row.account === "pro" && (
+            <span className="shrink-0 rounded-full bg-[#eda100] px-1.5 py-[1px] text-[9px] font-black text-[#171b33]">PRO</span>
+          )}
           {!row.riderId && <StatusBadge tone="warn" label={t("pfUnregistered")} />}
         </span>
       ),
@@ -509,6 +514,7 @@ function RiderTable({ rows }: { rows: EnrichedKpi[] }) {
         columns={columns}
         rows={pageRows}
         rowKey={(row) => row.id}
+        rowAccent={(row) => row.account === "pro"}
         onRowClick={setDetail}
         sort={sort}
         onSort={toggleSort(setSort)}
@@ -684,7 +690,12 @@ function EarningsTab({ earnings, scopeFranchise, scopeStation, date, headers }: 
       className: "max-w-[200px]",
       render: (row) => (
         <span className="inline-flex items-center gap-1.5">
-          <span className="truncate font-black">{row.riderName}</span>
+          {/* 模式二: PRO 行按行自带的 account 判定 —— 这条数据出自哪份日报,
+              而不是骑手"现在"属于哪个池(转池后历史行不该被追溯改色)。 */}
+          <span className={`truncate font-black ${row.account === "pro" ? "text-[#eda100]" : ""}`}>{row.riderName}</span>
+          {row.account === "pro" && (
+            <span className="shrink-0 rounded-full bg-[#eda100] px-1.5 py-[1px] text-[9px] font-black text-[#171b33]">PRO</span>
+          )}
           {!row.riderId && <StatusBadge tone="warn" label={t("pfUnregistered")} />}
         </span>
       ),

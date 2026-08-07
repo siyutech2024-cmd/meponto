@@ -300,7 +300,7 @@ export type DataColumn<T> = {
 
 export type SortState = { key: string; dir: 1 | -1 } | null;
 
-export function DataTable<T>({ columns, rows, rowKey, onRowClick, sort, onSort, minWidth = 720, empty }: {
+export function DataTable<T>({ columns, rows, rowKey, onRowClick, sort, onSort, minWidth = 720, empty, rowAccent }: {
   columns: Array<DataColumn<T>>;
   rows: T[];
   rowKey: (row: T) => string;
@@ -309,6 +309,12 @@ export function DataTable<T>({ columns, rows, rowKey, onRowClick, sort, onSort, 
   onSort?: (key: string) => void;
   minWidth?: number;
   empty?: ReactNode;
+  /**
+   * 模式二: 行级强调。返回 true 的行会带一道金色左边框 + 极淡底色 ——
+   * PRO 骑手在混合列表里一眼可辨,又不至于满屏刺眼(整行铺金会压掉状态色,
+   * 让"缺 PIX""风险"这些真正要人注意的标记失效)。
+   */
+  rowAccent?: (row: T) => boolean;
 }) {
   return (
     <div className="panel overflow-x-auto p-0">
@@ -332,7 +338,7 @@ export function DataTable<T>({ columns, rows, rowKey, onRowClick, sort, onSort, 
             <tr
               key={rowKey(row)}
               onClick={onRowClick ? () => onRowClick(row) : undefined}
-              className={`border-t border-[var(--line)] font-bold ${onRowClick ? "cursor-pointer transition-colors hover:bg-[var(--surface-hover)]" : ""}`}
+              className={`border-t border-[var(--line)] font-bold ${onRowClick ? "cursor-pointer transition-colors hover:bg-[var(--surface-hover)]" : ""} ${rowAccent?.(row) ? "bg-[#eda100]/[0.06] shadow-[inset_3px_0_0_0_#eda100]" : ""}`}
             >
               {columns.map((col, i) => (
                 <td key={col.key} className={`py-2.5 ${i === 0 ? "px-3" : "pr-2"} ${col.align === "right" ? "text-right" : ""} ${col.className ?? ""}`}>
