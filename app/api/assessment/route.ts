@@ -1,21 +1,11 @@
 import { appendServerAudit, jsonResponse, memory } from "../../lib/server/memory";
 import { flushPendingToDatabase, refreshCollectionsFromDatabase } from "../../lib/server/persistence";
 import { requirePermission, roleFromRequest, scopeFromRequest } from "../../lib/server/authz";
-import { defaultAssessmentRule, evaluateMetric, type AssessmentMetric, type AssessmentRule } from "../../lib/assessment";
+import { defaultAssessmentRule, evaluateMetric, weekWindow, type AssessmentMetric, type AssessmentRule } from "../../lib/assessment";
 
 const COLLECTIONS = ["assessmentRules", "riderDailyKpis", "riders"];
 
 /** Monday-anchored natural week containing `date`. */
-function weekWindow(date: string): { from: string; to: string } {
-  const d = new Date(`${date}T12:00:00Z`);
-  const back = (d.getUTCDay() - 1 + 7) % 7;
-  const start = new Date(d);
-  start.setUTCDate(d.getUTCDate() - back);
-  const end = new Date(start);
-  end.setUTCDate(start.getUTCDate() + 6);
-  return { from: start.toISOString().slice(0, 10), to: end.toISOString().slice(0, 10) };
-}
-
 function activeRule(): AssessmentRule {
   return memory.assessmentRules.find((rule) => rule.id === "rule-active") ?? defaultAssessmentRule;
 }

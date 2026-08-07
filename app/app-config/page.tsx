@@ -21,6 +21,8 @@ type SplashCfg = {
   audience?: "all" | "pro";
   /** A4 · 活动入口卡(首页 banner)。与开屏同一条记录、同一个页面维护。 */
   activityCard?: ActivityCard;
+  /** 排行榜开关(日榜/周榜)。 */
+  leaderboard?: Leaderboard;
   version: number;
   updatedAt?: string;
   updatedBy?: string;
@@ -33,6 +35,18 @@ type ActivityCard = {
   audience?: "all" | "pro"; startsAt?: string; endsAt?: string;
 };
 
+/** 排行榜开关。口径 = 实时快照,每人每天取 MAX(不是 SUM)。 */
+type Leaderboard = { enabled: boolean; daily: boolean; weekly: boolean; topN: number };
+
+const DEFAULT_LEADERBOARD: Leaderboard = { enabled: false, daily: true, weekly: true, topN: 20 };
+
+/**
+ * 排行榜 H5 地址。**必须是 mall 这个域**:页面里调的是相对路径
+ * /api/rider/leaderboard,请求会打到 serve 页面的那个域上。mall.meponto.com
+ * 既跑 Next 应用又是 API 所在域,同源零风险;换个域会"页面能开、接口 404"。
+ */
+const RANKING_URL = "https://mall.meponto.com/rider-app/ranking";
+
 const DEFAULT_CARD: ActivityCard = {
   enabled: false, title: "", subtitle: "", badge: "", imageURL: "", linkURL: "",
   audience: "all", startsAt: "", endsAt: "",
@@ -41,7 +55,7 @@ const DEFAULT_CARD: ActivityCard = {
 const DEFAULT_CFG: SplashCfg = {
   enabled: true, headline: "MePonto", tagline: "", durationMs: 2200,
   backgroundHex: "#07090d", accentHex: "#ffd100", imageURL: "", linkURL: "", audience: "all",
-  activityCard: DEFAULT_CARD, version: 1,
+  activityCard: DEFAULT_CARD, leaderboard: DEFAULT_LEADERBOARD, version: 1,
 };
 
 export default function AppConfigPage() {
@@ -120,6 +134,9 @@ export default function AppConfigPage() {
   const card = cfg.activityCard ?? DEFAULT_CARD;
   const setCard = (patch: Partial<ActivityCard>) =>
     setCfg((c) => ({ ...c, activityCard: { ...DEFAULT_CARD, ...c.activityCard, ...patch } }));
+  const board = cfg.leaderboard ?? DEFAULT_LEADERBOARD;
+  const setBoard = (patch: Partial<Leaderboard>) =>
+    setCfg((c) => ({ ...c, leaderboard: { ...DEFAULT_LEADERBOARD, ...c.leaderboard, ...patch } }));
 
   async function saveSplash() {
     const r = await fetch("/api/app/rider/splash", { method: "POST", headers, body: JSON.stringify(cfg) }).catch(() => null);
@@ -275,10 +292,43 @@ export default function AppConfigPage() {
             <label className="mt-3 block">
               <span className={label}>点击跳转 URL</span>
               <input value={card.linkURL} onChange={(e) => setCard({ linkURL: e.target.value })} placeholder="https://mall.meponto.com/…" className={field} />
+              {/* 一键填入 —— 手填这个 URL 最容易错在域上:页面里调的是相对路径
+                  /api/…,请求会打到 serve 页面的那个域,填错域会"页面能开、接口 404"。 */}
+              <div className="mt-1.5 flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setCard({ linkURL: RANKING_URL })}
+                  className="inline-flex h-8 items-center rounded-full border border-[var(--line)] px-3 text-[11px] font-black text-[var(--muted-strong)] hover:border-[var(--accent)] hover:text-[var(--accent)]"
+                >
+                  填入排行榜地址
+                </button>
+                {card.linkURL && (
+                  <a
+                    href={card.linkURL}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="inline-flex h-8 items-center rounded-full border border-[var(--line)] px-3 text-[11px] font-black text-[var(--muted-strong)] hover:border-[var(--accent)] hover:text-[var(--accent)]"
+                  >
+                    预览这个链接
+                  </a>
+                )}
+              </div>
               {/* A5 白名单:APP 只在 *.meponto.com 内嵌打开,其余一律跳系统浏览器 */}
               <span className="mt-1 block text-[11px] font-bold text-[var(--muted)]">
                 只有 *.meponto.com 会在 APP 内打开;其他域名会跳到系统浏览器。
               </span>
+              {/* 联动校验:卡指向排行榜但排行榜是关的 → 骑手点进去只会看到"已停用"。
+                  两个开关分处两块,不提示的话运营一定会踩。 */}
+              {card.linkURL.includes("/rider-app/ranking") && !board.enabled && (
+                <span className="mt-1.5 block rounded-[6px] border border-[var(--warning)] bg-[var(--warning-bg)] px-2 py-1.5 text-[11px] font-black text-[var(--warning-ink)]">
+                  这张卡指向排行榜,但下面的「骑手排行榜」开关还没打开 —— 骑手点进去会看到"排行榜已停用"。
+                </span>
+              )}
+              {card.linkURL.startsWith("https://meponto.com/rider-app/") && (
+                <span className="mt-1.5 block rounded-[6px] border border-[var(--warning)] bg-[var(--warning-bg)] px-2 py-1.5 text-[11px] font-black text-[var(--warning-ink)]">
+                  域名建议用 mall.meponto.com —— 骑手端页面和接口都在这个域,同域才不会出现"页面能开但接口 404"。
+                </span>
+              )}
             </label>
             <div className="mt-3 grid gap-3 sm:grid-cols-3">
               <label><span className={label}>受众</span>
@@ -289,6 +339,52 @@ export default function AppConfigPage() {
               </label>
               <label><span className={label}>开始日期(可空)</span><input type="date" value={card.startsAt ?? ""} onChange={(e) => setCard({ startsAt: e.target.value })} className={field} /></label>
               <label><span className={label}>结束日期(可空)</span><input type="date" value={card.endsAt ?? ""} onChange={(e) => setCard({ endsAt: e.target.value })} className={field} /></label>
+            </div>
+          </div>
+
+          {/* 排行榜开关 —— 同一条记录、同一个保存按钮,不另开菜单。
+              口径写在界面上:榜单来自实时抓取,每人每天取当日最高累计值。
+              运营看得到口径,才不会拿榜单去和结算报表对数。 */}
+          <div className="mt-5 border-t border-[var(--line)] pt-4">
+            <label className="flex items-center gap-2">
+              <input type="checkbox" checked={board.enabled} onChange={(e) => setBoard({ enabled: e.target.checked })} />
+              <span className="text-sm font-black">骑手排行榜 / Ranking</span>
+            </label>
+            <div className="mt-2 flex flex-wrap items-center gap-4">
+              <label className="flex items-center gap-2 text-sm font-bold">
+                <input type="checkbox" checked={board.daily} disabled={!board.enabled} onChange={(e) => setBoard({ daily: e.target.checked })} />
+                每日订单榜
+              </label>
+              <label className="flex items-center gap-2 text-sm font-bold">
+                <input type="checkbox" checked={board.weekly} disabled={!board.enabled} onChange={(e) => setBoard({ weekly: e.target.checked })} />
+                每周订单榜
+              </label>
+              <label className="flex items-center gap-2 text-sm font-bold">
+                显示前
+                <input
+                  type="number"
+                  min={3}
+                  max={100}
+                  value={board.topN}
+                  disabled={!board.enabled}
+                  onChange={(e) => setBoard({ topN: Number(e.target.value) || 20 })}
+                  className="h-9 w-20 rounded-[8px] border border-[var(--line)] bg-[var(--surface)] px-2 text-sm font-bold outline-none focus:border-[var(--accent)]"
+                />
+                名
+              </label>
+            </div>
+            {board.enabled && !card.linkURL.includes("/rider-app/ranking") && (
+              <div className="mt-2 rounded-[6px] border border-[var(--warning)] bg-[var(--warning-bg)] px-2 py-1.5 text-[11px] font-black text-[var(--warning-ink)]">
+                排行榜已开启,但上面的活动卡没有指向它 —— 骑手在 APP 里没有入口。
+                去活动卡点「填入排行榜地址」并开启活动卡。
+              </div>
+            )}
+            <div className="mt-2 text-[11px] font-bold leading-relaxed text-[var(--muted)]">
+              口径:实时抓取快照,每人每天取当日最高累计完单(不是各批次相加)。
+              周榜 = 最近 7 天每日最高值之和。<br />
+              一张总榜,PRO 骑手标金色,显示全名;骑手本人的名次永远附带,哪怕排在榜外。
+              <br />
+              <span className="text-[var(--warning-ink)]">注意:榜单与结算/考核口径不同(那两个以 T+1 导入报表为准),不要拿来对数。</span>
             </div>
           </div>
 

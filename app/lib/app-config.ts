@@ -57,6 +57,33 @@ export function activityCardVisible(card: AppActivityCard | undefined, pool: str
   return true;
 }
 
+/**
+ * 骑手排行榜配置(活动运营用,主后台开关)。
+ *
+ * 数据口径 = 实时抓取快照(业务方 2026-08-06 定)。注意快照里的 finishedCnt 是
+ * **当日累计**,所以每人每天取 MAX,绝不能 SUM —— 一天有十几个批次,SUM 会把
+ * 同一个人的单量重复累加,排名彻底失真。周榜 = 7 天各自 MAX 再相加。
+ *
+ * 一张总榜,PRO 标金(业务方定),显示全名(业务方定)。
+ */
+export type AppLeaderboardConfig = {
+  /** 总开关。关掉后 APP 完全看不到排行榜入口。 */
+  enabled: boolean;
+  /** 日榜(昨日/今日实时) */
+  daily: boolean;
+  /** 周榜(本周至今) */
+  weekly: boolean;
+  /** 榜上显示多少人。骑手自己的名次总是额外附带,哪怕排在榜外。 */
+  topN: number;
+};
+
+export const defaultLeaderboardConfig: AppLeaderboardConfig = {
+  enabled: false,
+  daily: true,
+  weekly: true,
+  topN: 20,
+};
+
 export type AppSplashConfig = {
   enabled: boolean;
   headline: string; // brand title, e.g. "MePonto"
@@ -72,6 +99,8 @@ export type AppSplashConfig = {
   audience?: "all" | "pro";
   /** A4 · 活动入口卡 — see AppActivityCard. Absent on legacy records. */
   activityCard?: AppActivityCard;
+  /** 排行榜开关 — see AppLeaderboardConfig. Absent on legacy records. */
+  leaderboard?: AppLeaderboardConfig;
   /** Bumped on every save; clients can use it to detect a fresh config. */
   version: number;
   updatedAt?: string;

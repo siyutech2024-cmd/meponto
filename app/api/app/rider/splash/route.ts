@@ -2,7 +2,7 @@ import { appendServerAudit, jsonResponse, memory } from "../../../../lib/server/
 import { flushPendingToDatabase, refreshCollectionsFromDatabase } from "../../../../lib/server/persistence";
 import { requirePermission, roleFromRequest } from "../../../../lib/server/authz";
 import { sessionFromRequest } from "../../../../lib/auth-session";
-import { defaultActivityCard, defaultSplashConfig, type AppSplashRecord } from "../../../../lib/app-config";
+import { defaultActivityCard, defaultLeaderboardConfig, defaultSplashConfig, type AppSplashRecord } from "../../../../lib/app-config";
 
 /**
  * App launch (启动页) config — one endpoint shared by every rider client.
@@ -86,6 +86,18 @@ async function handlePost(request: Request) {
           endsAt: String(body.activityCard.endsAt ?? "").slice(0, 10),
         }
       : prev.activityCard,
+    // 排行榜开关。同样整块下发,缺省不动 —— 保存开屏不会顺手关掉排行榜。
+    leaderboard: body.leaderboard !== undefined
+      ? {
+          ...defaultLeaderboardConfig,
+          ...prev.leaderboard,
+          ...body.leaderboard,
+          enabled: body.leaderboard.enabled === true,
+          daily: body.leaderboard.daily === true,
+          weekly: body.leaderboard.weekly === true,
+          topN: Math.max(3, Math.min(100, Math.floor(Number(body.leaderboard.topN) || 20))),
+        }
+      : prev.leaderboard,
     version: (prev.version ?? 0) + 1,
     updatedAt: nowStamp(),
     updatedBy: actor,
@@ -96,6 +108,16 @@ async function handlePost(request: Request) {
   appendServerAudit({ actor, action: "APP_SPLASH_UPDATED", entity: "AppSplashConfig", entityId: "app-splash", detail: `v${next.version} · enabled=${next.enabled} · "${next.headline}"`, risk: "Low" });
   // A4: a campaign banner going live/dark is its own operational event —
   // don't bury it inside the splash line.
+  if (JSON.stringify(prev.leaderboard ?? null) !== JSON.stringify(next.leaderboard ?? null)) {
+    appendServerAudit({
+      actor,
+      action: "APP_LEADERBOARD_UPDATED",
+      entity: "AppSplashConfig",
+      entityId: "app-splash",
+      detail: `enabled=${next.leaderboard?.enabled === true} · daily=${next.leaderboard?.daily === true} · weekly=${next.leaderboard?.weekly === true} · topN=${next.leaderboard?.topN ?? 20}`,
+      risk: "Low",
+    });
+  }
   if (JSON.stringify(prev.activityCard ?? null) !== JSON.stringify(next.activityCard ?? null)) {
     appendServerAudit({
       actor,

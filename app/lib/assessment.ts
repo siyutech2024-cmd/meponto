@@ -62,3 +62,26 @@ export function evaluateMetric(metric: AssessmentMetric, actual: number | null):
   if (cmp(metric.failOp, metric.failThreshold)) return { status: "fail", adjust: -metric.failAdjust };
   return { status: "mid", adjust: 0 };
 }
+
+
+/**
+ * 自然周窗口(周一 → 周日),圣保罗日历。
+ *
+ * 业务方 2026-08-07 定:一周 = 周一到周日。考核、例会、骑手排行榜必须共用
+ * 同一个"周",否则骑手说"我这周第 3",运营在考核页查是另一个数,解释不清。
+ *
+ * 之前这段逻辑只写在 api/assessment 里;排行榜要用,就提到这里两处复用 ——
+ * 各写一份迟早会漂移。
+ *
+ * @param date 锚点日期 YYYY-MM-DD(通常是今天)
+ */
+export function weekWindow(date: string): { from: string; to: string } {
+  const d = new Date(`${date}T12:00:00Z`);
+  // getUTCDay(): 周日=0 … 周六=6。减 1 再取模,把周一变成 0。
+  const back = (d.getUTCDay() - 1 + 7) % 7;
+  const start = new Date(d);
+  start.setUTCDate(d.getUTCDate() - back);
+  const end = new Date(start);
+  end.setUTCDate(start.getUTCDate() + 6);
+  return { from: start.toISOString().slice(0, 10), to: end.toISOString().slice(0, 10) };
+}
