@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Trophy, ArrowLeft, Home, Flame } from "lucide-react";
+import { Trophy, ArrowLeft, Flame } from "lucide-react";
 
 /**
  * 骑手排行榜(每日 / 每周订单榜)。
@@ -126,7 +126,8 @@ function Podium({ top }: { top: Entry[] }) {
  */
 function Row({ entry, max, count, delay }: { entry: Entry; max: number; count: number; delay: number }) {
   const isPro = entry.pool === "pro";
-  const ratio = max > 0 ? Math.max(0.06, entry.orders / max) : 0;
+  // 最低 8% —— 末位也要看得见那根条,否则"进度条"在榜尾整个消失。
+  const pct = max > 0 ? Math.max(8, Math.round((entry.orders / max) * 100)) : 0;
   const hue = rankHue(entry.rank, count);
   // PRO 保持金色身份;其余按名次取色带。
   const c1 = isPro ? GOLD : `hsl(${hue} 78% 56%)`;
@@ -143,18 +144,22 @@ function Row({ entry, max, count, delay }: { entry: Entry; max: number; count: n
         animation: delay >= 0 ? `slide .34s ${delay}s cubic-bezier(.2,.9,.3,1) both` : undefined,
       }}
     >
-      {/* 彩色进度底纹。绝对定位 + scaleX,不影响文字排版也不触发 layout。 */}
+      {/* 彩色进度条。
+          用静态 width 而不是 scaleX —— 值从不变化,不存在每帧 layout;
+          换来的是能在末端加一道实色"封口",让它明确读作一根**进度条**,
+          而不是一层看不太出来的底色。之前那版太淡,等于没有。 */}
       <span
         aria-hidden
-        className="absolute inset-y-0 left-0 w-full origin-left rounded-[10px]"
+        className="absolute inset-y-0 left-0"
         style={{
-          background: `linear-gradient(90deg, ${c1}38, ${c2}14)`,
-          transform: `scaleX(${ratio})`,
-          transition: "transform .55s cubic-bezier(.2,.9,.3,1)",
+          width: `${pct}%`,
+          background: `linear-gradient(90deg, ${c1}5c, ${c2}26)`,
+          borderRight: `2px solid ${c1}`,
+          borderRadius: "10px 3px 3px 10px",
         }}
       />
       {/* 左侧一道实色条 —— 名次色带的"锚点",一眼分辨梯队。 */}
-      <span aria-hidden className="absolute inset-y-0 left-0 w-[3px]" style={{ background: `linear-gradient(180deg, ${c1}, ${c2})` }} />
+      <span aria-hidden className="absolute inset-y-0 left-0 w-[3px] rounded-l-[10px]" style={{ background: `linear-gradient(180deg, ${c1}, ${c2})` }} />
       <span className="relative w-6 shrink-0 text-center text-[13px] font-black tabular-nums" style={{ color: c1 }}>{entry.rank}</span>
       <span
         className="relative flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-[11px] font-black text-white"
@@ -265,23 +270,20 @@ export default function RiderRankingPage() {
   }, [load]);
 
   /**
-   * 返回按钮:能不能 back 要在运行时判断,不能写死。
+   * 返回按钮:**没有上一页就不显示**。
    *
    * 这页有两种进法:
-   *   · APP 活动卡 → WebView 新开一个页面,**没有上一页**(history.length === 1)。
-   *     无脑 history.back() 什么都不会发生 —— 按钮看着能点,点了没反应。
-   *   · 骑手端内部点进来 → 有上一页,back() 正常。
+   *   · 骑手端内部点进来 → 有上一页,显示 Voltar,back() 正常
+   *   · APP 活动卡 → WebView 新开一个页面,history.length === 1,没有上一页。
+   *     这种情况下 WebView 顶部本来就有原生关闭按钮 —— 页面里再放一个
+   *     只会多此一举:back() 点了没反应,跳首页又会把人从活动里带走。
+   *     不显示,把退出交给原生那颗。
    *
-   * 所以:有历史就返回,没历史就回骑手端首页,并且把按钮文案也换掉
-   * (写"Voltar"却跳首页会让人以为点错了)。
+   * 判断必须放在 useEffect 里:服务端没有 window,写在渲染期会 hydration 不一致。
    */
   const [canGoBack, setCanGoBack] = useState(false);
   useEffect(() => {
     setCanGoBack(window.history.length > 1);
-  }, []);
-  const goBack = useCallback(() => {
-    if (window.history.length > 1) window.history.back();
-    else window.location.href = "/"; // app.meponto.com/ = 骑手端首页
   }, []);
 
   // 打开率埋点。方案里要看"有多少人真的点进来" —— 没有这个数,
@@ -319,10 +321,11 @@ export default function RiderRankingPage() {
       >
         {/* 返回:WebView 顶部有关闭按钮,但在浏览器里打开就出不去了。 */}
         <div className="flex items-center gap-3">
-          <button type="button" onClick={goBack} className="tag inline-flex items-center gap-1">
-            {canGoBack ? <ArrowLeft size={13} /> : <Home size={13} />}
-            {canGoBack ? "Voltar" : "Início"}
-          </button>
+          {canGoBack && (
+            <button type="button" onClick={() => window.history.back()} className="tag inline-flex items-center gap-1">
+              <ArrowLeft size={13} /> Voltar
+            </button>
+          )}
           <h1 className="flex items-center gap-2 text-lg font-black">
             <Trophy size={18} style={{ color: GOLD }} /> Ranking de pedidos
           </h1>
