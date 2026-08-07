@@ -3,7 +3,7 @@ import { getSupabaseServerClient } from "../../../lib/supabase/server";
 import {
   parseRiders,
   parseDeliveries,
-  alignTo5Min,
+  alignToMinute,
   type DeliveryRow,
 } from "../../../lib/eastwind";
 
@@ -69,12 +69,12 @@ export async function POST(request: Request) {
   const cityId = body.cityId ?? DEFAULT_CITY;
   const client = getSupabaseServerClient();
 
-  const result: Record<string, unknown> = { capturedAt: alignTo5Min(capturedAt) };
+  const result: Record<string, unknown> = { capturedAt: alignToMinute(capturedAt) };
 
   // --- riders → snapshots + kpi -------------------------------------------
   if (body.riderList != null || body.kpi != null) {
     const { snapshots, kpi } = parseRiders(body.riderList, body.kpi, capturedAt, cityId, body.riderFeatures ?? null);
-    const batch = alignTo5Min(capturedAt);
+    const batch = alignToMinute(capturedAt);
 
     // Idempotent batch PER SOURCE: only this feed's prior rows for the batch
     // are replaced — the other VPS's rows in the same 5-min bucket survive.

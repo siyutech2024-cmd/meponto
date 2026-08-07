@@ -80,10 +80,19 @@ const isObj = (v: unknown): v is AnyObj =>
   typeof v === "object" && v !== null && !Array.isArray(v);
 
 /** Round an ISO timestamp down to the nearest 5 minutes (UTC). */
-export function alignTo5Min(iso: string): string {
+/**
+ * 批次时间对齐到**1 分钟**。
+ *
+ * 对齐的目的只有幂等:同一轮抓取重试要落进同一个批次键(先删后插)。
+ * 原来对齐到 5 分钟 —— 抓取间隔改成 3 分钟后,18:00 和 18:03 两轮会撞进
+ * 同一个 18:00 批次,后一轮把前一轮**整批抹掉**。1 分钟粒度下任何 ≥1 分钟
+ * 的抓取间隔都不冲突,幂等语义不变。
+ * (函数名保留 alignTo5Min 的调用方已全部改为 alignToMinute。)
+ */
+export function alignToMinute(iso: string): string {
   const t = new Date(iso).getTime();
-  const five = 5 * 60 * 1000;
-  return new Date(Math.floor(t / five) * five).toISOString();
+  const minute = 60 * 1000;
+  return new Date(Math.floor(t / minute) * minute).toISOString();
 }
 
 /**
@@ -269,7 +278,7 @@ export function parseRiders(
   // resolve AR/CAA/%TSH/declined/… per rider.
   riderFeatures?: Record<string, unknown> | null,
 ): { snapshots: RiderSnapshotRow[]; kpi: KpiRow } {
-  const captured_at = alignTo5Min(capturedAtIso);
+  const captured_at = alignToMinute(capturedAtIso);
   // Unwrap the gateway envelope ({errno, data:{…}}) so the metrics sit one
   // level deep in raw (pick() searches the record + one nested level).
   const featureFor = (riderId: string | null): AnyObj | null => {

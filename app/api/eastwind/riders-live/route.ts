@@ -99,10 +99,53 @@ export async function GET(request: Request) {
       ),
     );
     snapshots = batches.flat();
-    // City KPI row: prefer the main feed's latest, fall back to any.
-    const kpiAt = latestBySource.get("main") ?? capturedAt;
-    const { data: kpis } = await client.from("rider_kpi_snapshots").select("*").eq("captured_at", kpiAt).limit(1);
-    kpi = (kpis?.[0] as Record<string, unknown>) ?? null;
+    // City KPI:改为**当日累计**口径(2026-08-07)。
+    //
+    // Eastwind 的城市计数器每个班段(11/14/18 点)清零 —— 换班后的头几分钟
+    // 看板会显示 接单 0 / 完单 0 / AR NULL,像坏了一样(实测 17:55 还是
+    // 348/306,18:00 直接归零)。只取"最新一批"就是把这个归零原样端给用户。
+    //
+    // 口径:计数在班段内单调递增 → 班段内取 MAX、跨班段相加 = 当日累计;
+    // 比率(AR/%TSH/CAA/超时)取"当日最后一个有值批次"的读数 —— 比率不能
+    // 跨班段相加,而平台自己的班段内读数就是该班段的正确值。
+    const spDayStart = (() => {
+      const sp = new Date(Date.now() - 3 * 3600_000);
+      return new Date(Date.UTC(sp.getUTCFullYear(), sp.getUTCMonth(), sp.getUTCDate(), 3)).toISOString();
+    })();
+    const { data: kpiRows } = await client
+      .from("rider_kpi_snapshots")
+      .select("captured_at, ar, caa, accept_cnt, overtime, tsh, finished_cnt")
+      .gte("captured_at", spDayStart)
+      .order("captured_at", { ascending: true })
+      .limit(500); // 5 分钟一批,一天最多 ~290 批
+    if (kpiRows && kpiRows.length) {
+      type KRow = { captured_at: string; ar: number | null; caa: number | null; accept_cnt: number | null; overtime: number | null; tsh: number | null; finished_cnt: number | null };
+      const rows = kpiRows as KRow[];
+      // 班段切分:计数下降 = 新班段开始(比对表更稳,不依赖排班时刻精确)。
+      let acceptDay = 0, finishedDay = 0;
+      let acceptMax = 0, finishedMax = 0;
+      for (const row of rows) {
+        const a = row.accept_cnt ?? 0, f = row.finished_cnt ?? 0;
+        if (a < acceptMax * 0.5 && f < finishedMax * 0.5 && (acceptMax > 5 || finishedMax > 5)) {
+          // 明显回落 → 上一班段结束,累计入账
+          acceptDay += acceptMax; finishedDay += finishedMax;
+          acceptMax = 0; finishedMax = 0;
+        }
+        if (a > acceptMax) acceptMax = a;
+        if (f > finishedMax) finishedMax = f;
+      }
+      acceptDay += acceptMax; finishedDay += finishedMax;
+      // 比率:最后一个"有值"的批次(换班空窗批全是 0/NULL,跳过)。
+      const lastRated = [...rows].reverse().find((row) => row.ar != null || (row.accept_cnt ?? 0) > 0);
+      kpi = {
+        ar: lastRated?.ar ?? null,
+        caa: lastRated?.caa ?? null,
+        accept_cnt: acceptDay,
+        overtime: lastRated?.overtime ?? null,
+        tsh: lastRated?.tsh ?? null,
+        finished_cnt: finishedDay,
+      };
+    }
   }
 
   await refreshCollectionsFromDatabase(["riders"]);
