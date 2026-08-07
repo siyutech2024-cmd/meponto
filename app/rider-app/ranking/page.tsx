@@ -39,6 +39,21 @@ const GOLD = "#eda100";
 const MEDAL = ["#f5b301", "#9fb3c8", "#d08b4f"] as const;
 
 /**
+ * ⚠️ 颜色一律走这个函数,不要用 `${color}66` 这种 8 位 hex 拼 alpha。
+ *
+ * 那个写法只对 hex 合法。名次色带是 `hsl(...)` 算出来的,
+ * `hsl(14 78% 56%)66` 是**非法 CSS**,浏览器直接丢掉整条声明 ——
+ * 结果就是进度条一条都不显示,而且控制台不报错,极难查。
+ * (2026-08-07 实测踩过一次)
+ */
+function hsl(hue: number, sat: number, light: number, alpha = 1): string {
+  return `hsl(${hue} ${sat}% ${light}% / ${alpha})`;
+}
+/** PRO 的金色也换成 hsl,好让它和色带用同一套 alpha 语法。 */
+const PRO_C1 = (a = 1) => hsl(41, 100, 46, a);
+const PRO_C2 = (a = 1) => hsl(45, 100, 74, a);
+
+/**
  * 名次色带:第 1 名热橙,一路过渡到榜尾的紫。
  *
  * 为什么不用灰:灰色进度条只传达"长短",色相变化额外传达"你在哪个梯队" ——
@@ -129,9 +144,12 @@ function Row({ entry, max, count, delay }: { entry: Entry; max: number; count: n
   // 最低 8% —— 末位也要看得见那根条,否则"进度条"在榜尾整个消失。
   const pct = max > 0 ? Math.max(8, Math.round((entry.orders / max) * 100)) : 0;
   const hue = rankHue(entry.rank, count);
-  // PRO 保持金色身份;其余按名次取色带。
-  const c1 = isPro ? GOLD : `hsl(${hue} 78% 56%)`;
-  const c2 = isPro ? "#ffd97a" : `hsl(${hue + 18} 82% 66%)`;
+  // PRO 保持金色身份;其余按名次取色带。alpha 版本单独取,别拼字符串。
+  const c1 = isPro ? PRO_C1() : hsl(hue, 78, 56);
+  const c2 = isPro ? PRO_C2() : hsl(hue + 18, 82, 66);
+  const fill = isPro
+    ? `linear-gradient(90deg, ${PRO_C1(0.42)} 0%, ${PRO_C1(0.3)} 62%, ${PRO_C2(0.12)} 100%)`
+    : `linear-gradient(90deg, ${hsl(hue, 78, 56, 0.42)} 0%, ${hsl(hue, 78, 56, 0.3)} 62%, ${hsl(hue + 18, 82, 66, 0.1)} 100%)`;
   return (
     <div
       className="relative flex items-center gap-2.5 overflow-hidden rounded-[10px] px-2.5 py-2.5"
@@ -152,7 +170,7 @@ function Row({ entry, max, count, delay }: { entry: Entry; max: number; count: n
       <span
         aria-hidden
         className="absolute inset-y-0 left-0 rounded-[10px]"
-        style={{ width: `${pct}%`, background: `linear-gradient(90deg, ${c1}66 0%, ${c1}4d 62%, ${c2}1a 100%)` }}
+        style={{ width: `${pct}%`, background: fill }}
       />
       <span className="relative w-6 shrink-0 text-center text-[13px] font-black tabular-nums" style={{ color: c1 }}>{entry.rank}</span>
       <span
