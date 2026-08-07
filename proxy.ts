@@ -105,7 +105,11 @@ export async function proxy(request: NextRequest) {
       url.pathname = "/rider-app";
       return NextResponse.rewrite(url);
     }
-    const riderSections = new Set(["wallet", "shifts", "agenda", "tasks", "mall", "map", "support", "scan"]);
+    // ⚠️ 新增骑手页面时**必须同时加进这个集合**,否则 app.meponto.com/<page>
+    // 不会被 rewrite 到 /rider-app/<page>,会掉进下面的"严格域⇄门户绑定",
+    // 被弹回 / → 未登录再跳 /register。页面本身没问题,是路由没登记 ——
+    // 表现是"页面打不开",极难联想到这里。(ranking 就踩过一次)
+    const riderSections = new Set(["wallet", "shifts", "agenda", "tasks", "mall", "map", "support", "scan", "ranking"]);
     const firstSegment = pathname.split("/")[1] ?? "";
     // /scan?partner=… and /scan?ref=… are the PUBLIC QR validation page; the
     // bare /scan is the in-app camera scanner.

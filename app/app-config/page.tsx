@@ -41,11 +41,17 @@ type Leaderboard = { enabled: boolean; daily: boolean; weekly: boolean; topN: nu
 const DEFAULT_LEADERBOARD: Leaderboard = { enabled: false, daily: true, weekly: true, topN: 20 };
 
 /**
- * 排行榜 H5 地址。**必须是 mall 这个域**:页面里调的是相对路径
- * /api/rider/leaderboard,请求会打到 serve 页面的那个域上。mall.meponto.com
- * 既跑 Next 应用又是 API 所在域,同源零风险;换个域会"页面能开、接口 404"。
+ * 排行榜 H5 地址 —— **骑手域是 app.meponto.com,不是 mall**。
+ *
+ * proxy.ts 里 mall.meponto.com 上的 /rider-app/* 会被 302 到
+ * app.meponto.com 的干净路径(去掉 /rider-app 前缀)。填 mall 那条也能到,
+ * 但白白多一跳;填 app 这条是最终落点。
+ * cookie 域是 .meponto.com,两个子域都带得上,登录态不受影响。
  */
-const RANKING_URL = "https://mall.meponto.com/rider-app/ranking";
+const RANKING_URL = "https://app.meponto.com/ranking";
+
+/** 这个 URL 是否指向排行榜(两种写法都算:干净路径 / 旧的 mall 转跳路径)。 */
+const pointsAtRanking = (url: string) => /\/(rider-app\/)?ranking\/?($|\?)/.test(url);
 
 const DEFAULT_CARD: ActivityCard = {
   enabled: false, title: "", subtitle: "", badge: "", imageURL: "", linkURL: "",
@@ -319,14 +325,21 @@ export default function AppConfigPage() {
               </span>
               {/* 联动校验:卡指向排行榜但排行榜是关的 → 骑手点进去只会看到"已停用"。
                   两个开关分处两块,不提示的话运营一定会踩。 */}
-              {card.linkURL.includes("/rider-app/ranking") && !board.enabled && (
+              {pointsAtRanking(card.linkURL) && !card.enabled && (
+                <span className="mt-1.5 block rounded-[6px] border border-[var(--warning)] bg-[var(--warning-bg)] px-2 py-1.5 text-[11px] font-black text-[var(--warning-ink)]">
+                  URL 填好了,但最上面的「首页活动入口卡」还没勾 —— 卡片不会下发到 APP,骑手看不到入口。
+                </span>
+              )}
+              {pointsAtRanking(card.linkURL) && !board.enabled && (
                 <span className="mt-1.5 block rounded-[6px] border border-[var(--warning)] bg-[var(--warning-bg)] px-2 py-1.5 text-[11px] font-black text-[var(--warning-ink)]">
                   这张卡指向排行榜,但下面的「骑手排行榜」开关还没打开 —— 骑手点进去会看到"排行榜已停用"。
                 </span>
               )}
-              {card.linkURL.startsWith("https://meponto.com/rider-app/") && (
+              {/* 骑手页的域是 app.meponto.com。mall 上的 /rider-app/* 会被 302 过去,
+                  能到但多一跳;写在这里省得下次又有人按 mall 域去填。 */}
+              {card.linkURL.includes("mall.meponto.com/rider-app/") && (
                 <span className="mt-1.5 block rounded-[6px] border border-[var(--warning)] bg-[var(--warning-bg)] px-2 py-1.5 text-[11px] font-black text-[var(--warning-ink)]">
-                  域名建议用 mall.meponto.com —— 骑手端页面和接口都在这个域,同域才不会出现"页面能开但接口 404"。
+                  骑手页面的域是 app.meponto.com。填 mall 这条会被自动转跳过去(能用,但多一跳),建议点「填入排行榜地址」换成干净地址。
                 </span>
               )}
             </label>
@@ -373,10 +386,16 @@ export default function AppConfigPage() {
                 名
               </label>
             </div>
-            {board.enabled && !card.linkURL.includes("/rider-app/ranking") && (
-              <div className="mt-2 rounded-[6px] border border-[var(--warning)] bg-[var(--warning-bg)] px-2 py-1.5 text-[11px] font-black text-[var(--warning-ink)]">
-                排行榜已开启,但上面的活动卡没有指向它 —— 骑手在 APP 里没有入口。
-                去活动卡点「填入排行榜地址」并开启活动卡。
+            {/* 入口链路自检。三个开关分处两块,任何一个漏了骑手就看不到入口,
+                而且**页面上完全没有报错**,只是什么都不出现 —— 最难自己发现的那种。
+                所以这里逐条点名缺的是哪一步,不要只说"配置不完整"。 */}
+            {board.enabled && !(card.enabled && pointsAtRanking(card.linkURL)) && (
+              <div className="mt-2 rounded-[6px] border border-[var(--warning)] bg-[var(--warning-bg)] px-2 py-1.5 text-[11px] font-black leading-relaxed text-[var(--warning-ink)]">
+                排行榜已开启,但骑手在 APP 里**还看不到入口**,缺:
+                {!pointsAtRanking(card.linkURL) && <><br />· 活动卡的跳转 URL 没指向排行榜 —— 点上面的「填入排行榜地址」</>}
+                {pointsAtRanking(card.linkURL) && !card.enabled && <><br />· 活动卡本身没启用 —— 勾上上面的「首页活动入口卡」</>}
+                {pointsAtRanking(card.linkURL) && card.enabled && !card.title.trim() && <><br />· 活动卡没有标题 —— 骑手会看到一张空白卡</>}
+                <br />改完记得点「保存启动页」。
               </div>
             )}
             <div className="mt-2 text-[11px] font-bold leading-relaxed text-[var(--muted)]">

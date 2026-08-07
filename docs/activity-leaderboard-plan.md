@@ -36,13 +36,29 @@
 | 写进 WebView 时的 Domain | `.meponto.com` ← 覆盖主域和所有子域 |
 | SameSite=Lax 会不会拦 | 不会。顶层导航允许带 cookie,页面内又是同源 fetch |
 
-### ⚠️ linkURL 必须填 `mall.meponto.com`
+### ⚠️ 正确的 linkURL 是 `app.meponto.com/ranking`(2026-08-07 实测更正)
 
-页面里调的是**相对路径** `/api/rider/leaderboard`,请求会打到"谁在 serve 这个
-页面"那个域上。`mall.meponto.com` 确认在跑 Next 应用、同时也是 API 所在的域,
-同源零风险;换成别的域可能页面能打开但接口 404。
+之前根据 build.gradle 的 BASE_URL 推断"必须填 mall.meponto.com" —— **这条是错的**,
+实测打开 `mall.meponto.com/rider-app/ranking` 被弹到了 `app.meponto.com/register`。
 
-    正确 → https://mall.meponto.com/rider-app/ranking
+真实的域路由在 `proxy.ts`:
+
+| 规则 | 效果 |
+|---|---|
+| `mall.meponto.com` 上的 `/rider-app/*` | 302 到 `app.meponto.com/<去掉前缀的路径>` |
+| `app.meponto.com` 上的 `riderSections` 白名单 | rewrite 到 `/rider-app/<page>` |
+| 不在白名单的路径 | 掉进"严格域⇄门户绑定" → 弹回 `/` → 未登录再跳 `/register` |
+
+`ranking` 当时**不在 riderSections 里**,所以两个域都打不开 —— 页面代码没问题,
+是路由没登记。已加入白名单。
+
+    正确 → https://app.meponto.com/ranking
+    (mall.meponto.com/rider-app/ranking 也能到,但白白多一跳)
+
+cookie 域是 `.meponto.com`,两个子域都带得上,登录态不受影响。
+
+> **给以后:新增任何骑手页面,必须同时把它的一级路径加进 `proxy.ts` 的
+> `riderSections`。** 漏了的表现是"页面打不开、跳去注册页",极难联想到路由。
 
 ### ⚠️ 硬约束(不满足就退化成"未登录"页)
 
@@ -165,7 +181,8 @@ PRO 是全职,单量天然高。一张总榜跑起来后,前 20 名很可能全�
 | 实时监控看板 | 共用同一张快照表 | 只读,不互相影响 |
 | 数据库负载 | 每次打开榜单查 7 天快照 | 已限 50,000 行;若后续变慢,加物化视图或日聚合表 |
 | module-guard | 已通过 | 排行榜接口不进内存层,不占内存路由基线 |
-| GA4 | 建议加事件 | `leaderboard_open`,看有多少人真的点 |
+| GA4 | ✅ 已加事件 | `leaderboard_open`,看有多少人真的点 |
+| proxy.ts 域路由 | **必须登记** | 新骑手页要加进 `riderSections`,否则打不开 |
 
 ---
 
