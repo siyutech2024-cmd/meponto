@@ -144,22 +144,16 @@ function Row({ entry, max, count, delay }: { entry: Entry; max: number; count: n
         animation: delay >= 0 ? `slide .34s ${delay}s cubic-bezier(.2,.9,.3,1) both` : undefined,
       }}
     >
-      {/* 彩色进度条。
-          用静态 width 而不是 scaleX —— 值从不变化,不存在每帧 layout;
-          换来的是能在末端加一道实色"封口",让它明确读作一根**进度条**,
-          而不是一层看不太出来的底色。之前那版太淡,等于没有。 */}
+      {/* 彩色进度条 = 一条横向背景色带。
+          不加左右竖线:竖线在一屏十几行里会连成一列栅栏,反而抢眼;
+          横条本身够长、够有色相,一眼就能比长短。靠饱和度让它看得见,
+          不靠边框。末端做渐隐,不切一刀。
+          用静态 width 而不是 scaleX —— 值从不变化,不存在每帧 layout。 */}
       <span
         aria-hidden
-        className="absolute inset-y-0 left-0"
-        style={{
-          width: `${pct}%`,
-          background: `linear-gradient(90deg, ${c1}5c, ${c2}26)`,
-          borderRight: `2px solid ${c1}`,
-          borderRadius: "10px 3px 3px 10px",
-        }}
+        className="absolute inset-y-0 left-0 rounded-[10px]"
+        style={{ width: `${pct}%`, background: `linear-gradient(90deg, ${c1}66 0%, ${c1}4d 62%, ${c2}1a 100%)` }}
       />
-      {/* 左侧一道实色条 —— 名次色带的"锚点",一眼分辨梯队。 */}
-      <span aria-hidden className="absolute inset-y-0 left-0 w-[3px] rounded-l-[10px]" style={{ background: `linear-gradient(180deg, ${c1}, ${c2})` }} />
       <span className="relative w-6 shrink-0 text-center text-[13px] font-black tabular-nums" style={{ color: c1 }}>{entry.rank}</span>
       <span
         className="relative flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-[11px] font-black text-white"
