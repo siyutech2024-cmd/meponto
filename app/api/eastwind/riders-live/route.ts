@@ -99,15 +99,16 @@ export async function GET(request: Request) {
       ),
     );
     snapshots = batches.flat();
-    // City KPI:改为**当日累计**口径(2026-08-07)。
+    // City KPI:**当前班次**口径(业务方 2026-08-07 定)。
     //
-    // Eastwind 的城市计数器每个班段(11/14/18 点)清零 —— 换班后的头几分钟
-    // 看板会显示 接单 0 / 完单 0 / AR NULL,像坏了一样(实测 17:55 还是
-    // 348/306,18:00 直接归零)。只取"最新一批"就是把这个归零原样端给用户。
+    // 实时看板的语义是"现在",所以 KPI 显示当前班段(11/14/18 点切班)的读数;
+    // 全天累计在「当日数据」页看(那边是班段求和)。两页分工,不再混。
     //
-    // 口径:计数在班段内单调递增 → 班段内取 MAX、跨班段相加 = 当日累计;
-    // 比率(AR/%TSH/CAA/超时)取"当日最后一个有值批次"的读数 —— 比率不能
-    // 跨班段相加,而平台自己的班段内读数就是该班段的正确值。
+    // 但不能傻取"最新一批":换班后的头几分钟 Eastwind 面板是空的,抓到的
+    // 批次全 0/NULL(实测 18:20 批),直接显示会像看板坏了。所以:
+    //   1. 按"计数明显回落"自动定位当前班段的起点(不依赖排班时刻)
+    //   2. 取当前班段内**最新一个有读数**的批次显示
+    //   3. 班段刚开始、一个有值批都没有时,数字如实显示 0(当前班次确实刚起步)
     const spDayStart = (() => {
       const sp = new Date(Date.now() - 3 * 3600_000);
       return new Date(Date.UTC(sp.getUTCFullYear(), sp.getUTCMonth(), sp.getUTCDate(), 3)).toISOString();
@@ -117,33 +118,32 @@ export async function GET(request: Request) {
       .select("captured_at, ar, caa, accept_cnt, overtime, tsh, finished_cnt")
       .gte("captured_at", spDayStart)
       .order("captured_at", { ascending: true })
-      .limit(500); // 5 分钟一批,一天最多 ~290 批
+      .limit(500); // 3 分钟一批,一天最多 ~240 批
     if (kpiRows && kpiRows.length) {
       type KRow = { captured_at: string; ar: number | null; caa: number | null; accept_cnt: number | null; overtime: number | null; tsh: number | null; finished_cnt: number | null };
       const rows = kpiRows as KRow[];
-      // 班段切分:计数下降 = 新班段开始(比对表更稳,不依赖排班时刻精确)。
-      let acceptDay = 0, finishedDay = 0;
+      // 定位当前班段起点:计数从高位明显回落 = 新班段开始。
+      let slotStart = 0;
       let acceptMax = 0, finishedMax = 0;
-      for (const row of rows) {
-        const a = row.accept_cnt ?? 0, f = row.finished_cnt ?? 0;
+      for (let i = 0; i < rows.length; i += 1) {
+        const a = rows[i].accept_cnt ?? 0, f = rows[i].finished_cnt ?? 0;
         if (a < acceptMax * 0.5 && f < finishedMax * 0.5 && (acceptMax > 5 || finishedMax > 5)) {
-          // 明显回落 → 上一班段结束,累计入账
-          acceptDay += acceptMax; finishedDay += finishedMax;
+          slotStart = i;
           acceptMax = 0; finishedMax = 0;
         }
         if (a > acceptMax) acceptMax = a;
         if (f > finishedMax) finishedMax = f;
       }
-      acceptDay += acceptMax; finishedDay += finishedMax;
-      // 比率:最后一个"有值"的批次(换班空窗批全是 0/NULL,跳过)。
-      const lastRated = [...rows].reverse().find((row) => row.ar != null || (row.accept_cnt ?? 0) > 0);
+      // 当前班段内最新的有读数批次(跳过换班空窗的全 0/NULL 批)。
+      const slot = rows.slice(slotStart);
+      const lastRated = [...slot].reverse().find((row) => row.ar != null || (row.accept_cnt ?? 0) > 0 || (row.finished_cnt ?? 0) > 0);
       kpi = {
         ar: lastRated?.ar ?? null,
         caa: lastRated?.caa ?? null,
-        accept_cnt: acceptDay,
+        accept_cnt: lastRated?.accept_cnt ?? 0,
         overtime: lastRated?.overtime ?? null,
         tsh: lastRated?.tsh ?? null,
-        finished_cnt: finishedDay,
+        finished_cnt: lastRated?.finished_cnt ?? 0,
       };
     }
   }
