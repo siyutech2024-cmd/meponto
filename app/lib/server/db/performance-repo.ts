@@ -12,7 +12,7 @@ export const perfMode = () => coreMode(PERF_MODULE);
 // ---- row mappers (TS camelCase ↔ table snake_case) ---------------------------
 
 type KpiRow = {
-  id: string; date: string; rider99_id: string; rider_name: string; phone: string;
+  id: string; date: string; rider99_id: string; rider_name: string; phone: string; account: string;
   cpf: string; city: string; online_hours: number; completed_orders: number;
   signed_shifts: number; signed_shift_hours: number; in_shift_online_hours: number;
   tsh: number | null; tsh_critical: number | null; ar: number | null;
@@ -21,7 +21,9 @@ type KpiRow = {
 
 export function kpiToRow(k: RiderDailyKpi): KpiRow {
   return {
-    id: k.id, date: k.date, rider99_id: k.rider99Id, rider_name: k.riderName ?? "",
+    // account 必须落表:没有它,同一骑手同天的 main/pro 两行既撞唯一约束,
+    // 又让 ?account=pro 过滤在事实表模式下永远筛不出 PRO。
+    id: k.id, date: k.date, rider99_id: k.rider99Id, rider_name: k.riderName ?? "", account: k.account ?? "main",
     phone: k.phone ?? "", cpf: k.cpf ?? "", city: k.city ?? "",
     online_hours: k.onlineHours ?? 0, completed_orders: k.completedOrders ?? 0,
     signed_shifts: k.signedShifts ?? 0, signed_shift_hours: k.signedShiftHours ?? 0,
@@ -34,6 +36,7 @@ export function kpiToRow(k: RiderDailyKpi): KpiRow {
 export function rowToKpi(r: KpiRow): RiderDailyKpi {
   return {
     id: r.id, date: r.date, rider99Id: r.rider99_id, riderName: r.rider_name,
+    account: r.account === "pro" ? "pro" : "main",
     phone: r.phone, cpf: r.cpf, city: r.city,
     onlineHours: Number(r.online_hours), completedOrders: Number(r.completed_orders),
     signedShifts: Number(r.signed_shifts), signedShiftHours: Number(r.signed_shift_hours),
@@ -48,7 +51,7 @@ export function rowToKpi(r: KpiRow): RiderDailyKpi {
 }
 
 type EarnRow = {
-  id: string; date: string; rider99_id: string; rider_name: string; phone: string;
+  id: string; date: string; rider99_id: string; rider_name: string; phone: string; account: string;
   cpf: string; city: string; total: number; trip_income: number; cash_debt: number;
   meal_deduction: number; bonus: number; other: number; tips: number;
   manual_adjust: number; referral_bonus: number; pix: string; orders: number;
@@ -57,7 +60,7 @@ type EarnRow = {
 
 export function earningToRow(e: RiderDailyEarning): EarnRow {
   return {
-    id: e.id, date: e.date, rider99_id: e.rider99Id, rider_name: e.riderName ?? "",
+    id: e.id, date: e.date, rider99_id: e.rider99Id, rider_name: e.riderName ?? "", account: e.account ?? "main",
     phone: e.phone ?? "", cpf: e.cpf ?? "", city: e.city ?? "",
     total: e.total ?? 0, trip_income: e.tripIncome ?? 0, cash_debt: e.cashDebt ?? 0,
     meal_deduction: e.mealDeduction ?? 0, bonus: e.bonus ?? 0, other: e.other ?? 0,
@@ -71,6 +74,7 @@ export function earningToRow(e: RiderDailyEarning): EarnRow {
 export function rowToEarning(r: EarnRow): RiderDailyEarning {
   return {
     id: r.id, date: r.date, rider99Id: r.rider99_id, riderName: r.rider_name,
+    account: r.account === "pro" ? "pro" : "main",
     phone: r.phone, cpf: r.cpf, city: r.city,
     total: Number(r.total), tripIncome: Number(r.trip_income), cashDebt: Number(r.cash_debt),
     mealDeduction: Number(r.meal_deduction), bonus: Number(r.bonus), other: Number(r.other),
@@ -137,8 +141,8 @@ export async function kpisByDateRange(from: string, to: string): Promise<RiderDa
 // ---- table-backed aggregates ---------------------------------------------------
 
 export const perfDatesT = () => callTransaction<string[]>("perf_dates_t", {});
-export const perfTrendT = (days = 30) =>
-  callTransaction<Array<{ date: string; orders: number; settle: number }>>("perf_trend_t", { p_days: days });
+export const perfTrendT = (days = 30, riderIds: string[] | null = null) =>
+  callTransaction<Array<{ date: string; orders: number; proOrders: number; settle: number }>>("perf_trend_t", { p_days: days, p_rider_ids: riderIds });
 export const kpiLeaderboardT = (limit = 10) =>
   callTransaction<Array<{ name: string; orders: number }>>("kpi_leaderboard_t", { p_limit: limit });
 export const earningsSettledTotalsT = (today: string) =>

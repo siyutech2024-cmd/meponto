@@ -221,6 +221,9 @@ export function parseEastwindRiderKpis(raw: string, date: string): RiderDailyKpi
 export type KpiAggregate = {
   key: string;
   riders: number;
+  /** 其中 PRO(模式二):行数与完单。PRO 是总数的一部分,不是并列项。 */
+  proRiders: number;
+  proOrders: number;
   onlineHours: number;
   completedOrders: number;
   signedShifts: number;
@@ -243,9 +246,12 @@ export function aggregateKpis(rows: RiderDailyKpi[], key: string): KpiAggregate 
   const signedShiftHours = sum("signedShiftHours");
   const inShift = sum("inShiftOnlineHours");
 
+  const proRows = rows.filter((row) => row.account === "pro");
   return {
     key,
     riders: rows.length,
+    proRiders: proRows.length,
+    proOrders: proRows.reduce((total, row) => total + (row.completedOrders ?? 0), 0),
     onlineHours: sum("onlineHours"),
     completedOrders: sum("completedOrders"),
     signedShifts: sum("signedShifts"),

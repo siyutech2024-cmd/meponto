@@ -231,7 +231,7 @@ export function Pager({ page, pages, total, onPage }: { page: number; pages: num
 // Stat — plain metric card (label / value / hint).
 // ---------------------------------------------------------------------------
 
-export function Stat({ label, value, hint }: { label: string; value: string; hint?: string }) {
+export function Stat({ label, value, hint }: { label: string; value: string; hint?: ReactNode }) {
   return (
     <div className="panel p-4">
       <div className="text-[11px] font-bold uppercase text-[var(--muted)]">{label}</div>

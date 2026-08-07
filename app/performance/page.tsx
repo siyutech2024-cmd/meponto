@@ -26,7 +26,7 @@ type EnrichedEarning = RiderDailyEarning & { franchise: string; station: string;
 type GroupRow = KpiAggregate & { franchise?: string };
 type EarningGroupRow = EarningAggregate & { franchise?: string };
 type Payload = {
-  trend?: Array<{ date: string; orders: number; settle: number }>;
+  trend?: Array<{ date: string; orders: number; proOrders?: number; settle: number }>;
   date: string | null;
   dates: string[];
   riders: EnrichedKpi[];
@@ -215,34 +215,53 @@ function DetailRow({ label, value }: { label: ReactNode; value: ReactNode }) {
   );
 }
 
-function TrendChart({ trend }: { trend: Array<{ date: string; orders: number; settle: number }> }) {
+function TrendChart({ trend }: { trend: Array<{ date: string; orders: number; proOrders?: number; settle: number }> }) {
   const t = useT();
   if (!trend || trend.length < 2) return null;
   const W = 720;
   const H = 120;
   const PAD = 6;
+  // PRO 数据没进来之前不画金线、不占图例 —— 一条贴着 0 的线只会引人来问。
+  const hasPro = trend.some((point) => (point.proOrders ?? 0) > 0);
   const maxOrders = Math.max(...trend.map((t) => t.orders), 1);
   const maxSettle = Math.max(...trend.map((t) => t.settle), 1);
   const x = (i: number) => PAD + (i / (trend.length - 1)) * (W - PAD * 2);
   const yo = (v: number) => H - PAD - (v / maxOrders) * (H - PAD * 2);
   const ys = (v: number) => H - PAD - (v / maxSettle) * (H - PAD * 2);
-  const line = (fn: (v: number) => number, key: "orders" | "settle") => trend.map((t, i) => `${i === 0 ? "M" : "L"}${x(i).toFixed(1)},${fn(t[key]).toFixed(1)}`).join(" ");
+  // PRO 曲线与总完单共用同一坐标轴(maxOrders):PRO 是总数的**其中一部分**,
+  // 同轴才能直接读出占比;单独一根轴会把两条线画得一样高,反而误导。
+  const line = (fn: (v: number) => number, pick: (p: (typeof trend)[number]) => number) =>
+    trend.map((point, i) => `${i === 0 ? "M" : "L"}${x(i).toFixed(1)},${fn(pick(point)).toFixed(1)}`).join(" ");
+  const last = trend[trend.length - 1];
   return (
     <div className="panel mb-4 p-4">
       <div className="mb-1 flex items-center justify-between text-[10px] font-black uppercase text-[var(--muted)]">
         <span>{t("pfTrendDays", { n: trend.length })}</span>
-        <span><span className="text-[var(--accent)]">―</span> {t("pfTrendOrders")} ｜ <span className="text-[#4dd9ff]">―</span> {t("pfTrendSettle")}</span>
+        <span>
+          <span className="text-[var(--accent)]">―</span> {t("pfTrendOrders")}
+          {hasPro && <> ｜ <span style={{ color: "#eda100" }}>―</span> PRO</>}
+          {" ｜ "}<span className="text-[#4dd9ff]">―</span> {t("pfTrendSettle")}
+        </span>
       </div>
       <svg viewBox={`0 0 ${W} ${H}`} className="h-28 w-full">
-        <path d={line(yo, "orders")} fill="none" stroke="var(--accent)" strokeWidth="2.5" strokeLinejoin="round" />
-        <path d={line(ys, "settle")} fill="none" stroke="#4dd9ff" strokeWidth="2" strokeDasharray="1 0" opacity="0.85" strokeLinejoin="round" />
-        {trend.map((t, i) => (
-          <circle key={t.date} cx={x(i)} cy={yo(t.orders)} r="3" fill="var(--accent)" />
+        <path d={line(yo, (p) => p.orders)} fill="none" stroke="var(--accent)" strokeWidth="2.5" strokeLinejoin="round" />
+        <path d={line(ys, (p) => p.settle)} fill="none" stroke="#4dd9ff" strokeWidth="2" strokeDasharray="1 0" opacity="0.85" strokeLinejoin="round" />
+        {hasPro && (
+          <path d={line(yo, (p) => p.proOrders ?? 0)} fill="none" stroke="#eda100" strokeWidth="2.5" strokeLinejoin="round" />
+        )}
+        {trend.map((point, i) => (
+          <circle key={point.date} cx={x(i)} cy={yo(point.orders)} r="3" fill="var(--accent)" />
+        ))}
+        {hasPro && trend.map((point, i) => (
+          <circle key={`pro-${point.date}`} cx={x(i)} cy={yo(point.proOrders ?? 0)} r="2.5" fill="#eda100" />
         ))}
       </svg>
       <div className="flex justify-between text-[10px] font-bold text-[var(--muted)]">
         <span>{trend[0].date.slice(5)}</span>
-        <span>{trend[trend.length - 1].date.slice(5)}{t("pfTrendLastLabel", { o: trend[trend.length - 1].orders, s: trend[trend.length - 1].settle.toFixed(0) })}</span>
+        <span>
+          {last.date.slice(5)}{t("pfTrendLastLabel", { o: last.orders, s: last.settle.toFixed(0) })}
+          {hasPro && <span className="font-black" style={{ color: "#eda100" }}> ｜ PRO {last.proOrders ?? 0}</span>}
+        </span>
       </div>
     </div>
   );
@@ -298,6 +317,18 @@ export default function PerformancePage() {
   });
 
   const total = data?.total;
+
+  // 当日 PRO 小计。从已按视角过滤过的骑手行现算 —— 加盟商/站点登录时
+
+  // 服务端已只返回自家骑手,这里不用再判断 scope。
+
+  const proDay = useMemo(() => {
+
+    const rows = (data?.riders ?? []).filter((row) => row.account === "pro");
+
+    return { riders: rows.length, orders: rows.reduce((sum, row) => sum + (row.completedOrders ?? 0), 0) };
+
+  }, [data]);
   const caaTone = total ? pctTone(total.caa, "low", 5) : "neutral";
   const otTone = total ? pctTone(total.overtime, "low", 10) : "neutral";
   const comboTone: BadgeTone = caaTone === "danger" || otTone === "danger" ? "danger" : caaTone === "neutral" && otTone === "neutral" ? "neutral" : "success";
@@ -350,12 +381,22 @@ export default function PerformancePage() {
         </div>
       )}
 
-      {/* Stat row — day totals */}
+      {/* Stat row — day totals。PRO 有数据时在卡片里金色单列一行 ——
+          "其中 PRO 多少",不另开卡:PRO 是总数的一部分,拆成第八张卡
+          会让人把两个数相加。加盟商/站点视角走同一段代码,自动同步。 */}
       {total && tab !== "import" && (
         <section className="mb-4 grid gap-3 sm:grid-cols-2 md:grid-cols-4 xl:grid-cols-7">
-          <Stat label={t("pfRiders")} value={String(total.riders)} />
+          <Stat
+            label={t("pfRiders")}
+            value={String(total.riders)}
+            hint={proDay.riders > 0 ? <span className="font-black" style={{ color: "#eda100" }}>PRO {proDay.riders}</span> : undefined}
+          />
           <Stat label={t("pfOnlineHours")} value={total.onlineHours.toFixed(1)} />
-          <Stat label={t("pfCompleted")} value={String(total.completedOrders)} />
+          <Stat
+            label={t("pfCompleted")}
+            value={String(total.completedOrders)}
+            hint={proDay.riders > 0 ? <span className="font-black" style={{ color: "#eda100" }}>PRO {proDay.orders}</span> : undefined}
+          />
           <Stat label={t("pfSignedHours")} value={total.signedShiftHours.toFixed(1)} />
           <TodoCard label="%TSH" value={fmtPct(total.tsh)} tone={pctTone(total.tsh)} />
           <TodoCard label="AR" value={fmtPct(total.ar)} tone={pctTone(total.ar, "high", 95)} />
@@ -434,9 +475,14 @@ function GroupTable({ rows, label, showFranchise }: { rows: GroupRow[]; label: s
   const columns: Array<DataColumn<GroupRow>> = [
     { key: "key", label, sortKey: "key", render: (row) => <span className="font-black">{row.key}</span> },
     ...(showFranchise ? ([{ key: "franchise", label: t("pfBelongFranchise"), render: (row) => <span className="tag">{row.franchise}</span> }] as Array<DataColumn<GroupRow>>) : []),
-    { key: "riders", label: t("pfRiders"), sortKey: "riders", align: "right", render: (row) => <span className="font-bold">{row.riders}</span> },
+    // PRO 小计随行显示(金色),站点/加盟商两个 tab 共用这张表 —— 一处改,两处生效。
+    { key: "riders", label: t("pfRiders"), sortKey: "riders", align: "right", render: (row) => (
+      <span className="font-bold">{row.riders}{row.proRiders > 0 && <span className="ml-1 text-[10px] font-black" style={{ color: "#eda100" }}>PRO {row.proRiders}</span>}</span>
+    ) },
     { key: "onlineHours", label: t("pfOnlineHours"), sortKey: "onlineHours", align: "right", render: (row) => row.onlineHours.toFixed(1) },
-    { key: "completedOrders", label: t("pfCompleted"), sortKey: "completedOrders", align: "right", render: (row) => <span className="font-black">{row.completedOrders}</span> },
+    { key: "completedOrders", label: t("pfCompleted"), sortKey: "completedOrders", align: "right", render: (row) => (
+      <span className="font-black">{row.completedOrders}{row.proOrders > 0 && <span className="ml-1 text-[10px] font-black" style={{ color: "#eda100" }}>PRO {row.proOrders}</span>}</span>
+    ) },
     { key: "signedShifts", label: t("pfHSignedShifts"), sortKey: "signedShifts", align: "right", render: (row) => row.signedShifts },
     { key: "signedShiftHours", label: t("pfSignedHours"), sortKey: "signedShiftHours", align: "right", render: (row) => row.signedShiftHours.toFixed(1) },
     { key: "inShiftOnlineHours", label: t("pfHActualOnline"), sortKey: "inShiftOnlineHours", align: "right", render: (row) => row.inShiftOnlineHours.toFixed(1) },

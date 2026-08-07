@@ -128,7 +128,18 @@ async function performanceDirect(url: URL): Promise<Response | null> {
     const allDates = factRead ? await perfDatesT() : await callRpc<string[]>("perf_dates");
     const activeDate = date && allDates.includes(date) ? date : allDates[0] ?? null;
 
-    const [kpiRaw, earnRaw, riders, trend] = await Promise.all([
+    // 趋势必须跟着视角走。加盟商/站点登录时顶部卡片按视角过滤,趋势图
+    // 却曾是全网数据 —— Clayton 看到自家 400 单,曲线末点写着全网 957 单。
+    // 骑手→加盟商/站点的归属在 riders 档案里(不在事实表),所以先取档案、
+    // 算出"自家骑手的 99ID 数组"再查趋势,两步串行。全网视角传 null 不过滤。
+    const riders = await fetchRows<Rider>("riders");
+    const scopedTrendIds = (franchise || station)
+      ? riders
+          .filter((r) => r.ninetyNineId && (franchise ? r.franchise === franchise : true) && (station ? r.ponto === station : true))
+          .map((r) => String(r.ninetyNineId))
+      : null;
+
+    const [kpiRaw, earnRaw, trend] = await Promise.all([
       !activeDate
         ? Promise.resolve([] as RiderDailyKpi[])
         : factRead
@@ -139,10 +150,9 @@ async function performanceDirect(url: URL): Promise<Response | null> {
         : factRead
           ? earningsByDate(activeDate)
           : fetchRows<RiderDailyEarning>("riderDailyEarnings", [{ op: "eq", field: "date", value: activeDate }]),
-      fetchRows<Rider>("riders"),
       factRead
-        ? perfTrendT(30)
-        : callRpc<Array<{ date: string; orders: number; settle: number }>>("perf_trend", { p_days: 30 }),
+        ? perfTrendT(30, scopedTrendIds)
+        : callRpc<Array<{ date: string; orders: number; proOrders: number; settle: number }>>("perf_trend", { p_days: 30, p_rider_ids: scopedTrendIds }),
     ]);
 
     let rows = enrich(kpiRaw, riders);
@@ -419,11 +429,25 @@ export async function GET(request: Request) {
 
   // 30-day network trend (orders + settlement) for the chart.
   const trendDates = [...allDates].sort().slice(-30);
-  const trend = trendDates.map((d) => ({
-    date: d,
-    orders: memory.riderDailyKpis.filter((row) => row.date === d).reduce((sum, row) => sum + (row.completedOrders ?? 0), 0),
-    settle: Math.round(memory.riderDailyEarnings.filter((row) => row.date === d).reduce((sum, row) => sum + (row.settleAmount ?? 0), 0) * 100) / 100,
-  }));
+  // 视角过滤:与上面 DB 路径同一口径(加盟商/站点只看自家骑手)。
+  const scopedIds = (franchise || station)
+    ? new Set(
+        memory.riders
+          .filter((r) => r.ninetyNineId && (franchise ? r.franchise === franchise : true) && (station ? r.ponto === station : true))
+          .map((r) => String(r.ninetyNineId)),
+      )
+    : null;
+  const inScope = (id: string) => !scopedIds || scopedIds.has(id);
+  const trend = trendDates.map((d) => {
+    const dayRows = memory.riderDailyKpis.filter((row) => row.date === d && inScope(row.rider99Id));
+    return {
+      date: d,
+      orders: dayRows.reduce((sum, row) => sum + (row.completedOrders ?? 0), 0),
+      // PRO 单独一条曲线(金色)。orders 仍是总数 —— PRO 是"其中",不是"另外"。
+      proOrders: dayRows.filter((row) => accountOf(row) === "pro").reduce((sum, row) => sum + (row.completedOrders ?? 0), 0),
+      settle: Math.round(memory.riderDailyEarnings.filter((row) => row.date === d && inScope(row.rider99Id)).reduce((sum, row) => sum + (row.settleAmount ?? 0), 0) * 100) / 100,
+    };
+  });
 
   return jsonResponse({
     data: {
