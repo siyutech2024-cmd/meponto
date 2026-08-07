@@ -32,6 +32,12 @@ export type RiderSnapshotRow = {
   online_mins: number | null;    // currentShift (seconds) → minutes
   rest_mins: number | null;      // riderRestTimeCnt (seconds) → minutes
   finished_cnt: number | null;   // order (completed orders)
+  /** 接单(邀约)/拒单/取消/超时 —— 入库时从 raw 抽成列,当日累计聚合要在
+   *  SQL/扫描里做"班段内 MAX、跨班段相加",藏在 JSON 里没法高效算。 */
+  accept_cnt: number | null;
+  declined_cnt: number | null;
+  cancelled_cnt: number | null;
+  delayed_cnt: number | null;
   lat: number | null;            // location.lat
   lng: number | null;            // location.lng
   raw: unknown;
@@ -279,6 +285,7 @@ export function parseRiders(
     if (!ss) ss = str(pick(rec, K.shiftStart));
     if (!se) se = str(pick(rec, K.shiftEnd));
     const feat = featureFor(str(pick(rec, K.riderId)));
+    const perfCols = extractRiderPerf(feat ? { ...rec, riderFeature: feat } : rec);
     return {
       captured_at,
       city_id: cityId,
@@ -298,6 +305,11 @@ export function parseRiders(
       online_mins: secToMin(pick(rec, K.online)),
       rest_mins: secToMin(pick(rec, K.rest)),
       finished_cnt: num(pick(rec, K.finished)),
+      // 计数列:与 extractRiderPerf 同一套候选键,查 rec 顶层 + riderFeature。
+      accept_cnt: perfCols.acceptCnt,
+      declined_cnt: perfCols.declinedCnt,
+      cancelled_cnt: perfCols.cancelledCnt,
+      delayed_cnt: perfCols.delayedCnt,
       lat: num(pick(rec, K.lat)),
       lng: num(pick(rec, K.lng)),
       raw: feat ? { ...rec, riderFeature: feat } : rec,

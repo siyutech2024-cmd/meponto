@@ -30,6 +30,8 @@ type ScanRow = {
   shift_start: string | null; shift_end: string | null; hot_zone: string | null;
   vehicle: string | null; online_mins: number | null; rest_mins: number | null;
   finished_cnt: number | null;
+  accept_cnt: number | null; declined_cnt: number | null;
+  cancelled_cnt: number | null; delayed_cnt: number | null;
 };
 
 export async function GET(request: Request) {
@@ -52,7 +54,7 @@ export async function GET(request: Request) {
   for (let from = 0; ; from += pageSize) {
     const { data, error } = await client
       .from("rider_status_snapshots")
-      .select("captured_at, rider_ext_id, rider_name, phone, id_no, status, shift_start, shift_end, hot_zone, vehicle, online_mins, rest_mins, finished_cnt")
+      .select("captured_at, rider_ext_id, rider_name, phone, id_no, status, shift_start, shift_end, hot_zone, vehicle, online_mins, rest_mins, finished_cnt, accept_cnt, declined_cnt, cancelled_cnt, delayed_cnt")
       .gte("captured_at", dayStart)
       .order("captured_at", { ascending: false })
       .range(from, from + pageSize - 1);
@@ -73,11 +75,23 @@ export async function GET(request: Request) {
   const slotOf = (r: { shift_start: string | null; shift_end: string | null }) =>
     [r.shift_start, r.shift_end].filter(Boolean).join("-") || "?";
   const latestBySlot = new Map<string, ScanRow>(); // `${riderKey}|${slot}` → final row of that slot
+  // 计数(接单/拒单/取消/超时)的当日累计口径:计数器每班段清零且班段内单调
+  // 递增 → **班段内取 MAX**(任何一批抓到都算数,不再依赖"末批恰好点到
+  // 卡片"),跨班段相加 = 当日累计。这是"计数器不清零"方案的核心。
+  type CntKey = "accept_cnt" | "declined_cnt" | "cancelled_cnt" | "delayed_cnt";
+  const CNT_KEYS: CntKey[] = ["accept_cnt", "declined_cnt", "cancelled_cnt", "delayed_cnt"];
+  const maxBySlot = new Map<string, Record<CntKey, number | null>>();
   for (const row of scan) {
     const key = riderKeyOf(row);
     if (!key) continue;
     const slotKey = `${key}|${slotOf(row)}`;
     if (!latestBySlot.has(slotKey)) latestBySlot.set(slotKey, row);
+    const acc = maxBySlot.get(slotKey) ?? { accept_cnt: null, declined_cnt: null, cancelled_cnt: null, delayed_cnt: null };
+    for (const k of CNT_KEYS) {
+      const v = row[k];
+      if (v != null && (acc[k] == null || v > acc[k]!)) acc[k] = v;
+    }
+    maxBySlot.set(slotKey, acc);
   }
 
   // Pass 2: fetch raw (per-rider slot perf) only for the batches that hold a
@@ -135,8 +149,11 @@ export async function GET(request: Request) {
     const fr = match && !isPlaceholder(match.franchise) ? match.franchise : "";
     const pt = match && !isPlaceholder(match.ponto) ? match.ponto : "";
     const onlineMins = sumOrNull(slots.map((x) => x.row.online_mins));
-    const acceptCnt = sumOrNull(slots.map((x) => x.perf?.acceptCnt));
-    const declinedCnt = sumOrNull(slots.map((x) => x.perf?.declinedCnt));
+    // 计数来自"班段 MAX"聚合(见上),不再取末批 raw —— 末批没点到卡片时
+    // 旧算法会把整个班段算丢。
+    const slotMax = (k: CntKey) => sumOrNull(slots.map((x) => maxBySlot.get(`${key}|${x.slot}`)?.[k]));
+    const acceptCnt = slotMax("accept_cnt");
+    const declinedCnt = slotMax("declined_cnt");
     // Day-level AR is recomputed from the summed counts (rates can't be
     // averaged across slots); %TSH is online-minutes-weighted.
     const ar = acceptCnt != null && declinedCnt != null && acceptCnt + declinedCnt > 0
@@ -171,8 +188,8 @@ export async function GET(request: Request) {
         tsh,
         acceptCnt,
         declinedCnt,
-        cancelledCnt: sumOrNull(slots.map((x) => x.perf?.cancelledCnt)),
-        delayedCnt: sumOrNull(slots.map((x) => x.perf?.delayedCnt)),
+        cancelledCnt: slotMax("cancelled_cnt"),
+        delayedCnt: slotMax("delayed_cnt"),
         joinTime: null,
       } as RiderShiftPerf,
     };

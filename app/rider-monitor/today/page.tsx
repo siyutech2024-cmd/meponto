@@ -109,6 +109,12 @@ export default function RiderTodayPage() {
         }
       />
 
+      {/* 七张卡齐全。计数口径(2026-08-07 定):
+          · 计数器每班段清零 → 服务端按「班段内 MAX、跨班段相加」还原当日累计,
+            不再依赖"班段末批恰好抓到卡片"(旧算法会把没抓到的班段整段算丢)
+          · "接单"是平台的**派单邀约**口径 —— 系统直派的单没有"接"这个动作,
+            所以接单 < 完单是正常现象,下面一行小字向看板用户说明,免得再被
+            当成 bug 报上来 */}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-7">
         <StatCard label={t("rtRidersToday")} value={s?.riders ?? 0} />
         <StatCard label={t("rmFinishedCnt")} value={s?.finished ?? 0} />
@@ -118,6 +124,7 @@ export default function RiderTodayPage() {
         <StatCard label={t("rmCancelledCnt")} value={s?.cancelled ?? 0} />
         <StatCard label={t("rmDelayedCnt")} value={s?.delayed ?? 0} />
       </div>
+      <div className="mt-2 text-[11px] font-bold text-[var(--muted)]">{t("rtAcceptNote")}</div>
 
       <div className="mb-3 mt-5 flex flex-wrap items-center gap-2">
         <div className="relative">
