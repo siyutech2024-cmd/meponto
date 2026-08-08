@@ -297,6 +297,11 @@ export default function StationDispatchPage() {
           shift={openShifts.find((row) => row.shift.id === shiftId)?.shift ?? null}
           franchise={franchise}
           fixedStation={station}
+          weekShifts={
+            openShifts.find((row) => row.shift.id === shiftId)?.shift.pool === "pro"
+              ? openShifts.filter((row) => row.shift.pool === "pro").map((row) => row.shift)
+              : []
+          }
           headers={headers}
           signups={board.signups}
           onDone={(text) => { setMessage({ tone: "ok", text }); void load(); }}

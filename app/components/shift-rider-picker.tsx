@@ -10,7 +10,7 @@ import type { DispatchShift, ShiftSignup } from "../lib/dispatch";
  * franchise (grouped by station); station mode lists only that station.
  */
 
-type RiderRow = { id: string; name: string; ninetyNineId?: string; cpf: string; franchise?: string; ponto: string; status: string };
+type RiderRow = { id: string; name: string; ninetyNineId?: string; cpf: string; franchise?: string; ponto: string; status: string; pool?: "standard" | "pro" };
 
 export function ShiftRiderPicker({
   shift,
@@ -20,6 +20,7 @@ export function ShiftRiderPicker({
   signups,
   onDone,
   onError,
+  weekShifts = [],
 }: {
   shift: DispatchShift | null;
   franchise: string;
@@ -28,6 +29,8 @@ export function ShiftRiderPicker({
   signups: ShiftSignup[];
   onDone: (text: string) => void;
   onError: (text: string) => void;
+  /** 本周与当前班次**同池**的全部班次 —— PRO 整周一键提报用。 */
+  weekShifts?: DispatchShift[];
 }) {
   const [riders, setRiders] = useState<RiderRow[]>([]);
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -44,15 +47,20 @@ export function ShiftRiderPicker({
 
   // Riders eligible for this picker: bound to the franchise (and station when
   // fixed), with a 99 ID (required by Eastwind reporting).
+  // 模式二:提报列表必须按池过滤。选中 PRO 班次时只列 PRO 骑手 ——
+  // 服务端本来就会拒掉混池提报,但让加盟商在 190 人里找自己的十几个 PRO、
+  // 提交后再看一串"não é PRO"的拒绝理由,是把校验当成了交互。
+  const shiftIsPro = shift?.pool === "pro";
   const pool = useMemo(() => {
     const term = query.trim().toLowerCase();
     return riders
       .filter((rider) => rider.ninetyNineId)
+      .filter((rider) => (shiftIsPro ? rider.pool === "pro" : rider.pool !== "pro"))
       .filter((rider) => !franchise || rider.franchise === franchise)
       .filter((rider) => !fixedStation || rider.ponto === fixedStation)
       .filter((rider) => !term || rider.name.toLowerCase().includes(term) || String(rider.ninetyNineId).includes(term))
       .sort((a, b) => a.ponto.localeCompare(b.ponto) || a.name.localeCompare(b.name));
-  }, [riders, franchise, fixedStation, query]);
+  }, [riders, franchise, fixedStation, query, shiftIsPro]);
 
   // Riders already signed up for the selected shift can't be re-submitted.
   const alreadyIn = useMemo(() => {
@@ -102,6 +110,48 @@ export function ShiftRiderPicker({
     else onDone(`已为 ${shift.date} ${shift.timeRange} 提报 ${created} 名骑手，待审核。`);
   }
 
+  /**
+   * PRO 整周一键提报。PRO 是全职、固定排班,常态是"这批人整周全班次都上"——
+   * 按班逐个提报要点 7天×3班 次。这里把选中的骑手循环提报到本周全部 PRO 班次;
+   * 服务端自带去重(duplicado 跳过)、池校验和配额校验,所以重复点也安全,
+   * 汇总结果一次告知。
+   */
+  async function submitWeek() {
+    if (!shift || weekShifts.length === 0) return;
+    const chosen = selectable.filter((rider) => selected.has(rider.id));
+    if (chosen.length === 0) return;
+    setBusy(true);
+    let created = 0;
+    let failed = 0;
+    for (const target of weekShifts) {
+      const byStation = new Map<string, RiderRow[]>();
+      for (const rider of chosen) {
+        const stationName = fixedStation || rider.ponto || "Unassigned";
+        byStation.set(stationName, [...(byStation.get(stationName) ?? []), rider]);
+      }
+      for (const [stationName, group] of byStation) {
+        const response = await fetch("/api/dispatch", {
+          method: "POST",
+          headers,
+          body: JSON.stringify({
+            action: "signup",
+            shiftId: target.id,
+            franchise,
+            station: stationName,
+            riders: group.map((rider) => ({ riderName: rider.name, rider99Id: rider.ninetyNineId, riderCpf: rider.cpf })),
+          }),
+        });
+        const payload = await response.json().catch(() => ({}));
+        if (response.ok) created += Number(payload.data?.created ?? 0);
+        else failed += group.length;
+      }
+    }
+    setBusy(false);
+    setSelected(new Set());
+    if (failed > 0) onError(`整周提报:新增 ${created} 条,部分失败(${failed})。`);
+    else onDone(`已把 ${chosen.length} 名 PRO 骑手提报到本周 ${weekShifts.length} 个 PRO 班次(新增 ${created} 条,已存在的自动跳过),待审核。`);
+  }
+
   if (!shift) {
     return (
       <div className="panel grid min-h-48 place-items-center p-6 text-center text-sm font-bold text-[var(--muted)]">
@@ -116,6 +166,7 @@ export function ShiftRiderPicker({
         <div className="text-xs font-black uppercase text-[var(--accent)]">
           <UserCheck size={14} className="mr-1 inline" />
           提报骑手 · {shift.date} {shift.timeRange}
+          {shiftIsPro && <span className="ml-1.5 rounded-full px-1.5 py-[1px] text-[9px]" style={{ background: "#eda100", color: "#171b33" }}>PRO</span>}
         </div>
         <span className="tag">{selected.size} / {selectable.length} 可选</span>
       </div>
@@ -141,7 +192,11 @@ export function ShiftRiderPicker({
       </label>
 
       <div className="max-h-[380px] flex-1 space-y-1 overflow-y-auto pr-1">
-        {pool.length === 0 && <div className="py-6 text-center text-sm font-bold text-[var(--muted)]">没有可提报的骑手（需要绑定 99ID{fixedStation ? " 且属于本站" : ""}）。</div>}
+        {pool.length === 0 && (
+          <div className="py-6 text-center text-sm font-bold text-[var(--muted)]">
+            {shiftIsPro ? "没有可提报的 PRO 骑手（PRO 班次只能提报 PRO 池骑手）。" : `没有可提报的骑手（需要绑定 99ID${fixedStation ? " 且属于本站" : ""}）。`}
+          </div>
+        )}
         {pool.map((rider) => {
           const taken = alreadyIn.has(rider.ninetyNineId!);
           return (
@@ -180,8 +235,19 @@ export function ShiftRiderPicker({
         onClick={() => void submit()}
         className="mt-3 inline-flex h-11 w-full items-center justify-center gap-2 rounded-[8px] bg-[var(--accent)] text-sm font-black uppercase text-[var(--accent-ink)] hover:bg-[var(--accent-strong)] disabled:opacity-50"
       >
-        <Send size={15} /> 提报 {selected.size} 名骑手
+        <Send size={15} /> 提报 {selected.size} 名骑手 · 本班次
       </button>
+      {shiftIsPro && weekShifts.length > 1 && (
+        <button
+          type="button"
+          disabled={busy || selected.size === 0}
+          onClick={() => void submitWeek()}
+          className="mt-2 inline-flex h-11 w-full items-center justify-center gap-2 rounded-[8px] text-sm font-black uppercase disabled:opacity-50"
+          style={{ background: "#eda100", color: "#171b33" }}
+        >
+          <Send size={15} /> 提报到本周全部 PRO 班次（{weekShifts.length} 班）
+        </button>
+      )}
     </div>
   );
 }

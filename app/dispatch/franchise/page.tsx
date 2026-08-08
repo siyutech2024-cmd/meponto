@@ -444,6 +444,7 @@ export default function FranchiseDispatchPage() {
           <ShiftRiderPicker
             shift={activeRow?.shift ?? null}
             franchise={franchise}
+            weekShifts={activeRow?.shift.pool === "pro" ? proShifts.map((row) => row.shift) : []}
             headers={headers}
             signups={board.signups}
             onDone={(text) => { setMessage({ tone: "ok", text }); void load(); }}

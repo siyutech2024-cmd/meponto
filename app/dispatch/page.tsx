@@ -854,8 +854,14 @@ function ReviewTab({ board, onAction, setMessage, network }: { board: Board; onA
   const [station, setStation] = useState("");
   const [ridersText, setRidersText] = useState("");
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  // 模式二:审核队列按池过滤。PRO 提报每周固定一大批 —— 点「PRO」chip →
+  // 全选 → 通过,三下清完,不用在混合队列里逐条挑。
+  const [poolChip, setPoolChip] = useState<"" | "pro" | "standard">("");
 
-  const pending = board.signups.filter((signup) => signup.status === "submitted");
+  const shiftPoolById = new Map(board.shifts.map((shift) => [shift.id, shift.pool === "pro" ? "pro" : "standard"]));
+  const pendingAll = board.signups.filter((signup) => signup.status === "submitted");
+  const pending = pendingAll.filter((signup) => !poolChip || shiftPoolById.get(signup.shiftId) === poolChip);
+  const pendingProCnt = pendingAll.filter((signup) => shiftPoolById.get(signup.shiftId) === "pro").length;
   const input = "h-11 w-full rounded-[8px] border border-[var(--line)] bg-[var(--surface)] px-3 text-sm font-bold outline-none focus:border-[var(--accent)]";
 
   const toggle = (id: string) => {
@@ -1036,6 +1042,27 @@ function ReviewTab({ board, onAction, setMessage, network }: { board: Board; onA
               />
               {t("dpPendingQueue", { n: pending.length })}
             </label>
+          }
+          desc={
+            <div className="mt-1 flex gap-1.5">
+              {([["", `全部 ${pendingAll.length}`], ["pro", `PRO ${pendingProCnt}`], ["standard", `普通 ${pendingAll.length - pendingProCnt}`]] as const).map(([key, label]) => (
+                <button
+                  key={key}
+                  type="button"
+                  onClick={() => { setPoolChip(key); setSelected(new Set()); }}
+                  className="inline-flex h-7 items-center rounded-full px-2.5 text-[10px] font-black uppercase"
+                  style={
+                    poolChip === key
+                      ? key === "pro"
+                        ? { background: "#eda100", color: "#171b33" }
+                        : { background: "var(--text)", color: "var(--bg)" }
+                      : { border: "1px solid var(--line)", color: "var(--muted-strong)" }
+                  }
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
           }
           right={
             <div className="flex gap-2">
