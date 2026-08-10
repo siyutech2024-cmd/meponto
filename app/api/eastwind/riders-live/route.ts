@@ -31,12 +31,16 @@ const CAT_BY_CODE: Record<string, { cat: Cat; label: string }> = {
 // Classify by status TEXT first (the displayed status), code only as fallback.
 // IMPORTANT: "Não está online" (未履约/未上线) contains "online" but is negated,
 // so the not-online check must run BEFORE the online check.
+// ⚠ "Ausente"(离开/挂起)不是未上线!用户 2026-08-10 实锤:Ausente 骑手
+// 有 28 分钟在线 + 28 分钟休息记录 —— 是登录后的暂离状态,和 Em pausa
+// 一样归"在线"档。之前把它并进未上线,导致未上线卡比 99 官方多出几人。
+// 修完之后:未上线卡 = 99 看板 Não está online 的原数。
 function classify(statusCode: string | null, statusStr: string | null): { cat: Cat; label: string } {
   const s = (statusStr || "").toLowerCase();
   if (/entregando|em rota/.test(s)) return { cat: "delivering", label: "配送中" };
-  if (/não está online|nao esta online|não conectado|nao conectado|ausente|offline|desconect|未履约|未上线|未在线/.test(s))
+  if (/não está online|nao esta online|não conectado|nao conectado|offline|desconect|未履约|未上线|未在线/.test(s))
     return { cat: "notOnline", label: "未上线" };
-  if (/conectado|em pausa|pausa|\bonline\b/.test(s)) return { cat: "online", label: "在线" };
+  if (/conectado|em pausa|pausa|ausente|\bonline\b/.test(s)) return { cat: "online", label: "在线" };
   if (/abaixo|expectativ|不及预期/.test(s)) return { cat: "below", label: "不及预期" };
   if (/fora|área|area|不在区域/.test(s)) return { cat: "outArea", label: "不在区域内" };
   const byCode = statusCode != null ? CAT_BY_CODE[String(statusCode)] : undefined;
