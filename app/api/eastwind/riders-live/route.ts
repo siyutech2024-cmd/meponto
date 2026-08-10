@@ -51,6 +51,7 @@ type SnapshotRow = {
   hot_zone: string | null; vehicle: string | null; online_mins: number | null; rest_mins: number | null;
   finished_cnt: number | null; lat: number | null; lng: number | null;
   error_show: string | null; raw: unknown;
+  source?: string | null;
 };
 
 export async function GET(request: Request) {
@@ -115,36 +116,54 @@ export async function GET(request: Request) {
     })();
     const { data: kpiRows } = await client
       .from("rider_kpi_snapshots")
-      .select("captured_at, ar, caa, accept_cnt, overtime, tsh, finished_cnt")
+      .select("captured_at, source, ar, caa, accept_cnt, overtime, tsh, finished_cnt")
       .gte("captured_at", spDayStart)
       .order("captured_at", { ascending: true })
-      .limit(500); // 3 分钟一批,一天最多 ~240 批
+      .limit(1000); // 两个源 × 3 分钟一批,一天最多 ~480 批
     if (kpiRows && kpiRows.length) {
-      type KRow = { captured_at: string; ar: number | null; caa: number | null; accept_cnt: number | null; overtime: number | null; tsh: number | null; finished_cnt: number | null };
-      const rows = kpiRows as KRow[];
-      // 定位当前班段起点:计数从高位明显回落 = 新班段开始。
-      let slotStart = 0;
-      let acceptMax = 0, finishedMax = 0;
-      for (let i = 0; i < rows.length; i += 1) {
-        const a = rows[i].accept_cnt ?? 0, f = rows[i].finished_cnt ?? 0;
-        if (a < acceptMax * 0.5 && f < finishedMax * 0.5 && (acceptMax > 5 || finishedMax > 5)) {
-          slotStart = i;
-          acceptMax = 0; finishedMax = 0;
-        }
-        if (a > acceptMax) acceptMax = a;
-        if (f > finishedMax) finishedMax = f;
+      type KRow = { captured_at: string; source?: string | null; ar: number | null; caa: number | null; accept_cnt: number | null; overtime: number | null; tsh: number | null; finished_cnt: number | null };
+      // ⚠ 必须**分源**统计:两个 Eastwind 账号各有自己的城市计数器,量级差
+      // 两个数量级(主号几百 vs PRO 个位数)。混在一个序列里,PRO 的小读数
+      // 会被"计数明显回落"的换班检测当成换班,班段起点被反复误判。
+      const grouped = new Map<string, KRow[]>();
+      for (const row of kpiRows as KRow[]) {
+        const src = row.source ?? "main";
+        const list = grouped.get(src) ?? [];
+        list.push(row);
+        grouped.set(src, list);
       }
-      // 当前班段内最新的有读数批次(跳过换班空窗的全 0/NULL 批)。
-      const slot = rows.slice(slotStart);
-      const lastRated = [...slot].reverse().find((row) => row.ar != null || (row.accept_cnt ?? 0) > 0 || (row.finished_cnt ?? 0) > 0);
-      kpi = {
-        ar: lastRated?.ar ?? null,
-        caa: lastRated?.caa ?? null,
-        accept_cnt: lastRated?.accept_cnt ?? 0,
-        overtime: lastRated?.overtime ?? null,
-        tsh: lastRated?.tsh ?? null,
-        finished_cnt: lastRated?.finished_cnt ?? 0,
-      };
+      const perSource: KRow[] = [];
+      for (const rows of grouped.values()) {
+        // 定位当前班段起点:计数从高位明显回落 = 新班段开始。
+        let slotStart = 0;
+        let acceptMax = 0, finishedMax = 0;
+        for (let i = 0; i < rows.length; i += 1) {
+          const a = rows[i].accept_cnt ?? 0, f = rows[i].finished_cnt ?? 0;
+          if (a < acceptMax * 0.5 && f < finishedMax * 0.5 && (acceptMax > 5 || finishedMax > 5)) {
+            slotStart = i;
+            acceptMax = 0; finishedMax = 0;
+          }
+          if (a > acceptMax) acceptMax = a;
+          if (f > finishedMax) finishedMax = f;
+        }
+        // 当前班段内最新的有读数批次(跳过换班空窗的全 0/NULL 批)。
+        const slot = rows.slice(slotStart);
+        const lastRated = [...slot].reverse().find((row) => row.ar != null || (row.accept_cnt ?? 0) > 0 || (row.finished_cnt ?? 0) > 0);
+        if (lastRated) perSource.push(lastRated);
+      }
+      if (perSource.length) {
+        // 计数可加(两个账号的骑手集不相交);比率不可加,取主导源
+        // (完单多的那个 —— 即主号)的读数,量级上就是全城比率。
+        const dom = perSource.reduce((a, b) => ((b.finished_cnt ?? 0) > (a.finished_cnt ?? 0) ? b : a));
+        kpi = {
+          ar: dom.ar ?? null,
+          caa: dom.caa ?? null,
+          overtime: dom.overtime ?? null,
+          tsh: dom.tsh ?? null,
+          accept_cnt: perSource.reduce((n, r) => n + (r.accept_cnt ?? 0), 0),
+          finished_cnt: perSource.reduce((n, r) => n + (r.finished_cnt ?? 0), 0),
+        };
+      }
     }
   }
 
@@ -177,9 +196,11 @@ export async function GET(request: Request) {
       hotZone: s.hot_zone, vehicle: s.vehicle, onlineMins: s.online_mins, restMins: s.rest_mins,
       finishedCnt: s.finished_cnt, lat: s.lat, lng: s.lng,
       franchise: match?.franchise || "", ponto: match?.ponto || "", leader: match?.leader || "",
-      // 模式二: pool membership for the PRO realtime monitor view (VPS
-      // scraper feeds the snapshots; this joins them to the rider's pool).
-      pool: match?.pool === "pro" ? "pro" : "standard",
+      // 模式二: pool membership for the PRO realtime monitor view.
+      // 规则(业务方 2026-08-10 定):在新 Eastwind(PRO 账号)看板上出现
+      // 即为 PRO —— 快照的 source 直接定池,档案匹配只是补充(没建档 /
+      // 还没被入库自动标记的骑手也立即显示为 PRO,不会误归普通池)。
+      pool: s.source === "pro" || match?.pool === "pro" ? "pro" : "standard",
       // "Unassigned" is the placeholder franchise for auto-materialized
       // profiles — those riders are NOT assigned yet (the 只看未归属 filter
       // was matching nobody because the placeholder string is truthy).

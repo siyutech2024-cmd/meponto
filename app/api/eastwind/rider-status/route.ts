@@ -91,6 +91,19 @@ export async function POST(request: Request) {
     result.ridersInserted = snapshots.length;
     result.kpiCaptured = true;
     result.source = source;
+
+    // 模式二规则(业务方 2026-08-10 定):出现在新 Eastwind(PRO 账号)看板
+    // 上的骑手 = PRO 骑手,档案 pool 自动置 'pro',不再人工维护。
+    // DB 端定点 UPDATE(见迁移 20260810120000),幂等;失败不阻塞入库 ——
+    // 实时快照是主产物,标记下一批(3 分钟)自然补上。
+    if (source === "pro" && snapshots.length) {
+      const extIds = [...new Set(snapshots.map((s) => s.rider_ext_id).filter(Boolean))] as string[];
+      if (extIds.length) {
+        const { data: tagged, error: tagErr } = await client.rpc("eastwind_autotag_pro", { p_ext_ids: extIds });
+        if (tagErr) result.autoTagError = tagErr.message;
+        else result.autoTaggedPro = tagged ?? 0;
+      }
+    }
   }
 
   // --- delivery → upsert by order_no (waybill board; disabled for now) -----
