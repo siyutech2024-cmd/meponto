@@ -32,7 +32,7 @@ import { Trophy, ArrowLeft, Flame } from "lucide-react";
  */
 
 type Entry = { rank: number; name: string; rider99Id: string; orders: number; pool: "standard" | "pro"; isMe: boolean };
-type Board = { top: Entry[]; me: Entry | null; total: number; date?: string; from?: string; to?: string };
+type Board = { top: Entry[]; me: Entry | null; total: number; date?: string; from?: string; to?: string; live?: boolean };
 type Payload = { enabled: boolean; updatedAt?: string | null; daily?: Board | null; weekly?: Board | null };
 
 const GOLD = "#eda100";
@@ -367,7 +367,7 @@ export default function RiderRankingPage() {
           <>
             {bothOn && (
               <div className="relative flex gap-2">
-                {([["daily", "Último dia", <Flame key="f" size={13} />], ["weekly", "Esta semana", <Trophy key="t" size={13} />]] as const).map(([key, label, icon]) => (
+                {([["daily", daily?.live ? "Hoje" : "Último dia", <Flame key="f" size={13} />], ["weekly", "Esta semana", <Trophy key="t" size={13} />]] as const).map(([key, label, icon]) => (
                   <button
                     key={key}
                     type="button"
@@ -388,19 +388,36 @@ export default function RiderRankingPage() {
             {/* key 让切 tab 时整块重新播一次进场动画 —— 否则切换毫无反馈,
                 会让人以为没点上。 */}
             <div key={tab} style={{ animation: "pop .26s ease-out both" }}>
-              {/* 副标题必须带日期 —— 这是「昨天」的榜,不写清楚骑手会当成今天的。 */}
-              {tab === "daily" && <BoardView board={daily} subtitle={daily?.date ? `Dia ${daily.date}` : ""} />}
+              {/* 实时日榜写明"今天·半小时更新";回退 T+1 时必须带日期 ——
+                  那是「昨天」的榜,不写清楚骑手会当成今天的。 */}
+              {tab === "daily" && (
+                <BoardView
+                  board={daily}
+                  subtitle={daily?.live ? "Hoje · atualiza a cada 30 min" : daily?.date ? `Dia ${daily.date}` : ""}
+                />
+              )}
               {tab === "weekly" && <BoardView board={weekly} subtitle={weekly ? `${weekly.from} – ${weekly.to}` : ""} />}
             </div>
 
-            {/* 口径声明 —— 必须写,否则骑手会拿榜单去质疑工资。 */}
+            {/* 口径声明 —— 必须写,否则骑手会拿榜单去质疑工资。
+                日榜实时时要说清:今天是实时的"部分"数据,最终以确认报表为准。 */}
             <div className="panel p-3 text-[11px] font-bold leading-relaxed text-[var(--muted)]">
-              O ranking usa o relatório confirmado — o mesmo número do seu pagamento e da avaliação semanal.
-              Por isso o dia de hoje entra amanhã, quando o relatório é fechado.
-              {data.updatedAt && (
+              {daily?.live ? (
                 <>
-                  <br />
-                  Último dia disponível: {String(data.updatedAt).slice(0, 10)}
+                  O ranking de hoje é parcial, em tempo real, e atualiza a cada 30 minutos.
+                  A semana usa o relatório confirmado — o mesmo número do seu pagamento.
+                  O número final de hoje fecha amanhã, no relatório.
+                </>
+              ) : (
+                <>
+                  O ranking usa o relatório confirmado — o mesmo número do seu pagamento e da avaliação semanal.
+                  Por isso o dia de hoje entra amanhã, quando o relatório é fechado.
+                  {data.updatedAt && (
+                    <>
+                      <br />
+                      Último dia disponível: {String(data.updatedAt).slice(0, 10)}
+                    </>
+                  )}
                 </>
               )}
             </div>

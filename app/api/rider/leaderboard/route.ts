@@ -46,7 +46,18 @@ import type { Rider } from "../../../lib/data";
 const AGG_TTL_MS = 300_000;
 const aggCache = new Map<string, { at: number; rows: Agg[]; week: { from: string; to: string } }>();
 
+/**
+ * ── 日榜:当日实时(业务方 2026-08-10 定,"按当日数据统计,每半小时更新")
+ * 快照按 (骑手,班段) MAX 相加 = 当日累计(与当日数据页同一算法,聚合在
+ * 库内 RPC rider_today_orders 完成)。30 分钟缓存 = 更新节奏本身。
+ * 当天还没数据(清晨/收班后导表前)→ 回退 T+1 最新一天,页面照常。
+ * 周榜不动:仍是 T+1 确认报表 —— 和结算同源,骑手拿周榜对工资仍然对得上。
+ */
+const TODAY_TTL_MS = 1_800_000;
+let todayCache: { at: number; date: string; rows: TodayAgg[] } | null = null;
+
 type Agg = { rider_ext_id: string; rider_name: string | null; day_orders: number; week_orders: number; ref_day: string | null };
+type TodayAgg = { rider_ext_id: string; rider_name: string | null; day_orders: number };
 type Entry = { rank: number; name: string; rider99Id: string; orders: number; pool: "standard" | "pro"; isMe: boolean };
 
 /** 圣保罗当地日期(YYYY-MM-DD)。榜单是给骑手看的,必须用他们的日历。 */
@@ -119,8 +130,20 @@ export async function GET(request: Request) {
     aggCache.clear();
     aggCache.set(cacheKey, { at: Date.now(), rows, week });
   }
-  // 日榜那天 = 报表里最新有数据的一天(通常是昨天)。
+  // 日榜那天 = 报表里最新有数据的一天(通常是昨天)—— 仅作实时空档的回退。
   const refDay = rows[0]?.ref_day ?? null;
+
+  // 当日实时榜(30 分钟缓存;失败或为空都回退 T+1,不让日榜消失)。
+  let todayRows: TodayAgg[] = [];
+  if (todayCache && todayCache.date === today && Date.now() - todayCache.at < TODAY_TTL_MS) {
+    todayRows = todayCache.rows;
+  } else {
+    const { data: liveRows, error: liveErr } = await supabase.rpc("rider_today_orders");
+    if (!liveErr && liveRows) {
+      todayRows = liveRows as TodayAgg[];
+      todayCache = { at: Date.now(), date: today, rows: todayRows };
+    }
+  }
 
   // 调用者是谁(用来标出"我"的名次)。
   const session = await sessionFromRequest(request);
@@ -136,8 +159,8 @@ export async function GET(request: Request) {
   const riders = await fetchRows<Rider>("riders");
   const poolMap = new Map(riders.filter((r) => r.ninetyNineId).map((r) => [String(r.ninetyNineId), r.pool === "pro" ? "pro" as const : "standard" as const]));
 
-  const rank = (pick: (row: Agg) => number): Entry[] =>
-    rows
+  const rankList = <T extends { rider_ext_id: string; rider_name: string | null }>(list: T[], pick: (row: T) => number): Entry[] =>
+    list
       .filter((row) => pick(row) > 0)
       .sort((a, b) => pick(b) - pick(a) || (a.rider_name ?? "").localeCompare(b.rider_name ?? ""))
       .map((row, index) => ({
@@ -148,6 +171,7 @@ export async function GET(request: Request) {
         pool: poolMap.get(row.rider_ext_id) ?? "standard",
         isMe: row.rider_ext_id === meId,
       }));
+  const rank = (pick: (row: Agg) => number): Entry[] => rankList(rows, pick);
 
   /** 截到 topN,但如果"我"在榜外,把我那一行附在后面。 */
   const cut = (all: Entry[]) => {
@@ -161,7 +185,13 @@ export async function GET(request: Request) {
       enabled: true,
       // 报表最新一天 —— 页面上要显示"这是哪天的榜",否则骑手会以为是今天的。
       updatedAt: refDay,
-      daily: config.daily ? { date: refDay ?? "", ...cut(rank((row) => row.day_orders)) } : null,
+      // 当天有实时数据 → 今日实时榜(live 标记,页面显示"今天·半小时更新");
+      // 否则回退 T+1 最新一天,行为与旧版完全一致。
+      daily: config.daily
+        ? todayRows.length > 0
+          ? { date: today, live: true, ...cut(rankList(todayRows, (row) => row.day_orders)) }
+          : { date: refDay ?? "", live: false, ...cut(rank((row) => row.day_orders)) }
+        : null,
       // to 给的是本周日,不是今天 —— 界面要显示完整周期,骑手才知道还有几天可以追。
       weekly: config.weekly ? { from: week.from, to: week.to, ...cut(rank((row) => row.week_orders)) } : null,
     },
