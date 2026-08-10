@@ -102,19 +102,24 @@ async function performanceDirect(url: URL): Promise<Response | null> {
       const rows = factRead
         ? await kpisByRider99(nineId)
         : await fetchRows<RiderDailyKpi>("riderDailyKpis", [{ op: "eq", field: "rider99Id", value: nineId }]);
-      const latest = rows.sort((a, b) => b.date.localeCompare(a.date))[0];
-      if (!latest) return jsonResponse({ data: null });
+      const sorted = rows.sort((a, b) => b.date.localeCompare(a.date));
+      if (!sorted.length) return jsonResponse({ data: null });
+      // 同一天可能有 main + pro 两行(骑手周中入池/双号并行时)。只取一行会
+      // 让 APP 里"我的状态"单量偏少 —— 合并同日所有行:数量相加,
+      // 百分率复用 aggregateKpis 的口径(与看板一致,别自创第二种平均)。
+      const latestDate = sorted[0].date;
+      const merged = aggregateKpis(sorted.filter((row) => row.date === latestDate), latestDate);
       // Full six T+1 indicators (orders / online hours / TSH / AR / CAA /
       // overtime) so the rider app renders the complete status grid.
       return jsonResponse({
         data: {
-          date: latest.date,
-          completedOrders: latest.completedOrders,
-          onlineHours: latest.onlineHours,
-          tsh: latest.tsh,
-          ar: latest.ar,
-          caa: latest.caa,
-          overtime: latest.overtime,
+          date: latestDate,
+          completedOrders: merged.completedOrders,
+          onlineHours: merged.onlineHours,
+          tsh: merged.tsh,
+          ar: merged.ar,
+          caa: merged.caa,
+          overtime: merged.overtime,
         },
       });
     }

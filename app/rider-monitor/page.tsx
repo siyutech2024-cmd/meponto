@@ -31,6 +31,7 @@ type Payload = {
   capturedAt: string | null;
   kpi: { ar: number | null; caa: number | null; acceptCnt: number | null; overtime: number | null; tsh: number | null; finishedCnt: number | null } | null;
   kpiPro: { ar: number | null; caa: number | null; acceptCnt: number | null; overtime: number | null; tsh: number | null; finishedCnt: number | null } | null;
+  scopeKpiPro: { ar: number | null; caa: number | null; acceptCnt: number | null; overtime: number | null; tsh: number | null; finishedCnt: number | null } | null;
   scopeKpi: { ar: number | null; caa: number | null; acceptCnt: number | null; overtime: number | null; tsh: number | null; finishedCnt: number | null } | null;
   riders: LiveRider[];
   summary: { total: number; assigned: number; unassigned: number; finishedTotal: number; cats: Cats; byFranchise: AggRow[]; byPonto: AggRow[] };
@@ -343,9 +344,10 @@ export default function RiderMonitorPage() {
         const scopeKpiRow = data?.scopeKpi ?? null;
         const kpiRow = scopeKpiRow ?? kpi;
         if (!kpiRow) return null;
-        // PRO 副值只在总部城市视角显示:加盟商/站点的 scopeKpi 已按视角
-        // 聚合(含各自的 PRO 骑手),再叠一行全网 PRO 会数错对象。
-        const pro = scopeKpiRow ? null : data?.kpiPro ?? null;
+        // PRO 副值三级视角同步:总部用 kpiPro(PRO 账号的城市读数,口径最准);
+        // 加盟商/站点用 scopeKpiPro(**自家 PRO 骑手**按 scope 公式单独聚合,
+        // 不会把全网 PRO 数错到自家头上)。
+        const pro = scopeKpiRow ? data?.scopeKpiPro ?? null : data?.kpiPro ?? null;
         return (
           <div className="mt-3 flex flex-wrap gap-2">
             <KpiPill label="AR" value={pct(kpiRow.ar)} sub={pro ? pct(pro.ar) : null} />

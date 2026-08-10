@@ -280,13 +280,12 @@ export async function GET(request: Request) {
   //   %TSH = online-minutes-weighted mean of per-rider TSH
   // Count-based (exact) when the counters exist; falls back to the mean of
   // per-rider percentages only where Eastwind omitted counters entirely.
-  const scopeKpi = (() => {
-    if (!franchise && !ponto) return null; // HQ keeps the city KPI row
-    if (scoped.length === 0) return null;
+  const aggregateScopeKpi = (rowsIn: typeof scoped) => {
+    if (rowsIn.length === 0) return null;
     const r1 = (n: number) => Math.round(n * 10) / 10;
     let accept = 0, declined = 0, cancelled = 0, delayed = 0, finished = 0;
     let arSum = 0, arN = 0, caaSum = 0, caaN = 0, otSum = 0, otN = 0, tshWeighted = 0, tshWeight = 0;
-    for (const row of scoped) {
+    for (const row of rowsIn) {
       const p = row.perf;
       if (typeof p.acceptCnt === "number") accept += p.acceptCnt;
       if (typeof p.declinedCnt === "number") declined += p.declinedCnt;
@@ -311,7 +310,12 @@ export async function GET(request: Request) {
       tsh: tshWeight > 0 ? r1(tshWeighted / tshWeight) : null,
       finishedCnt: finished,
     };
-  })();
+  };
+  const isScopedView = Boolean(franchise || ponto);
+  const scopeKpi = isScopedView ? aggregateScopeKpi(scoped) : null; // HQ keeps the city KPI row
+  // 加盟商/站点视角的 PRO 副值:**自家 PRO 骑手**按同一套公式单独聚合。
+  // (总部视角的 PRO 副值走 kpiPro —— PRO 账号的城市读数,口径更准。)
+  const scopeKpiPro = isScopedView ? aggregateScopeKpi(scoped.filter((r) => r.pool === "pro")) : null;
 
   return jsonResponse({
     data: {
@@ -320,6 +324,7 @@ export async function GET(request: Request) {
       // PRO 源当前班次读数 —— 存在才带(PRO 收班/断供时为 null,前端不显示)。
       kpiPro: kpiPro ? { ar: kpiPro.ar, caa: kpiPro.caa, acceptCnt: kpiPro.accept_cnt, overtime: kpiPro.overtime, tsh: kpiPro.tsh, finishedCnt: kpiPro.finished_cnt } : null,
       scopeKpi,
+      scopeKpiPro,
       riders: scoped,
       summary: {
         total: scoped.length,
