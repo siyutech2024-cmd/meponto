@@ -51,10 +51,13 @@ export async function GET(request: Request) {
     const today = new Date(Date.now() - 864e5).toISOString().slice(0, 10);
     const WD_PT = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"];
     const DK = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"];
-    // 模式二 S1 (flag MODE2_POOL=on, default off): riders only see shifts of
-    // their own pool — PRO riders get the PRO plan, standard riders never see
-    // it. With the flag off behaviour is exactly as before (all shifts).
-    const poolFilterOn = process.env.MODE2_POOL === "on";
+    // 模式二 S1: riders only see shifts of their own pool — PRO riders get
+    // the PRO plan, standard riders never see it.
+    // 2026-08-10 默认翻转为【开】(业务方定"PRO 只显示 PRO 排班"):
+    // 灰度期的 default-off 使命已结束 —— PRO 全量上线,该开关在 Vercel
+    // 从未被设置过,等于功能做完一直没生效。保留 MODE2_POOL=off 作为
+    // 紧急关闭开关(设了 off 即回到全部可见的旧行为)。
+    const poolFilterOn = process.env.MODE2_POOL !== "off";
     const me = memory.riders.find((r) => r.name === session.name || r.id === session.userId);
     const myPool = me?.pool === "pro" ? "pro" : "standard";
     const mySignups = memory.shiftSignups.filter((g) => g.riderName === session.name);
