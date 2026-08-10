@@ -76,20 +76,43 @@ export async function GET(request: Request) {
 
   const client = getSupabaseServerClient();
   // TWO feeds write here (main VPS + PRO VPS, disjoint rider sets). Each
-  // source keeps its own 5-min cadence, so the live board is the UNION of
-  // each source's LATEST batch — one lagging feed must not hide the other.
-  const { data: latestRows, error: latestErr } = await client
-    .from("rider_status_snapshots")
-    .select("captured_at, source")
-    .order("captured_at", { ascending: false })
-    .limit(60);
-  if (latestErr) return jsonResponse({ error: latestErr.message }, { status: 500 });
+  // source keeps its own cadence, so the live board is the UNION of each
+  // source's LATEST batch — one lagging feed must not hide the other.
+  //
+  // ⚠ 修 bug(2026-08-10,PRO 上线当天用户实测"PRO 骑手时有时无"):
+  // 原来是拉"最近 60 行"再归类找各源最新批 —— 但快照是**一行一骑手**,
+  // 主号一批就是 63 行;只要主号批次比 PRO 新,60 行窗口全被主号占满,
+  // PRO 层整层消失。谁的批次新谁就把对方挤掉。现在按源各查最新一批。
+  const KNOWN_SOURCES = ["main", "pro"] as const;
   const latestBySource = new Map<string, string>();
-  for (const row of (latestRows ?? []) as Array<{ captured_at: string; source?: string }>) {
-    const src = row.source ?? "main";
-    if (!latestBySource.has(src)) latestBySource.set(src, row.captured_at);
+  const latestPerSource = await Promise.all(
+    KNOWN_SOURCES.map((src) =>
+      client
+        .from("rider_status_snapshots")
+        .select("captured_at")
+        .eq("source", src)
+        .order("captured_at", { ascending: false })
+        .limit(1)
+        .then((r) => ({ src, at: (r.data?.[0] as { captured_at: string } | undefined)?.captured_at ?? null, error: r.error })),
+    ),
+  );
+  for (const { error } of latestPerSource) {
+    if (error) return jsonResponse({ error: error.message }, { status: 500 });
   }
-  const capturedAt = [...latestBySource.values()].sort().reverse()[0] ?? null;
+  for (const { src, at } of latestPerSource) {
+    if (at) latestBySource.set(src, at);
+  }
+  // 新鲜度护栏:某源断供(会话掉线/服务停)时,它的"最新批"可能是几小时
+  // 前的,不能再当实时层展示。以最新的源为基准,落后超过 20 分钟的源剔除。
+  // 用相对基准而不是绝对时钟,收班后(两源都停)看板仍能显示最后状态。
+  const newest = [...latestBySource.values()].sort().reverse()[0] ?? null;
+  if (newest) {
+    const cutoff = new Date(new Date(newest).getTime() - 20 * 60_000).toISOString();
+    for (const [src, at] of latestBySource) {
+      if (at < cutoff) latestBySource.delete(src);
+    }
+  }
+  const capturedAt = newest;
 
   let snapshots: SnapshotRow[] = [];
   let kpi: Record<string, unknown> | null = null;
