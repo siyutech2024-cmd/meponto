@@ -24,18 +24,20 @@ type TodayRider = {
   key: string; riderExtId: string | null; name: string | null; phone: string | null;
   status: string | null; shift: string; hotZone: string | null; vehicle: string | null;
   onlineMins: number | null; restMins: number | null; finishedCnt: number | null;
-  franchise: string; ponto: string; lastSeenAt: string; perf: Perf | null;
+  franchise: string; ponto: string; pool?: "standard" | "pro"; lastSeenAt: string; perf: Perf | null;
 };
 type Payload = {
   date: string; batches: number; latestBatch: string | null; riders: TodayRider[];
-  summary: { riders: number; finished: number; onlineMins: number; accepted: number; declined: number; cancelled: number; delayed: number };
+  summary: { riders: number; ridersPro?: number; finished: number; finishedPro?: number; onlineMins: number; accepted: number; declined: number; cancelled: number; delayed: number };
 };
 
-function StatCard({ label, value }: { label: string; value: string | number }) {
+function StatCard({ label, value, sub }: { label: string; value: string | number; sub?: string | null }) {
   return (
     <div className="panel p-4">
       <div className="text-[10px] font-bold uppercase tracking-wider text-[var(--muted)]">{label}</div>
       <div className="mt-2 text-2xl font-extrabold tracking-tight text-[var(--text)] font-[family-name:var(--font-outfit)]">{value}</div>
+      {/* 模式二: 金色 PRO 小计 —— 与实时页 KPI 条、T+1 看板顶卡同一套语言。 */}
+      {sub != null && <div className="mt-0.5 text-[10px] font-bold" style={{ color: "#b97900" }}>PRO {sub}</div>}
     </div>
   );
 }
@@ -116,8 +118,8 @@ export default function RiderTodayPage() {
             所以接单 < 完单是正常现象,下面一行小字向看板用户说明,免得再被
             当成 bug 报上来 */}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-7">
-        <StatCard label={t("rtRidersToday")} value={s?.riders ?? 0} />
-        <StatCard label={t("rmFinishedCnt")} value={s?.finished ?? 0} />
+        <StatCard label={t("rtRidersToday")} value={s?.riders ?? 0} sub={s?.ridersPro ? String(s.ridersPro) : null} />
+        <StatCard label={t("rmFinishedCnt")} value={s?.finished ?? 0} sub={s?.ridersPro ? String(s.finishedPro ?? 0) : null} />
         <StatCard label={t("rtOnlineTotal")} value={hours(s?.onlineMins)} />
         <StatCard label={t("rmAcceptCnt")} value={s?.accepted ?? 0} />
         <StatCard label={t("rmDeclinedCnt")} value={s?.declined ?? 0} />
@@ -142,7 +144,10 @@ export default function RiderTodayPage() {
           headers={[t("rmColRider"), t("rmScopeFranchise"), t("rmScopePonto"), t("rmColShift"), t("rmFinishedCnt"), t("rmColOnlineMin"), t("rmAcceptCnt"), t("rmDeclinedCnt"), t("rmCancelledCnt"), t("rmDelayedCnt"), "AR", "%TSH", t("rtLastSeen")]}
           rows={filtered.map((r) => [
             <div key="n" className="flex flex-col">
-              <span className="font-bold text-[var(--text)]">{r.name || "—"}</span>
+              <span className="flex items-center gap-1.5 font-bold" style={r.pool === "pro" ? { color: "#b97900" } : undefined}>
+                <span className="text-inherit">{r.name || "—"}</span>
+                {r.pool === "pro" && <span className="shrink-0 rounded-full px-1.5 py-[1px] text-[9px] font-black" style={{ background: "#eda100", color: "#171b33" }}>PRO</span>}
+              </span>
               <span className="text-[11px] text-[var(--muted)]">{r.phone || "—"}</span>
             </div>,
             r.franchise
@@ -160,6 +165,7 @@ export default function RiderTodayPage() {
             pct(r.perf?.tsh),
             hhmm(r.lastSeenAt),
           ])}
+          rowAccent={(index) => filtered[index]?.pool === "pro"}
         />
       )}
       <p className="mt-3 text-[11px] text-[var(--muted)]">{t("rtNote")}</p>

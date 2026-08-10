@@ -32,6 +32,7 @@ type ScanRow = {
   finished_cnt: number | null;
   accept_cnt: number | null; declined_cnt: number | null;
   cancelled_cnt: number | null; delayed_cnt: number | null;
+  source: string | null;
 };
 
 export async function GET(request: Request) {
@@ -54,7 +55,7 @@ export async function GET(request: Request) {
   for (let from = 0; ; from += pageSize) {
     const { data, error } = await client
       .from("rider_status_snapshots")
-      .select("captured_at, rider_ext_id, rider_name, phone, id_no, status, shift_start, shift_end, hot_zone, vehicle, online_mins, rest_mins, finished_cnt, accept_cnt, declined_cnt, cancelled_cnt, delayed_cnt")
+      .select("captured_at, rider_ext_id, rider_name, phone, id_no, status, shift_start, shift_end, hot_zone, vehicle, online_mins, rest_mins, finished_cnt, accept_cnt, declined_cnt, cancelled_cnt, delayed_cnt, source")
       .gte("captured_at", dayStart)
       .order("captured_at", { ascending: false })
       .range(from, from + pageSize - 1);
@@ -81,9 +82,12 @@ export async function GET(request: Request) {
   type CntKey = "accept_cnt" | "declined_cnt" | "cancelled_cnt" | "delayed_cnt";
   const CNT_KEYS: CntKey[] = ["accept_cnt", "declined_cnt", "cancelled_cnt", "delayed_cnt"];
   const maxBySlot = new Map<string, Record<CntKey, number | null>>();
+  // 模式二规则:出现在 PRO 源(新 Eastwind 账号)快照里的骑手 = PRO。
+  const proKeys = new Set<string>();
   for (const row of scan) {
     const key = riderKeyOf(row);
     if (!key) continue;
+    if (row.source === "pro") proKeys.add(key);
     const slotKey = `${key}|${slotOf(row)}`;
     if (!latestBySlot.has(slotKey)) latestBySlot.set(slotKey, row);
     const acc = maxBySlot.get(slotKey) ?? { accept_cnt: null, declined_cnt: null, cancelled_cnt: null, delayed_cnt: null };
@@ -179,6 +183,8 @@ export async function GET(request: Request) {
       finishedCnt: sumOrNull(slots.map((x) => x.row.finished_cnt)),
       franchise: fr,
       ponto: pt,
+      // 模式二: 池标记 —— PRO 源出现过即 PRO(source 是事实),档案匹配兜底。
+      pool: proKeys.has(key) || match?.pool === "pro" ? ("pro" as const) : ("standard" as const),
       lastSeenAt: s.captured_at,
       slots: slots.length,
       perf: {
@@ -213,6 +219,9 @@ export async function GET(request: Request) {
       riders: scoped,
       summary: {
         riders: scoped.length,
+        // PRO 小计(金色小字用):与 T+1 看板顶卡同一套"总数 + PRO 其中"口径。
+        ridersPro: scoped.filter((r) => r.pool === "pro").length,
+        finishedPro: scoped.filter((r) => r.pool === "pro").reduce((acc, r) => acc + (r.finishedCnt ?? 0), 0),
         finished: sum((r) => r.finishedCnt),
         onlineMins: sum((r) => r.onlineMins),
         accepted: sum((r) => r.perf?.acceptCnt),
