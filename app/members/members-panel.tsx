@@ -8,13 +8,21 @@ import type { Rider } from "../lib/data";
 /**
  * MembersPanel — 用户 / 会员表 body, one unified member list (公开用户 + 骑手).
  *  - 会员一级: member without a 99 ID (public user).
- *  - 会员二级+: member with a 99 ID (rider), tier by lifetime orders.
+ *  - 会员二级: member with a 99 ID (rider), tier by lifetime orders.
+ *  - 会员三级: PRO 池骑手(模式二,2026-08-10 定"所有 PRO 默认三级")——
+ *    跟着 pool 字段走,入池(含入库自动标记)自动升,退池自动回二级。
  * Reuses the existing riders collection — no separate data table.
  * Rendered by BOTH the PontoSys page (/members) and the PontoMall back-office
  * 会员 tab, so the logic lives exactly once (same pattern as PointsEconomyPanel).
  */
 
 function tierBadge(member: Rider) {
+  if (member.pool === "pro")
+    return (
+      <span className="inline-flex whitespace-nowrap rounded-[6px] border px-2 py-0.5 text-[11px] font-black" style={{ borderColor: "#eda100", background: "rgba(237,161,0,.12)", color: "#b97900" }}>
+        会员三级 · PRO 骑手
+      </span>
+    );
   return member.ninetyNineId
     ? <StatusBadge tone="info" label="会员二级 · 骑手" />
     : <StatusBadge tone="neutral" label="会员一级 · 公开用户" />;
@@ -24,7 +32,7 @@ export default function MembersPanel() {
   const [riders, setRiders] = useState<Rider[]>([]);
   const [loading, setLoading] = useState(true);
   const [q, setQ] = useState("");
-  const [filter, setFilter] = useState<"all" | "public" | "rider">("all");
+  const [filter, setFilter] = useState<"all" | "public" | "rider" | "pro">("all");
   const [page, setPage] = useState(1);
   const [selected, setSelected] = useState<Rider | null>(null);
 
@@ -44,6 +52,7 @@ export default function MembersPanel() {
       riders.filter((r) => {
         if (filter === "public" && r.ninetyNineId) return false;
         if (filter === "rider" && !r.ninetyNineId) return false;
+        if (filter === "pro" && r.pool !== "pro") return false;
         if (q && !`${r.name} ${r.phone} ${r.ninetyNineId ?? ""}`.toLowerCase().includes(q.toLowerCase())) return false;
         return true;
       }),
@@ -57,7 +66,8 @@ export default function MembersPanel() {
   const pagedRows = useMemo(() => rows.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE), [rows, safePage]);
 
   const publicCount = riders.filter((r) => !r.ninetyNineId).length;
-  const riderCount = riders.length - publicCount;
+  const proCount = riders.filter((r) => r.pool === "pro").length;
+  const riderCount = riders.length - publicCount - proCount;
 
   const columns: Array<DataColumn<Rider>> = [
     { key: "name", label: "姓名", render: (r) => r.name },
@@ -71,10 +81,11 @@ export default function MembersPanel() {
 
   return (
     <div>
-      <section className="mb-4 grid grid-cols-2 gap-3 md:grid-cols-3">
+      <section className="mb-4 grid grid-cols-2 gap-3 md:grid-cols-4">
         <Stat label="总会员" value={booting ? "…" : String(riders.length)} />
         <Stat label="公开用户（一级）" value={booting ? "…" : String(publicCount)} />
-        <Stat label="骑手（二级+）" value={booting ? "…" : String(riderCount)} />
+        <Stat label="骑手（二级）" value={booting ? "…" : String(riderCount)} />
+        <Stat label="PRO 骑手（三级）" value={booting ? "…" : String(proCount)} />
       </section>
 
       <div className="mb-3">
@@ -89,9 +100,9 @@ export default function MembersPanel() {
           }
         >
           <SearchInput value={q} onChange={(value) => { setQ(value); setPage(1); }} placeholder="搜索姓名 / 电话 / 99 ID" />
-          {(["all", "public", "rider"] as const).map((f) => (
+          {(["all", "public", "rider", "pro"] as const).map((f) => (
             <Chip key={f} active={filter === f} onClick={() => { setFilter(f); setPage(1); }}>
-              {f === "all" ? "全部" : f === "public" ? "公开用户" : "骑手"}
+              {f === "all" ? "全部" : f === "public" ? "公开用户" : f === "rider" ? "骑手" : "PRO 骑手"}
             </Chip>
           ))}
         </Toolbar>

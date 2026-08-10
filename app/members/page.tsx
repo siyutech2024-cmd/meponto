@@ -13,7 +13,7 @@ export default function MembersPage() {
     <AppShell>
       <PageTitle
         title="用户 / 会员"
-        eyebrow="公开用户 + 骑手 · 统一会员表（无 99 ID = 会员一级；有 99 ID = 会员二级起）"
+        eyebrow="公开用户 + 骑手 · 统一会员表（无 99 ID = 一级；骑手 = 二级；PRO 骑手 = 三级）"
       />
       <MembersPanel />
     </AppShell>
