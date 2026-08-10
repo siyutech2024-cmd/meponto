@@ -108,8 +108,11 @@ function Podium({ top }: { top: Entry[] }) {
               {initials(entry.name)}
               {champion && <span className="absolute -top-3 text-[18px] leading-none" style={{ animation: "bob 2.4s ease-in-out infinite" }}>👑</span>}
             </div>
-            <span className="mt-1.5 line-clamp-1 max-w-full text-center text-[11px] font-black text-white/90">
-              {shortName(entry.name)}
+            {/* PRO 标志:头像渐变色太隐晦(和金牌色几乎分不清),
+                加显式徽章,和榜单行同一款。 */}
+            <span className="mt-1.5 flex max-w-full items-center justify-center gap-1">
+              <span className="line-clamp-1 min-w-0 text-center text-[11px] font-black text-white/90">{shortName(entry.name)}</span>
+              {entry.pool === "pro" && <span className="shrink-0 rounded-full px-1 py-[1px] text-[8px] font-black tracking-wide" style={{ background: `linear-gradient(135deg, ${GOLD}, #ffce4d)`, color: "#171b33" }}>PRO</span>}
             </span>
             <span className="text-[15px] font-black tabular-nums" style={{ color: medal }}>{entry.orders}</span>
             <div
@@ -179,9 +182,12 @@ function Row({ entry, max, count, delay }: { entry: Entry; max: number; count: n
       >
         {initials(entry.name)}
       </span>
-      <span className="relative min-w-0 flex-1 truncate text-[13px] font-black" style={isPro ? { color: "#8a5c00" } : undefined}>
-        {entry.name}
-        {isPro && <span className="ml-1.5 rounded-full px-1.5 py-[1px] text-[9px] font-black" style={{ background: GOLD, color: "#171b33" }}>PRO</span>}
+      {/* 徽章必须在 truncate 容器**外面**:放里面时长名字会把徽章一起裁掉,
+          只露出一条橙色残边(用户 2026-08-10 截图实锤)。名字自己截断,
+          徽章 shrink-0 永远完整可见。 */}
+      <span className="relative flex min-w-0 flex-1 items-center gap-1.5">
+        <span className="min-w-0 truncate text-[13px] font-black" style={isPro ? { color: "#8a5c00" } : undefined}>{entry.name}</span>
+        {isPro && <span className="shrink-0 rounded-full px-1.5 py-[1px] text-[10px] font-black tracking-wide" style={{ background: `linear-gradient(135deg, ${GOLD}, #ffce4d)`, color: "#171b33", boxShadow: "0 1px 4px rgba(237,161,0,.5)" }}>PRO</span>}
       </span>
       <span className="relative shrink-0 text-sm font-black tabular-nums" style={{ color: c1 }}>{entry.orders}</span>
     </div>
