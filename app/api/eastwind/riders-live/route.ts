@@ -284,6 +284,23 @@ export async function GET(request: Request) {
   //   %TSH = online-minutes-weighted mean of per-rider TSH
   // Count-based (exact) when the counters exist; falls back to the mean of
   // per-rider percentages only where Eastwind omitted counters entirely.
+  // 班段已过分钟数(圣保罗时钟):TSH 的权重底数。
+  // 例:14:00-18:00 班,现在 15:30 → 已过 90 分钟;班还没开始 → 0。
+  const spNowMin = (() => {
+    const sp = new Date(Date.now() - 3 * 3600_000);
+    return sp.getUTCHours() * 60 + sp.getUTCMinutes();
+  })();
+  const parseHM = (s: string): number | null => {
+    const m = /^(\d{1,2}):(\d{2})$/.exec(s.trim());
+    return m ? Number(m[1]) * 60 + Number(m[2]) : null;
+  };
+  const elapsedSlotMin = (shift: string): number => {
+    const [st, en] = shift.split("-");
+    const start = st != null ? parseHM(st) : null;
+    const end = en != null ? parseHM(en) : null;
+    if (start == null || end == null || end <= start) return 0;
+    return Math.max(0, Math.min(spNowMin, end) - start);
+  };
   const aggregateScopeKpi = (rowsIn: typeof scoped) => {
     if (rowsIn.length === 0) return null;
     const r1 = (n: number) => Math.round(n * 10) / 10;
@@ -299,10 +316,20 @@ export async function GET(request: Request) {
       if (typeof p.ar === "number") { arSum += p.ar; arN += 1; }
       if (typeof p.caa === "number") { caaSum += p.caa; caaN += 1; }
       if (typeof p.overtime === "number") { otSum += p.overtime; otN += 1; }
-      if (typeof p.tsh === "number") {
-        const weight = row.onlineMins && row.onlineMins > 0 ? row.onlineMins : 1;
-        tshWeighted += p.tsh * weight;
-        tshWeight += weight;
+      // ── TSH(2026-08-10 修口径,业务方指出):
+      // 旧算法只平均"有 TSH 读数"的骑手,还按在线分钟加权 —— 未上线的
+      // 骑手没有读数被整个排除,旷工不拉低团队 TSH,数字系统性虚高。
+      // 新口径:排了班就计入 —— 未上线按 0 计;权重 = 班段已过时长
+      // (同班段人人相等,跨班段长短公平;班段没开始的权重为 0 不参与)。
+      // 在线但读数缺失(抽取失败)的仍跳过,不冤枉人。
+      const elapsed = elapsedSlotMin(row.shift ?? "");
+      if (elapsed > 0) {
+        if (typeof p.tsh === "number") {
+          tshWeighted += p.tsh * elapsed;
+          tshWeight += elapsed;
+        } else if (row.cat === "notOnline") {
+          tshWeight += elapsed; // TSH=0,只加权重
+        }
       }
     }
     const offers = accept + declined;
