@@ -30,6 +30,7 @@ type AggRow = { name: string; total: number; finished: number } & Cats;
 type Payload = {
   capturedAt: string | null;
   kpi: { ar: number | null; caa: number | null; acceptCnt: number | null; overtime: number | null; tsh: number | null; finishedCnt: number | null } | null;
+  kpiPro: { ar: number | null; caa: number | null; acceptCnt: number | null; overtime: number | null; tsh: number | null; finishedCnt: number | null } | null;
   scopeKpi: { ar: number | null; caa: number | null; acceptCnt: number | null; overtime: number | null; tsh: number | null; finishedCnt: number | null } | null;
   riders: LiveRider[];
   summary: { total: number; assigned: number; unassigned: number; finishedTotal: number; cats: Cats; byFranchise: AggRow[]; byPonto: AggRow[] };
@@ -54,11 +55,14 @@ function StatCard({ label, value, color, big }: { label: string; value: number |
   );
 }
 
-function KpiPill({ label, value }: { label: string; value: string }) {
+function KpiPill({ label, value, sub }: { label: string; value: string; sub?: string | null }) {
   return (
     <div className="rounded-[8px] border border-[var(--line)] bg-[var(--surface-raised)] px-3 py-2">
       <div className="text-[10px] font-bold uppercase tracking-wider text-[var(--muted)]">{label}</div>
       <div className="mt-0.5 text-lg font-extrabold text-[var(--text)] font-[family-name:var(--font-outfit)]">{value}</div>
+      {/* 模式二: PRO 源副值 —— 与 T+1 看板顶卡的金色 PRO 小计同一套视觉
+          语言;PRO 数据存在才渲染,不占空行。 */}
+      {sub != null && <div className="mt-0.5 text-[10px] font-bold" style={{ color: "#b97900" }}>PRO {sub}</div>}
     </div>
   );
 }
@@ -237,6 +241,7 @@ export default function RiderMonitorPage() {
         .map((r) => ({
           key: riderKey(r), name: r.name || "—", phone: r.phone,
           statusText: catLabel(r), color: CAT_COLOR[r.cat], lat: r.lat as number, lng: r.lng as number,
+          pro: r.pool === "pro",
           // Hover tooltip summary lines (pre-localized).
           metaLines: [
             `${t("rmColShift")}: ${r.shift || "—"} · ${t("rmColZone")}: ${r.hotZone || "—"}`,
@@ -338,14 +343,17 @@ export default function RiderMonitorPage() {
         const scopeKpiRow = data?.scopeKpi ?? null;
         const kpiRow = scopeKpiRow ?? kpi;
         if (!kpiRow) return null;
+        // PRO 副值只在总部城市视角显示:加盟商/站点的 scopeKpi 已按视角
+        // 聚合(含各自的 PRO 骑手),再叠一行全网 PRO 会数错对象。
+        const pro = scopeKpiRow ? null : data?.kpiPro ?? null;
         return (
           <div className="mt-3 flex flex-wrap gap-2">
-            <KpiPill label="AR" value={pct(kpiRow.ar)} />
-            <KpiPill label="CAA" value={pct(kpiRow.caa)} />
-            <KpiPill label={t("rmAcceptCnt")} value={String(kpiRow.acceptCnt ?? "—")} />
-            <KpiPill label="Overtime" value={pct(kpiRow.overtime)} />
-            <KpiPill label="%TSH" value={pct(kpiRow.tsh)} />
-            <KpiPill label={t("rmFinishedCnt")} value={String(kpiRow.finishedCnt ?? "—")} />
+            <KpiPill label="AR" value={pct(kpiRow.ar)} sub={pro ? pct(pro.ar) : null} />
+            <KpiPill label="CAA" value={pct(kpiRow.caa)} sub={pro ? pct(pro.caa) : null} />
+            <KpiPill label={t("rmAcceptCnt")} value={String(kpiRow.acceptCnt ?? "—")} sub={pro ? String(pro.acceptCnt ?? "—") : null} />
+            <KpiPill label="Overtime" value={pct(kpiRow.overtime)} sub={pro ? pct(pro.overtime) : null} />
+            <KpiPill label="%TSH" value={pct(kpiRow.tsh)} sub={pro ? pct(pro.tsh) : null} />
+            <KpiPill label={t("rmFinishedCnt")} value={String(kpiRow.finishedCnt ?? "—")} sub={pro ? String(pro.finishedCnt ?? "—") : null} />
             <span className="ml-auto self-center text-[10px] text-[var(--muted)]">{scopeKpiRow ? t("rmKpiScopeNote") : t("rmKpiCityNote")}</span>
           </div>
         );

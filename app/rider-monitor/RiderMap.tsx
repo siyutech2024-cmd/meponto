@@ -20,9 +20,22 @@ export type MapRider = {
   color: string;
   lat: number;
   lng: number;
+  /** 模式二: PRO 骑手点位加金色描边环(填充色仍表状态,环表身份)。 */
+  pro?: boolean;
   /** Pre-localized summary lines shown in the hover tooltip (shift, zone, …). */
   metaLines?: string[];
 };
+
+/** PRO 身份色 —— 与列表徽章、监控 chips 同一个金。 */
+const PRO_GOLD = "#eda100";
+/** 点位样式:PRO = 金环加粗加大一号;普通 = 描边同填充色。 */
+const markerStyle = (r: MapRider) => ({
+  radius: r.pro ? 9 : 8,
+  color: r.pro ? PRO_GOLD : r.color,
+  weight: r.pro ? 3.5 : 2,
+  fillColor: r.color,
+  fillOpacity: 0.85,
+});
 
 const FOCUS_ZOOM = 16;
 const DEFAULT_CENTER: [number, number] = [-23.63, -46.66];
@@ -142,17 +155,13 @@ export default function RiderMap({
       const existing = markers.get(r.key);
       if (existing) {
         existing.setLatLng([r.lat, r.lng]);
-        existing.setStyle({ color: r.color, fillColor: r.color });
+        // 全量样式 —— pool 会被入库自动标记流转(普通→PRO),环得跟着变。
+        existing.setStyle(markerStyle(r));
+        existing.setRadius(r.pro ? 9 : 8);
         existing.setPopupContent(popupHtml(r));
         existing.setTooltipContent(tooltipHtml(r));
       } else {
-        const m = L.circleMarker([r.lat, r.lng], {
-          radius: 8,
-          color: r.color,
-          weight: 2,
-          fillColor: r.color,
-          fillOpacity: 0.85,
-        })
+        const m = L.circleMarker([r.lat, r.lng], markerStyle(r))
           .addTo(map)
           .bindPopup(popupHtml(r))
           // Hover card: rider summary (name, status, shift, zone, online, done).
@@ -200,11 +209,15 @@ export default function RiderMap({
 
 const esc = (s: string) => s.replace(/[<>&"]/g, (c) => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;", '"': "&quot;" }[c] as string));
 
+/** 弹窗/悬浮卡里的金色 PRO 徽章(与列表同款)。 */
+const proTag = (r: MapRider) =>
+  r.pro ? ` <span style="background:${PRO_GOLD};color:#171b33;border-radius:99px;padding:0 5px;font-size:10px;font-weight:900">PRO</span>` : "";
+
 function popupHtml(r: MapRider): string {
-  return `<b>${esc(r.name)}</b><br><span style="color:${esc(r.color)};font-weight:700">${esc(r.statusText)}</span>${r.phone ? `<br><small>${esc(r.phone)}</small>` : ""}`;
+  return `<b>${esc(r.name)}</b>${proTag(r)}<br><span style="color:${esc(r.color)};font-weight:700">${esc(r.statusText)}</span>${r.phone ? `<br><small>${esc(r.phone)}</small>` : ""}`;
 }
 
 function tooltipHtml(r: MapRider): string {
   const meta = (r.metaLines ?? []).map((l) => `<br><small>${esc(l)}</small>`).join("");
-  return `<b>${esc(r.name)}</b><br><span style="color:${esc(r.color)};font-weight:700">${esc(r.statusText)}</span>${meta}${r.phone ? `<br><small>${esc(r.phone)}</small>` : ""}`;
+  return `<b>${esc(r.name)}</b>${proTag(r)}<br><span style="color:${esc(r.color)};font-weight:700">${esc(r.statusText)}</span>${meta}${r.phone ? `<br><small>${esc(r.phone)}</small>` : ""}`;
 }
