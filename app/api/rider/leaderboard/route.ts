@@ -44,7 +44,7 @@ import type { Rider } from "../../../lib/data";
  * 缓存公共部分、每个请求再标记自己那行,一份缓存所有人能用。
  */
 const AGG_TTL_MS = 300_000;
-const aggCache = new Map<string, { at: number; rows: Agg[] }>();
+const aggCache = new Map<string, { at: number; rows: Agg[]; week: { from: string; to: string } }>();
 
 type Agg = { rider_ext_id: string; rider_name: string | null; day_orders: number; week_orders: number; ref_day: string | null };
 type Entry = { rank: number; name: string; rider99Id: string; orders: number; pool: "standard" | "pro"; isMe: boolean };
@@ -76,27 +76,48 @@ export async function GET(request: Request) {
   if (!config.enabled) return Response.json({ data: { enabled: false } });
 
   const today = spDate();
-  const week = weekWindow(today); // 自然周,周一→周日
+  let week = weekWindow(today); // 自然周,周一→周日
 
-  // 库内聚合(带 5 分钟缓存)。
-  const cacheKey = `${week.from}|${week.to}`;
+  const fetchWeek = async (win: { from: string; to: string }): Promise<Agg[] | null> => {
+    const { data: rpcRows, error: rpcError } = await supabase.rpc("rider_order_ranking", {
+      p_from: win.from,
+      p_to: win.to,
+    });
+    if (rpcError) return null;
+    return (rpcRows ?? []) as Agg[];
+  };
+
+  // 库内聚合(带 5 分钟缓存)。缓存 key 带上实际使用的窗口。
   let rows: Agg[] = [];
+  let cacheKey = `${week.from}|${week.to}`;
   const cached = aggCache.get(cacheKey);
   if (cached && Date.now() - cached.at < AGG_TTL_MS) {
     rows = cached.rows;
+    week = cached.week;
   } else {
-    const { data: rpcRows, error: rpcError } = await supabase.rpc("rider_order_ranking", {
-      p_from: week.from,
-      p_to: week.to,
-    });
-    if (rpcError) {
+    const thisWeek = await fetchWeek(week);
+    if (thisWeek === null) {
       // 迁移没跑 = 明确失败。见上面的注释:不做前端聚合兜底。
-      return Response.json({ error: `排行榜聚合函数不可用(迁移是否已应用?): ${rpcError.message}` }, { status: 500 });
+      return Response.json({ error: "排行榜聚合函数不可用(迁移是否已应用?)" }, { status: 500 });
     }
-    rows = (rpcRows ?? []) as Agg[];
+    rows = thisWeek;
+    // ⚠️ 周一(以及周日数据还没导入的周一整天)本周窗口必然为空:
+    // T+1 报表天然滞后一天,而周日(8-09)的数据属于**上一周**的窗口。
+    // 空榜会让骑手以为功能坏了 —— 回退显示上周完整榜。页面本来就把
+    // from–to 日期区间显示出来,骑手看得出这是上周,不会误导。
+    // 本周第一笔数据(周二导入周一的报表)一进来,缓存过期后自动切回本周。
+    if (rows.length === 0) {
+      const prevDate = new Date(new Date(`${today}T12:00:00Z`).getTime() - 7 * 864e5).toISOString().slice(0, 10);
+      const prevWeek = weekWindow(prevDate);
+      const prev = await fetchWeek(prevWeek);
+      if (prev && prev.length > 0) {
+        rows = prev;
+        week = prevWeek;
+      }
+    }
     // 只保留当前这一把 —— 跨周后旧 key 没人再用,不让 Map 无限长大。
     aggCache.clear();
-    aggCache.set(cacheKey, { at: Date.now(), rows });
+    aggCache.set(cacheKey, { at: Date.now(), rows, week });
   }
   // 日榜那天 = 报表里最新有数据的一天(通常是昨天)。
   const refDay = rows[0]?.ref_day ?? null;
