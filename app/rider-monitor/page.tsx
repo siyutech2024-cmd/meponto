@@ -37,6 +37,9 @@ type Payload = {
 
 const CAT_COLOR: Record<Cat, string> = { delivering: "#16a34a", online: "#2563eb", notOnline: "#9ca3af", below: "#d97706", outArea: "#dc2626", other: "#6b7280" };
 const CAT_KEY: Record<Cat, TranslationKey> = { delivering: "rmDelivering", online: "rmOnline", notOnline: "rmNotOnline", below: "rmBelow", outArea: "rmOutArea", other: "rmColStatus" };
+// 列表排序 = 跟进优先级(业务方 2026-08-10 定):要人管的状态在前,
+// 健康状态在后。未上线最需要打电话,配送中最不需要。
+const CAT_PRIORITY: Record<Cat, number> = { notOnline: 0, below: 1, outArea: 2, other: 3, online: 4, delivering: 5 };
 
 function StatCard({ label, value, color, big }: { label: string; value: number | string; color: string; big?: boolean }) {
   return (
@@ -211,7 +214,10 @@ export default function RiderMonitorPage() {
       if (!`${r.name ?? ""} ${r.phone ?? ""} ${r.riderExtId ?? ""}`.toLowerCase().includes(q)) return false;
     }
     return true;
-  });
+  }).sort((a, b) =>
+    // 状态优先级 → 同状态内按名字,顺序稳定,3 分钟刷新不跳行
+    CAT_PRIORITY[a.cat] - CAT_PRIORITY[b.cat] || (a.name ?? "").localeCompare(b.name ?? ""),
+  );
 
   const staleMin = data?.capturedAt ? Math.floor((Date.now() - new Date(data.capturedAt).getTime()) / 60000) : null;
   const isStale = staleMin != null && staleMin > 15;
