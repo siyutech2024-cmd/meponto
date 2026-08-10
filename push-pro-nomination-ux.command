@@ -23,6 +23,11 @@
 #
 # 不动的东西:审批流仍是 提报 → 总部审核(D5"免审直通"业务方定过暂不做);
 # 配额、锁班、池隔离的服务端规则一概未变 —— 变的只是把人从校验错误里解放出来。
+#
+# ── ④ 顺手修:实时监控页池筛选 chip 选中态是个黑块
+# "全部池/普通池"选中时用了 text/bg 反色 —— 渲染出来是读不出字的黑色椭圆
+# (用户原话:黑色遮挡看得我难受)。改成与左侧状态 chips 同一套选中风格
+# (描边+淡金底),PRO 保留金色实底。
 cd "$(dirname "$0")" || exit 1
 set -e
 rm -f .git/index.lock
@@ -32,11 +37,12 @@ npm run codex:preflight
 
 echo "==> 提交并推送"
 git add app/components/shift-rider-picker.tsx \
+        app/rider-monitor/page.tsx \
         app/dispatch/franchise/page.tsx \
         app/dispatch/station/page.tsx \
         app/dispatch/page.tsx \
         push-pro-nomination-ux.command
-git commit -m "feat(dispatch): make PRO nomination humane — the rider picker now filters by the shift's pool so a PRO slot lists only PRO riders instead of all 190 with server-side rejections doing the teaching, a gold one-click button submits the selected riders to every PRO shift of the week (the existing signup endpoint already dedupes, pool-checks and quota-caps, so repeats are safe), and the HQ review queue gains all/PRO/standard chips so the weekly PRO batch is chip → select all → approve"
+git commit -m "feat(dispatch): make PRO nomination humane — the rider picker now filters by the shift's pool so a PRO slot lists only PRO riders instead of all 190 with server-side rejections doing the teaching, a gold one-click button submits the selected riders to every PRO shift of the week (the existing signup endpoint already dedupes, pool-checks and quota-caps, so repeats are safe), and the HQ review queue gains all/PRO/standard chips so the weekly PRO batch is chip → select all → approve; fix(monitor): the pool-filter chips' selected state used text/bg inversion which rendered as an unreadable black pill — now the same outline-plus-tint treatment as the status chips beside them"
 git push origin main
 
 echo
@@ -47,3 +53,5 @@ echo "     再点一次 → 提示已存在自动跳过(幂等)"
 echo "  3) 选普通班次 → PRO 骑手不再出现在列表里,金色按钮消失"
 echo "  4) 主后台审核 tab → 队列标题下有 全部/PRO/普通 chip;"
 echo "     点 PRO → 全选 → 通过,只处理 PRO 提报"
+echo "  5) 实时监控页:池筛选选中「全部池/普通池」→ 淡金底描边样式,"
+echo "     不再是黑块;PRO 仍为金色实底"

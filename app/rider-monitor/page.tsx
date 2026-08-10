@@ -473,10 +473,14 @@ export default function RiderMonitorPage() {
             key={p || "all"}
             type="button"
             onClick={() => setPoolFilter(p)}
-            className={`rounded-full px-2.5 py-1 text-[11px] font-black transition ${
+            className={`h-8 rounded-full border px-3 text-xs font-bold transition-colors ${
               poolFilter === p
-                ? p === "pro" ? "bg-[#eda100] text-[#171b33]" : "bg-[var(--text)] text-[var(--bg)]"
-                : "border border-[var(--line)] text-[var(--muted-strong)]"
+                ? p === "pro"
+                  ? "border-[#eda100] bg-[#eda100] text-[#171b33]"
+                  // 选中态与左侧状态 chips 同一套(描边+淡金底)。原来用
+                  // text/bg 反色,渲染出来是一个读不出字的黑块。
+                  : "border-[var(--accent)] bg-[rgba(255,209,0,0.12)] text-[var(--accent)]"
+                : "border-[var(--line)] text-[var(--muted-strong)] hover:border-[var(--accent)]"
             }`}
           >
             {p === "" ? t("rmPoolAll") : p === "pro" ? "PRO" : t("rmPoolStandard")}
