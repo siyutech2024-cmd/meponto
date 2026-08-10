@@ -236,7 +236,9 @@ function creditOrderPoints(riderId: string, rider99Id: string, date: string, com
     .reduce((sum, row) => sum + (row.completedOrders ?? 0), 0);
   // UNIFIED tier: the SAME rolling-window earned-points engine that prices
   // redemptions also sets the earn multiplier — one ladder everywhere.
-  const tier = resolveRiderTierStatus(memory.pointsLedgerEntries, riderId, config);
+  // 模式二: PRO 保底 Ouro —— 积分加成(+10%)与卡面同一档,一套阶梯到底。
+  const riderProfile = memory.riders.find((item) => item.id === riderId);
+  const tier = resolveRiderTierStatus(memory.pointsLedgerEntries, riderId, config, undefined, riderProfile?.pool === "pro" ? "ouro" : undefined);
   const points = Math.round(completedOrders * config.perOrderPoints * tier.pointsMultiplier);
   if (points <= 0) return;
 

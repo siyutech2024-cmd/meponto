@@ -306,6 +306,10 @@ export function resolveRiderTierStatus(
   riderId: string,
   config: MallConfig,
   now: Date = new Date(),
+  /** 模式二(2026-08-10 业务方定):PRO 骑手保底 Ouro(三级)。
+   *  只保底不封顶 —— 积分赚够仍照常升 Diamante;其他规则一概不变。
+   *  这里收的是"保底档"而不是布尔,规则再变只改调用方一处。 */
+  floorTier?: MembershipTier,
 ): RiderTierStatus {
   // Tier = CUMULATIVE earned points (lifetime by default; tierWindowDays > 0
   // opts into a rolling window). Spending or inactivity decay never demotes —
@@ -324,6 +328,11 @@ export function resolveRiderTierStatus(
   let current = ladder[0];
   for (const step of ladder) {
     if (step.minEarned !== null && earned >= step.minEarned) current = step;
+  }
+  // 保底:算出的档低于 floorTier 时抬到 floorTier;高于则保留(不封顶)。
+  if (floorTier) {
+    const floorStep = ladder.find((step) => step.def.tier === floorTier);
+    if (floorStep && ladder.indexOf(floorStep) > ladder.indexOf(current)) current = floorStep;
   }
   const next = ladder[ladder.indexOf(current) + 1] ?? null;
   return {

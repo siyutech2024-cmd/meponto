@@ -385,7 +385,8 @@ export async function GET(request: Request) {
     }
     const orderCount = lifetimeOrders(rider.ninetyNineId);
     // UNIFIED tier: rolling-window earned points (same engine prices redemptions).
-    const tier = resolveRiderTierStatus(riderEntries, rider.id, getConfig());
+    // 模式二: PRO 保底 Ouro(三级),不封顶。
+    const tier = resolveRiderTierStatus(riderEntries, rider.id, getConfig(), undefined, rider.pool === "pro" ? "ouro" : undefined);
     me = {
       tierStatus: tier,
       orders: memory.marketplaceOrders
@@ -965,7 +966,8 @@ async function handlePost(request: Request) {
       applyPointsExpiry(rider.id);
       applyInactivityDecay(memory.pointsLedgerEntries, rider.id, getConfig());
 
-      const tier = resolveRiderTierStatus(memory.pointsLedgerEntries, rider.id, getConfig());
+      // 模式二: PRO 保底 Ouro —— 兑换定价与展示同一档,不能一边金卡一边原价。
+      const tier = resolveRiderTierStatus(memory.pointsLedgerEntries, rider.id, getConfig(), undefined, rider.pool === "pro" ? "ouro" : undefined);
       const basePrice = Math.ceil(product.pointsPrice * tier.redeemDiscount);
       // Auto-apply the best eligible storefront coupon (points discount).
       const couponPick = bestCouponForRider(rider.id, tier.tier, basePrice);

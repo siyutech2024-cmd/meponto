@@ -373,7 +373,8 @@ export async function GET(request: Request) {
   // --- UNIFIED membership tier (rolling-window earned points; the same
   // engine PontoMall uses to price redemptions — one standard everywhere) ---
   const tier = {
-    ...resolveRiderTierStatus(riderLedger, rider.id, mallConfig),
+    // 模式二: PRO 骑手保底 Ouro(三级),只保底不封顶,其余规则不变。
+    ...resolveRiderTierStatus(riderLedger, rider.id, mallConfig, undefined, rider.pool === "pro" ? "ouro" : undefined),
     ladder: tierThresholds(mallConfig).map((s) => ({ tier: s.def.tier, label: s.def.label, minEarned: s.minEarned ?? 0 })),
   };
 
