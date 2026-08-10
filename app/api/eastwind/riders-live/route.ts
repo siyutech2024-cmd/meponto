@@ -116,6 +116,7 @@ export async function GET(request: Request) {
 
   let snapshots: SnapshotRow[] = [];
   let kpi: Record<string, unknown> | null = null;
+  let kpiPro: Record<string, unknown> | null = null;
   if (capturedAt) {
     const batches = await Promise.all(
       [...latestBySource.entries()].map(([src, at]) =>
@@ -156,7 +157,7 @@ export async function GET(request: Request) {
         grouped.set(src, list);
       }
       const perSource: KRow[] = [];
-      for (const rows of grouped.values()) {
+      for (const [src, rows] of grouped.entries()) {
         // 定位当前班段起点:计数从高位明显回落 = 新班段开始。
         let slotStart = 0;
         let acceptMax = 0, finishedMax = 0;
@@ -172,7 +173,12 @@ export async function GET(request: Request) {
         // 当前班段内最新的有读数批次(跳过换班空窗的全 0/NULL 批)。
         const slot = rows.slice(slotStart);
         const lastRated = [...slot].reverse().find((row) => row.ar != null || (row.accept_cnt ?? 0) > 0 || (row.finished_cnt ?? 0) > 0);
-        if (lastRated) perSource.push(lastRated);
+        if (lastRated) {
+          perSource.push(lastRated);
+          // PRO 源单独留一份 —— KPI 条上以金色小字副值显示(业务方
+          // 2026-08-10 定,与 T+1 看板顶卡的 PRO 小计同一套视觉语言)。
+          if (src === "pro") kpiPro = lastRated as unknown as Record<string, unknown>;
+        }
       }
       if (perSource.length) {
         // 计数可加(两个账号的骑手集不相交);比率不可加,取主导源
@@ -311,6 +317,8 @@ export async function GET(request: Request) {
     data: {
       capturedAt,
       kpi: kpi ? { ar: kpi.ar, caa: kpi.caa, acceptCnt: kpi.accept_cnt, overtime: kpi.overtime, tsh: kpi.tsh, finishedCnt: kpi.finished_cnt } : null,
+      // PRO 源当前班次读数 —— 存在才带(PRO 收班/断供时为 null,前端不显示)。
+      kpiPro: kpiPro ? { ar: kpiPro.ar, caa: kpiPro.caa, acceptCnt: kpiPro.accept_cnt, overtime: kpiPro.overtime, tsh: kpiPro.tsh, finishedCnt: kpiPro.finished_cnt } : null,
       scopeKpi,
       riders: scoped,
       summary: {

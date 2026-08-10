@@ -23,7 +23,12 @@
 # 20 分钟(相对最新源),不再当实时层展示 —— 防止会话掉线后挂旧状态;
 # 用相对基准,收班后两源都停时看板仍显示最后状态。
 #
-# ── ④ 顺手排雷:KPI 条分源统计(PRO 上线当天就会发作)
+# ── ④(配套)接口输出 kpiPro:PRO 源当前班次读数单独带一份
+# 业务方定的显示方案:KPI 条每格下方金色小字副值(PRO 存在才显示),
+# 与 T+1 看板顶卡的 PRO 小计同一套视觉语言。页面渲染在
+# push-monitor-status-sort.command 那半边。
+#
+# ── ⑤ 顺手排雷:KPI 条分源统计(PRO 上线当天就会发作)
 # 实时页 KPI 条把两个源的 rider_kpi_snapshots 混成一个序列做换班检测。
 # PRO 城市计数是个位数,混进主号几百的序列,"计数明显回落"判定被反复
 # 误触发,班段起点乱跳。现在按源分组各自检测:计数(接单/完单)可加
@@ -45,7 +50,7 @@ git add supabase/migrations/20260810120000_pro_autotag_rpc.sql \
         app/api/eastwind/rider-status/route.ts \
         app/api/eastwind/riders-live/route.ts \
         push-pro-autotag.command
-git commit -m "feat(mode2): riders on the new Eastwind board ARE pro riders — presence on the PRO account's board is now the source of truth for pool membership, so each pro-source ingest batch auto-tags the matched rider profiles via a targeted in-database update (idempotent, non-blocking, no profile creation and no full-collection write-back, avoiding the 7/21 stale-memory class of incident) and the live board derives the row's pool from the snapshot source directly so an unprofiled rider on the pro board can never be misfiled as standard; fix(realtime): the pro fleet flickered in and out of the live board within half an hour of going live — the latest-batch-per-source lookup scanned the newest 60 snapshot ROWS, but snapshots are one row per rider and a main batch alone is 63, so whichever feed had the newer batch crowded the other clean out of the window; each source now gets its own latest-batch query plus a freshness guard that drops a feed more than 20 minutes behind the newest one, so a dead session shows as absent instead of as hours-old riders posing as live; fix(realtime): the KPI strip mixed both sources' city counters into one series, and the pro account's single-digit readings tripped the counter-fallback shift detection against the main account's hundreds on every interleave — the strip now detects the current slot per source, sums the addable counts across the disjoint fleets, and takes rates from the dominant source"
+git commit -m "feat(mode2): riders on the new Eastwind board ARE pro riders — presence on the PRO account's board is now the source of truth for pool membership, so each pro-source ingest batch auto-tags the matched rider profiles via a targeted in-database update (idempotent, non-blocking, no profile creation and no full-collection write-back, avoiding the 7/21 stale-memory class of incident) and the live board derives the row's pool from the snapshot source directly so an unprofiled rider on the pro board can never be misfiled as standard; fix(realtime): the pro fleet flickered in and out of the live board within half an hour of going live — the latest-batch-per-source lookup scanned the newest 60 snapshot ROWS, but snapshots are one row per rider and a main batch alone is 63, so whichever feed had the newer batch crowded the other clean out of the window; each source now gets its own latest-batch query plus a freshness guard that drops a feed more than 20 minutes behind the newest one, so a dead session shows as absent instead of as hours-old riders posing as live; fix(realtime): the KPI strip mixed both sources' city counters into one series, and the pro account's single-digit readings tripped the counter-fallback shift detection against the main account's hundreds on every interleave — the strip now detects the current slot per source, sums the addable counts across the disjoint fleets, takes rates from the dominant source, and exposes the pro source's current-shift reading as a separate kpiPro field for the board's gold sub-values"
 git push origin main
 
 echo
