@@ -189,7 +189,7 @@ export async function GET(request: Request) {
     ) || 0;
 
     // Sum settle per rider within the window.
-    const riderAgg = new Map<string, { name: string; rider99Id: string; franchise: string; station: string; settle: number; orders: number; days: number; pool: "standard" | "pro" }>();
+    const riderAgg = new Map<string, { name: string; rider99Id: string; franchise: string; station: string; settle: number; orders: number; days: number; cashDebt: number; pool: "standard" | "pro" }>();
     for (const row of weekEarnings) {
       if (row.date < win.from || row.date > win.to) continue;
       const rider = byNinetyNine.get(row.rider99Id);
@@ -197,9 +197,13 @@ export async function GET(request: Request) {
       if (scope.franchise && franchise !== scope.franchise) continue;
       const key = row.rider99Id;
       const pool: "standard" | "pro" = rider?.pool === "pro" ? "pro" : "standard";
-      const cur = riderAgg.get(key) ?? { name: rider?.name ?? row.rider99Id, rider99Id: row.rider99Id, franchise, station: rider?.ponto ?? "Unassigned", settle: 0, orders: 0, days: 0, pool };
+      const cur = riderAgg.get(key) ?? { name: rider?.name ?? row.rider99Id, rider99Id: row.rider99Id, franchise, station: rider?.ponto ?? "Unassigned", settle: 0, orders: 0, days: 0, cashDebt: 0, pool };
       // PRO: money comes from orders × rate, never from the sheet.
       cur.settle += pool === "pro" ? 0 : (row.settleAmount ?? 0);
+      // 模式二(2026-08-11):PRO 的现金单欠款单独累计 —— 骑手代收的顾客
+      // 现金,欠加盟商的债务;结算单必须能看见,加盟商才能净额结算。
+      // 普通骑手不在此列(他们的欠款已体现在表格结算金额的口径里)。
+      if (pool === "pro") cur.cashDebt += row.cashDebt ?? 0;
       cur.orders += row.orders ?? 0;
       cur.days += 1;
       riderAgg.set(key, cur);
@@ -232,18 +236,20 @@ export async function GET(request: Request) {
 
     // Group into franchise → riders (each row carries its pool so the board
     // can show a PRO sub-total next to the standard one — 分池对账).
-    const groups = new Map<string, { franchise: string; settle: number; proSettle: number; proOrders: number; riders: Array<{ name: string; rider99Id: string; station: string; settle: number; orders: number; days: number; paid: number; pool: "standard" | "pro" }> }>();
+    const groups = new Map<string, { franchise: string; settle: number; proSettle: number; proOrders: number; proCashDebt: number; riders: Array<{ name: string; rider99Id: string; station: string; settle: number; orders: number; days: number; cashDebt: number; paid: number; pool: "standard" | "pro" }> }>();
     for (const r of riderAgg.values()) {
       // Round each rider's settle FIRST, then sum, so the franchise total always
       // equals the sum of the displayed rider rows (no cent drift).
       const riderSettle = round(r.settle);
-      const g = groups.get(r.franchise) ?? { franchise: r.franchise, settle: 0, proSettle: 0, proOrders: 0, riders: [] };
+      const riderCashDebt = round(r.cashDebt);
+      const g = groups.get(r.franchise) ?? { franchise: r.franchise, settle: 0, proSettle: 0, proOrders: 0, proCashDebt: 0, riders: [] };
       g.settle = round(g.settle + riderSettle);
       if (r.pool === "pro") {
         g.proSettle = round(g.proSettle + riderSettle);
         g.proOrders += r.orders;
+        g.proCashDebt = round(g.proCashDebt + riderCashDebt);
       }
-      g.riders.push({ name: r.name, rider99Id: r.rider99Id, station: r.station, settle: riderSettle, orders: r.orders, days: r.days, paid: round(paidToRider.get(r.name) ?? 0), pool: r.pool });
+      g.riders.push({ name: r.name, rider99Id: r.rider99Id, station: r.station, settle: riderSettle, orders: r.orders, days: r.days, cashDebt: riderCashDebt, paid: round(paidToRider.get(r.name) ?? 0), pool: r.pool });
       groups.set(r.franchise, g);
     }
     const franchises = [...groups.values()]
@@ -252,6 +258,9 @@ export async function GET(request: Request) {
     const grandTotal = round(franchises.reduce((s, g) => s + g.settle, 0));
     const proTotal = round(franchises.reduce((s, g) => s + g.proSettle, 0));
     const proOrdersTotal = franchises.reduce((s, g) => s + g.proOrders, 0);
+    // PRO 现金欠款合计(显示用;净额 = proTotal - proCashDebtTotal 由页面呈现,
+    // 不改动任何入账金额 —— 金额永远来自导入表格与费率推导,账本规则不变)
+    const proCashDebtTotal = round(franchises.reduce((s, g) => s + g.proCashDebt, 0));
 
     // 倒扣待扣:某天算下来是负数 = 骑手当天不但没拿到钱,还欠了一笔。
     // 以前这种行只在显示层被过滤掉,系统里查不到"谁还欠多少"。这里按窗口外
@@ -262,8 +271,8 @@ export async function GET(request: Request) {
     return jsonResponse({
       data: {
         week: win, franchises, grandTotal,
-        // 模式二: PRO 小计 + 费率(两端同源,永远一致)
-        proTotal, proOrdersTotal, proRate,
+        // 模式二: PRO 小计 + 费率(两端同源,永远一致)+ 现金欠款合计
+        proTotal, proOrdersTotal, proRate, proCashDebtTotal,
         // 倒扣待扣(派生量,全量口径)
         deductions, deductionTotal,
         payments: paymentsInWindow, scoped: Boolean(scope.franchise),

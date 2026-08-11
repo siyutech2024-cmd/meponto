@@ -12,12 +12,12 @@ import { useVentoStore } from "../lib/store";
 import { translate, type TranslationKey } from "../lib/i18n";
 import type { RiderWithdrawal } from "../lib/finance";
 
-type WeeklyRider = { name: string; rider99Id: string; station: string; settle: number; orders: number; days: number; paid: number; pool?: "standard" | "pro" };
-type WeeklyGroup = { franchise: string; settle: number; franchisePaid: number; riders: WeeklyRider[]; proSettle?: number; proOrders?: number };
+type WeeklyRider = { name: string; rider99Id: string; station: string; settle: number; orders: number; days: number; cashDebt?: number; paid: number; pool?: "standard" | "pro" };
+type WeeklyGroup = { franchise: string; settle: number; franchisePaid: number; riders: WeeklyRider[]; proSettle?: number; proOrders?: number; proCashDebt?: number };
 // 模式二: proTotal = Σ(PRO 完单 × proRate) —— 与加盟商端同源计算,两端永远一致。
 /** 倒扣待扣(派生量):负数结算且未核销的日行,按骑手归集。 */
 type PendingDeduction = { rider99Id: string; riderName: string; amount: number; days: number; rows: Array<{ id: string; date: string; amount: number }> };
-type Weekly = { week: { from: string; to: string }; franchises: WeeklyGroup[]; grandTotal: number; scoped: boolean; proTotal?: number; proOrdersTotal?: number; proRate?: number; deductions?: PendingDeduction[]; deductionTotal?: number };
+type Weekly = { week: { from: string; to: string }; franchises: WeeklyGroup[]; grandTotal: number; scoped: boolean; proTotal?: number; proOrdersTotal?: number; proRate?: number; proCashDebtTotal?: number; deductions?: PendingDeduction[]; deductionTotal?: number };
 
 const money = (v: number) => `R$ ${v.toFixed(2)}`;
 const md = (iso: string) => `${Number(iso.slice(5, 7))}.${Number(iso.slice(8, 10))}`;
@@ -317,6 +317,14 @@ function RiderPayrollWallet() {
     { key: "orders", label: t("wlColOrders"), align: "right", render: (r) => r.orders },
     { key: "days", label: t("wlColDays"), align: "right", render: (r) => r.days },
     { key: "settle", label: t("wlColSettle"), align: "right", render: (r) => <b>{money(r.settle)}</b> },
+    {
+      // 模式二: PRO 现金单欠款 —— 骑手代收的顾客现金,欠加盟商的债务。
+      // 只对 PRO 行显示(普通骑手的欠款已在表格结算口径内),净额=结算-欠款。
+      key: "cashDebt", label: <span title={t("wlCashDebtTitle")}>{t("wlColCashDebt")}</span>, align: "right",
+      render: (r) => (r.pool === "pro" && (r.cashDebt ?? 0) > 0
+        ? <span className="font-black text-[var(--danger-ink)]">−{money(r.cashDebt ?? 0)}</span>
+        : <span className="text-[var(--muted)]">—</span>),
+    },
     { key: "paid", label: <span title={t("wlPaidRiderTitle")}>{t("wlColPaidRider")}</span>, align: "right", render: (r) => <span className="text-[var(--success)]">{money(r.paid)}</span> },
     {
       key: "status", label: t("wlColStatus"), render: (r) => {
@@ -389,6 +397,8 @@ function RiderPayrollWallet() {
           {weekly && (weekly.proOrdersTotal ?? 0) > 0 && (
             <span className="rounded-full bg-[#eda100] px-2 py-0.5 text-[11px] font-black text-[#171b33]" title={`${weekly.proOrdersTotal} × R$${(weekly.proRate ?? 0).toFixed(2)}`}>
               PRO {money(weekly.proTotal ?? 0)} · {weekly.proOrdersTotal} × R${(weekly.proRate ?? 0).toFixed(2)}
+              {/* 现金欠款:代收现金冲抵后的净额,加盟商按净额结算 */}
+              {(weekly.proCashDebtTotal ?? 0) > 0 && ` · ${t("wlCashDebtShort")} −${money(weekly.proCashDebtTotal ?? 0)} · ${t("wlNetShort")} ${money(Math.round(((weekly.proTotal ?? 0) - (weekly.proCashDebtTotal ?? 0)) * 100) / 100)}`}
             </span>
           )}
           {/* 倒扣待扣:整天算下来是负数的骑手,系统里第一次能看见"谁还欠多少"。
@@ -456,6 +466,10 @@ function RiderPayrollWallet() {
                   {overpaid > 0
                     ? <>{t("wlOverpaid")} <b className="text-[var(--danger)]">+{money(overpaid)}</b></>
                     : <>{t("wlPending")} <b className={pendingAmt > 0 ? "text-[var(--warn)]" : "text-[var(--muted)]"}>{money(pendingAmt)}</b></>}
+                  {/* 模式二: 本加盟商 PRO 现金欠款小计 —— 加盟商照此净额结算 */}
+                  {(g.proCashDebt ?? 0) > 0 && (
+                    <> {" · "}<span title={t("wlCashDebtTitle")} className="text-[#b97900]">{t("wlCashDebtShort")} <b>−{money(g.proCashDebt ?? 0)}</b></span></>
+                  )}
                 </span>
               }
               right={

@@ -746,9 +746,13 @@ async function handlePost(request: Request) {
           cpf: String(raw.cpf ?? "").trim(),
           city: String(raw.city ?? "").trim(),
           total,
-          // PRO rows: every money column is forced to 0 at the door.
+          // PRO rows: income columns are forced to 0 at the door (v3.0 R6 —
+          // per-order pay must never enter the system).
           tripIncome: isPro ? 0 : num(raw.tripIncome),
-          cashDebt: isPro ? 0 : num(raw.cashDebt),
+          // ⚠ cashDebt 例外(2026-08-11 业务方定):现金单欠款不是薪酬,是
+          // 骑手代收的顾客现金 —— 欠加盟商的债务。清零它等于结算时看不见
+          // 这笔账。保留原值,不泄露任何费率信息。
+          cashDebt: num(raw.cashDebt),
           mealDeduction: isPro ? 0 : num(raw.mealDeduction),
           bonus: isPro ? 0 : num(raw.bonus),
           other: isPro ? 0 : num(raw.other),
