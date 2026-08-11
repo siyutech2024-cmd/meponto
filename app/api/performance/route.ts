@@ -187,6 +187,10 @@ async function performanceDirect(url: URL): Promise<Response | null> {
     if (franchise) earningRows = earningRows.filter((row) => row.franchise === franchise);
     if (station) earningRows = earningRows.filter((row) => row.station === station);
     if (accountFilter) earningRows = earningRows.filter((row) => accountOf(row) === accountFilter);
+    // PRO 展示结算额 = 完单 × HqProRate(见 withProDerivedSettle 注释)。
+    const mallCfg = (await fetchRows<{ id: string; hqProRatePerOrder?: number }>("mallConfigs", [{ op: "eq", field: "id", value: "mall-config" }]))[0];
+    const proRate = Number(mallCfg?.hqProRatePerOrder ?? 12) || 0;
+    earningRows = withProDerivedSettle(earningRows, proRate, (row) => accountOf(row) === "pro");
 
     const groupEarnings = (field: "station" | "franchise") => {
       const map = new Map<string, EnrichedEarning[]>();
@@ -223,6 +227,21 @@ const num = (value: unknown) => {
   const parsed = Number(String(value ?? "").replace(",", "."));
   return Number.isFinite(parsed) ? parsed : 0;
 };
+
+/**
+ * 模式二(2026-08-11 业务方指出"PRO 收入结算没显示金额"):
+ * PRO 行表内金额恒为 0(v3.0 R6),收入结算视图的展示结算额改为
+ * **完单 × HqProRate** —— 与钱包周结同一推导、同一费率配置,两处永远一致。
+ * 只改读出的展示值,不写回任何存储;打款权威仍在钱包周结(加盟商整体转账)。
+ */
+const withProDerivedSettle = <T extends { orders?: number; settleAmount?: number }>(
+  list: T[],
+  proRate: number,
+  isPro: (row: T) => boolean,
+): T[] =>
+  proRate > 0
+    ? list.map((row) => (isPro(row) ? { ...row, settleAmount: Math.round((row.orders ?? 0) * proRate * 100) / 100 } : row))
+    : list;
 
 /**
  * Auto-credit mall points for completed orders on T+1 import.
@@ -425,6 +444,9 @@ export async function GET(request: Request) {
   if (franchise) earningRows = earningRows.filter((row) => row.franchise === franchise);
   if (station) earningRows = earningRows.filter((row) => row.station === station);
   if (accountFilter) earningRows = earningRows.filter((row) => accountOf(row) === accountFilter);
+  // PRO 展示结算额 = 完单 × HqProRate(与 DB 直读路径同一口径)。
+  const proRateLegacy = Number(memory.mallConfigs.find((c) => c.id === "mall-config")?.hqProRatePerOrder ?? 12) || 0;
+  earningRows = withProDerivedSettle(earningRows, proRateLegacy, (row) => accountOf(row) === "pro");
 
   const groupEarnings = (field: "station" | "franchise") => {
     const map = new Map<string, EnrichedEarning[]>();

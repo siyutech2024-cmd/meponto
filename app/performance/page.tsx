@@ -656,8 +656,10 @@ function EarningsTab({ earnings, scopeFranchise, scopeStation, date, headers }: 
   }, [loadPaid]);
 
   async function markPaid() {
-    const rows = earnings.riders.filter((r) => selected.has(r.id) && !paidNames.has(r.riderName) && r.settleAmount > 0);
-    const zero = earnings.riders.filter((r) => selected.has(r.id) && !paidNames.has(r.riderName) && r.settleAmount <= 0).length;
+    // PRO 行的结算额是"完单×费率"的展示推导 —— PRO 的钱走加盟商整体转账
+    // (钱包周结,净额口径),不逐骑手日结,这里必须排除,防止重复记账。
+    const rows = earnings.riders.filter((r) => selected.has(r.id) && !paidNames.has(r.riderName) && r.settleAmount > 0 && r.account !== "pro");
+    const zero = earnings.riders.filter((r) => selected.has(r.id) && !paidNames.has(r.riderName) && (r.settleAmount <= 0 || r.account === "pro")).length;
     if (rows.length === 0) {
       setNote({ tone: "err", text: zero > 0 ? t("pfErrZeroSettle", { n: zero }) : t("pfErrSelectRiders") });
       return;
