@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { Banknote, Building2, ChevronDown, Info, RefreshCcw, Store, Wallet } from "lucide-react";
 import { AppShell, PageTitle } from "../components/ui";
-import { DataTable, Drawer, ProBadge, SectionCard, Stat, StatusBadge, Toolbar, type BadgeTone, type DataColumn } from "../components/kit";
+import { Chip, DataTable, Drawer, ProBadge, SectionCard, Stat, StatusBadge, Toolbar, type BadgeTone, type DataColumn } from "../components/kit";
 import { downloadCsv } from "../lib/csv";
 import { readSession } from "../lib/session";
 import { mallHubPortals } from "../lib/portals";
@@ -13,11 +13,11 @@ import { translate, type TranslationKey } from "../lib/i18n";
 import type { RiderWithdrawal } from "../lib/finance";
 
 type WeeklyRider = { name: string; rider99Id: string; station: string; settle: number; orders: number; days: number; cashDebt?: number; paid: number; pool?: "standard" | "pro" };
-type WeeklyGroup = { franchise: string; settle: number; franchisePaid: number; riders: WeeklyRider[]; proSettle?: number; proOrders?: number; proCashDebt?: number };
+type WeeklyGroup = { franchise: string; settle: number; franchisePaid: number; riders: WeeklyRider[]; proSettle?: number; proOrders?: number; proCashDebt?: number; netSettle?: number };
 // 模式二: proTotal = Σ(PRO 完单 × proRate) —— 与加盟商端同源计算,两端永远一致。
 /** 倒扣待扣(派生量):负数结算且未核销的日行,按骑手归集。 */
 type PendingDeduction = { rider99Id: string; riderName: string; amount: number; days: number; rows: Array<{ id: string; date: string; amount: number }> };
-type Weekly = { week: { from: string; to: string }; franchises: WeeklyGroup[]; grandTotal: number; scoped: boolean; proTotal?: number; proOrdersTotal?: number; proRate?: number; proCashDebtTotal?: number; deductions?: PendingDeduction[]; deductionTotal?: number };
+type Weekly = { week: { from: string; to: string }; franchises: WeeklyGroup[]; grandTotal: number; grandNetTotal?: number; scoped: boolean; proTotal?: number; proOrdersTotal?: number; proRate?: number; proCashDebtTotal?: number; deductions?: PendingDeduction[]; deductionTotal?: number };
 
 const money = (v: number) => `R$ ${v.toFixed(2)}`;
 const md = (iso: string) => `${Number(iso.slice(5, 7))}.${Number(iso.slice(8, 10))}`;
@@ -80,6 +80,8 @@ function RiderPayrollWallet() {
   const [deductionOpen, setDeductionOpen] = useState(false);
   const [riderRef, setRiderRef] = useState<{ franchise: string; rider99Id: string } | null>(null);
   const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({});
+  // 模式二(2026-08-11):结算表按池筛选(全部 / PRO / 普通)。
+  const [poolFilter, setPoolFilter] = useState<"" | "pro" | "standard">("");
 
   const loadRevShare = useCallback(async () => {
     if (!scopeFranchise) return;
@@ -258,11 +260,25 @@ function RiderPayrollWallet() {
 
   const pendingWithdrawals = withdrawals.filter((w) => w.status === "requested");
   const groups = weekly?.franchises ?? [];
+  // 结算口径(2026-08-11):净额 = 应结 − PRO 现金欠款,打款按净额。
+  const groupNet = (g: WeeklyGroup) => g.netSettle ?? Math.round((g.settle - (g.proCashDebt ?? 0)) * 100) / 100;
+  const riderNet = (r: WeeklyRider) => Math.round((r.settle - (r.cashDebt ?? 0)) * 100) / 100;
   const paidTotal = groups.reduce((a, g) => a + g.franchisePaid, 0);
-  const pendingTotal = groups.reduce((a, g) => a + Math.max(0, g.settle - g.franchisePaid), 0);
-  const overpaidTotal = groups.reduce((a, g) => a + Math.max(0, g.franchisePaid - g.settle), 0);
+  const pendingTotal = groups.reduce((a, g) => a + Math.max(0, groupNet(g) - g.franchisePaid), 0);
+  const overpaidTotal = groups.reduce((a, g) => a + Math.max(0, g.franchisePaid - groupNet(g)), 0);
   const revDraftCount = revStatements.filter((s) => s.status === "draft").length;
-  const riderPending = (r: WeeklyRider) => Math.max(0, Math.round((r.settle - r.paid) * 100) / 100);
+  const riderPending = (r: WeeklyRider) => Math.max(0, Math.round((riderNet(r) - r.paid) * 100) / 100);
+
+  // 池筛选只作用于展示(表格行 + 空组隐藏);组头部金额仍是加盟商全量,
+  // 免得"看着 PRO 筛选打了全额款"。
+  const displayGroups = useMemo(
+    () => (poolFilter
+      ? groups
+          .map((g) => ({ ...g, riders: g.riders.filter((r) => (r.pool === "pro" ? "pro" : "standard") === poolFilter) }))
+          .filter((g) => g.riders.length > 0)
+      : groups),
+    [groups, poolFilter],
+  );
 
   const drawerStmt = stmtDrawerId ? revStatements.find((s) => s.id === stmtDrawerId) : undefined;
   const drawerGroup = riderRef ? groups.find((g) => g.franchise === riderRef.franchise) : undefined;
@@ -324,6 +340,11 @@ function RiderPayrollWallet() {
       render: (r) => (r.pool === "pro" && (r.cashDebt ?? 0) > 0
         ? <span className="font-black text-[var(--danger-ink)]">−{money(r.cashDebt ?? 0)}</span>
         : <span className="text-[var(--muted)]">—</span>),
+    },
+    {
+      // 净额 = 应结 − 现金欠款:这是实际打款数(riderPending 同口径)。
+      key: "net", label: <span title={t("wlCashDebtTitle")}>{t("wlNetShort")}</span>, align: "right",
+      render: (r) => <b className={(r.cashDebt ?? 0) > 0 ? "text-[#b97900]" : undefined}>{money(riderNet(r))}</b>,
     },
     { key: "paid", label: <span title={t("wlPaidRiderTitle")}>{t("wlColPaidRider")}</span>, align: "right", render: (r) => <span className="text-[var(--success)]">{money(r.paid)}</span> },
     {
@@ -392,7 +413,19 @@ function RiderPayrollWallet() {
           <span className="px-1 text-sm font-black" data-i18n-skip>{weekly ? `${md(weekly.week.from)} – ${md(weekly.week.to)}` : loading ? "…" : "—"}</span>
           <button type="button" className={btnGhost} onClick={() => shiftWeek(7)}>{t("wlNextWeek")}</button>
           <span className="text-[11px] font-bold text-[var(--muted)]">{t("wlNatWeek")}</span>
+          {/* 模式二: 池筛选(全部 / PRO / 普通)—— 只筛表格展示 */}
+          {(["", "pro", "standard"] as const).map((f) => (
+            <Chip key={f || "all"} active={poolFilter === f} onClick={() => setPoolFilter(f)}>
+              {f === "" ? t("wlPoolAll") : f === "pro" ? "PRO" : t("wlPoolStd")}
+            </Chip>
+          ))}
           <span className="text-sm font-black text-[var(--accent)]">{t("wlWeekTotal", { money: weekly ? money(weekly.grandTotal) : loading ? "…" : "—" })}</span>
+          {/* 净额 = 总额 − PRO 现金欠款:实际打款口径 */}
+          {weekly && (weekly.proCashDebtTotal ?? 0) > 0 && (
+            <span className="text-sm font-black text-[#b97900]" title={t("wlCashDebtTitle")}>
+              {t("wlNetShort")} {money(weekly.grandNetTotal ?? weekly.grandTotal)}
+            </span>
+          )}
           {/* 模式二 T3: PRO 小计 = 完单 × 费率(总部/加盟商两端同源) */}
           {weekly && (weekly.proOrdersTotal ?? 0) > 0 && (
             <span className="rounded-full bg-[#eda100] px-2 py-0.5 text-[11px] font-black text-[#171b33]" title={`${weekly.proOrdersTotal} × R$${(weekly.proRate ?? 0).toFixed(2)}`}>
@@ -434,9 +467,10 @@ function RiderPayrollWallet() {
 
       {/* Weekly settlement — one compact rider table per franchise; row → drawer. */}
       <div className="space-y-4">
-        {groups.length === 0 && <div className="panel p-6 text-center text-sm font-bold text-[var(--muted)]">{loading ? "…" : t("wlNoWeekData")}</div>}
-        {groups.map((g) => {
-          const net = Math.round((g.settle - g.franchisePaid) * 100) / 100;
+        {displayGroups.length === 0 && <div className="panel p-6 text-center text-sm font-bold text-[var(--muted)]">{loading ? "…" : t("wlNoWeekData")}</div>}
+        {displayGroups.map((g) => {
+          // 待付 = 净额(应结 − PRO 现金欠款)− 已付
+          const net = Math.round((groupNet(g) - g.franchisePaid) * 100) / 100;
           const pendingAmt = Math.max(0, net);
           const overpaid = net < 0 ? -net : 0;
           // Collapsible: summary always visible in the header; the 50+ rider
@@ -466,9 +500,12 @@ function RiderPayrollWallet() {
                   {overpaid > 0
                     ? <>{t("wlOverpaid")} <b className="text-[var(--danger)]">+{money(overpaid)}</b></>
                     : <>{t("wlPending")} <b className={pendingAmt > 0 ? "text-[var(--warn)]" : "text-[var(--muted)]"}>{money(pendingAmt)}</b></>}
-                  {/* 模式二: 本加盟商 PRO 现金欠款小计 —— 加盟商照此净额结算 */}
+                  {/* 模式二: 本加盟商 PRO 现金欠款小计 + 净额 —— 打款按净额 */}
                   {(g.proCashDebt ?? 0) > 0 && (
-                    <> {" · "}<span title={t("wlCashDebtTitle")} className="text-[#b97900]">{t("wlCashDebtShort")} <b>−{money(g.proCashDebt ?? 0)}</b></span></>
+                    <>
+                      {" · "}<span title={t("wlCashDebtTitle")} className="text-[#b97900]">{t("wlCashDebtShort")} <b>−{money(g.proCashDebt ?? 0)}</b></span>
+                      {" · "}<span className="text-[#b97900]">{t("wlNetShort")} <b>{money(groupNet(g))}</b></span>
+                    </>
                   )}
                 </span>
               }

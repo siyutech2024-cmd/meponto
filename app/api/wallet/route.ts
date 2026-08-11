@@ -195,6 +195,8 @@ export async function GET(request: Request) {
       const rider = byNinetyNine.get(row.rider99Id);
       const franchise = rider?.franchise ?? "Unassigned";
       if (scope.franchise && franchise !== scope.franchise) continue;
+      // 站点会话:只看本站骑手(此前站点账号会看到全网 —— 2026-08-11 补)
+      if (scope.station && (rider?.ponto ?? "Unassigned") !== scope.station) continue;
       const key = row.rider99Id;
       const pool: "standard" | "pro" = rider?.pool === "pro" ? "pro" : "standard";
       const cur = riderAgg.get(key) ?? { name: rider?.name ?? row.rider99Id, rider99Id: row.rider99Id, franchise, station: rider?.ponto ?? "Unassigned", settle: 0, orders: 0, days: 0, cashDebt: 0, pool };
@@ -253,7 +255,14 @@ export async function GET(request: Request) {
       groups.set(r.franchise, g);
     }
     const franchises = [...groups.values()]
-      .map((g) => ({ ...g, riders: g.riders.sort((a, b) => b.settle - a.settle), franchisePaid: round(paidToFranchise.get(g.franchise) ?? 0) }))
+      .map((g) => ({
+        ...g,
+        riders: g.riders.sort((a, b) => b.settle - a.settle),
+        franchisePaid: round(paidToFranchise.get(g.franchise) ?? 0),
+        // 结算口径(2026-08-11 业务方定):净额 = 应结 − PRO 现金欠款。
+        // 加盟商按净额打款;应结与欠款保持各自原值,账目可追溯。
+        netSettle: round(g.settle - g.proCashDebt),
+      }))
       .sort((a, b) => b.settle - a.settle);
     const grandTotal = round(franchises.reduce((s, g) => s + g.settle, 0));
     const proTotal = round(franchises.reduce((s, g) => s + g.proSettle, 0));
@@ -261,6 +270,7 @@ export async function GET(request: Request) {
     // PRO 现金欠款合计(显示用;净额 = proTotal - proCashDebtTotal 由页面呈现,
     // 不改动任何入账金额 —— 金额永远来自导入表格与费率推导,账本规则不变)
     const proCashDebtTotal = round(franchises.reduce((s, g) => s + g.proCashDebt, 0));
+    const grandNetTotal = round(franchises.reduce((s, g) => s + g.netSettle, 0));
 
     // 倒扣待扣:某天算下来是负数 = 骑手当天不但没拿到钱,还欠了一笔。
     // 以前这种行只在显示层被过滤掉,系统里查不到"谁还欠多少"。这里按窗口外
@@ -272,10 +282,10 @@ export async function GET(request: Request) {
       data: {
         week: win, franchises, grandTotal,
         // 模式二: PRO 小计 + 费率(两端同源,永远一致)+ 现金欠款合计
-        proTotal, proOrdersTotal, proRate, proCashDebtTotal,
+        proTotal, proOrdersTotal, proRate, proCashDebtTotal, grandNetTotal,
         // 倒扣待扣(派生量,全量口径)
         deductions, deductionTotal,
-        payments: paymentsInWindow, scoped: Boolean(scope.franchise),
+        payments: paymentsInWindow, scoped: Boolean(scope.franchise || scope.station),
       },
     });
   }
