@@ -261,14 +261,16 @@ export async function GET(request: Request) {
 
   // Summaries.
   const cats = EMPTY_CATS();
-  const frAgg: Record<string, { total: number; finished: number } & ReturnType<typeof EMPTY_CATS>> = {};
-  const ptAgg: Record<string, { total: number; finished: number } & ReturnType<typeof EMPTY_CATS>> = {};
+  const frAgg: Record<string, { total: number; pro: number; finished: number } & ReturnType<typeof EMPTY_CATS>> = {};
+  const ptAgg: Record<string, { total: number; pro: number; finished: number } & ReturnType<typeof EMPTY_CATS>> = {};
   for (const r of scoped) {
     cats[r.cat] += 1;
     for (const [key, name] of [["fr", r.franchise || "未归属"], ["pt", r.ponto || "未归属"]] as const) {
       const agg = key === "fr" ? frAgg : ptAgg;
-      agg[name] = agg[name] || { total: 0, finished: 0, ...EMPTY_CATS() };
+      agg[name] = agg[name] || { total: 0, pro: 0, finished: 0, ...EMPTY_CATS() };
       agg[name].total += 1;
+      // 模式二: 每行带 PRO 小计("总数 + 其中 PRO"口径,与顶卡一致)。
+      if (r.pool === "pro") agg[name].pro += 1;
       agg[name].finished += r.finishedCnt || 0;
       agg[name][r.cat] += 1;
     }

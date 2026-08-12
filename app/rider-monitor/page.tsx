@@ -26,7 +26,7 @@ type LiveRider = {
   pool?: "standard" | "pro";
 };
 type Cats = { delivering: number; online: number; notOnline: number; below: number; outArea: number; other: number };
-type AggRow = { name: string; total: number; finished: number } & Cats;
+type AggRow = { name: string; total: number; pro?: number; finished: number } & Cats;
 type Payload = {
   capturedAt: string | null;
   kpi: { ar: number | null; caa: number | null; acceptCnt: number | null; overtime: number | null; tsh: number | null; finishedCnt: number | null } | null;
@@ -446,7 +446,11 @@ export default function RiderMonitorPage() {
               headers={[t("rmScopeFranchise"), t("rmOnShift"), t("rmDelivering"), t("rmOnline"), t("rmBelow"), t("rmColFinished")]}
               rows={data.summary.byFranchise.map((f) => [
                 <span key="n" className={`font-bold ${f.name === "未归属" ? "text-[var(--danger-ink)]" : "text-[var(--text)]"}`}>{f.name === "未归属" ? t("rmUnassigned") : f.name}</span>,
-                <span key="t" className="font-extrabold">{f.total}</span>,
+                // 在班骑手 = 总数 + 金色 PRO 小计(有才显示,与顶卡同一套语言)
+                <span key="t" className="font-extrabold">
+                  {f.total}
+                  {(f.pro ?? 0) > 0 && <span className="ml-1.5 text-[10px] font-bold" style={{ color: "#b97900" }}>PRO {f.pro}</span>}
+                </span>,
                 <span key="d" style={{ color: CAT_COLOR.delivering }}>{f.delivering}</span>,
                 <span key="o" style={{ color: CAT_COLOR.online }}>{f.online}</span>,
                 <span key="b" style={{ color: CAT_COLOR.below }}>{f.below}</span>,
@@ -460,7 +464,10 @@ export default function RiderMonitorPage() {
               headers={[t("rmScopePonto"), t("rmOnShift"), t("rmDelivering"), t("rmOnline"), t("rmBelow"), t("rmColFinished")]}
               rows={data.summary.byPonto.map((p) => [
                 <span key="n" className={`font-bold ${p.name === "未归属" ? "text-[var(--danger-ink)]" : "text-[var(--text)]"}`}>{p.name === "未归属" ? t("rmUnassigned") : p.name}</span>,
-                <span key="t" className="font-extrabold">{p.total}</span>,
+                <span key="t" className="font-extrabold">
+                  {p.total}
+                  {(p.pro ?? 0) > 0 && <span className="ml-1.5 text-[10px] font-bold" style={{ color: "#b97900" }}>PRO {p.pro}</span>}
+                </span>,
                 <span key="d" style={{ color: CAT_COLOR.delivering }}>{p.delivering}</span>,
                 <span key="o" style={{ color: CAT_COLOR.online }}>{p.online}</span>,
                 <span key="b" style={{ color: CAT_COLOR.below }}>{p.below}</span>,
