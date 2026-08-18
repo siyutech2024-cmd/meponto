@@ -446,11 +446,24 @@ export default function FranchisePage() {
   const language = useVentoStore((state) => state.language);
   const copy = franchiseCopies[language];
   const mallShare = useMallShareSummary();
+  // 总部内部页(2026-08-11 业务方定):加盟商/站点会话不可见 ——
+  // 导航入口已从两个门户移除,这里再加硬守卫,直输 URL 也弹回各自首页。
+  const [allowed, setAllowed] = useState(false);
+  useEffect(() => {
+    const session = readSession();
+    if (session?.portal === "franchise" || session?.portal === "ponto") {
+      window.location.replace(session.portal === "franchise" ? "/dispatch/franchise" : "/dispatch/station");
+      return;
+    }
+    setAllowed(true);
+  }, []);
   const t = (key: TranslationKey, vars?: Record<string, string | number | undefined>) => {
     let text = translate(language, key);
     if (vars) for (const [name, value] of Object.entries(vars)) text = text.replace(`{${name}}`, String(value ?? ""));
     return text;
   };
+
+  if (!allowed) return null;
 
   return (
     <AppShell>

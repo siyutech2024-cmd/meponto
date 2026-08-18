@@ -113,7 +113,8 @@ export const portalConfigs: Record<PortalId, PortalConfig> = {
       { href: "/performance", label: "KPI 考核", description: "查看本加盟商站点与骑手的 T+1 KPI。", permission: "view_analytics" },
       { href: "/wallet", label: "结算与提现", description: "骑手余额台账、提现付款确认（PIX）。", permission: "view_finance" },
       { href: "/support", label: "联系总部", description: "提交工单，总部统一处理回复。", permission: "view_analytics" },
-      { href: "/franchise", label: "合作方案", description: "查看加盟模型、SOP、KPI 和月度治理节奏。", permission: "view_analytics" },
+      // 「加盟治理 /franchise」为总部内部页(合作条款、费率、治理节奏),
+      // 2026-08-11 业务方定:只在主后台显示,加盟商/站点一律隐藏。
       { href: "/pontos", label: "站点列表", description: "查看/维护所属站点基础信息。", permission: "manage_pontos" },
       { href: "/users", label: "站点账号", description: "为下属站点创建和管理登录账号。", permission: "manage_slots" },
       { href: "/rider-monitor", label: "实时骑手看板", description: "本加盟商在线骑手实时状态与状态分布;含当日累计数据页签。", permission: "manage_riders" },
