@@ -98,7 +98,8 @@ function Podium({ top, variant = "dark" }: { top: Entry[]; variant?: "dark" | "r
   const realme = variant === "realme";
   // 视觉顺序 2-1-3,冠军在中间且台子最高。
   const order = [top[1], top[0], top[2]];
-  const heights = realme ? [62, 92, 50] : [58, 82, 44];
+  // 活动皮肤台子加高一档,2/3 名要放得下"耳机"奖品标签。
+  const heights = realme ? [80, 96, 68] : [58, 82, 44];
   return (
     <div className="flex items-end justify-center gap-2 px-2 pt-2">
       {order.map((entry, index) => {
@@ -146,10 +147,13 @@ function Podium({ top, variant = "dark" }: { top: Entry[]; variant?: "dark" | "r
                 }}
               >
                 <div className="pt-1 text-[14px] font-black" style={{ color: "#FFD60A" }}>{entry.rank}</div>
-                {champion && (
+                {champion ? (
                   <div className="px-1 text-[8.5px] font-black leading-[1.25]" style={{ color: "#FFD60A" }}>
                     realme C100x<br /><span className="text-white/90">8000mAh</span>
                   </div>
+                ) : (
+                  // 2/3 名奖品:耳机(与活动海报一致)。
+                  <div className="px-1 text-[8.5px] font-black leading-[1.25] text-white/85">Fone de<br />ouvido</div>
                 )}
               </div>
             ) : (
@@ -468,6 +472,7 @@ export default function RiderRankingPage() {
                             <div className="mt-0.5 text-[11px] font-black text-[#111]">
                               <span className="text-[15px]">8000</span>mAh Bateria · Prêmio do 1º lugar
                             </div>
+                            <div className="text-[10px] font-black text-[#111]/70">2º e 3º lugar: fone de ouvido</div>
                           </div>
                         </div>
                         <div className="relative h-[58px] w-[44px] shrink-0" aria-hidden>
