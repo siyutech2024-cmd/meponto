@@ -121,7 +121,8 @@ function Podium({ top, variant = "dark" }: { top: Entry[]; variant?: "dark" | "r
                 color: realme && champion ? "#FFD60A" : "#171b33",
                 fontSize: champion ? 17 : 14,
                 boxShadow: realme ? "0 5px 14px rgba(0,0,0,.28)" : `0 6px 18px ${medal}55`,
-                border: realme ? "2px solid #fff" : undefined,
+                // PRO 冠军在活动皮肤里头像描金圈,保住金色身份。
+                border: realme ? (entry.pool === "pro" ? `3px solid ${GOLD}` : "2px solid #fff") : undefined,
               }}
             >
               {initials(entry.name)}
@@ -131,7 +132,18 @@ function Podium({ top, variant = "dark" }: { top: Entry[]; variant?: "dark" | "r
                 加显式徽章,和榜单行同一款。 */}
             <span className="mt-1.5 flex max-w-full items-center justify-center gap-1">
               <span className={`line-clamp-1 min-w-0 text-center text-[11px] font-black ${realme ? "text-[#111]" : "text-white/90"}`}>{shortName(entry.name)}</span>
-              {entry.pool === "pro" && <span className="shrink-0 rounded-full px-1 py-[1px] text-[8px] font-black tracking-wide" style={{ background: realme ? "#111" : `linear-gradient(135deg, ${GOLD}, #ffce4d)`, color: realme ? "#FFD60A" : "#171b33" }}>PRO</span>}
+              {entry.pool === "pro" && (
+                // 活动黄底上黑色小徽章会和黑名字融成一团 —— 放大并描白边,
+                // 黑底金字在黄底上重新跳出来。深色皮肤维持原金色胶囊。
+                <span
+                  className={`shrink-0 rounded-full font-black tracking-wide ${realme ? "px-1.5 py-[2px] text-[9px]" : "px-1 py-[1px] text-[8px]"}`}
+                  style={realme
+                    ? { background: "#111", color: "#FFD60A", border: "1.5px solid #fff", boxShadow: "0 1px 4px rgba(0,0,0,.35)" }
+                    : { background: `linear-gradient(135deg, ${GOLD}, #ffce4d)`, color: "#171b33" }}
+                >
+                  PRO
+                </span>
+              )}
             </span>
             <span className="text-[15px] font-black tabular-nums" style={{ color: realme ? "#111" : medal }}>{entry.orders}</span>
             {realme ? (
