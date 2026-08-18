@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { Trophy, ArrowLeft, Flame } from "lucide-react";
 
 /**
@@ -37,6 +37,17 @@ type Payload = { enabled: boolean; updatedAt?: string | null; daily?: Board | nu
 
 const GOLD = "#eda100";
 const MEDAL = ["#f5b301", "#9fb3c8", "#d08b4f"] as const;
+
+/**
+ * realme C100x 周榜活动(两期)。日榜不动,只有**周榜**的领奖台换成
+ * realme 品牌黄的活动皮肤;活动结束后把 CAMPAIGN_WEEKS 清空即可整体回到
+ * 深色默认皮肤,不用改别的代码。
+ */
+const CAMPAIGN_WEEKS = [
+  { from: "2026-08-17", to: "2026-08-23", label: "17/08 – 23/08", award: "28/08" },
+  { from: "2026-08-24", to: "2026-08-30", label: "24/08 – 30/08", award: "04/09" },
+] as const;
+const REALME_YELLOW = "linear-gradient(160deg, #FFD60A 0%, #FFC300 55%, #F5B301 100%)";
 
 /**
  * ⚠️ 颜色一律走这个函数,不要用 `${color}66` 这种 8 位 hex 拼 alpha。
@@ -82,16 +93,22 @@ function initials(name: string): string {
  * 领奖台。前三名值得一个和第 27 名不一样的位置 —— 这是整张榜唯一真正
  * 「有奖」的部分,平铺成列表就没有任何戏剧性了。
  */
-function Podium({ top }: { top: Entry[] }) {
+function Podium({ top, variant = "dark" }: { top: Entry[]; variant?: "dark" | "realme" }) {
   if (top.length < 3) return null;
+  const realme = variant === "realme";
   // 视觉顺序 2-1-3,冠军在中间且台子最高。
   const order = [top[1], top[0], top[2]];
-  const heights = [58, 82, 44];
+  const heights = realme ? [62, 92, 50] : [58, 82, 44];
   return (
     <div className="flex items-end justify-center gap-2 px-2 pt-2">
       {order.map((entry, index) => {
         const medal = MEDAL[entry.rank - 1];
         const champion = entry.rank === 1;
+        // 活动皮肤:黄底上文字一律近黑;冠军头像黑底黄字呼应奖品海报,
+        // 台子用深色半透明块压住黄底,冠军台标注奖品。
+        const avatarBg = realme && champion
+          ? "linear-gradient(145deg, #111, #333)"
+          : entry.pool === "pro" ? `linear-gradient(145deg, ${GOLD}, #b97900)` : `linear-gradient(145deg, ${medal}, ${medal}bb)`;
         return (
           <div key={entry.rider99Id} className="flex min-w-0 flex-1 flex-col items-center" style={{ animation: `rise .5s ${0.08 * index}s cubic-bezier(.2,.9,.3,1.2) both` }}>
             <div
@@ -99,10 +116,11 @@ function Podium({ top }: { top: Entry[] }) {
               style={{
                 width: champion ? 56 : 46,
                 height: champion ? 56 : 46,
-                background: entry.pool === "pro" ? `linear-gradient(145deg, ${GOLD}, #b97900)` : `linear-gradient(145deg, ${medal}, ${medal}bb)`,
-                color: "#171b33",
+                background: avatarBg,
+                color: realme && champion ? "#FFD60A" : "#171b33",
                 fontSize: champion ? 17 : 14,
-                boxShadow: `0 6px 18px ${medal}55`,
+                boxShadow: realme ? "0 5px 14px rgba(0,0,0,.28)" : `0 6px 18px ${medal}55`,
+                border: realme ? "2px solid #fff" : undefined,
               }}
             >
               {initials(entry.name)}
@@ -111,20 +129,41 @@ function Podium({ top }: { top: Entry[] }) {
             {/* PRO 标志:头像渐变色太隐晦(和金牌色几乎分不清),
                 加显式徽章,和榜单行同一款。 */}
             <span className="mt-1.5 flex max-w-full items-center justify-center gap-1">
-              <span className="line-clamp-1 min-w-0 text-center text-[11px] font-black text-white/90">{shortName(entry.name)}</span>
-              {entry.pool === "pro" && <span className="shrink-0 rounded-full px-1 py-[1px] text-[8px] font-black tracking-wide" style={{ background: `linear-gradient(135deg, ${GOLD}, #ffce4d)`, color: "#171b33" }}>PRO</span>}
+              <span className={`line-clamp-1 min-w-0 text-center text-[11px] font-black ${realme ? "text-[#111]" : "text-white/90"}`}>{shortName(entry.name)}</span>
+              {entry.pool === "pro" && <span className="shrink-0 rounded-full px-1 py-[1px] text-[8px] font-black tracking-wide" style={{ background: realme ? "#111" : `linear-gradient(135deg, ${GOLD}, #ffce4d)`, color: realme ? "#FFD60A" : "#171b33" }}>PRO</span>}
             </span>
-            <span className="text-[15px] font-black tabular-nums" style={{ color: medal }}>{entry.orders}</span>
-            <div
-              className="mt-1 w-full rounded-t-[8px]"
-              style={{
-                height: heights[index],
-                background: `linear-gradient(180deg, ${medal}66, ${medal}0a)`,
-                borderTop: `2px solid ${medal}`,
-              }}
-            >
-              <div className="pt-1 text-center text-[13px] font-black" style={{ color: medal }}>{entry.rank}</div>
-            </div>
+            <span className="text-[15px] font-black tabular-nums" style={{ color: realme ? "#111" : medal }}>{entry.orders}</span>
+            {realme ? (
+              <div
+                className="mt-1 w-full rounded-t-[10px] text-center"
+                style={{
+                  height: heights[index],
+                  background: champion
+                    ? "linear-gradient(180deg, #111 0%, #2a2a2a 100%)"
+                    : "linear-gradient(180deg, rgba(17,17,17,.8), rgba(17,17,17,.5))",
+                  borderTop: champion ? "3px solid #FFD60A" : `3px solid ${medal}`,
+                  boxShadow: champion ? "0 -4px 18px rgba(0,0,0,.25)" : undefined,
+                }}
+              >
+                <div className="pt-1 text-[14px] font-black" style={{ color: "#FFD60A" }}>{entry.rank}</div>
+                {champion && (
+                  <div className="px-1 text-[8.5px] font-black leading-[1.25]" style={{ color: "#FFD60A" }}>
+                    realme C100x<br /><span className="text-white/90">8000mAh</span>
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div
+                className="mt-1 w-full rounded-t-[8px]"
+                style={{
+                  height: heights[index],
+                  background: `linear-gradient(180deg, ${medal}66, ${medal}0a)`,
+                  borderTop: `2px solid ${medal}`,
+                }}
+              >
+                <div className="pt-1 text-center text-[13px] font-black" style={{ color: medal }}>{entry.rank}</div>
+              </div>
+            )}
           </div>
         );
       })}
@@ -205,42 +244,54 @@ function Skeleton() {
   );
 }
 
-function BoardView({ board, subtitle }: { board: Board | null | undefined; subtitle: string }) {
+function BoardView({ board, subtitle, variant = "dark", stageExtra }: { board: Board | null | undefined; subtitle: string; variant?: "dark" | "realme"; stageExtra?: ReactNode }) {
   const rest = useMemo(() => board?.top.slice(3) ?? [], [board]);
   const max = board?.top[0]?.orders ?? 0;
+  const realme = variant === "realme";
   if (!board) return null;
   if (board.top.length === 0) {
     return (
-      <div className="panel p-8 text-center">
-        <div className="text-[28px]">🛵</div>
-        <div className="mt-2 text-sm font-bold text-[var(--muted)]">Ainda sem dados para este período.</div>
+      <div className="space-y-3">
+        {/* 空榜(比如第二期还没开赛)也要把奖品横幅和期次切换留在台上,
+            否则骑手切过去就"什么都没了",不知道怎么切回来。 */}
+        {stageExtra && (realme ? (
+          <div className="relative overflow-hidden rounded-[14px] p-3" style={{ background: REALME_YELLOW, boxShadow: "0 10px 30px rgba(245,179,1,.35)" }}>{stageExtra}</div>
+        ) : stageExtra)}
+        <div className="panel p-8 text-center">
+          <div className="text-[28px]">🛵</div>
+          <div className="mt-2 text-sm font-bold text-[var(--muted)]">Ainda sem dados para este período.</div>
+        </div>
       </div>
     );
   }
   return (
     <div className="space-y-3">
-      {/* 领奖台放在深色"舞台"上 —— 和下面浅色的列表拉开层次,
-          前三名才有被单独打光的感觉。 */}
+      {/* 领奖台舞台:默认深色;周榜活动期换 realme 品牌黄(黄底黑字),
+          与 C100x 奖品海报同一视觉。 */}
       <div
         className="relative overflow-hidden rounded-[14px] p-3 pb-4"
         style={{
-          background: "linear-gradient(160deg, #1b1f36 0%, #2a2140 55%, #3a1f33 100%)",
+          background: realme ? REALME_YELLOW : "linear-gradient(160deg, #1b1f36 0%, #2a2140 55%, #3a1f33 100%)",
+          boxShadow: realme ? "0 10px 30px rgba(245,179,1,.35)" : undefined,
           // 提成独立合成层 + 隔离重绘:里面几层大渐变就不会跟着滚动一起重画。
           transform: "translateZ(0)",
           contain: "paint",
         }}
       >
-        {/* 顶部金色光晕。纯装饰,pointer-events 关掉。 */}
-        <span
-          aria-hidden
-          className="pointer-events-none absolute -top-16 left-1/2 h-40 w-40 -translate-x-1/2 rounded-full"
-          style={{ background: `radial-gradient(closest-side, ${GOLD}55, transparent)` }}
-        />
+        {/* 顶部金色光晕。纯装饰,pointer-events 关掉。黄底上不需要。 */}
+        {!realme && (
+          <span
+            aria-hidden
+            className="pointer-events-none absolute -top-16 left-1/2 h-40 w-40 -translate-x-1/2 rounded-full"
+            style={{ background: `radial-gradient(closest-side, ${GOLD}55, transparent)` }}
+          />
+        )}
+        {stageExtra}
         <div className="relative mb-1 flex items-center justify-between px-1">
-          <span className="text-[11px] font-bold text-white/55">{subtitle}</span>
-          <span className="text-[11px] font-bold text-white/55">{board.total} entregadores</span>
+          <span className={`text-[11px] font-bold ${realme ? "text-[#111]/60" : "text-white/55"}`}>{subtitle}</span>
+          <span className={`text-[11px] font-bold ${realme ? "text-[#111]/60" : "text-white/55"}`}>{board.total} entregadores</span>
         </div>
-        <Podium top={board.top} />
+        <Podium top={board.top} variant={variant} />
       </div>
 
       {rest.length > 0 && (
@@ -268,11 +319,14 @@ export default function RiderRankingPage() {
   const [tab, setTab] = useState<"daily" | "weekly">("daily");
   const [data, setData] = useState<Payload | null>(null);
   const [failed, setFailed] = useState(false);
+  // 活动期次:null = 让服务端用当前周(默认行为);选了某期就带 ?week= 拉那一周。
+  const [campaignWeek, setCampaignWeek] = useState<string | null>(null);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (week?: string | null) => {
     try {
       // 不带任何自定义 header —— 认证完全靠 cookie(APP WebView 已注入)。
-      const response = await fetch("/api/rider/leaderboard", { cache: "no-store", credentials: "include" });
+      const url = week ? `/api/rider/leaderboard?week=${week}` : "/api/rider/leaderboard";
+      const response = await fetch(url, { cache: "no-store", credentials: "include" });
       if (!response.ok) {
         setFailed(true);
         return;
@@ -284,8 +338,8 @@ export default function RiderRankingPage() {
   }, []);
 
   useEffect(() => {
-    void load();
-  }, [load]);
+    void load(campaignWeek);
+  }, [load, campaignWeek]);
 
   /**
    * 返回按钮:**没有上一页就不显示**。
@@ -396,7 +450,56 @@ export default function RiderRankingPage() {
                   subtitle={daily?.live ? "Hoje · atualiza a cada 30 min" : daily?.date ? `Dia ${daily.date}` : ""}
                 />
               )}
-              {tab === "weekly" && <BoardView board={weekly} subtitle={weekly ? `${weekly.from} – ${weekly.to}` : ""} />}
+              {tab === "weekly" && (
+                <BoardView
+                  board={weekly}
+                  subtitle={weekly ? `${weekly.from} – ${weekly.to}` : ""}
+                  variant={CAMPAIGN_WEEKS.length > 0 ? "realme" : "dark"}
+                  stageExtra={CAMPAIGN_WEEKS.length > 0 ? (
+                    <div className="relative">
+                      {/* 奖品横幅:realme C100x 海报同款黄底黑字 + 双机剪影。 */}
+                      <div className="flex items-center justify-between gap-2 px-1">
+                        <div className="flex items-center gap-2">
+                          <span className="text-[20px]">🏆</span>
+                          <div>
+                            <div className="text-[15px] font-black leading-none tracking-tight text-[#111]">
+                              realme C100x <span className="ml-0.5 rounded-[4px] border-[1.5px] border-[#111] px-[3px] align-[2px] text-[9px] font-black">NFC</span>
+                            </div>
+                            <div className="mt-0.5 text-[11px] font-black text-[#111]">
+                              <span className="text-[15px]">8000</span>mAh Bateria · Prêmio do 1º lugar
+                            </div>
+                          </div>
+                        </div>
+                        <div className="relative h-[58px] w-[44px] shrink-0" aria-hidden>
+                          <span className="absolute right-0 top-[2px] h-[54px] w-[26px] rounded-[6px]" style={{ background: "linear-gradient(160deg,#1a2b4a,#0d1526)", boxShadow: "-2px 3px 8px rgba(0,0,0,.25)" }} />
+                          <span className="absolute left-0 top-0 h-[54px] w-[26px] rounded-[6px]" style={{ background: "linear-gradient(160deg,#f5f0e6,#dcd4c2)", boxShadow: "-2px 3px 8px rgba(0,0,0,.2)" }}>
+                            <span className="absolute left-[4px] top-[4px] h-2 w-2 rounded-full bg-[#333]" style={{ boxShadow: "0 10px 0 -2px #333" }} />
+                          </span>
+                        </div>
+                      </div>
+                      {/* 期次切换:17/08–23/08(颁奖 28/08)/ 24/08–30/08(颁奖 04/09)。 */}
+                      <div className="mt-2.5 flex gap-1.5">
+                        {CAMPAIGN_WEEKS.map((c) => {
+                          const active = weekly?.from === c.from || (campaignWeek === null && weekly == null && c === CAMPAIGN_WEEKS[0]);
+                          return (
+                            <button
+                              key={c.from}
+                              type="button"
+                              onClick={() => setCampaignWeek(c.from)}
+                              className="flex-1 rounded-full px-1 py-[6px] text-[10.5px] font-black"
+                              style={active
+                                ? { background: "#111", color: "#FFD60A" }
+                                : { background: "rgba(17,17,17,.08)", color: "#111", border: "1.5px solid rgba(17,17,17,.35)" }}
+                            >
+                              {c.label} · 🏅 {c.award}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  ) : undefined}
+                />
+              )}
             </div>
 
             {/* 口径声明 —— 必须写,否则骑手会拿榜单去质疑工资。

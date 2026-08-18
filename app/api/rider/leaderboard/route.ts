@@ -87,7 +87,11 @@ export async function GET(request: Request) {
   if (!config.enabled) return Response.json({ data: { enabled: false } });
 
   const today = spDate();
-  let week = weekWindow(today); // 自然周,周一→周日
+  // 可选 ?week=YYYY-MM-DD(取该日期所在自然周)——活动期切换历史周用。
+  // 显式指定的周为空时**不做**上周回退:骑手主动看某一期,空就是还没开始/没数据。
+  const weekParam = new URL(request.url).searchParams.get("week");
+  const explicitWeek = weekParam && /^\d{4}-\d{2}-\d{2}$/.test(weekParam) ? weekWindow(weekParam) : null;
+  let week = explicitWeek ?? weekWindow(today); // 自然周,周一→周日
 
   const fetchWeek = async (win: { from: string; to: string }): Promise<Agg[] | null> => {
     const { data: rpcRows, error: rpcError } = await supabase.rpc("rider_order_ranking", {
@@ -117,7 +121,7 @@ export async function GET(request: Request) {
     // 空榜会让骑手以为功能坏了 —— 回退显示上周完整榜。页面本来就把
     // from–to 日期区间显示出来,骑手看得出这是上周,不会误导。
     // 本周第一笔数据(周二导入周一的报表)一进来,缓存过期后自动切回本周。
-    if (rows.length === 0) {
+    if (rows.length === 0 && !explicitWeek) {
       const prevDate = new Date(new Date(`${today}T12:00:00Z`).getTime() - 7 * 864e5).toISOString().slice(0, 10);
       const prevWeek = weekWindow(prevDate);
       const prev = await fetchWeek(prevWeek);
@@ -126,8 +130,8 @@ export async function GET(request: Request) {
         week = prevWeek;
       }
     }
-    // 只保留当前这一把 —— 跨周后旧 key 没人再用,不让 Map 无限长大。
-    aggCache.clear();
+    // 活动期会在两个窗口之间来回切,保留少量条目;超限一起清,不让 Map 无限长大。
+    if (aggCache.size >= 4) aggCache.clear();
     aggCache.set(cacheKey, { at: Date.now(), rows, week });
   }
   // 日榜那天 = 报表里最新有数据的一天(通常是昨天)—— 仅作实时空档的回退。
