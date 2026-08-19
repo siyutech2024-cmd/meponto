@@ -49,6 +49,12 @@ const CAMPAIGN_WEEKS = [
 ] as const;
 const REALME_YELLOW = "linear-gradient(160deg, #FFD60A 0%, #FFC300 55%, #F5B301 100%)";
 
+/** GA4 事件(gtag 由全局 layout 注入;不存在时静默跳过,不影响页面)。 */
+function track(event: string, params?: Record<string, unknown>) {
+  const gtag = (window as unknown as { gtag?: (...args: unknown[]) => void }).gtag;
+  gtag?.("event", event, params);
+}
+
 /**
  * ⚠️ 颜色一律走这个函数,不要用 `${color}66` 这种 8 位 hex 拼 alpha。
  *
@@ -441,7 +447,7 @@ export default function RiderRankingPage() {
                   <button
                     key={key}
                     type="button"
-                    onClick={() => setTab(key)}
+                    onClick={() => { setTab(key); track("leaderboard_tab", { tab: key }); }}
                     className="inline-flex h-9 flex-1 items-center justify-center gap-1.5 rounded-full text-xs font-black"
                     style={
                       tab === key
@@ -502,7 +508,7 @@ export default function RiderRankingPage() {
                             <button
                               key={c.from}
                               type="button"
-                              onClick={() => setCampaignWeek(c.from)}
+                              onClick={() => { setCampaignWeek(c.from); track("campaign_week_select", { week: c.from, label: c.label }); }}
                               className="flex-1 rounded-full px-1 py-[6px] text-[10.5px] font-black"
                               style={active
                                 ? { background: "#111", color: "#FFD60A" }
