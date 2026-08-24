@@ -106,6 +106,10 @@ export async function GET(request: Request) {
   for (const { src, at } of latestPerSource) {
     if (at) latestBySource.set(src, at);
   }
+  // Raw per-source batch times (BEFORE the freshness cutoff) — exposed in the
+  // payload so "PRO 没数据" is diagnosable at a glance: an old timestamp here
+  // means that source's scraper is down; null means it never uploaded.
+  const sourceBatches: Record<string, string | null> = Object.fromEntries(latestPerSource.map(({ src, at }) => [src, at]));
   // 新鲜度护栏:某源断供(会话掉线/服务停)时,它的"最新批"可能是几小时
   // 前的,不能再当实时层展示。以最新的源为基准,落后超过 20 分钟的源剔除。
   // 用相对基准而不是绝对时钟,收班后(两源都停)看板仍能显示最后状态。
@@ -353,6 +357,7 @@ export async function GET(request: Request) {
   return jsonResponse({
     data: {
       capturedAt,
+      sourceBatches,
       kpi: kpi ? { ar: kpi.ar, caa: kpi.caa, acceptCnt: kpi.accept_cnt, overtime: kpi.overtime, tsh: kpi.tsh, finishedCnt: kpi.finished_cnt } : null,
       // PRO 源当前班次读数 —— 存在才带(PRO 收班/断供时为 null,前端不显示)。
       kpiPro: kpiPro ? { ar: kpiPro.ar, caa: kpiPro.caa, acceptCnt: kpiPro.accept_cnt, overtime: kpiPro.overtime, tsh: kpiPro.tsh, finishedCnt: kpiPro.finished_cnt } : null,
