@@ -253,11 +253,14 @@ async function pull(ctx, city = null) {
       // "open" → click the picker; "pick" → click the dropdown option.
       const drive = (step, target) => page.evaluate(([stepArg, targetArg]) => {
         const norm = (v) => String(v ?? "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/\s+/g, " ").trim();
-        const leaves = [...document.querySelectorAll("body *")].filter(
-          (el) => el.childElementCount === 0 && el.offsetParent !== null && norm(el.textContent).length > 0 && norm(el.textContent).length < 60,
-        );
         const known = ["sao paulo", "sao joao da boa vista"];
-        const cityEls = leaves.filter((el) => known.includes(norm(el.textContent)));
+        // Innermost visible elements whose full text is exactly a city name
+        // (no descendant also matches — that keeps us on the clickable node).
+        const cityEls = [...document.querySelectorAll("body *")].filter((el) => {
+          if (el.offsetParent === null) return false;
+          if (!known.includes(norm(el.textContent))) return false;
+          return ![...el.children].some((child) => known.includes(norm(child.textContent)));
+        });
         if (stepArg === "read") return cityEls.length ? norm(cityEls[0].textContent) : "";
         if (stepArg === "open") {
           if (!cityEls.length) return false;
@@ -274,7 +277,15 @@ async function pull(ctx, city = null) {
       const want = city.label.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/\s+/g, " ").trim();
       let switched = false;
       try {
-        const current = await drive("read", "");
+        // The SPA renders the picker SECONDS after domcontentloaded — poll for
+        // it instead of reading immediately (2026-08-27: instant read found an
+        // empty DOM and every round was skipped).
+        let current = "";
+        for (let attempt = 0; attempt < 30 && !current; attempt += 1) {
+          await page.waitForTimeout(1000);
+          current = await drive("read", "");
+        }
+        if (!current) log("city picker never appeared after 30s");
         if (current === want) {
           switched = true; // already on this city
         } else {
