@@ -143,24 +143,23 @@ export const HOT_ZONES: HotZone[] = [
       [-46.629027, -23.586821], [-46.635067, -23.583597], [-46.641223, -23.586693],
     ],
   },
-  // ---- São João da Boa Vista (SP interior, ~90k people) ---------------------
-  // Opened as a new small-city operation. No Eastwind area metadata yet: the
-  // grid mirrors the SP hexagon geometry (≈650 m edge) centred on the city,
-  // four cells covering the built-up area. Refine when 99 publishes areas.
+  // ---- São João da Boa Vista (SP interior) ---------------------------------
+  // Single Eastwind hot_area covering the whole town — traced from the 99
+  // operations map screenshot (the polygon labelled hot_area_…208827). One
+  // area, not a grid: the city is small enough that 99 runs it as one zone,
+  // which also matches the local model (one franchise + rider-head stations).
+  // Vertices follow the screenshot clockwise from the NW corner near SP-344,
+  // out to Jardim das Paineiras in the east, south past the ASTE area and
+  // back over the industrial district / airport in the west. ≈125 km².
   {
-    id: "sjbv1", city: "São João da Boa Vista", group: "São João da Boa Vista", hotZone: null, areaId: null, color: TEAL,
-    points: [[-46.793061, -21.966927], [-46.798517, -21.964029], [-46.803973, -21.966927], [-46.803973, -21.972723], [-46.798517, -21.975621], [-46.793061, -21.972723], [-46.793061, -21.966927]],
-  },
-  {
-    id: "sjbv2", city: "São João da Boa Vista", group: "São João da Boa Vista", hotZone: null, areaId: null, color: TEAL,
-    points: [[-46.782149, -21.966927], [-46.787605, -21.964029], [-46.793061, -21.966927], [-46.793061, -21.972723], [-46.787605, -21.975621], [-46.782149, -21.972723], [-46.782149, -21.966927]],
-  },
-  {
-    id: "sjbv3", city: "São João da Boa Vista", group: "São João da Boa Vista", hotZone: null, areaId: null, color: TEAL,
-    points: [[-46.787605, -21.958233], [-46.793061, -21.955335], [-46.798517, -21.958233], [-46.798517, -21.964029], [-46.793061, -21.966927], [-46.787605, -21.964029], [-46.787605, -21.958233]],
-  },
-  {
-    id: "sjbv4", city: "São João da Boa Vista", group: "São João da Boa Vista", hotZone: null, areaId: null, color: TEAL,
-    points: [[-46.798517, -21.958233], [-46.803973, -21.955335], [-46.809429, -21.958233], [-46.809429, -21.964029], [-46.803973, -21.966927], [-46.798517, -21.964029], [-46.798517, -21.958233]],
+    id: "sjbv-hot", city: "São João da Boa Vista", group: "São João da Boa Vista",
+    hotZone: "hot_area_sjbv", areaId: null, color: TEAL,
+    points: [
+      [-46.879, -21.943], [-46.86, -21.927], [-46.833, -21.925], [-46.808, -21.918],
+      [-46.776, -21.92], [-46.748, -21.927], [-46.73, -21.94], [-46.726, -21.96],
+      [-46.738, -21.976], [-46.742, -21.995], [-46.76, -22.01], [-46.79, -22.018],
+      [-46.818, -22.01], [-46.842, -21.995], [-46.862, -21.976], [-46.878, -21.96],
+      [-46.879, -21.943],
+    ],
   },
 ];
