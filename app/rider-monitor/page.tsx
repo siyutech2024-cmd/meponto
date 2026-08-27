@@ -378,7 +378,7 @@ export default function RiderMonitorPage() {
                 className={`h-7 px-2.5 text-[11px] font-bold ${city === name ? "bg-[var(--accent)] text-[var(--accent-ink)]" : "text-[var(--muted-strong)] hover:bg-[var(--surface-hover)]"}`}
               >
                 {name}
-                <span className="ml-1 opacity-70">{HOT_ZONES.filter((z) => z.city === name).length}</span>
+                <span className="ml-1 opacity-70">{t("rmZoneCount", { n: HOT_ZONES.filter((z) => z.city === name).length })}</span>
               </button>
             ))}
           </div>
