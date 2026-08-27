@@ -206,8 +206,35 @@ export default function RiderMonitorPage() {
     return () => clearInterval(timer);
   }, [load, loadZoneAssignments]);
 
-  const riders = data?.riders ?? [];
-  const cats = data?.summary.cats;
+  // ---- City scoping (HQ) ---------------------------------------------------
+  // A city is represented by the franchises that own its hot zones, so the
+  // whole board — cards, KPI, rider list, distribution tables — follows the
+  // city switcher, not just the map. Cities whose zones aren't assigned yet
+  // show nothing rather than everything (an unassigned new city has no
+  // traffic anyway). São Paulo keeps the full view when its zones carry no
+  // assignments, preserving today's behaviour for the main operation.
+  const cityFranchises = useMemo(() => {
+    const names = new Set<string>();
+    for (const zone of HOT_ZONES) {
+      if (zone.city !== city) continue;
+      for (const name of zoneAssign[zone.id] ?? []) if (name) names.add(name);
+    }
+    return names;
+  }, [city, zoneAssign]);
+  const cityHasAssignments = cityFranchises.size > 0;
+  const inCity = useCallback((franchise: string) => !isHQ || !cityHasAssignments || cityFranchises.has(franchise), [isHQ, cityHasAssignments, cityFranchises]);
+
+  const riders = (data?.riders ?? []).filter((r) => inCity(r.franchise));
+  // Recompute the status counts on the city-scoped rider set; falls back to the
+  // server summary when no city filtering applies.
+  const cats = useMemo(() => {
+    if (!data) return undefined;
+    if (!isHQ || !cityHasAssignments) return data.summary.cats;
+    const acc: Cats = { delivering: 0, online: 0, notOnline: 0, below: 0, outArea: 0, other: 0 };
+    for (const r of riders) acc[r.cat] += 1;
+    return acc;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [data, isHQ, cityHasAssignments, city, zoneAssign]);
   // 模式二 T6: how many of the riders on shift right now come from the PRO
   // source — shown as a subtitle on the existing "on shift" card.
   const proOnline = riders.filter((r) => r.pool === "pro").length;
@@ -265,12 +292,31 @@ export default function RiderMonitorPage() {
   }, [scopeFranchise, zoneAssign, city]);
   // Franchise choices for the HQ assign panel: every franchise seen in the
   // city-wide summary plus any already holding an assignment.
+  // Franchise choices for the HQ zone-assignment panel. Sourced from the
+  // FRANCHISE REGISTRY (/api/network) — a newly opened city has no riders on
+  // the live board yet, so deriving options from live traffic hid exactly the
+  // franchises an operator needs to assign zones to. Live names and existing
+  // assignments are unioned in as a fallback.
+  const [registryFranchises, setRegistryFranchises] = useState<string[]>([]);
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/network", { headers, cache: "no-store" })
+      .then((response) => (response.ok ? response.json() : null))
+      .then((payload) => {
+        if (cancelled || !payload) return;
+        const names = (payload.data?.franchises ?? []).map((f: { name: string }) => f.name).filter(Boolean);
+        setRegistryFranchises(names);
+      })
+      .catch(() => undefined);
+    return () => { cancelled = true; };
+  }, [headers]);
+
   const franchiseOptions = useMemo(() => {
-    const names = new Set<string>();
+    const names = new Set<string>(registryFranchises);
     for (const f of data?.summary.byFranchise ?? []) if (f.name && f.name !== "未归属") names.add(f.name);
     for (const fs of Object.values(zoneAssign)) for (const f of fs) if (f) names.add(f);
     return [...names].sort((a, b) => a.localeCompare(b));
-  }, [data, zoneAssign]);
+  }, [data, zoneAssign, registryFranchises]);
 
   const catChips: Array<[Cat | "", string]> = [
     ["", t("rmAllStatus")], ["delivering", t("rmDelivering")], ["online", t("rmOnline")], ["notOnline", t("rmNotOnline")], ["below", t("rmBelow")], ["outArea", t("rmOutArea")],
@@ -462,7 +508,7 @@ export default function RiderMonitorPage() {
             <div className="mb-2 text-[11px] font-bold uppercase tracking-wider text-[var(--muted)]">{t("rmByFranchise")}</div>
             <DataTable
               headers={[t("rmScopeFranchise"), t("rmOnShift"), t("rmDelivering"), t("rmOnline"), t("rmBelow"), t("rmColFinished")]}
-              rows={data.summary.byFranchise.map((f) => [
+              rows={data.summary.byFranchise.filter((f) => inCity(f.name)).map((f) => [
                 <span key="n" className={`font-bold ${f.name === "未归属" ? "text-[var(--danger-ink)]" : "text-[var(--text)]"}`}>{f.name === "未归属" ? t("rmUnassigned") : f.name}</span>,
                 // 在班骑手 = 总数 + 金色 PRO 小计(有才显示,与顶卡同一套语言)
                 <span key="t" className="font-extrabold">
@@ -480,7 +526,7 @@ export default function RiderMonitorPage() {
             <div className="mb-2 text-[11px] font-bold uppercase tracking-wider text-[var(--muted)]">{t("rmByPonto")}</div>
             <DataTable
               headers={[t("rmScopePonto"), t("rmOnShift"), t("rmDelivering"), t("rmOnline"), t("rmBelow"), t("rmColFinished")]}
-              rows={data.summary.byPonto.map((p) => [
+              rows={data.summary.byPonto.filter((p) => data.riders.some((r) => r.ponto === p.name && inCity(r.franchise))).map((p) => [
                 <span key="n" className={`font-bold ${p.name === "未归属" ? "text-[var(--danger-ink)]" : "text-[var(--text)]"}`}>{p.name === "未归属" ? t("rmUnassigned") : p.name}</span>,
                 <span key="t" className="font-extrabold">
                   {p.total}
