@@ -17,9 +17,8 @@ export type ZoneCity = (typeof ZONE_CITIES)[number];
  *  one OL account scraping several cities stays cleanly separated. */
 export const CITY_IDS: Record<ZoneCity, string> = {
   "São Paulo": "55000199",
-  // Filled in once the scraper reports the first SJBV batch; until then the
-  // city shows "no data" instead of São Paulo's riders.
-  "São João da Boa Vista": "",
+  // From Eastwind's vendor.rider.monitor.cityInfo (read 2026-08-27).
+  "São João da Boa Vista": "55000174",
 };
 
 /** Map centre + zoom per city (used by the monitor when switching). */
