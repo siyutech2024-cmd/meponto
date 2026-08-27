@@ -1,10 +1,10 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { CalendarDays, CheckCircle2, ClipboardCopy, ClipboardList, Download, Lock, Plus, RefreshCcw, Send, Star, Unlock, Upload, Users, X } from "lucide-react";
+import { ArrowLeftRight, CalendarDays, CheckCircle2, ClipboardCopy, ClipboardList, Download, Lock, Plus, RefreshCcw, Send, Star, Unlock, Upload, Users, X } from "lucide-react";
 import { AppShell, PageTitle } from "../components/ui";
 import { Chip, DataTable, Drawer, ProBadge, SectionCard, Stat, StatusBadge, TodoCard, Toolbar, type BadgeTone, type DataColumn } from "../components/kit";
-import type { DispatchShift, ShiftQuota, ShiftSignup } from "../lib/dispatch";
+import type { DispatchShift, ShiftQuota, ShiftSignup, SwapRequest, SwapRequestStatus } from "../lib/dispatch";
 import { downloadCsv } from "../lib/csv";
 import { useDialog } from "../components/dialog";
 import type { Franchise } from "../lib/network";
@@ -21,9 +21,39 @@ function useT() {
   };
 }
 
-type Board = { shifts: DispatchShift[]; quotas: ShiftQuota[]; signups: ShiftSignup[] };
+type Board = { shifts: DispatchShift[]; quotas: ShiftQuota[]; signups: ShiftSignup[]; swaps: SwapRequest[] };
 
 const headers = { "Content-Type": "application/json", "x-vento-role": "Super Admin" };
+
+const SWAP_TONE: Record<SwapRequestStatus, BadgeTone> = {
+  pending: "warn",
+  approved: "success",
+  rejected: "danger",
+  expired: "neutral",
+};
+
+const SWAP_STATUS_KEY: Record<SwapRequestStatus, TranslationKey> = {
+  pending: "dsSwapStPending",
+  approved: "dsSwapStApproved",
+  rejected: "dsSwapStRejected",
+  expired: "dsSwapStExpired",
+};
+
+/** 换人原因以稳定代码入库(站点端选葡语、总部读中文,存文案两边都会错)。 */
+const SWAP_REASON_KEY: Record<string, TranslationKey> = {
+  sick: "dsSwapR1",
+  late: "dsSwapR2",
+  personal: "dsSwapR3",
+  vehicle: "dsSwapR4",
+  other: "dsSwapR5",
+};
+
+function swapReasonText(reason: string, t: (k: TranslationKey) => string): string {
+  if (!reason) return "--";
+  const [code, ...rest] = reason.split(" · ");
+  const head = SWAP_REASON_KEY[code] ? t(SWAP_REASON_KEY[code]) : code;
+  return rest.length > 0 ? `${head} · ${rest.join(" · ")}` : head;
+}
 
 const statusKey: Record<string, TranslationKey> = {
   scheduling: "dpStScheduling",
@@ -60,6 +90,7 @@ const tabs = [
   { id: "quota", labelKey: "dpTabQuota", icon: Users },
   { id: "review", labelKey: "dpTabReview", icon: ClipboardList },
   { id: "report", labelKey: "dpTabReport", icon: Send },
+  { id: "swap", labelKey: "dpTabSwap", icon: ArrowLeftRight },
 ] as const;
 
 const SLOT_RANGES = ["11:00~14:00", "14:00~18:00", "18:00~22:00"] as const;
@@ -102,7 +133,13 @@ type TabId = (typeof tabs)[number]["id"];
 export default function DispatchPage() {
   const t = useT();
   const [tab, setTab] = useState<TabId>("board");
-  const [board, setBoard] = useState<Board>({ shifts: [], quotas: [], signups: [] });
+  const [board, setBoard] = useState<Board>({ shifts: [], quotas: [], signups: [], swaps: [] });
+  /**
+   * 换人待确认 —— 直接用服务端 summary,不在前端另算一份。服务端已经在 GET 时
+   * 把过期的 pending 关掉了,所以这个数字只会因为"被处理"或"班次已过"而下降,
+   * 前端不存任何"已读/忽略"状态。
+   */
+  const [pendingSwaps, setPendingSwaps] = useState(0);
   /**
    * 模式二 · PRO 排班表 = 独立工作区(业务方 2026-08-06 定:"单独的排班表")。
    *
@@ -123,7 +160,10 @@ export default function DispatchPage() {
     try {
       const response = await fetch("/api/dispatch", { headers, cache: "no-store" });
       const payload = await response.json();
-      if (response.ok) setBoard(payload.data);
+      if (response.ok) {
+        setBoard({ shifts: [], quotas: [], signups: [], swaps: [], ...payload.data });
+        setPendingSwaps(Number(payload.summary?.pendingSwaps ?? 0));
+      }
     } finally {
       setLoading(false);
     }
@@ -149,6 +189,8 @@ export default function DispatchPage() {
       shifts,
       quotas: board.quotas.filter((quota) => ids.has(quota.shiftId)),
       signups: board.signups.filter((signup) => ids.has(signup.shiftId)),
+      // 换人申请**不**按池过滤:告警不该因为看的是另一张排班表就消失。
+      swaps: board.swaps,
     };
   }, [board, pool]);
 
@@ -204,8 +246,9 @@ export default function DispatchPage() {
         }
       />
 
-      <section className="mb-4 grid gap-3 md:grid-cols-4">
+      <section className="mb-4 grid gap-3 md:grid-cols-3 xl:grid-cols-5">
         <TodoCard label={t("dpPendingCnt")} value={pendingCount} tone={pendingCount > 0 ? "warn" : "neutral"} active={tab === "review"} onClick={() => setTab("review")} hint={t("dpTabReview")} />
+        <TodoCard label={t("dpSwapPendingCnt")} value={pendingSwaps} tone={pendingSwaps > 0 ? "warn" : "neutral"} active={tab === "swap"} onClick={() => setTab("swap")} hint={t("dpTabSwap")} />
         <TodoCard label={t("dpNotReported")} value={notReportedCount} tone={notReportedCount > 0 ? "warn" : "neutral"} active={tab === "report"} onClick={() => setTab("report")} hint={t("dpTabReport")} />
         <Stat label={t("dpStScheduling")} value={String(schedulingCount)} />
         <Stat label={t("dpApprovedCnt")} value={String(approvedCount)} />
@@ -262,6 +305,7 @@ export default function DispatchPage() {
       {tab === "quota" && <QuotaTab board={scopedBoard} byShift={byShift} onSave={post} setMessage={setMessage} network={network} />}
       {tab === "review" && <ReviewTab board={scopedBoard} onAction={post} setMessage={setMessage} network={network} />}
       {tab === "report" && <ReportTab board={scopedBoard} byShift={byShift} onAction={post} setMessage={setMessage} />}
+      {tab === "swap" && <SwapTab swaps={board.swaps} onAction={post} setMessage={setMessage} />}
     </AppShell>
   );
 }
@@ -1085,6 +1129,137 @@ function ReviewTab({ board, onAction, setMessage, network }: { board: Board; onA
           />
         </SectionCard>
       </div>
+    </div>
+  );
+}
+
+/**
+ * 换人申请队列 (HQ). The whole point of this tab is that an alert fires ONCE:
+ * `pending` is the only state that shows up in the default view and in the
+ * header count, and a decision is terminal on the server. There is deliberately
+ * no local "read/ignore" state — a stale tab that re-submits gets the decided
+ * record back (alreadyDecided) instead of re-opening anything.
+ */
+function SwapTab({ swaps, onAction, setMessage }: { swaps: SwapRequest[]; onAction: (body: Record<string, unknown>) => Promise<Record<string, unknown> | null>; setMessage: (m: { tone: "ok" | "warn" | "err"; text: string } | null) => void }) {
+  const t = useT();
+  const dialog = useDialog();
+  const [filter, setFilter] = useState<"pending" | "decided" | "all">("pending");
+  const [busyId, setBusyId] = useState("");
+
+  const pendingCount = swaps.filter((row) => row.status === "pending").length;
+  const rows = swaps.filter((row) => (filter === "all" ? true : filter === "pending" ? row.status === "pending" : row.status !== "pending"));
+
+  async function decide(row: SwapRequest, approve: boolean) {
+    let note = "";
+    if (approve) {
+      const ok = await dialog.confirm(t("dpSwapApproveTitle"), {
+        message: t("dpSwapApproveMsg", { out: row.outRiderName || row.outRider99Id, in: row.inRiderName || row.inRider99Id }),
+        confirmText: t("dpSwapApproveConfirm"),
+      });
+      if (!ok) return;
+    } else {
+      const value = await dialog.prompt(t("dpSwapRejectTitle"), {
+        message: t("dpSwapRejectMsg"),
+        placeholder: t("dpSwapReason"),
+        confirmText: t("dpSwapRejectConfirm"),
+      });
+      if (value === null) return;
+      note = value;
+    }
+    setMessage(null);
+    setBusyId(row.id);
+    // onAction refreshes the board, so the row leaves the pending list and the
+    // header count drops on its own — nothing to update locally.
+    const result = await onAction({ action: "swapDecide", swapId: row.id, approve, note });
+    setBusyId("");
+    if (!result) return;
+    const finalStatus = String(result.status ?? "");
+    if (finalStatus && finalStatus !== (approve ? "approved" : "rejected")) {
+      setMessage({ tone: "warn", text: t("dpSwapAlready") });
+      return;
+    }
+    setMessage({
+      tone: "ok",
+      text: approve ? t("dpSwapOkApproved", { out: row.outRiderName || row.outRider99Id, in: row.inRiderName || row.inRider99Id }) : t("dpSwapOkRejected"),
+    });
+  }
+
+  const columns: Array<DataColumn<SwapRequest>> = [
+    {
+      key: "shift",
+      label: t("dpShift"),
+      render: (row) => (
+        <div>
+          <div className="font-black" translate="no">{row.shiftDate} {row.shiftRange}</div>
+          <div className="text-[11px] font-bold text-[var(--muted)]">{row.franchise} / {row.station}</div>
+        </div>
+      ),
+    },
+    {
+      key: "swap",
+      label: `${t("dpSwapOut")} → ${t("dpSwapIn")}`,
+      render: (row) => (
+        <div className="text-xs font-bold">
+          <div className="text-[var(--danger-ink)]">{row.outRiderName || row.outRider99Id} <span className="font-mono text-[10px] text-[var(--muted)]">{row.outRider99Id}</span></div>
+          <div className="text-[var(--ok-ink)]">→ {row.inRiderName || row.inRider99Id} <span className="font-mono text-[10px] text-[var(--muted)]">{row.inRider99Id}</span></div>
+        </div>
+      ),
+    },
+    { key: "reason", label: t("dpSwapReason"), render: (row) => <span className="text-xs font-bold">{swapReasonText(row.reason, t)}</span> },
+    {
+      key: "by",
+      label: t("dpSubmittedAt"),
+      render: (row) => <span className="text-[11px] font-bold text-[var(--muted)]">{t("dpSwapBy", { who: row.createdBy, at: row.createdAt })}</span>,
+    },
+    {
+      key: "action",
+      label: t("dpAction"),
+      align: "right",
+      render: (row) =>
+        row.status === "pending" ? (
+          <div className="flex flex-wrap justify-end gap-2">
+            <button
+              type="button"
+              disabled={busyId === row.id}
+              onClick={() => void decide(row, true)}
+              className="inline-flex h-9 items-center gap-1 rounded-[8px] bg-[var(--accent)] px-3.5 text-xs font-black uppercase text-[var(--accent-ink)] hover:bg-[var(--accent-strong)] disabled:opacity-50"
+            >
+              <CheckCircle2 size={13} /> {t("dpSwapApprove")}
+            </button>
+            <button
+              type="button"
+              disabled={busyId === row.id}
+              onClick={() => void decide(row, false)}
+              className="inline-flex h-9 items-center gap-1 rounded-[8px] border border-[var(--danger)] px-3.5 text-xs font-black uppercase text-[var(--danger-ink)] disabled:opacity-50"
+            >
+              {t("dpReject")}
+            </button>
+          </div>
+        ) : (
+          <div className="flex flex-col items-end gap-1">
+            <StatusBadge tone={SWAP_TONE[row.status] ?? "neutral"} label={t(SWAP_STATUS_KEY[row.status] ?? "dsSwapStPending")} />
+            <span className="text-[10px] font-bold text-[var(--muted)]">{t("dpSwapDecidedBy", { who: row.decidedBy ?? "--", at: row.decidedAt ?? "--" })}</span>
+            {row.decisionNote && <span className="text-[10px] font-bold text-[var(--muted-strong)]">{row.decisionNote}</span>}
+          </div>
+        ),
+    },
+  ];
+
+  return (
+    <div className="space-y-4">
+      <SectionCard
+        title={t("dpSwapQueue", { n: rows.length })}
+        desc={t("dpSwapPendingCnt") + ` ${pendingCount}`}
+        right={
+          <div className="flex flex-wrap gap-2">
+            {([["pending", t("dpSwapChipPending")], ["decided", t("dpSwapChipDecided")], ["all", t("fmChipAll")]] as const).map(([key, label]) => (
+              <Chip key={key} active={filter === key} onClick={() => setFilter(key)}>{label}</Chip>
+            ))}
+          </div>
+        }
+      >
+        <DataTable<SwapRequest> columns={columns} rows={rows} rowKey={(row) => row.id} minWidth={880} empty={t("dpSwapEmpty")} />
+      </SectionCard>
     </div>
   );
 }

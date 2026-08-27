@@ -65,8 +65,48 @@ export type ShiftSignup = {
   updatedAt: string;
 };
 
+/**
+ * Rider swap request (换人申请) — a station/rider-head asks to replace an
+ * approved rider on a shift that is already running or about to run.
+ *
+ * LIFECYCLE IS THE POINT: an alert must fire once and then be gone forever.
+ *   pending  → the only state that alerts HQ
+ *   approved / rejected → decided, never alerts again (decidedAt/By recorded)
+ *   expired  → the shift ended while still pending; auto-closed on read, so a
+ *              stale request can never keep nagging the console
+ * Every terminal state is written back to the record, so the alert count is a
+ * plain "status === pending" filter with no client-side dismissal state.
+ */
+export type SwapRequestStatus = "pending" | "approved" | "rejected" | "expired";
+
+export type SwapRequest = {
+  id: string;
+  shiftId: string;
+  /** Denormalised for the alert list (a shift may be deleted later). */
+  shiftDate: string;
+  shiftRange: string;
+  franchise: string;
+  station: string;
+  /** Rider leaving the shift. */
+  outSignupId: string;
+  outRiderName: string;
+  outRider99Id: string;
+  /** Replacement rider. */
+  inRiderId: string;
+  inRiderName: string;
+  inRider99Id: string;
+  reason: string;
+  status: SwapRequestStatus;
+  createdAt: string;
+  createdBy: string;
+  decidedAt?: string;
+  decidedBy?: string;
+  decisionNote?: string;
+};
+
 export const dispatchShifts: DispatchShift[] = [];
 export const shiftQuotas: ShiftQuota[] = [];
+export const swapRequests: SwapRequest[] = [];
 export const shiftSignups: ShiftSignup[] = [];
 
 const statusWords: Record<string, DispatchShiftStatus> = {

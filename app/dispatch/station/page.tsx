@@ -1,17 +1,62 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { ClipboardList, RefreshCcw, Star } from "lucide-react";
+import { ArrowLeftRight, ClipboardList, RefreshCcw, Star } from "lucide-react";
 import { AppShell, PageTitle } from "../../components/ui";
-import { ProBadge, SectionCard, Stat, StatusBadge, TodoCard, type BadgeTone } from "../../components/kit";
+import { Drawer, ProBadge, SectionCard, Stat, StatusBadge, TodoCard, type BadgeTone } from "../../components/kit";
 import { readSession } from "../../lib/session";
-import type { DispatchShift, ShiftQuota, ShiftSignup } from "../../lib/dispatch";
+import type { DispatchShift, ShiftQuota, ShiftSignup, SwapRequest, SwapRequestStatus } from "../../lib/dispatch";
 import { ShiftRiderPicker } from "../../components/shift-rider-picker";
 import { useVentoStore } from "../../lib/store";
 import { translate, type TranslationKey } from "../../lib/i18n";
 
-type Board = { shifts: DispatchShift[]; quotas: ShiftQuota[]; signups: ShiftSignup[] };
+type Board = { shifts: DispatchShift[]; quotas: ShiftQuota[]; signups: ShiftSignup[]; swaps: SwapRequest[] };
 type MyRow = { shift: DispatchShift; quota?: ShiftQuota; signups: ShiftSignup[] };
+type RiderRow = { id: string; name: string; ninetyNineId?: string; ponto: string; franchise?: string };
+
+function useT() {
+  const language = useVentoStore((s) => s.language);
+  return (k: TranslationKey, vars?: Record<string, string | number | undefined>) => {
+    let s = translate(language, k);
+    if (vars) for (const [key, val] of Object.entries(vars)) s = s.replace(`{${key}}`, String(val ?? ""));
+    return s;
+  };
+}
+
+/**
+ * 换人原因用**稳定代码**存库,不存翻译后的文案 —— 站点端是葡语骑手头在选,
+ * 总部端是中文控制台在读,存任何一种语言都会让另一端看不懂。代码在两端各自
+ * 翻回本地语言;识别不出的旧值(或自由文本)原样显示。
+ */
+const SWAP_REASONS: Array<{ code: string; key: TranslationKey }> = [
+  { code: "sick", key: "dsSwapR1" },
+  { code: "late", key: "dsSwapR2" },
+  { code: "personal", key: "dsSwapR3" },
+  { code: "vehicle", key: "dsSwapR4" },
+  { code: "other", key: "dsSwapR5" },
+];
+
+function swapReasonText(reason: string, t: (k: TranslationKey) => string): string {
+  if (!reason) return "--";
+  const [code, ...rest] = reason.split(" · ");
+  const known = SWAP_REASONS.find((item) => item.code === code);
+  const head = known ? t(known.key) : code;
+  return rest.length > 0 ? `${head} · ${rest.join(" · ")}` : head;
+}
+
+const SWAP_TONE: Record<SwapRequestStatus, BadgeTone> = {
+  pending: "warn",
+  approved: "success",
+  rejected: "danger",
+  expired: "neutral",
+};
+
+const SWAP_STATUS_KEY: Record<SwapRequestStatus, TranslationKey> = {
+  pending: "dsSwapStPending",
+  approved: "dsSwapStApproved",
+  rejected: "dsSwapStRejected",
+  expired: "dsSwapStExpired",
+};
 
 const WEEKDAY_KEYS: TranslationKey[] = ["pfWdMon", "pfWdTue", "pfWdWed", "pfWdThu", "pfWdFri", "pfWdSat", "pfWdSun"];
 
@@ -66,12 +111,7 @@ function statBadge(value: number, target: number) {
 }
 
 export default function StationDispatchPage() {
-  const language = useVentoStore((s) => s.language);
-  const t = (k: TranslationKey, vars?: Record<string, string | number | undefined>) => {
-    let s = translate(language, k);
-    if (vars) for (const [key, val] of Object.entries(vars)) s = s.replace(`{${key}}`, String(val ?? ""));
-    return s;
-  };
+  const t = useT();
   const session = useMemo(() => readSession(), []);
   // SERVER session wins — stale localStorage must not point at another station.
   const [identity, setIdentity] = useState({ station: session?.station || "", franchise: session?.franchise || "" });
@@ -106,20 +146,37 @@ export default function StationDispatchPage() {
   const franchise = identity.franchise;
   const headers = useMemo(() => ({ "Content-Type": "application/json", "x-vento-role": session?.role ?? "Ponto Manager" }), [session]);
 
-  const [board, setBoard] = useState<Board>({ shifts: [], quotas: [], signups: [] });
+  const [board, setBoard] = useState<Board>({ shifts: [], quotas: [], signups: [], swaps: [] });
   const [message, setMessage] = useState<{ tone: "ok" | "err" | "warn"; text: string } | null>(null);
   const [shiftId, setShiftId] = useState("");
   const [weekStart, setWeekStart] = useState(() => mondayOf());
+  // 换人申请:点了哪个骑手的「换人」。null = 抽屉关闭。
+  const [swapTarget, setSwapTarget] = useState<{ signup: ShiftSignup; shift: DispatchShift } | null>(null);
+  const [riders, setRiders] = useState<RiderRow[]>([]);
 
   const load = useCallback(async () => {
     const response = await fetch(`/api/dispatch?station=${encodeURIComponent(station)}&franchise=${encodeURIComponent(franchise)}`, { headers, cache: "no-store" });
     const payload = await response.json();
-    if (response.ok) setBoard(payload.data);
+    if (response.ok) setBoard({ shifts: [], quotas: [], signups: [], swaps: [], ...payload.data });
   }, [headers, station, franchise]);
 
   useEffect(() => {
     void load();
   }, [load]);
+
+  // Replacement-rider source for the swap form (same endpoint the signup
+  // picker uses, so the two lists can never disagree).
+  useEffect(() => {
+    void fetch("/api/riders", { headers, cache: "no-store" })
+      .then((response) => (response.ok ? response.json() : null))
+      .then((payload) => payload && setRiders(payload.data as RiderRow[]))
+      .catch(() => undefined);
+  }, [headers]);
+
+  const stationRiders = useMemo(
+    () => riders.filter((rider) => Boolean(rider.ninetyNineId) && (!station || rider.ponto === station) && (!franchise || !rider.franchise || rider.franchise === franchise)),
+    [riders, station, franchise],
+  );
 
   // Shifts that have a station-level quota for us.
   const myRows: MyRow[] = board.shifts
@@ -144,6 +201,10 @@ export default function StationDispatchPage() {
   const weekApproved = weekRows.reduce((sum, row) => sum + approvedOf(row), 0);
   const weekGap = weekRows.reduce((sum, row) => sum + Math.max(0, (row.quota?.quota ?? 0) - approvedOf(row)), 0);
   const weekWaiting = weekRows.reduce((sum, row) => sum + row.signups.filter((item) => item.status === "submitted").length, 0);
+
+  // 一条报名同时只能有一条待确认的换人申请(服务端 409 拦重复),按状态算出来,
+  // 不存任何本地"已提交"标记 —— 刷新后仍然准确。
+  const pendingSwapSignupIds = new Set(board.swaps.filter((row) => row.status === "pending").map((row) => row.outSignupId));
 
   // Day-grouped board: date header + that day's shift rows (same as HQ ReportTab).
   const dayGroups = new Map<string, MyRow[]>();
@@ -275,12 +336,31 @@ export default function StationDispatchPage() {
                             </button>
                             {selected && row.signups.length > 0 && (
                               <div className="mt-2 flex flex-wrap gap-2 px-1">
-                                {row.signups.map((signup) => (
-                                  <span key={signup.id} className="inline-flex items-center gap-2 rounded-[8px] border border-[var(--line)] bg-[var(--surface-raised)] px-3 py-1.5 text-[11px] font-bold">
-                                    {signup.riderName || signup.rider99Id}
-                                    <StatusBadge tone={SIGNUP_TONE[signup.status] ?? "neutral"} label={signupKey[signup.status] ? t(signupKey[signup.status]) : signup.status} />
-                                  </span>
-                                ))}
+                                {row.signups.map((signup) => {
+                                  // 只有"已通过/已提报"的人需要换人 —— 待审的直接改报名就行,
+                                  // 服务端也是这么判的。已经有待确认申请的不给重复提交。
+                                  const swappable = signup.status === "approved" || signup.status === "reported";
+                                  const waiting = pendingSwapSignupIds.has(signup.id);
+                                  return (
+                                    <span key={signup.id} className="inline-flex items-center gap-2 rounded-[8px] border border-[var(--line)] bg-[var(--surface-raised)] px-3 py-1.5 text-[11px] font-bold">
+                                      {signup.riderName || signup.rider99Id}
+                                      <StatusBadge tone={SIGNUP_TONE[signup.status] ?? "neutral"} label={signupKey[signup.status] ? t(signupKey[signup.status]) : signup.status} />
+                                      {swappable && (
+                                        waiting ? (
+                                          <StatusBadge tone="warn" label={t("dsSwapStPending")} />
+                                        ) : (
+                                          <button
+                                            type="button"
+                                            onClick={() => { setMessage(null); setSwapTarget({ signup, shift: row.shift }); }}
+                                            className="inline-flex h-6 items-center gap-1 rounded-[6px] border border-[var(--line)] px-2 text-[10px] font-black uppercase text-[var(--muted-strong)] hover:border-[var(--accent)] hover:text-[var(--accent)]"
+                                          >
+                                            <ArrowLeftRight size={11} /> {t("dsSwap")}
+                                          </button>
+                                        )
+                                      )}
+                                    </span>
+                                  );
+                                })}
                               </div>
                             )}
                           </div>
@@ -308,6 +388,198 @@ export default function StationDispatchPage() {
           onError={(text) => { setMessage({ tone: "err", text }); void load(); }}
         />
       </div>
+
+      {/* 我的换人申请 —— 纯历史。待确认是琥珀色的提醒,已决定的只是记录,
+          不会再弹任何东西(状态由服务端决定,前端没有"已读/忽略")。 */}
+      <SectionCard className="mt-4" title={<span className="inline-flex items-center gap-2"><ArrowLeftRight size={14} /> {t("dsSwapMine")}</span>}>
+        {board.swaps.length === 0 ? (
+          <div className="text-sm font-bold text-[var(--muted)]">{t("dsSwapEmpty")}</div>
+        ) : (
+          <div className="space-y-2">
+            {board.swaps.map((row) => (
+              <div key={row.id} className="rounded-[10px] border border-[var(--line)] bg-[var(--surface-raised)] p-3">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="text-[13px] font-black" translate="no">{row.shiftDate} {row.shiftRange}</span>
+                  <span className="text-[12px] font-bold">
+                    {row.outRiderName || row.outRider99Id} <span className="text-[var(--muted)]">→</span> {row.inRiderName || row.inRider99Id}
+                  </span>
+                  <StatusBadge tone={SWAP_TONE[row.status] ?? "neutral"} label={t(SWAP_STATUS_KEY[row.status] ?? "dsSwapStPending")} />
+                </div>
+                <div className="mt-1 text-[11px] font-bold text-[var(--muted-strong)]">
+                  {t("dsSwapReason")}: {swapReasonText(row.reason, t)}
+                  <span className="ml-2 text-[var(--muted)]" translate="no">{row.createdAt}</span>
+                </div>
+                {row.status !== "pending" && (
+                  <div className="mt-0.5 text-[11px] font-bold text-[var(--muted)]">
+                    {t("dsSwapDecided", { x: `${row.decidedAt ?? "--"}${row.decidedBy ? ` · ${row.decidedBy}` : ""}` })}
+                    {row.decisionNote ? ` · ${t("dsSwapDecisionNote", { x: row.decisionNote })}` : ""}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+      </SectionCard>
+
+      <Drawer
+        open={Boolean(swapTarget)}
+        onClose={() => setSwapTarget(null)}
+        width={460}
+        ariaLabel={t("dsSwapTitle")}
+        title={<div className="text-sm font-black uppercase">{t("dsSwapTitle")}</div>}
+      >
+        {swapTarget && (
+          <SwapForm
+            target={swapTarget}
+            riders={stationRiders}
+            signups={board.signups}
+            headers={headers}
+            onDone={(text) => { setSwapTarget(null); setMessage({ tone: "ok", text }); void load(); }}
+            onError={(text) => setMessage({ tone: "err", text })}
+          />
+        )}
+      </Drawer>
     </AppShell>
+  );
+}
+
+/**
+ * 换人申请表单. Replacement is picked from this station's riders (the same
+ * /api/riders source the signup picker uses); manual name + 99 ID stays
+ * available for a rider who isn't in the roster yet. Reason is mandatory —
+ * HQ decides on the reason, so an empty one just moves the question back.
+ */
+function SwapForm({
+  target,
+  riders,
+  signups,
+  headers,
+  onDone,
+  onError,
+}: {
+  target: { signup: ShiftSignup; shift: DispatchShift };
+  riders: RiderRow[];
+  signups: ShiftSignup[];
+  headers: Record<string, string>;
+  onDone: (text: string) => void;
+  onError: (text: string) => void;
+}) {
+  const t = useT();
+  const [manual, setManual] = useState(false);
+  const [pick, setPick] = useState("");
+  const [name, setName] = useState("");
+  const [nineId, setNineId] = useState("");
+  const [reason, setReason] = useState("");
+  const [note, setNote] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  // Anyone already on this shift can't be the replacement — the server refuses
+  // it with a 409, so filtering here just saves the round trip.
+  const taken = new Set(
+    signups
+      .filter((item) => item.shiftId === target.shift.id && item.status !== "rejected" && item.status !== "cancelled")
+      .map((item) => item.rider99Id),
+  );
+  const options = riders.filter((rider) => !taken.has(rider.ninetyNineId ?? "")).sort((a, b) => a.name.localeCompare(b.name));
+  const typing = manual || options.length === 0;
+
+  const input = "h-11 w-full rounded-[8px] border border-[var(--line)] bg-[var(--surface)] px-3 text-sm font-bold outline-none focus:border-[var(--accent)]";
+
+  async function submit() {
+    const chosen = options.find((rider) => rider.id === pick);
+    const inRiderName = (typing ? name : chosen?.name ?? "").trim();
+    const inRider99Id = (typing ? nineId : chosen?.ninetyNineId ?? "").trim();
+    if (!inRiderName || !inRider99Id) {
+      onError(t("dsSwapNeedRider"));
+      return;
+    }
+    if (!reason) {
+      onError(t("dsSwapNeedReason"));
+      return;
+    }
+    setBusy(true);
+    const response = await fetch("/api/dispatch", {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        action: "swapRequest",
+        outSignupId: target.signup.id,
+        inRiderName,
+        inRider99Id,
+        inRiderId: typing ? "" : chosen?.id ?? "",
+        reason: note.trim() ? `${reason} · ${note.trim()}` : reason,
+      }),
+    });
+    const payload = await response.json().catch(() => ({}));
+    setBusy(false);
+    if (!response.ok) {
+      onError(t("dsSwapFail", { x: payload.error ?? response.status }));
+      return;
+    }
+    onDone(t("dsSwapOk"));
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="rounded-[10px] border border-[var(--line)] bg-[var(--surface-raised)] p-3">
+        <div className="text-[10px] font-black uppercase text-[var(--muted)]">{t("dsSwapShift")}</div>
+        <div className="text-sm font-black" translate="no">{target.shift.date} {target.shift.timeRange} · {target.shift.hotzone}</div>
+        <div className="mt-2 text-[10px] font-black uppercase text-[var(--muted)]">{t("dsSwapOut")}</div>
+        <div className="text-sm font-black">
+          {target.signup.riderName || target.signup.rider99Id}
+          <span className="ml-2 font-mono text-[10px] font-bold text-[var(--muted)]">{target.signup.rider99Id}</span>
+        </div>
+      </div>
+
+      <div>
+        <div className="mb-1.5 flex items-center justify-between">
+          <span className="text-xs font-black uppercase text-[var(--muted)]">{t("dsSwapIn")}</span>
+          {options.length > 0 && (
+            <button type="button" className="tag" onClick={() => setManual((value) => !value)}>
+              {typing ? t("dsSwapBack") : t("dsSwapManual")}
+            </button>
+          )}
+        </div>
+        {typing ? (
+          <div className="space-y-2">
+            {options.length === 0 && <div className="text-[11px] font-bold text-[var(--muted)]">{t("dsSwapNoRiders")}</div>}
+            <input className={input} placeholder={t("dsSwapInName")} value={name} onChange={(e) => setName(e.target.value)} />
+            <input className={input} inputMode="numeric" placeholder={t("dsSwapIn99")} value={nineId} onChange={(e) => setNineId(e.target.value.replace(/\D/g, ""))} />
+          </div>
+        ) : (
+          <select className={input} value={pick} onChange={(e) => setPick(e.target.value)}>
+            <option value="">{t("dsSwapPick")}</option>
+            {options.map((rider) => (
+              <option key={rider.id} value={rider.id}>{rider.name} · {rider.ninetyNineId}</option>
+            ))}
+          </select>
+        )}
+      </div>
+
+      <div>
+        <div className="mb-1.5 text-xs font-black uppercase text-[var(--muted)]">{t("dsSwapReason")}</div>
+        <select className={input} value={reason} onChange={(e) => setReason(e.target.value)}>
+          <option value="">{t("dsSwapReasonPick")}</option>
+          {SWAP_REASONS.map((item) => (
+            <option key={item.code} value={item.code}>{t(item.key)}</option>
+          ))}
+        </select>
+        <textarea
+          className="mt-2 min-h-20 w-full rounded-[8px] border border-[var(--line)] bg-[var(--surface)] p-3 text-sm font-bold outline-none focus:border-[var(--accent)]"
+          placeholder={t("dsSwapNote")}
+          value={note}
+          onChange={(e) => setNote(e.target.value)}
+        />
+      </div>
+
+      <button
+        type="button"
+        disabled={busy}
+        onClick={() => void submit()}
+        className="inline-flex h-11 w-full items-center justify-center gap-2 rounded-[8px] bg-[var(--accent)] text-sm font-black uppercase text-[var(--accent-ink)] hover:bg-[var(--accent-strong)] disabled:opacity-50"
+      >
+        <ArrowLeftRight size={15} /> {t("dsSwapSend")}
+      </button>
+    </div>
   );
 }

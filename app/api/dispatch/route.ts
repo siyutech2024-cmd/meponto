@@ -2,9 +2,9 @@ import { acceptClientId, appendServerAudit, jsonResponse, makeServerId, memory }
 import { flushPendingToDatabase, persistDeleteRecord, refreshCollectionsFromDatabase } from "../../lib/server/persistence";
 import { requirePermission, roleFromRequest } from "../../lib/server/authz";
 import { sendPushToRider } from "../../lib/server/notify";
-import { parseEastwindShifts, type DispatchShift, type ShiftQuota, type ShiftSignup, type ShiftSignupStatus } from "../../lib/dispatch";
+import { parseEastwindShifts, type DispatchShift, type ShiftQuota, type ShiftSignup, type ShiftSignupStatus, type SwapRequest } from "../../lib/dispatch";
 
-const DISPATCH_COLLECTIONS = ["dispatchShifts", "shiftQuotas", "shiftSignups"];
+const DISPATCH_COLLECTIONS = ["dispatchShifts", "shiftQuotas", "shiftSignups", "swapRequests"];
 
 function nowStamp() {
   return new Date().toISOString().slice(0, 16).replace("T", " ");
@@ -60,14 +60,38 @@ export async function GET(request: Request) {
     signups = signups.filter((signup) => signup.station === stationScope);
   }
 
+  // ---- Swap requests (换人申请) -------------------------------------------
+  // Auto-expiry FIRST: a request whose shift day has passed is closed here, so
+  // the pending count can never accumulate stale alerts. Decided requests keep
+  // their terminal status forever — they are history, not alerts.
+  const today = nowStamp().slice(0, 10);
+  let expired = 0;
+  for (let index = 0; index < memory.swapRequests.length; index += 1) {
+    const request_ = memory.swapRequests[index];
+    if (request_.status !== "pending") continue;
+    if (request_.shiftDate && request_.shiftDate >= today) continue;
+    memory.swapRequests[index] = { ...request_, status: "expired", decidedAt: nowStamp(), decidedBy: "System (shift ended)" };
+    expired += 1;
+  }
+  if (expired > 0) await flushPendingToDatabase();
+
+  let swaps = memory.swapRequests;
+  if (franchiseScope) swaps = swaps.filter((row) => row.franchise === franchiseScope);
+  if (stationScope) swaps = swaps.filter((row) => row.station === stationScope);
+  swaps = [...swaps].sort((a, b) => b.createdAt.localeCompare(a.createdAt)).slice(0, 200);
+
   return jsonResponse({
-    data: { shifts, quotas, signups },
+    data: { shifts, quotas, signups, swaps },
     summary: {
       shifts: shifts.length,
       planned: shifts.reduce((sum, shift) => sum + shift.plannedCount, 0),
       approved: signups.filter((signup) => signup.status === "approved" || signup.status === "reported").length,
       pending: signups.filter((signup) => signup.status === "submitted").length,
       reportedShifts: shifts.filter((shift) => shift.reportedAt).length,
+      // The ONE number the console badge reads. Pure status filter — no
+      // client-side dismissal, so an alert disappears only when it is decided
+      // or its shift has passed.
+      pendingSwaps: swaps.filter((row) => row.status === "pending").length,
     },
   });
 }
@@ -123,6 +147,19 @@ type SetWeekBody = {
 
 type DeleteShiftBody = { action: "deleteShift"; shiftId: string };
 
+/** 换人申请: a station/rider-head asks HQ to swap an approved rider out. */
+type SwapRequestBody = {
+  action: "swapRequest";
+  outSignupId: string;
+  inRiderName: string;
+  inRider99Id: string;
+  inRiderId?: string;
+  reason: string;
+};
+
+/** HQ decides a swap request. Terminal — the alert never returns. */
+type SwapDecideBody = { action: "swapDecide"; swapId: string; approve: boolean; note?: string };
+
 type NudgeBody = { action: "nudge"; scope: "franchise" | "station"; name: string };
 
 /** 模式二 T5 · 锁班: freeze one shift (shiftId) or every open shift of a day
@@ -130,7 +167,7 @@ type NudgeBody = { action: "nudge"; scope: "franchise" | "station"; name: string
  *  always audited. */
 type LockBody = { action: "lock"; shiftId?: string; date?: string; unlock?: boolean };
 
-type Body = ImportBody | QuotaBody | SignupBody | ReviewBody | ReportBody | SetWeekBody | DeleteShiftBody | NudgeBody | LockBody;
+type Body = ImportBody | QuotaBody | SignupBody | ReviewBody | ReportBody | SetWeekBody | DeleteShiftBody | NudgeBody | LockBody | SwapRequestBody | SwapDecideBody;
 
 async function handlePost(request: Request) {
   const peek = (await request.clone().json().catch(() => ({}))) as { action?: string };
@@ -414,6 +451,115 @@ async function handlePost(request: Request) {
       });
 
       return jsonResponse({ data: { changed, blocked } });
+    }
+
+    // ---- 换人申请 (station/rider-head → HQ) ------------------------------
+    case "swapRequest": {
+      const { outSignupId, inRiderName, inRider99Id, inRiderId, reason } = body as SwapRequestBody;
+      if (!outSignupId || !String(inRiderName ?? "").trim() || !String(inRider99Id ?? "").trim()) {
+        return jsonResponse({ error: "outSignupId, inRiderName e inRider99Id são obrigatórios" }, { status: 400 });
+      }
+      const outSignup = memory.shiftSignups.find((row) => row.id === outSignupId);
+      if (!outSignup) return jsonResponse({ error: "报名记录不存在" }, { status: 404 });
+      if (outSignup.status !== "approved" && outSignup.status !== "reported") {
+        return jsonResponse({ error: "只有已通过的报名才需要换人(待审的直接改报名即可)。" }, { status: 409 });
+      }
+      const swapShift = memory.dispatchShifts.find((row) => row.id === outSignup.shiftId);
+      if (!swapShift) return jsonResponse({ error: "班次不存在" }, { status: 404 });
+      // One open request per signup — re-submitting must not multiply alerts.
+      const duplicate = memory.swapRequests.find((row) => row.outSignupId === outSignupId && row.status === "pending");
+      if (duplicate) return jsonResponse({ error: "该骑手已有一条待审核的换人申请。", data: duplicate }, { status: 409 });
+      // The replacement must not already be on this shift.
+      const already = memory.shiftSignups.some(
+        (row) => row.shiftId === outSignup.shiftId && row.rider99Id === String(inRider99Id).trim() && row.status !== "rejected" && row.status !== "cancelled",
+      );
+      if (already) return jsonResponse({ error: "替补骑手已在该班次名单中。" }, { status: 409 });
+
+      const stamp = nowStamp();
+      const record: SwapRequest = {
+        id: makeServerId("swp", memory.swapRequests.length + 1),
+        shiftId: outSignup.shiftId,
+        shiftDate: swapShift.date,
+        shiftRange: swapShift.timeRange,
+        franchise: outSignup.franchise,
+        station: outSignup.station,
+        outSignupId,
+        outRiderName: outSignup.riderName,
+        outRider99Id: outSignup.rider99Id,
+        inRiderId: String(inRiderId ?? "").trim(),
+        inRiderName: String(inRiderName).trim().slice(0, 80),
+        inRider99Id: String(inRider99Id).trim(),
+        reason: String(reason ?? "").trim().slice(0, 200),
+        status: "pending",
+        createdAt: stamp,
+        createdBy: actor,
+      };
+      memory.swapRequests.unshift(record);
+      appendServerAudit({
+        actor,
+        action: "DISPATCH_SWAP_REQUESTED",
+        entity: "SwapRequest",
+        entityId: record.id,
+        detail: `${record.station} ${record.shiftDate} ${record.shiftRange}: ${record.outRiderName} → ${record.inRiderName}${record.reason ? ` (${record.reason})` : ""}`,
+        risk: "Medium",
+      });
+      return jsonResponse({ data: record }, { status: 201 });
+    }
+
+    // ---- HQ decides the swap (terminal — alert gone for good) -------------
+    case "swapDecide": {
+      const { swapId, approve, note } = body as SwapDecideBody;
+      const index = memory.swapRequests.findIndex((row) => row.id === swapId);
+      if (index === -1) return jsonResponse({ error: "换人申请不存在" }, { status: 404 });
+      const swap = memory.swapRequests[index];
+      if (swap.status !== "pending") {
+        // Idempotent: a second click (or a stale tab) returns the decided
+        // record instead of re-opening or duplicating anything.
+        return jsonResponse({ data: swap, alreadyDecided: true });
+      }
+      const stamp = nowStamp();
+      if (approve) {
+        // Out rider: cancelled on this shift (keeps the row for the record).
+        const outIndex = memory.shiftSignups.findIndex((row) => row.id === swap.outSignupId);
+        if (outIndex !== -1) {
+          memory.shiftSignups[outIndex] = { ...memory.shiftSignups[outIndex], status: "cancelled", note: `换人:${swap.reason || "—"}`, updatedAt: stamp };
+        }
+        // In rider: approved directly (HQ already decided), so the shift
+        // headcount stays whole.
+        const replacement: ShiftSignup = {
+          id: makeServerId("sgn", memory.shiftSignups.length + 1),
+          shiftId: swap.shiftId,
+          franchise: swap.franchise,
+          station: swap.station,
+          riderId: swap.inRiderId,
+          riderName: swap.inRiderName,
+          rider99Id: swap.inRider99Id,
+          riderCpf: "",
+          status: "approved",
+          note: `换人替补(原 ${swap.outRiderName})`,
+          createdAt: stamp,
+          updatedAt: stamp,
+        };
+        memory.shiftSignups.unshift(replacement);
+        await sendPushToRider(swap.inRiderName, "Escala confirmada ✅", `Você entrou no turno ${swap.shiftDate} ${swap.shiftRange}.`, "/rider-app/agenda");
+        await sendPushToRider(swap.outRiderName, "Escala alterada", `Você saiu do turno ${swap.shiftDate} ${swap.shiftRange}.`, "/rider-app/agenda");
+      }
+      memory.swapRequests[index] = {
+        ...swap,
+        status: approve ? "approved" : "rejected",
+        decidedAt: stamp,
+        decidedBy: actor,
+        decisionNote: String(note ?? "").trim().slice(0, 200) || undefined,
+      };
+      appendServerAudit({
+        actor,
+        action: approve ? "DISPATCH_SWAP_APPROVED" : "DISPATCH_SWAP_REJECTED",
+        entity: "SwapRequest",
+        entityId: swap.id,
+        detail: `${swap.station} ${swap.shiftDate} ${swap.shiftRange}: ${swap.outRiderName} → ${swap.inRiderName}`,
+        risk: "Medium",
+      });
+      return jsonResponse({ data: memory.swapRequests[index] });
     }
 
     case "nudge": {

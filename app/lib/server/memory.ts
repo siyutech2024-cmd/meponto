@@ -47,7 +47,7 @@ import { systemSettings, type SystemSetting } from "../settings";
 import { chatMessages, chatRooms, type ChatMessage, type ChatRoom } from "../chat";
 import { riderSlots, slotEnrollments, type RiderSlot, type SlotEnrollment } from "../slots";
 import { leads, type Lead } from "../leads";
-import { dispatchShifts, shiftQuotas, shiftSignups, type DispatchShift, type ShiftQuota, type ShiftSignup } from "../dispatch";
+import { dispatchShifts, shiftQuotas, shiftSignups, swapRequests, type DispatchShift, type ShiftQuota, type ShiftSignup, type SwapRequest } from "../dispatch";
 import { appUsers, type AppUser } from "../users";
 import { riderDailyEarnings, riderDailyKpis, type RiderDailyEarning, type RiderDailyKpi } from "../performance";
 import { mallConfigs, type MallConfig } from "../mall";
@@ -113,6 +113,7 @@ const globalState = globalThis as typeof globalThis & {
     dispatchShifts: DispatchShift[];
     shiftQuotas: ShiftQuota[];
     shiftSignups: ShiftSignup[];
+    swapRequests: SwapRequest[];
     appUsers: AppUser[];
     riderDailyKpis: RiderDailyKpi[];
     riderDailyEarnings: RiderDailyEarning[];
@@ -183,6 +184,7 @@ export const memory =
     auditEntries: trackCollection<ServerAuditEntry>("auditEntries", []),
     leads: trackCollection("leads", [...leads]),
     dispatchShifts: trackCollection("dispatchShifts", [...dispatchShifts]),
+    swapRequests: trackCollection<SwapRequest>("swapRequests", [...swapRequests]),
     shiftQuotas: trackCollection("shiftQuotas", [...shiftQuotas]),
     shiftSignups: trackCollection("shiftSignups", [...shiftSignups]),
     appUsers: trackCollection("appUsers", [...appUsers]),
@@ -331,6 +333,8 @@ memory.walletPayments ??= [];
 memory.walletPayments = trackCollection("walletPayments", memory.walletPayments);
 memory.assessmentRules ??= [];
 memory.assessmentRules = trackCollection("assessmentRules", memory.assessmentRules);
+memory.swapRequests ??= [];
+memory.swapRequests = trackCollection("swapRequests", memory.swapRequests);
 memory.hotZoneAssignments ??= [];
 memory.hotZoneAssignments = trackCollection("hotZoneAssignments", memory.hotZoneAssignments);
 memory.franchisePurchaseOrders ??= [];
