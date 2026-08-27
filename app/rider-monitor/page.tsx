@@ -5,7 +5,7 @@ import { RefreshCcw, Search, Bike, X, MapPin, Phone } from "lucide-react";
 import { AppShell, DataTable, PageTitle } from "../components/ui";
 import RiderMap, { type MapRider } from "./RiderMap";
 import MonitorTabs from "./MonitorTabs";
-import { HOT_ZONES } from "./hot-zones";
+import { CITY_VIEW, HOT_ZONES, ZONE_CITIES, type ZoneCity } from "./hot-zones";
 import { readSession } from "../lib/session";
 import { useVentoStore } from "../lib/store";
 import { translate, type TranslationKey } from "../lib/i18n";
@@ -114,6 +114,9 @@ export default function RiderMonitorPage() {
   // limited to their own zones). A zone can be shared by several franchises.
   // { [zoneId]: franchiseNames[] }
   const [zoneAssign, setZoneAssign] = useState<Record<string, string[]>>({});
+  // City switcher: zones (and the map view) are scoped to the selected city so
+  // a new small-city operation doesn't clutter the São Paulo board.
+  const [city, setCity] = useState<ZoneCity>("São Paulo");
   const [showZonePanel, setShowZonePanel] = useState(false);
   /**
    * 模式二 T6 · 应岗未上 (rostered but not online).
@@ -256,10 +259,10 @@ export default function RiderMonitorPage() {
   // Zone visibility per portal: HQ sees everything; a franchise portal only
   // its assigned zones; a station portal sees all zones (its riders are
   // already scoped, and station→franchise ownership isn't in this payload).
-  const visibleZones = useMemo(
-    () => (scopeFranchise ? HOT_ZONES.filter((z) => (zoneAssign[z.id] ?? []).includes(scopeFranchise)) : HOT_ZONES),
-    [scopeFranchise, zoneAssign],
-  );
+  const visibleZones = useMemo(() => {
+    const inCity = HOT_ZONES.filter((z) => z.city === city);
+    return scopeFranchise ? inCity.filter((z) => (zoneAssign[z.id] ?? []).includes(scopeFranchise)) : inCity;
+  }, [scopeFranchise, zoneAssign, city]);
   // Franchise choices for the HQ assign panel: every franchise seen in the
   // city-wide summary plus any already holding an assignment.
   const franchiseOptions = useMemo(() => {
@@ -365,6 +368,20 @@ export default function RiderMonitorPage() {
         <div className="mb-2 flex items-center gap-3">
           <span className="text-[11px] font-bold uppercase tracking-wider text-[var(--muted)]">{t("rmMap")}</span>
           <span className="text-[11px] text-[var(--muted)]">{mapRiders.length} {t("rmRidersUnit")}{noGpsCount > 0 ? ` · ${t("rmNoGps", { n: noGpsCount })}` : ""}</span>
+          {/* City switcher — zone sets and map view per city. */}
+          <div className="flex overflow-hidden rounded-[8px] border border-[var(--line)]">
+            {ZONE_CITIES.map((name) => (
+              <button
+                key={name}
+                type="button"
+                onClick={() => setCity(name)}
+                className={`h-7 px-2.5 text-[11px] font-bold ${city === name ? "bg-[var(--accent)] text-[var(--accent-ink)]" : "text-[var(--muted-strong)] hover:bg-[var(--surface-hover)]"}`}
+              >
+                {name}
+                <span className="ml-1 opacity-70">{HOT_ZONES.filter((z) => z.city === name).length}</span>
+              </button>
+            ))}
+          </div>
           {scopeFranchise && visibleZones.length === 0 ? (
             <span className="text-[11px] font-bold text-[var(--danger-ink)]">{t("rmZoneNone")}</span>
           ) : null}
@@ -382,7 +399,7 @@ export default function RiderMonitorPage() {
           <div className="mb-3 rounded-[10px] border border-[var(--line)] bg-[var(--surface-raised)] p-4">
             <div className="mb-2 text-[11px] font-bold uppercase tracking-wider text-[var(--muted)]">{t("rmZoneAssignHint")}</div>
             <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-4">
-              {HOT_ZONES.map((z) => {
+              {HOT_ZONES.filter((z) => z.city === city).map((z) => {
                 const assigned = zoneAssign[z.id] ?? [];
                 const addable = franchiseOptions.filter((f) => !assigned.includes(f));
                 return (
@@ -432,6 +449,7 @@ export default function RiderMonitorPage() {
         <RiderMap
           riders={mapRiders}
           zones={visibleZones}
+          view={CITY_VIEW[city]}
           zoneLabel={(zoneId) => (zoneAssign[zoneId]?.length ? zoneAssign[zoneId].join(" · ") : null)}
           focusKey={detailKey}
           onSelect={setDetailKey}

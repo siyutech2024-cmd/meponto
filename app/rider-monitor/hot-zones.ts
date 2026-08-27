@@ -8,10 +8,22 @@
  * São Caetano (orange): 4 zones, no metadata in the source map.
  */
 
+/** Cities the monitor can switch between. Zones carry their city so a new
+ *  city can be opened without touching São Paulo's data. */
+export const ZONE_CITIES = ["São Paulo", "São João da Boa Vista"] as const;
+export type ZoneCity = (typeof ZONE_CITIES)[number];
+
+/** Map centre + zoom per city (used by the monitor when switching). */
+export const CITY_VIEW: Record<ZoneCity, { center: [number, number]; zoom: number }> = {
+  "São Paulo": { center: [-23.63, -46.66], zoom: 12 },
+  "São João da Boa Vista": { center: [-21.9698, -46.7985], zoom: 13 },
+};
+
 export type HotZone = {
   /** Stable id used for franchise assignment. */
   id: string;
-  group: "Santo Amaro" | "São Caetano";
+  city: ZoneCity;
+  group: "Santo Amaro" | "São Caetano" | "São João da Boa Vista";
   hotZone: string | null; // Eastwind area_name, e.g. "hot_zone_57"
   areaId: string | null;  // Eastwind area_id
   color: string;
@@ -21,10 +33,11 @@ export type HotZone = {
 
 const PURPLE = "#9c27b0";
 const ORANGE = "#e65100";
+const TEAL = "#0d9488";
 
 export const HOT_ZONES: HotZone[] = [
   {
-    id: "hz57", group: "Santo Amaro", hotZone: "hot_zone_57", areaId: "273742563130", color: PURPLE,
+    id: "hz57", city: "São Paulo", group: "Santo Amaro", hotZone: "hot_zone_57", areaId: "273742563130", color: PURPLE,
     points: [
       [-46.683728, -23.576757], [-46.689765, -23.573531], [-46.695922, -23.576626], [-46.696042, -23.582946],
       [-46.7022, -23.586041], [-46.702321, -23.592362], [-46.696283, -23.595589], [-46.696403, -23.601911],
@@ -38,7 +51,7 @@ export const HOT_ZONES: HotZone[] = [
     ],
   },
   {
-    id: "hz63", group: "Santo Amaro", hotZone: "hot_zone_63", areaId: "25733367606", color: PURPLE,
+    id: "hz63", city: "São Paulo", group: "Santo Amaro", hotZone: "hot_zone_63", areaId: "25733367606", color: PURPLE,
     points: [
       [-46.726957, -23.604737], [-46.732994, -23.601509], [-46.739154, -23.604602], [-46.739278, -23.610924],
       [-46.745439, -23.614017], [-46.745563, -23.62034], [-46.751724, -23.623432], [-46.751849, -23.629755],
@@ -53,7 +66,7 @@ export const HOT_ZONES: HotZone[] = [
     ],
   },
   {
-    id: "hz19", group: "Santo Amaro", hotZone: "hot_zone_19", areaId: "148408370978", color: PURPLE,
+    id: "hz19", city: "São Paulo", group: "Santo Amaro", hotZone: "hot_zone_19", areaId: "148408370978", color: PURPLE,
     points: [
       [-46.703288, -23.642943], [-46.709328, -23.639714], [-46.71549, -23.642809], [-46.715612, -23.649133],
       [-46.721775, -23.652227], [-46.721897, -23.658552], [-46.728061, -23.661646], [-46.728184, -23.667971],
@@ -65,7 +78,7 @@ export const HOT_ZONES: HotZone[] = [
     ],
   },
   {
-    id: "hz56", group: "Santo Amaro", hotZone: "hot_zone_56", areaId: "232684521279", color: PURPLE,
+    id: "hz56", city: "São Paulo", group: "Santo Amaro", hotZone: "hot_zone_56", areaId: "232684521279", color: PURPLE,
     points: [
       [-46.696283, -23.595589], [-46.702321, -23.592362], [-46.708479, -23.595456], [-46.7086, -23.601778],
       [-46.71476, -23.604872], [-46.714881, -23.611194], [-46.708843, -23.614422], [-46.708964, -23.620745],
@@ -77,7 +90,7 @@ export const HOT_ZONES: HotZone[] = [
     ],
   },
   {
-    id: "sc1", group: "São Caetano", hotZone: null, areaId: null, color: ORANGE,
+    id: "sc1", city: "São Paulo", group: "São Caetano", hotZone: null, areaId: null, color: ORANGE,
     points: [
       [-46.593457, -23.644104], [-46.599502, -23.640879], [-46.605661, -23.643979], [-46.605775, -23.650303],
       [-46.611934, -23.653402], [-46.61798, -23.650177], [-46.62414, -23.653275], [-46.624255, -23.6596],
@@ -91,7 +104,7 @@ export const HOT_ZONES: HotZone[] = [
     ],
   },
   {
-    id: "sc2", group: "São Caetano", hotZone: null, areaId: null, color: ORANGE,
+    id: "sc2", city: "São Paulo", group: "São Caetano", hotZone: null, areaId: null, color: ORANGE,
     points: [
       [-46.580579, -23.606288], [-46.586622, -23.603065], [-46.592778, -23.606164], [-46.592891, -23.612487],
       [-46.586848, -23.61571], [-46.58696, -23.622033], [-46.593117, -23.625133], [-46.59323, -23.631456],
@@ -104,7 +117,7 @@ export const HOT_ZONES: HotZone[] = [
     ],
   },
   {
-    id: "sc3", group: "São Caetano", hotZone: null, areaId: null, color: ORANGE,
+    id: "sc3", city: "São Paulo", group: "São Caetano", hotZone: null, areaId: null, color: ORANGE,
     points: [
       [-46.610562, -23.577529], [-46.616602, -23.574305], [-46.622757, -23.577403], [-46.622872, -23.583724],
       [-46.629027, -23.586821], [-46.629143, -23.593143], [-46.623102, -23.596367], [-46.623217, -23.602689],
@@ -115,7 +128,7 @@ export const HOT_ZONES: HotZone[] = [
     ],
   },
   {
-    id: "sc4", group: "São Caetano", hotZone: null, areaId: null, color: ORANGE,
+    id: "sc4", city: "São Paulo", group: "São Caetano", hotZone: null, areaId: null, color: ORANGE,
     points: [
       [-46.641223, -23.586693], [-46.647262, -23.583468], [-46.653419, -23.586565], [-46.653536, -23.592886],
       [-46.659693, -23.595982], [-46.659811, -23.602304], [-46.653771, -23.60553], [-46.653888, -23.611852],
@@ -129,5 +142,25 @@ export const HOT_ZONES: HotZone[] = [
       [-46.617176, -23.605913], [-46.623217, -23.602689], [-46.623102, -23.596367], [-46.629143, -23.593143],
       [-46.629027, -23.586821], [-46.635067, -23.583597], [-46.641223, -23.586693],
     ],
+  },
+  // ---- São João da Boa Vista (SP interior, ~90k people) ---------------------
+  // Opened as a new small-city operation. No Eastwind area metadata yet: the
+  // grid mirrors the SP hexagon geometry (≈650 m edge) centred on the city,
+  // four cells covering the built-up area. Refine when 99 publishes areas.
+  {
+    id: "sjbv1", city: "São João da Boa Vista", group: "São João da Boa Vista", hotZone: null, areaId: null, color: TEAL,
+    points: [[-46.793061, -21.966927], [-46.798517, -21.964029], [-46.803973, -21.966927], [-46.803973, -21.972723], [-46.798517, -21.975621], [-46.793061, -21.972723], [-46.793061, -21.966927]],
+  },
+  {
+    id: "sjbv2", city: "São João da Boa Vista", group: "São João da Boa Vista", hotZone: null, areaId: null, color: TEAL,
+    points: [[-46.782149, -21.966927], [-46.787605, -21.964029], [-46.793061, -21.966927], [-46.793061, -21.972723], [-46.787605, -21.975621], [-46.782149, -21.972723], [-46.782149, -21.966927]],
+  },
+  {
+    id: "sjbv3", city: "São João da Boa Vista", group: "São João da Boa Vista", hotZone: null, areaId: null, color: TEAL,
+    points: [[-46.787605, -21.958233], [-46.793061, -21.955335], [-46.798517, -21.958233], [-46.798517, -21.964029], [-46.793061, -21.966927], [-46.787605, -21.964029], [-46.787605, -21.958233]],
+  },
+  {
+    id: "sjbv4", city: "São João da Boa Vista", group: "São João da Boa Vista", hotZone: null, areaId: null, color: TEAL,
+    points: [[-46.798517, -21.958233], [-46.803973, -21.955335], [-46.809429, -21.958233], [-46.809429, -21.964029], [-46.803973, -21.966927], [-46.798517, -21.964029], [-46.798517, -21.958233]],
   },
 ];

@@ -47,10 +47,13 @@ export default function RiderMap({
   zoneLabel,
   focusKey,
   onSelect,
+  view,
 }: {
   riders: MapRider[];
   /** Hot zones visible to this portal (HQ: all; franchise: assigned only). */
   zones: HotZone[];
+  /** Map centre/zoom for the selected city. */
+  view?: { center: [number, number]; zoom: number };
   /** Extra tooltip line per zone id (e.g. assigned franchise name). */
   zoneLabel?: (zoneId: string) => string | null;
   focusKey: string | null;
@@ -58,6 +61,9 @@ export default function RiderMap({
 }) {
   const mapDiv = useRef<HTMLDivElement>(null);
   const mapRef = useRef<any>(null);
+  // Kept in a ref so the init closure reads the current city without re-running.
+  const viewRef = useRef(view);
+  viewRef.current = view;
   const markersRef = useRef<Map<string, any>>(new Map());
   const zoneLayerRef = useRef<any>(null);
   const zoneBoundsRef = useRef<any>(null);
@@ -75,7 +81,7 @@ export default function RiderMap({
     function init() {
       const L = (window as any).L;
       if (!L || disposed || !mapDiv.current || mapRef.current) return;
-      const map = L.map(mapDiv.current).setView([-23.63, -46.66], 12);
+      const map = L.map(mapDiv.current).setView(viewRef.current?.center ?? [-23.63, -46.66], viewRef.current?.zoom ?? 12);
       L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 19, attribution: "© OpenStreetMap" }).addTo(map);
       mapRef.current = map;
       setReady(true); // re-runs the marker effect if riders arrived before Leaflet
@@ -113,6 +119,13 @@ export default function RiderMap({
       }
     };
   }, []);
+
+  // Recentre when the operator switches city.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!ready || !map || !view) return;
+    map.setView(view.center, view.zoom);
+  }, [ready, view]);
 
   // (Re)draw the hot-zone polygons whenever the visible zone set changes
   // (e.g. HQ re-assigns a zone, or a franchise portal loads its own subset).
