@@ -243,35 +243,60 @@ async function pull(ctx, city = null) {
 
     // ---- City switch (multi-city rotation) ---------------------------------
     // The board keeps one city selected per session; pick ours before reading.
-    // If the picker can't be driven we SKIP this city rather than upload the
-    // previous city's riders under the wrong cityId.
+    // Matching is ACCENT-INSENSITIVE ("Sao Paulo" on the board vs "São Paulo"
+    // in config — 2026-08-27 incident: literal matching failed BOTH cities and
+    // silently stopped every upload). If the picker can't be driven we SKIP
+    // this city rather than upload the previous city's riders under the wrong
+    // cityId.
     if (city?.label) {
-      const switched = await (async () => {
-        try {
-          const current = await page.locator(`text=${city.label}`).first().isVisible({ timeout: 3000 }).catch(() => false);
-          // Open the city dropdown (the control showing the current city).
-          const picker = page.locator('[class*="city"], [class*="City"]').filter({ hasText: /Sao Paulo|São Paulo|São João|Sao Joao/ }).first();
-          if (await picker.count()) {
-            await picker.click({ timeout: 5000 });
-            await page.waitForTimeout(500);
-          }
-          const option = page.getByText(city.label, { exact: false }).last();
-          if (await option.count()) {
-            await option.click({ timeout: 5000 });
-            await page.waitForTimeout(1500);
-            return true;
-          }
-          return current; // already on this city
-        } catch {
-          return false;
+      // Runs in page context. step: "read" → return current picker text;
+      // "open" → click the picker; "pick" → click the dropdown option.
+      const drive = (step, target) => page.evaluate(([stepArg, targetArg]) => {
+        const norm = (v) => String(v ?? "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/\s+/g, " ").trim();
+        const leaves = [...document.querySelectorAll("body *")].filter(
+          (el) => el.childElementCount === 0 && el.offsetParent !== null && norm(el.textContent).length > 0 && norm(el.textContent).length < 60,
+        );
+        const known = ["sao paulo", "sao joao da boa vista"];
+        const cityEls = leaves.filter((el) => known.includes(norm(el.textContent)));
+        if (stepArg === "read") return cityEls.length ? norm(cityEls[0].textContent) : "";
+        if (stepArg === "open") {
+          if (!cityEls.length) return false;
+          cityEls[0].click();
+          return true;
         }
-      })();
+        // "pick": dropdown options are appended AFTER the picker — click the last match.
+        const options = cityEls.filter((el) => norm(el.textContent) === norm(targetArg));
+        if (!options.length) return false;
+        options[options.length - 1].click();
+        return true;
+      }, [step, target]);
+
+      const want = city.label.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/\s+/g, " ").trim();
+      let switched = false;
+      try {
+        const current = await drive("read", "");
+        if (current === want) {
+          switched = true; // already on this city
+        } else {
+          await drive("open", "");
+          await page.waitForTimeout(800);
+          if (await drive("pick", city.label)) {
+            await page.waitForTimeout(2500);
+            switched = (await drive("read", "")) === want;
+          }
+        }
+      } catch (e) {
+        log(`city switch error: ${e.message}`);
+      }
       if (!switched) {
         log(`city switch failed: ${city.label} — skipping this city this round`);
         await alert(`city:${city.label}`, `could not switch to ${city.label}; skipped one round`);
         return;
       }
       log(`city → ${city.label}`);
+      // Fresh data for the newly selected city fires a new riderList request.
+      await page.waitForResponse((r) => r.url().includes(RIDER_LIST_API), { timeout: 20000 }).catch(() => {});
+      await page.waitForTimeout(1500);
     }
     // Wait explicitly for the rider list response (cold start / slow networks
     // can take much longer than a fixed delay). Then a short settle for KPI.
