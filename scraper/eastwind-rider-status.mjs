@@ -50,6 +50,22 @@ const cfg = {
   ingestToken: process.env.MEPONTO_INGEST_TOKEN || "",
   profileDir: process.env.PROFILE_DIR || "./.eastwind-profile",
   cityId: process.env.CITY_ID || "55000199",
+  /**
+   * Multi-city rotation (2026-08-27). ONE OL account can serve several cities
+   * — the board has a city picker. Configure as
+   *   CITIES="São Paulo:55000199,São João da Boa Vista:<cityId>"
+   * and each round scrapes them in order, uploading one batch per city with
+   * its own cityId. Leave unset to keep the single-city behaviour.
+   * The label must match the option text in the Eastwind city dropdown.
+   */
+  cities: (process.env.CITIES || "")
+    .split(",")
+    .map((entry) => entry.trim())
+    .filter(Boolean)
+    .map((entry) => {
+      const idx = entry.lastIndexOf(":");
+      return idx === -1 ? { label: entry, id: "" } : { label: entry.slice(0, idx).trim(), id: entry.slice(idx + 1).trim() };
+    }),
   intervalMin: Number(process.env.INTERVAL_MIN || 5),
   shiftStartMin: hmToMin(process.env.SHIFT_START, 0),     // e.g. "10:30"
   shiftEndMin: hmToMin(process.env.SHIFT_END, 24 * 60),   // e.g. "22:30"
@@ -119,7 +135,14 @@ async function captureRiderDetails(page, riderList) {
   const detailApisSeen = new Set();
   let captured = 0;
   let clickFails = 0;
+  // Overall deadline: the click loop must never eat the whole interval —
+  // partial details beat a wedged round.
+  const deadline = Date.now() + 4 * 60_000;
   for (const { id, name, phone } of riders) {
+    if (Date.now() > deadline) {
+      log("detail capture deadline reached — keeping partial results");
+      break;
+    }
     // Arm the response wait BEFORE clicking; swallow its eventual rejection so
     // a failed click can't leave an unhandled promise rejection behind.
     const respP = page.waitForResponse((r) => isDetailApi(apiOf(r.url())), { timeout: 4000 });
@@ -171,8 +194,18 @@ function inShiftWindow() {
 }
 
 let pulling = false; // re-entrancy guard: a slow round must not overlap the next tick
-async function pull(ctx) {
+let roundStartedAt = 0;
+const ROUND_HANG_MS = 10 * 60_000; // watchdog: a round wedged past this is dead
+async function pull(ctx, city = null) {
   if (pulling) {
+    // WATCHDOG (2026-08-22): a Playwright await can wedge forever, which used
+    // to leave `pulling` stuck true and every later round skipped — the board
+    // silently froze for hours. A hung round can't be untangled in-process;
+    // exit and let pm2/systemd bring up a clean instance in seconds.
+    if (Date.now() - roundStartedAt > ROUND_HANG_MS) {
+      log("round hung >10min — exiting for a clean restart");
+      process.exit(1);
+    }
     log("previous round still running — skip");
     return;
   }
@@ -181,7 +214,9 @@ async function pull(ctx) {
     return;
   }
   pulling = true;
+  roundStartedAt = Date.now();
   const capturedAt = new Date().toISOString();
+  const cityId = city?.id || cfg.cityId;
   const page = await ctx.newPage();
 
   // Capture gateway responses fired by the rider board. Track every gateway
@@ -204,6 +239,39 @@ async function pull(ctx) {
     if (!page.url().includes("/monitor/")) {
       await alert("login", "LOGIN_REQUIRED — session expired. Re-copy .eastwind-profile (run login.mjs on a desktop, then redeploy).");
       return;
+    }
+
+    // ---- City switch (multi-city rotation) ---------------------------------
+    // The board keeps one city selected per session; pick ours before reading.
+    // If the picker can't be driven we SKIP this city rather than upload the
+    // previous city's riders under the wrong cityId.
+    if (city?.label) {
+      const switched = await (async () => {
+        try {
+          const current = await page.locator(`text=${city.label}`).first().isVisible({ timeout: 3000 }).catch(() => false);
+          // Open the city dropdown (the control showing the current city).
+          const picker = page.locator('[class*="city"], [class*="City"]').filter({ hasText: /Sao Paulo|São Paulo|São João|Sao Joao/ }).first();
+          if (await picker.count()) {
+            await picker.click({ timeout: 5000 });
+            await page.waitForTimeout(500);
+          }
+          const option = page.getByText(city.label, { exact: false }).last();
+          if (await option.count()) {
+            await option.click({ timeout: 5000 });
+            await page.waitForTimeout(1500);
+            return true;
+          }
+          return current; // already on this city
+        } catch {
+          return false;
+        }
+      })();
+      if (!switched) {
+        log(`city switch failed: ${city.label} — skipping this city this round`);
+        await alert(`city:${city.label}`, `could not switch to ${city.label}; skipped one round`);
+        return;
+      }
+      log(`city → ${city.label}`);
     }
     // Wait explicitly for the rider list response (cold start / slow networks
     // can take much longer than a fixed delay). Then a short settle for KPI.
@@ -242,10 +310,12 @@ async function pull(ctx) {
     const res = await fetch(cfg.ingestUrl, {
       method: "POST",
       headers: { "Content-Type": "application/json", "x-ingest-token": cfg.ingestToken },
-      body: JSON.stringify({ capturedAt, cityId: cfg.cityId, riderList, kpi, riderFeatures }),
+      body: JSON.stringify({ capturedAt, cityId, riderList, kpi, riderFeatures }),
+      // A hanging ingest request must not wedge the round forever.
+      signal: AbortSignal.timeout(60_000),
     });
     const txt = await res.text();
-    log(`ingest ${res.status}: ${txt.slice(0, 300)}`);
+    log(`ingest ${res.status} [${city?.label ?? "default"} / ${cityId}]: ${txt.slice(0, 300)}`);
     if (!res.ok) await alert("ingest", `ingest failed HTTP ${res.status}: ${txt.slice(0, 200)}`);
     else _alertedAt.delete("login"); // healthy round clears the login alert throttle
   } finally {
@@ -269,8 +339,19 @@ async function main() {
     viewport: { width: 1440, height: 900 },
   });
 
-  await pull(ctx).catch((e) => log("pull error:", e.message));
-  setInterval(() => pull(ctx).catch((e) => log("pull error:", e.message)), cfg.intervalMin * 60 * 1000);
+  // One round = every configured city, in order, in the SAME session.
+  const round = async () => {
+    if (cfg.cities.length === 0) {
+      await pull(ctx).catch((e) => log("pull error:", e.message));
+      return;
+    }
+    for (const city of cfg.cities) {
+      await pull(ctx, city).catch((e) => log(`pull error [${city.label}]:`, e.message));
+    }
+  };
+
+  await round();
+  setInterval(() => void round(), cfg.intervalMin * 60 * 1000);
 }
 
 main();

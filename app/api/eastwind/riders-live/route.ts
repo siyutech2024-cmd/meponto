@@ -62,6 +62,10 @@ export async function GET(request: Request) {
   const url = new URL(request.url);
   let franchise = url.searchParams.get("franchise")?.trim() || "";
   let ponto = url.searchParams.get("ponto")?.trim() || "";
+  // Multi-city: one OL account scrapes several cities, each batch carrying its
+  // Eastwind city_id. The board asks for one city at a time so São Paulo's
+  // riders never leak into a small-city view (and vice versa).
+  const cityId = url.searchParams.get("cityId")?.trim() || "";
 
   // ---- Session scope enforcement (same rule as /api/mall) -----------------
   // The query params exist for the dashboards' convenience, but the SESSION
@@ -91,10 +95,9 @@ export async function GET(request: Request) {
   const latestBySource = new Map<string, string>();
   const latestPerSource = await Promise.all(
     KNOWN_SOURCES.map((src) =>
-      client
-        .from("rider_status_snapshots")
-        .select("captured_at")
-        .eq("source", src)
+      (cityId
+        ? client.from("rider_status_snapshots").select("captured_at").eq("source", src).eq("city_id", cityId)
+        : client.from("rider_status_snapshots").select("captured_at").eq("source", src))
         .order("captured_at", { ascending: false })
         .limit(1)
         .then((r) => ({ src, at: (r.data?.[0] as { captured_at: string } | undefined)?.captured_at ?? null, error: r.error })),
@@ -128,7 +131,10 @@ export async function GET(request: Request) {
   if (capturedAt) {
     const batches = await Promise.all(
       [...latestBySource.entries()].map(([src, at]) =>
-        client.from("rider_status_snapshots").select("*").eq("captured_at", at).eq("source", src).then((r) => (r.data ?? []) as SnapshotRow[]),
+        (cityId
+          ? client.from("rider_status_snapshots").select("*").eq("captured_at", at).eq("source", src).eq("city_id", cityId)
+          : client.from("rider_status_snapshots").select("*").eq("captured_at", at).eq("source", src)
+        ).then((r) => (r.data ?? []) as SnapshotRow[]),
       ),
     );
     snapshots = batches.flat();

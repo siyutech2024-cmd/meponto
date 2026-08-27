@@ -5,7 +5,7 @@ import { RefreshCcw, Search, Bike, X, MapPin, Phone } from "lucide-react";
 import { AppShell, DataTable, PageTitle } from "../components/ui";
 import RiderMap, { type MapRider } from "./RiderMap";
 import MonitorTabs from "./MonitorTabs";
-import { CITY_VIEW, HOT_ZONES, ZONE_CITIES, type ZoneCity } from "./hot-zones";
+import { CITY_IDS, CITY_VIEW, HOT_ZONES, ZONE_CITIES, type ZoneCity } from "./hot-zones";
 import { readSession } from "../lib/session";
 import { useVentoStore } from "../lib/store";
 import { translate, type TranslationKey } from "../lib/i18n";
@@ -163,6 +163,11 @@ export default function RiderMonitorPage() {
     const params = new URLSearchParams();
     if (scopeFranchise) params.set("franchise", scopeFranchise);
     if (scopeStation) params.set("ponto", scopeStation);
+    // Ask for the selected city's snapshots only. A city whose Eastwind
+    // city_id isn't known yet (scraper hasn't reported it) asks for a sentinel
+    // so the board shows an empty state instead of another city's riders.
+    const wantCityId = CITY_IDS[city] || "__pending__";
+    params.set("cityId", wantCityId);
     const res = await fetch(`/api/eastwind/riders-live?${params}`, { headers, cache: "no-store" });
     if (res.ok) {
       const live = (await res.json()).data as Payload;
@@ -170,7 +175,7 @@ export default function RiderMonitorPage() {
       setUpdatedAt(new Date().toLocaleTimeString("pt-BR", { timeZone: "America/Sao_Paulo" }));
       void loadNoShow(live); // 模式二 T6: recompute against the same snapshot
     }
-  }, [headers, scopeFranchise, scopeStation, loadNoShow]);
+  }, [headers, scopeFranchise, scopeStation, loadNoShow, city]);
 
   const loadZoneAssignments = useCallback(async () => {
     const res = await fetch("/api/eastwind/zone-assignments", { headers, cache: "no-store" });
@@ -409,6 +414,14 @@ export default function RiderMonitorPage() {
           </div>
         );
       })()}
+
+      {/* City not wired to the scraper yet — say so instead of showing an
+          empty board that looks broken. */}
+      {isHQ && !CITY_IDS[city] ? (
+        <div className="mt-3 rounded-[10px] border border-[var(--warning)] bg-[var(--warning-bg,rgba(217,119,6,0.08))] px-4 py-3 text-[12px] font-bold text-[var(--warning-ink)]">
+          {t("rmCityPending", { city })}
+        </div>
+      ) : null}
 
       <div className="mt-5">
         <div className="mb-2 flex items-center gap-3">

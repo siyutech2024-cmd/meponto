@@ -13,6 +13,15 @@
 export const ZONE_CITIES = ["São Paulo", "São João da Boa Vista"] as const;
 export type ZoneCity = (typeof ZONE_CITIES)[number];
 
+/** Eastwind city_id per city — the monitor filters live snapshots by this so
+ *  one OL account scraping several cities stays cleanly separated. */
+export const CITY_IDS: Record<ZoneCity, string> = {
+  "São Paulo": "55000199",
+  // Filled in once the scraper reports the first SJBV batch; until then the
+  // city shows "no data" instead of São Paulo's riders.
+  "São João da Boa Vista": "",
+};
+
 /** Map centre + zoom per city (used by the monitor when switching). */
 export const CITY_VIEW: Record<ZoneCity, { center: [number, number]; zoom: number }> = {
   "São Paulo": { center: [-23.63, -46.66], zoom: 12 },
