@@ -288,13 +288,33 @@ export default function RiderMonitorPage() {
   );
   const noGpsCount = riders.length - mapRiders.length;
 
-  // Zone visibility per portal: HQ sees everything; a franchise portal only
-  // its assigned zones; a station portal sees all zones (its riders are
-  // already scoped, and station→franchise ownership isn't in this payload).
+  // ---- City isolation for tenant portals -----------------------------------
+  // A franchise/station portal may only see the cities where its franchise
+  // owns at least one hot zone. Anything else — the city button, the zones,
+  // the map view — simply doesn't exist for them. HQ sees every city.
+  // A station's franchise isn't in the session, so it's derived from its own
+  // (server-scoped) rider rows.
+  const sessionFranchise = scopeFranchise || (scopeStation ? data?.riders.find((r) => r.ponto === scopeStation && r.franchise && r.franchise !== "未归属")?.franchise ?? "" : "");
+  const allowedCities = useMemo<ZoneCity[]>(() => {
+    if (isHQ) return [...ZONE_CITIES];
+    const owned = ZONE_CITIES.filter((c) =>
+      HOT_ZONES.some((z) => z.city === c && (zoneAssign[z.id] ?? []).includes(sessionFranchise)),
+    );
+    // No zone assigned anywhere (legacy tenants before zone assignment):
+    // default to São Paulo only — never expose the newer cities by accident.
+    return owned.length > 0 ? owned : ["São Paulo"];
+  }, [isHQ, zoneAssign, sessionFranchise]);
+  useEffect(() => {
+    if (!allowedCities.includes(city)) setCity(allowedCities[0]);
+  }, [allowedCities, city]);
+
+  // Zone visibility per portal: HQ sees everything in the city; a tenant
+  // portal only the zones assigned to its franchise.
   const visibleZones = useMemo(() => {
     const inCity = HOT_ZONES.filter((z) => z.city === city);
-    return scopeFranchise ? inCity.filter((z) => (zoneAssign[z.id] ?? []).includes(scopeFranchise)) : inCity;
-  }, [scopeFranchise, zoneAssign, city]);
+    if (isHQ) return inCity;
+    return sessionFranchise ? inCity.filter((z) => (zoneAssign[z.id] ?? []).includes(sessionFranchise)) : inCity;
+  }, [isHQ, sessionFranchise, zoneAssign, city]);
   // Franchise choices for the HQ assign panel: every franchise seen in the
   // city-wide summary plus any already holding an assignment.
   // Franchise choices for the HQ zone-assignment panel. Sourced from the
@@ -427,9 +447,11 @@ export default function RiderMonitorPage() {
         <div className="mb-2 flex items-center gap-3">
           <span className="text-[11px] font-bold uppercase tracking-wider text-[var(--muted)]">{t("rmMap")}</span>
           <span className="text-[11px] text-[var(--muted)]">{mapRiders.length} {t("rmRidersUnit")}{noGpsCount > 0 ? ` · ${t("rmNoGps", { n: noGpsCount })}` : ""}</span>
-          {/* City switcher — zone sets and map view per city. */}
+          {/* City switcher — tenants only see the cities their franchise owns
+              zones in; a single-city tenant gets no switcher at all. */}
+          {allowedCities.length > 1 ? (
           <div className="flex overflow-hidden rounded-[8px] border border-[var(--line)]">
-            {ZONE_CITIES.map((name) => (
+            {allowedCities.map((name) => (
               <button
                 key={name}
                 type="button"
@@ -441,6 +463,7 @@ export default function RiderMonitorPage() {
               </button>
             ))}
           </div>
+          ) : null}
           {scopeFranchise && visibleZones.length === 0 ? (
             <span className="text-[11px] font-bold text-[var(--danger-ink)]">{t("rmZoneNone")}</span>
           ) : null}
