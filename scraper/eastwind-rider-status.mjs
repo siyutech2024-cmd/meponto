@@ -242,72 +242,33 @@ async function pull(ctx, city = null) {
     }
 
     // ---- City switch (multi-city rotation) ---------------------------------
-    // The board keeps one city selected per session; pick ours before reading.
-    // Matching is ACCENT-INSENSITIVE ("Sao Paulo" on the board vs "São Paulo"
-    // in config — 2026-08-27 incident: literal matching failed BOTH cities and
-    // silently stopped every upload). If the picker can't be driven we SKIP
-    // this city rather than upload the previous city's riders under the wrong
-    // cityId.
-    if (city?.label) {
-      // Runs in page context. step: "read" → return current picker text;
-      // "open" → click the picker; "pick" → click the dropdown option.
-      const drive = (step, target) => page.evaluate(([stepArg, targetArg]) => {
-        const norm = (v) => String(v ?? "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/\s+/g, " ").trim();
-        const known = ["sao paulo", "sao joao da boa vista"];
-        // Innermost visible elements whose full text is exactly a city name
-        // (no descendant also matches — that keeps us on the clickable node).
-        const cityEls = [...document.querySelectorAll("body *")].filter((el) => {
-          if (el.offsetParent === null) return false;
-          if (!known.includes(norm(el.textContent))) return false;
-          return ![...el.children].some((child) => known.includes(norm(child.textContent)));
-        });
-        if (stepArg === "read") return cityEls.length ? norm(cityEls[0].textContent) : "";
-        if (stepArg === "open") {
-          if (!cityEls.length) return false;
-          cityEls[0].click();
-          return true;
-        }
-        // "pick": dropdown options are appended AFTER the picker — click the last match.
-        const options = cityEls.filter((el) => norm(el.textContent) === norm(targetArg));
-        if (!options.length) return false;
-        options[options.length - 1].click();
-        return true;
-      }, [step, target]);
-
-      const want = city.label.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/\s+/g, " ").trim();
-      let switched = false;
-      try {
-        // The SPA renders the picker SECONDS after domcontentloaded — poll for
-        // it instead of reading immediately (2026-08-27: instant read found an
-        // empty DOM and every round was skipped).
-        let current = "";
-        for (let attempt = 0; attempt < 30 && !current; attempt += 1) {
-          await page.waitForTimeout(1000);
-          current = await drive("read", "");
-        }
-        if (!current) log("city picker never appeared after 30s");
-        if (current === want) {
-          switched = true; // already on this city
-        } else {
-          await drive("open", "");
-          await page.waitForTimeout(800);
-          if (await drive("pick", city.label)) {
-            await page.waitForTimeout(2500);
-            switched = (await drive("read", "")) === want;
-          }
-        }
-      } catch (e) {
-        log(`city switch error: ${e.message}`);
+    // The board persists the selected city in localStorage and reads it on
+    // load, so we set the ID and reload — no clicking, no text matching.
+    //
+    // ⚠ 2026-08-27 事故教训: 最初按城市名点下拉,结果抓取器会话是**中文界面**
+    // ("圣保罗"/"圣若昂达博阿维斯塔"),按 "Sao Paulo" 永远匹配不上,两个城市
+    // 全部跳过,连主号上传都断了 40 分钟。cityId 是稳定的,和界面语言无关。
+    if (city?.id) {
+      const key = "monitorRiderlistCityID";
+      const already = await page.evaluate((k) => localStorage.getItem(k), key);
+      if (already !== String(city.id)) {
+        await page.evaluate(([k, v]) => localStorage.setItem(k, v), [key, String(city.id)]);
+        await page.reload({ waitUntil: "domcontentloaded" });
+        await page.waitForResponse((r) => r.url().includes(RIDER_LIST_API), { timeout: 30000 }).catch(() => {});
+        await page.waitForTimeout(2500);
       }
-      if (!switched) {
-        log(`city switch failed: ${city.label} — skipping this city this round`);
-        await alert(`city:${city.label}`, `could not switch to ${city.label}; skipped one round`);
+      // Verify against the REQUEST the board actually issued (cityID=<id> in
+      // the gateway query) — never trust the click, trust the traffic.
+      const usedCity = await page.evaluate(() => {
+        const hit = performance.getEntriesByType("resource").map((e) => e.name).reverse().find((u) => u.includes("riderList") && u.includes("cityID="));
+        return hit ? (hit.match(/[?&]cityID=(\d+)/) || [])[1] ?? "" : "";
+      });
+      if (usedCity && usedCity !== String(city.id)) {
+        log(`city switch failed: board still on cityID=${usedCity}, wanted ${city.id} — skipping`);
+        await alert(`city:${city.label}`, `could not switch to ${city.label} (board on ${usedCity})`);
         return;
       }
-      log(`city → ${city.label}`);
-      // Fresh data for the newly selected city fires a new riderList request.
-      await page.waitForResponse((r) => r.url().includes(RIDER_LIST_API), { timeout: 20000 }).catch(() => {});
-      await page.waitForTimeout(1500);
+      log(`city → ${city.label} (${city.id})`);
     }
     // Wait explicitly for the rider list response (cold start / slow networks
     // can take much longer than a fixed delay). Then a short settle for KPI.
@@ -376,6 +337,10 @@ async function main() {
   });
 
   // One round = every configured city, in order, in the SAME session.
+  // FAILURE ISOLATION (2026-08-27): each city is independent — one city that
+  // can't be selected must never stop the others from uploading. The main
+  // city is listed first, so it is always captured before any experimental
+  // new-city work can go wrong.
   const round = async () => {
     if (cfg.cities.length === 0) {
       await pull(ctx).catch((e) => log("pull error:", e.message));
