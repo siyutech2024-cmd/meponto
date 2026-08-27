@@ -3,8 +3,43 @@ import { flushPendingToDatabase, persistDeleteRecord, refreshCollectionsFromData
 import { requirePermission, roleFromRequest } from "../../lib/server/authz";
 import { sendPushToRider } from "../../lib/server/notify";
 import { parseEastwindShifts, type DispatchShift, type ShiftQuota, type ShiftSignup, type ShiftSignupStatus, type SwapRequest } from "../../lib/dispatch";
+import { canonicalCity, CITIES, CITY_IDS, DEFAULT_CITY, type City } from "../../lib/cities";
 
 const DISPATCH_COLLECTIONS = ["dispatchShifts", "shiftQuotas", "shiftSignups", "swapRequests"];
+
+/**
+ * Which cities a caller may see. HQ → all. A franchise/station → the cities
+ * where its franchise owns a hot zone (the same rule the live monitor uses),
+ * so a São Paulo franchise can never see, sign up for, or be given quota on a
+ * shift in a city it doesn't operate in. A tenant with no zone assigned yet
+ * falls back to the default city — never to "everything".
+ */
+async function allowedCitiesFor(franchise: string): Promise<City[] | null> {
+  if (!franchise) return null; // HQ — no restriction
+  await refreshCollectionsFromDatabase(["hotZoneAssignments"]);
+  const { HOT_ZONES } = await import("../../rider-monitor/hot-zones");
+  const owned = new Set<City>();
+  for (const zone of HOT_ZONES) {
+    const row = memory.hotZoneAssignments.find((entry) => entry.id === zone.id);
+    const names = row?.franchises ?? (row?.franchise ? [row.franchise] : []);
+    if (names.includes(franchise)) owned.add(canonicalCity(zone.city));
+  }
+  return owned.size > 0 ? [...owned] : [DEFAULT_CITY];
+}
+
+/**
+ * Cross-city guard: a franchise may only be given quota on / sign riders onto
+ * a shift in a city where it actually operates (owns a hot zone). Without this
+ * a São Paulo franchise could be allocated headcount on a new-city shift —
+ * silently wrong numbers on both cities' boards. HQ is exempt.
+ */
+async function cityMismatch(franchise: string, shiftCity: string, isHq: boolean): Promise<string | null> {
+  if (isHq || !franchise) return null;
+  const allowed = await allowedCitiesFor(franchise);
+  const target = canonicalCity(shiftCity);
+  if (!allowed || allowed.includes(target)) return null;
+  return `加盟商「${franchise}」不在 ${target} 运营,不能操作该城市的班次。A franquia não opera em ${target}.`;
+}
 
 function nowStamp() {
   return new Date().toISOString().slice(0, 16).replace("T", " ");
@@ -37,12 +72,39 @@ export async function GET(request: Request) {
 
   const from = url.searchParams.get("from") ?? "";
   const to = url.searchParams.get("to") ?? "";
-  const franchiseScope = url.searchParams.get("franchise") ?? "";
-  const stationScope = url.searchParams.get("station") ?? "";
+  let franchiseScope = url.searchParams.get("franchise") ?? "";
+  let stationScope = url.searchParams.get("station") ?? "";
+
+  // Session scope wins over the params (same rule as /api/mall and the live
+  // monitor): a franchise/station session is pinned server-side, so a
+  // caller-supplied param can never widen what it sees.
+  const { scopeFromRequest } = await import("../../lib/server/authz");
+  const sessionScope = await scopeFromRequest(request);
+  if (sessionScope.station) {
+    stationScope = sessionScope.station;
+    franchiseScope = sessionScope.franchise || franchiseScope;
+  } else if (sessionScope.franchise) {
+    franchiseScope = sessionScope.franchise;
+  }
+
+  // ---- City scoping --------------------------------------------------------
+  // Shifts belong to a city (rows written before cities existed resolve to the
+  // default one). The caller asks for a city; a tenant caller can only ask for
+  // a city it operates in, and gets its own cities regardless of the param.
+  const requestedCity = url.searchParams.get("city")?.trim() || "";
+  const allowedCities = await allowedCitiesFor(franchiseScope || sessionScope.franchise || "");
+  const cityFilter: City[] | null = allowedCities
+    ? requestedCity && allowedCities.includes(canonicalCity(requestedCity))
+      ? [canonicalCity(requestedCity)]
+      : allowedCities
+    : requestedCity
+      ? [canonicalCity(requestedCity)]
+      : null; // HQ without a param → every city
 
   const shifts = memory.dispatchShifts
     .filter((shift) => (!from || shift.date >= from) && (!to || shift.date <= to))
     .filter((shift) => view !== "open" || shift.status === "scheduling")
+    .filter((shift) => !cityFilter || cityFilter.includes(canonicalCity(shift.city)))
     .sort((a, b) => (a.date + a.timeRange).localeCompare(b.date + b.timeRange));
 
   const shiftIds = new Set(shifts.map((shift) => shift.id));
@@ -76,12 +138,23 @@ export async function GET(request: Request) {
   if (expired > 0) await flushPendingToDatabase();
 
   let swaps = memory.swapRequests;
+  // A swap alert belongs to its shift's city — keep the queue city-scoped too.
+  if (cityFilter) {
+    const cityShiftIds = new Set(memory.dispatchShifts.filter((row) => cityFilter.includes(canonicalCity(row.city))).map((row) => row.id));
+    swaps = swaps.filter((row) => cityShiftIds.has(row.shiftId));
+  }
   if (franchiseScope) swaps = swaps.filter((row) => row.franchise === franchiseScope);
   if (stationScope) swaps = swaps.filter((row) => row.station === stationScope);
   swaps = [...swaps].sort((a, b) => b.createdAt.localeCompare(a.createdAt)).slice(0, 200);
 
   return jsonResponse({
-    data: { shifts, quotas, signups, swaps },
+    data: {
+      shifts, quotas, signups, swaps,
+      // The switcher renders exactly these — a tenant never sees a city button
+      // for a city it doesn't operate in.
+      cities: allowedCities ?? [...CITIES],
+      city: cityFilter && cityFilter.length === 1 ? cityFilter[0] : null,
+    },
     summary: {
       shifts: shifts.length,
       planned: shifts.reduce((sum, shift) => sum + shift.plannedCount, 0),
@@ -196,7 +269,11 @@ async function handlePost(request: Request) {
 
   switch (body.action) {
     case "import": {
-      const { text, planId = "", planName = "", city = "圣保罗", pool: importPool } = body as ImportBody;
+      const { text, planId = "", planName = "", city: rawImportCity, pool: importPool } = body as ImportBody;
+      // Store the CANONICAL city name so a shift imported from a Chinese UI
+      // ("圣保罗") and one created from the console ("São Paulo") are the same
+      // city everywhere downstream.
+      const city = canonicalCity(rawImportCity);
       // 模式二: 新 OL 账号导入的整批班次都属于 PRO 池。Eastwind 的班次 id
       // 本身全局唯一,不会和普通池撞,所以只需要打标记。
       const shiftPool = importPool === "pro" ? "pro" : undefined;
@@ -256,6 +333,8 @@ async function handlePost(request: Request) {
       if (!quotaShift) {
         return jsonResponse({ error: "shift not found" }, { status: 404 });
       }
+      const quotaCityError = await cityMismatch(franchise, quotaShift.city, isHqCaller);
+      if (quotaCityError) return jsonResponse({ error: quotaCityError, code: "city_mismatch" }, { status: 409 });
 
       // Allocation caps (不得超发) — franchise/station callers only; HQ
       // allocates at its own discretion (总部不受限):
@@ -295,6 +374,8 @@ async function handlePost(request: Request) {
       }
       const shift = memory.dispatchShifts.find((item) => item.id === shiftId);
       if (!shift) return jsonResponse({ error: "shift not found" }, { status: 404 });
+      const signupCityError = await cityMismatch(franchise, shift.city, isHqCaller);
+      if (signupCityError) return jsonResponse({ error: signupCityError, code: "city_mismatch" }, { status: 409 });
 
       // 模式二 T5: a LOCKED shift's roster is frozen. Only HQ may still add
       // (the exception flow) — franchise/station submissions are refused with
@@ -703,7 +784,12 @@ async function handlePost(request: Request) {
     }
 
     case "setWeek": {
-      const { entries, hotzone = "Santo Amaro", city = "圣保罗", pool: weekPool } = body as SetWeekBody;
+      const { entries, hotzone = "Santo Amaro", city: rawWeekCity, pool: weekPool } = body as SetWeekBody;
+      const city = canonicalCity(rawWeekCity);
+      // Ids stay byte-identical for the default city (existing rows must keep
+      // matching); other cities get a suffix so two cities can never collide
+      // on the same date/range/zone.
+      const citySuffix = city === DEFAULT_CITY ? "" : `-${CITY_IDS[city]}`;
       // 模式二: PRO 是一张独立排班表 —— 同一天、同一时段、同一热区,PRO 和普通
       // 各自可以有一个班次。所以 id 必须带池后缀,否则两边会写进同一条记录、
       // 互相覆盖 plannedCount(这是本次补漏发现的最隐蔽的一个坑)。
@@ -742,7 +828,7 @@ async function handlePost(request: Request) {
           updated += 1;
         } else if (plannedCount > 0) {
           const record: DispatchShift = {
-            id: `ms-${date}-${timeRange.replace(/[:~]/g, "")}-${hotzone.replace(/\s+/g, "")}${poolSuffix}`.toLowerCase(),
+            id: `ms-${date}-${timeRange.replace(/[:~]/g, "")}-${hotzone.replace(/\s+/g, "")}${citySuffix}${poolSuffix}`.toLowerCase(),
             planId: "",
             planName: isProWeek ? "PRO 排班" : "手动排班",
             city,

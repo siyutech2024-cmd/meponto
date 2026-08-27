@@ -11,6 +11,8 @@ import type { Franchise } from "../lib/network";
 import type { Ponto } from "../lib/data";
 import { useVentoStore } from "../lib/store";
 import { translate, type TranslationKey } from "../lib/i18n";
+import { canonicalCity, DEFAULT_CITY, type City } from "../lib/cities";
+import { HOT_ZONES } from "../rider-monitor/hot-zones";
 
 function useT() {
   const language = useVentoStore((s) => s.language);
@@ -21,7 +23,34 @@ function useT() {
   };
 }
 
-type Board = { shifts: DispatchShift[]; quotas: ShiftQuota[]; signups: ShiftSignup[]; swaps: SwapRequest[] };
+type Board = {
+  shifts: DispatchShift[];
+  quotas: ShiftQuota[];
+  signups: ShiftSignup[];
+  swaps: SwapRequest[];
+  /** Cities this caller may switch between (server-decided; a tenant only gets its own). */
+  cities: City[];
+  /** The single city the payload is scoped to (null = HQ asked for everything). */
+  city: City | null;
+};
+
+const EMPTY_BOARD: Board = { shifts: [], quotas: [], signups: [], swaps: [], cities: [], city: null };
+
+/**
+ * Hot zones of one city, deduplicated, for the scheduling form.
+ * Compare through `canonicalCity` — historic rows spell São Paulo as "圣保罗"
+ * and a raw string match would silently return an empty list.
+ */
+function hotzonesOf(city: string): string[] {
+  const target = canonicalCity(city);
+  const names = new Set<string>();
+  for (const zone of HOT_ZONES) {
+    if (canonicalCity(zone.city) !== target) continue;
+    const name = zone.hotZone ?? zone.group;
+    if (name) names.add(name);
+  }
+  return [...names];
+}
 
 const headers = { "Content-Type": "application/json", "x-vento-role": "Super Admin" };
 
@@ -133,7 +162,12 @@ type TabId = (typeof tabs)[number]["id"];
 export default function DispatchPage() {
   const t = useT();
   const [tab, setTab] = useState<TabId>("board");
-  const [board, setBoard] = useState<Board>({ shifts: [], quotas: [], signups: [], swaps: [] });
+  const [board, setBoard] = useState<Board>(EMPTY_BOARD);
+  /**
+   * 城市切换 —— 每次 GET 都带上 city,服务端按城市过滤 shifts/quotas/signups/swaps
+   * 和 summary,所以顶部统计卡自动跟着城市走(前端不再另算一份全量口径)。
+   */
+  const [city, setCity] = useState<City>(DEFAULT_CITY);
   /**
    * 换人待确认 —— 直接用服务端 summary,不在前端另算一份。服务端已经在 GET 时
    * 把过期的 pending 关掉了,所以这个数字只会因为"被处理"或"班次已过"而下降,
@@ -158,20 +192,28 @@ export default function DispatchPage() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const response = await fetch("/api/dispatch", { headers, cache: "no-store" });
+      const response = await fetch(`/api/dispatch?city=${encodeURIComponent(city)}`, { headers, cache: "no-store" });
       const payload = await response.json();
       if (response.ok) {
-        setBoard({ shifts: [], quotas: [], signups: [], swaps: [], ...payload.data });
+        setBoard({ ...EMPTY_BOARD, ...payload.data });
         setPendingSwaps(Number(payload.summary?.pendingSwaps ?? 0));
       }
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [city]);
 
   useEffect(() => {
     void load();
   }, [load]);
+
+  // 服务端说了算:如果当前选中的城市不在这个调用方的可见列表里(比如只在新城市
+  // 运营的租户,默认值是圣保罗),就跟着服务端返回的城市走。
+  useEffect(() => {
+    if (board.cities.length === 0) return;
+    if (board.cities.some((item) => canonicalCity(item) === canonicalCity(city))) return;
+    setCity(canonicalCity(board.city ?? board.cities[0]));
+  }, [board.cities, board.city, city]);
 
   useEffect(() => {
     fetch("/api/network", { headers, cache: "no-store" })
@@ -190,7 +232,10 @@ export default function DispatchPage() {
       quotas: board.quotas.filter((quota) => ids.has(quota.shiftId)),
       signups: board.signups.filter((signup) => ids.has(signup.shiftId)),
       // 换人申请**不**按池过滤:告警不该因为看的是另一张排班表就消失。
+      // (城市过滤已经在服务端做掉了,这里不再做任何跨城市假设。)
       swaps: board.swaps,
+      cities: board.cities,
+      city: board.city,
     };
   }, [board, pool]);
 
@@ -257,6 +302,26 @@ export default function DispatchPage() {
       {/* 模式二 · 排班表切换。放在 tab 之上 —— 先选"哪张表",再选"看这张表的哪个环节"。
           PRO 高亮成金色,和全站 PRO 徽章同色,一眼能看出自己在哪张表上操作。 */}
       <div className="mb-3 flex flex-wrap items-center gap-2">
+        {/* 城市切换 —— 只在调用方能看到多座城市时出现;单城市租户不该看到一个
+            没有第二个选项的控件。列表由服务端给(board.cities)。 */}
+        {board.cities.length > 1 && (
+          <>
+            <span className="text-[11px] font-black uppercase text-[var(--muted)]">{t("dpCity")}</span>
+            <div className="flex overflow-hidden rounded-full border border-[var(--line)]">
+              {board.cities.map((name) => (
+                <button
+                  key={name}
+                  type="button"
+                  onClick={() => setCity(canonicalCity(name))}
+                  className={`h-8 px-3 text-xs font-black ${canonicalCity(name) === canonicalCity(city) ? "bg-[var(--accent)] text-[var(--accent-ink)]" : "text-[var(--muted-strong)] hover:bg-[var(--surface-raised)]"}`}
+                >
+                  {name}
+                </button>
+              ))}
+            </div>
+            <span className="mx-1 h-5 w-px bg-[var(--line)]" aria-hidden />
+          </>
+        )}
         <span className="text-[11px] font-black uppercase text-[var(--muted)]">{t("dpPoolTable")}</span>
         <button
           type="button"
@@ -301,7 +366,7 @@ export default function DispatchPage() {
         </div>
       )}
 
-      {tab === "board" && <BoardTab board={scopedBoard} byShift={byShift} loading={loading} onAction={post} setMessage={setMessage} pool={pool} />}
+      {tab === "board" && <BoardTab board={scopedBoard} byShift={byShift} loading={loading} onAction={post} setMessage={setMessage} pool={pool} city={city} />}
       {tab === "quota" && <QuotaTab board={scopedBoard} byShift={byShift} onSave={post} setMessage={setMessage} network={network} />}
       {tab === "review" && <ReviewTab board={scopedBoard} onAction={post} setMessage={setMessage} network={network} />}
       {tab === "report" && <ReportTab board={scopedBoard} byShift={byShift} onAction={post} setMessage={setMessage} />}
@@ -321,7 +386,7 @@ function ShiftStatusBadge({ shift, label }: { shift: DispatchShift; label: strin
   return <StatusBadge tone={SHIFT_TONE[shift.status] ?? "info"} label={label} />;
 }
 
-function BoardTab({ board, byShift, loading, onAction, setMessage, pool }: { board: Board; byShift: { quotaMap: Map<string, ShiftQuota[]>; signupMap: Map<string, ShiftSignup[]> }; loading: boolean; onAction: (body: Record<string, unknown>) => Promise<Record<string, unknown> | null>; setMessage: (m: { tone: "ok" | "warn" | "err"; text: string } | null) => void; pool: "standard" | "pro" }) {
+function BoardTab({ board, byShift, loading, onAction, setMessage, pool, city }: { board: Board; byShift: { quotaMap: Map<string, ShiftQuota[]>; signupMap: Map<string, ShiftSignup[]> }; loading: boolean; onAction: (body: Record<string, unknown>) => Promise<Record<string, unknown> | null>; setMessage: (m: { tone: "ok" | "warn" | "err"; text: string } | null) => void; pool: "standard" | "pro"; city: City }) {
   const t = useT();
   const dialog = useDialog();
   const [weekStart, setWeekStart] = useState(() => mondayOf(0));
@@ -346,8 +411,12 @@ function BoardTab({ board, byShift, loading, onAction, setMessage, pool }: { boa
       setMessage({ tone: "warn", text: t("dpQaWarn") });
       return;
     }
-    // 建在当前这张表里 —— 在 PRO 表上快速新增,建出来的就是 PRO 班。
-    const result = await onAction({ action: "setWeek", pool, entries: [{ date, timeRange, plannedCount }] });
+    // 建在当前这张表里 —— 在 PRO 表上快速新增,建出来的就是 PRO 班;
+    // 城市也跟着当前视图走,否则在新城市面板上快建会落到圣保罗去。
+    // 默认城市不传 hotzone:沿用服务端旧默认值,班次 id 与历史数据保持逐字一致;
+    // 其他城市必须带本城热区,否则会建出一个圣保罗热区名的班次。
+    const cityZone = canonicalCity(city) === DEFAULT_CITY ? "" : hotzonesOf(city)[0] ?? "";
+    const result = await onAction({ action: "setWeek", pool, city, ...(cityZone ? { hotzone: cityZone } : {}), entries: [{ date, timeRange, plannedCount }] });
     if (result) setMessage({ tone: "ok", text: t("dpQaOk", { date, range: timeRange, n: plannedCount }) });
   }
 
@@ -442,6 +511,9 @@ function BoardTab({ board, byShift, loading, onAction, setMessage, pool }: { boa
 
       {loading && board.shifts.length === 0 ? (
         <div className="panel p-6 text-sm font-bold text-[var(--muted)]">{t("dpLoading")}</div>
+      ) : weekShifts.length === 0 ? (
+        // 空白周历会被当成"页面坏了"。说清楚是这座城市这一周没有班次,并指路。
+        <div className="panel p-8 text-center text-sm font-bold text-[var(--muted)]">{t("dpCityWeekEmpty", { city, action: t("dpTabSetup") })}</div>
       ) : (
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-7">
           {weekDates.map((date) => {
@@ -484,22 +556,34 @@ function BoardTab({ board, byShift, loading, onAction, setMessage, pool }: { boa
       )}
 
       <Drawer open={setupOpen} onClose={() => setSetupOpen(false)} width={860} ariaLabel={t("dpTabSetup")} title={<div className="text-sm font-black uppercase">{t("dpTabSetup")}</div>}>
-        <WeekSetupForm board={board} onSave={onAction} setMessage={setMessage} pool={pool} />
+        <WeekSetupForm board={board} onSave={onAction} setMessage={setMessage} pool={pool} city={city} />
       </Drawer>
 
       <Drawer open={importOpen} onClose={() => setImportOpen(false)} width={560} ariaLabel={t("dpTabImport")} title={<div className="text-sm font-black uppercase">{t("dpTabImport")}</div>}>
-        <ImportForm onImport={onAction} setMessage={setMessage} pool={pool} />
+        <ImportForm onImport={onAction} setMessage={setMessage} pool={pool} city={city} />
       </Drawer>
     </div>
   );
 }
 
-function WeekSetupForm({ board, onSave, setMessage, pool }: { board: Board; onSave: (body: Record<string, unknown>) => Promise<Record<string, unknown> | null>; setMessage: (m: { tone: "ok" | "warn" | "err"; text: string } | null) => void; pool: "standard" | "pro" }) {
+/** Sentinel option value: fall back to a free-text hot zone. */
+const HOTZONE_CUSTOM = "__custom__";
+
+function WeekSetupForm({ board, onSave, setMessage, pool, city }: { board: Board; onSave: (body: Record<string, unknown>) => Promise<Record<string, unknown> | null>; setMessage: (m: { tone: "ok" | "warn" | "err"; text: string } | null) => void; pool: "standard" | "pro"; city: City }) {
   const t = useT();
   const [weekStart, setWeekStart] = useState(() => mondayOf(1));
-  const [hotzone, setHotzone] = useState("Santo Amaro");
+  // 热区跟着城市走(以前硬编码 Santo Amaro,在新城市上会建出一批圣保罗的热区名)。
+  const zoneOptions = useMemo(() => hotzonesOf(city), [city]);
+  const [hotzone, setHotzone] = useState(() => zoneOptions[0] ?? "");
+  // 老数据里的热区名不一定在 HOT_ZONES 里,所以保留手填的口子。
+  const [customZone, setCustomZone] = useState(false);
   const [grid, setGrid] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    setCustomZone(false);
+    setHotzone(zoneOptions[0] ?? "");
+  }, [zoneOptions]);
 
   const days = useMemo(() => Array.from({ length: 7 }, (_, index) => addDays(weekStart, index)), [weekStart]);
 
@@ -531,7 +615,34 @@ function WeekSetupForm({ board, onSave, setMessage, pool }: { board: Board; onSa
         </label>
         <label className="text-xs font-black uppercase text-[var(--muted)]">
           {t("dpHotzone")}
-          <input className={`${input} mt-1.5 w-full`} value={hotzone} onChange={(e) => setHotzone(e.target.value)} />
+          {customZone || zoneOptions.length === 0 ? (
+            <div className="mt-1.5 flex gap-2">
+              <input className={`${input} w-full`} value={hotzone} placeholder={t("dpHotzoneCustom")} onChange={(e) => setHotzone(e.target.value)} />
+              {zoneOptions.length > 0 && (
+                <button type="button" className="tag h-11 shrink-0" onClick={() => { setCustomZone(false); setHotzone(zoneOptions[0]); }}>
+                  {t("dpHotzoneBack")}
+                </button>
+              )}
+            </div>
+          ) : (
+            <select
+              className={`${input} mt-1.5 w-full`}
+              value={hotzone}
+              onChange={(e) => {
+                if (e.target.value === HOTZONE_CUSTOM) {
+                  setCustomZone(true);
+                  setHotzone("");
+                  return;
+                }
+                setHotzone(e.target.value);
+              }}
+            >
+              {zoneOptions.map((name) => (
+                <option key={name} value={name}>{name}</option>
+              ))}
+              <option value={HOTZONE_CUSTOM}>{t("dpHotzoneOther")}</option>
+            </select>
+          )}
         </label>
       </div>
       <div className="flex gap-2">
@@ -592,7 +703,12 @@ function WeekSetupForm({ board, onSave, setMessage, pool }: { board: Board; onSa
             setBusy(false);
             return;
           }
-          const result = await onSave({ action: "setWeek", pool, hotzone: hotzone.trim() || "Santo Amaro", entries });
+          if (!hotzone.trim()) {
+            setMessage({ tone: "warn", text: t("dpHotzoneWarn") });
+            setBusy(false);
+            return;
+          }
+          const result = await onSave({ action: "setWeek", pool, city, hotzone: hotzone.trim(), entries });
           setBusy(false);
           if (result) setMessage({ tone: "ok", text: t("dpSetupOk", { created: String(result.created), updated: String(result.updated) }) });
         }}
@@ -604,7 +720,7 @@ function WeekSetupForm({ board, onSave, setMessage, pool }: { board: Board; onSa
   );
 }
 
-function ImportForm({ onImport, setMessage, pool }: { onImport: (body: Record<string, unknown>) => Promise<Record<string, unknown> | null>; setMessage: (m: { tone: "ok" | "warn" | "err"; text: string } | null) => void; pool: "standard" | "pro" }) {
+function ImportForm({ onImport, setMessage, pool, city }: { onImport: (body: Record<string, unknown>) => Promise<Record<string, unknown> | null>; setMessage: (m: { tone: "ok" | "warn" | "err"; text: string } | null) => void; pool: "standard" | "pro"; city: City }) {
   const t = useT();
   const [planId, setPlanId] = useState("");
   const [planName, setPlanName] = useState("");
@@ -633,7 +749,9 @@ function ImportForm({ onImport, setMessage, pool }: { onImport: (body: Record<st
           setBusy(true);
           setMessage(null);
           // 在 PRO 表上导入 = 这批 Eastwind 班次(来自新 OL 账号)整批标为 PRO
-          const result = await onImport({ action: "import", pool, planId: planId.trim(), planName: planName.trim(), text });
+          // 城市 = 当前视图的城市(仅作兜底:粘贴的表格里自带城市时以表格为准),
+          // 否则在新城市面板上导入会整批落回圣保罗、在这个面板里看不见。
+          const result = await onImport({ action: "import", pool, city, planId: planId.trim(), planName: planName.trim(), text });
           setBusy(false);
           if (result) {
             setMessage({ tone: "ok", text: t("dpImpOk", { created: String(result.created), updated: String(result.updated) }) });

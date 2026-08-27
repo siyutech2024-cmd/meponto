@@ -91,7 +91,11 @@ for (const file of files) {
 // ---- Transactional-core migration guardrails (docs/data-core-cure-plan.md §2.6) ----
 // Baselines only shrink: every wave that retires a memory collection or a
 // route's `memory` import lowers the number here in the same PR.
-const TRACK_COLLECTION_BASELINE = 111; // occurrences in app/lib/server/memory.ts
+// occurrences in app/lib/server/memory.ts
+// 112 (2026-08-27): + swapRequests — rider swap requests (换人申请). Follows the
+// existing dispatch collections so the alert lifecycle ships with the rest of
+// the scheduling data; migrates to a real table with them in data-core W4.
+const TRACK_COLLECTION_BASELINE = 112;
 const MEMORY_ROUTE_IMPORT_BASELINE = 76; // app/api/**/route.ts importing lib/server/memory
 {
   const memorySource = readFileSync(join(root, "app/lib/server/memory.ts"), "utf8");

@@ -8,24 +8,11 @@
  * São Caetano (orange): 4 zones, no metadata in the source map.
  */
 
-/** Cities the monitor can switch between. Zones carry their city so a new
- *  city can be opened without touching São Paulo's data. */
-export const ZONE_CITIES = ["São Paulo", "São João da Boa Vista"] as const;
-export type ZoneCity = (typeof ZONE_CITIES)[number];
-
-/** Eastwind city_id per city — the monitor filters live snapshots by this so
- *  one OL account scraping several cities stays cleanly separated. */
-export const CITY_IDS: Record<ZoneCity, string> = {
-  "São Paulo": "55000199",
-  // From Eastwind's vendor.rider.monitor.cityInfo (read 2026-08-27).
-  "São João da Boa Vista": "55000174",
-};
-
-/** Map centre + zoom per city (used by the monitor when switching). */
-export const CITY_VIEW: Record<ZoneCity, { center: [number, number]; zoom: number }> = {
-  "São Paulo": { center: [-23.63, -46.66], zoom: 12 },
-  "São João da Boa Vista": { center: [-21.9698, -46.7985], zoom: 13 },
-};
+/** Cities the monitor can switch between, and their Eastwind ids / map views.
+ *  Single source of truth lives in app/lib/cities.ts — zone code re-exports it
+ *  so a city is never spelled two different ways across the platform. */
+export { CITIES as ZONE_CITIES, CITY_IDS, CITY_VIEW, canonicalCity, type City as ZoneCity } from "../lib/cities";
+import type { City as ZoneCity } from "../lib/cities";
 
 export type HotZone = {
   /** Stable id used for franchise assignment. */
