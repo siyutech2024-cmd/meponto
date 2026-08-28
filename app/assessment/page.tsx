@@ -159,8 +159,21 @@ type LmPayload = {
   franchises: Array<{ franchise: string; assessments: LeaderAssessment[]; untaggedRider99Ids: string[] }>;
 };
 
+type LmPendingPayment = {
+  id: string; refName: string; franchise: string; amount: number;
+  weekFrom: string; weekTo: string; note: string;
+};
+
+type LmApplication = {
+  id: string; kind: "open_station" | "join_station" | "transfer"; franchise: string;
+  applicantName: string; targetStationId?: string; proposedStationName?: string;
+  eligibility: { orders28d: number; activeDays28d: number }; createdAt: string;
+};
+
 function LeaderModeSection({ t, canManage }: { t: T; canManage: boolean }) {
   const [payload, setPayload] = useState<LmPayload | null>(null);
+  const [pending, setPending] = useState<LmPendingPayment[]>([]);
+  const [applications, setApplications] = useState<LmApplication[]>([]);
   const [weekSel, setWeekSel] = useState<"this" | "last">("this");
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<{ tone: "ok" | "err"; text: string } | null>(null);
@@ -174,6 +187,10 @@ function LeaderModeSection({ t, canManage }: { t: T; canManage: boolean }) {
   const load = useCallback(async () => {
     const response = await fetch(`/api/leaders/assessment?week=${weekParam}`, { headers: HEADERS, cache: "no-store" });
     if (response.ok) setPayload((await response.json()).data as LmPayload);
+    const pendingRes = await fetch("/api/wallet?leaderPending=1", { headers: HEADERS, cache: "no-store" });
+    if (pendingRes.ok) setPending(((await pendingRes.json()).data ?? []) as LmPendingPayment[]);
+    const appsRes = await fetch("/api/leaders?applications=1", { headers: HEADERS, cache: "no-store" });
+    if (appsRes.ok) setApplications(((await appsRes.json()).data ?? []) as LmApplication[]);
   }, [weekParam]);
 
   useEffect(() => {
@@ -210,6 +227,56 @@ function LeaderModeSection({ t, canManage }: { t: T; canManage: boolean }) {
   const pct = (a: LeaderAssessment) =>
     a.metrics.leaderSelfOrdersPct === null ? "—" : `${a.metrics.leaderSelfOrdersPct}%`;
 
+  async function confirmPay(paymentId: string) {
+    setBusy(true);
+    setMsg(null);
+    const response = await fetch("/api/wallet", { method: "POST", headers: HEADERS, body: JSON.stringify({ action: "confirmLeaderPayment", paymentId }) });
+    const data = (await response.json().catch(() => ({}))) as { error?: string };
+    setBusy(false);
+    if (!response.ok) {
+      setMsg({ tone: "err", text: String(data.error ?? response.status) });
+      return;
+    }
+    setMsg({ tone: "ok", text: t("lmActionDone") });
+    void load();
+  }
+
+  /** WhatsApp daily digest — ALWAYS pt-BR (the field language), regardless of
+   *  the operator's UI language. HQ ops copies this into the franchise group. */
+  function copyDigest(group: LmPayload["franchises"][number]) {
+    const ptGap = (gap: LeaderAssessment["gaps"][number]) =>
+      gap.hintKey === "recruit_more"
+        ? `faltam ${gap.deficit} ativos`
+        : gap.hintKey === "raise_volume"
+          ? `faltam ${gap.deficit} pedidos`
+          : `líder ${gap.deficit}pp acima do limite`;
+    const lines = [`*MePonto · ${group.franchise}* — ${payload?.week} (até ${payload?.today})`];
+    for (const a of group.assessments) {
+      const flags = a.gaps.map(ptGap).join("; ");
+      lines.push(
+        `• ${a.stationName}: ${a.metrics.totalOrders}/${a.targetsSnapshot.minWeeklyOrders} pedidos · ${a.metrics.activeRiders}/${a.targetsSnapshot.minActiveRiders} ativos${a.trial ? " · em teste" : ""}${flags ? ` — ${flags}` : " ✓"}`,
+      );
+    }
+    void navigator.clipboard.writeText(lines.join("\n")).then(() => setMsg({ tone: "ok", text: t("lmCopied") }));
+  }
+
+  async function review(id: string, decision: "approved" | "rejected") {
+    setBusy(true);
+    setMsg(null);
+    const response = await fetch("/api/leaders", { method: "POST", headers: HEADERS, body: JSON.stringify({ action: "reviewApplication", id, decision }) });
+    const data = (await response.json().catch(() => ({}))) as { error?: string };
+    setBusy(false);
+    if (!response.ok) {
+      setMsg({ tone: "err", text: String(data.error ?? response.status) });
+      return;
+    }
+    setMsg({ tone: "ok", text: t("lmActionDone") });
+    void load();
+  }
+
+  const appKindLabel = (kind: LmApplication["kind"]) =>
+    kind === "open_station" ? t("lmAppOpen") : kind === "join_station" ? t("lmAppJoin") : t("lmAppTransfer");
+
   return (
     <SectionCard
       title={
@@ -240,6 +307,11 @@ function LeaderModeSection({ t, canManage }: { t: T; canManage: boolean }) {
                   {t("lmGenSettle")}
                 </button>
               </>
+            )}
+            {canManage && (
+              <button type="button" disabled={busy} className="tag" onClick={() => copyDigest(group)}>
+                {t("lmCopyDigest")}
+              </button>
             )}
           </div>
           {group.untaggedRider99Ids.length > 0 && (
@@ -292,6 +364,50 @@ function LeaderModeSection({ t, canManage }: { t: T; canManage: boolean }) {
           )}
         </div>
       ))}
+      {canManage && applications.length > 0 && (
+        <div className="mt-4 border-t border-[var(--line)] pt-3">
+          <div className="mb-2 text-sm font-black">
+            {t("lmApplications")} ({applications.length})
+          </div>
+          <div className="space-y-2">
+            {applications.map((app) => (
+              <div key={app.id} className="flex flex-wrap items-center gap-2 rounded-[8px] border border-[var(--line)] bg-[var(--surface-raised)] px-3 py-2 text-[12px] font-bold">
+                <span className="tag text-[10px]">{appKindLabel(app.kind)}</span>
+                <span className="font-black">{app.applicantName}</span>
+                {app.proposedStationName && <span className="text-[var(--muted)]">→ {app.proposedStationName}</span>}
+                <span className="text-[var(--muted)]">{t("lmApp28d", { o: app.eligibility.orders28d, d: app.eligibility.activeDays28d })}</span>
+                <span className="flex-1" />
+                <button type="button" disabled={busy} className="tag" onClick={() => void review(app.id, "approved")}>
+                  {t("lmApprove")}
+                </button>
+                <button type="button" disabled={busy} className="tag" onClick={() => void review(app.id, "rejected")}>
+                  {t("lmReject")}
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+      {canManage && pending.length > 0 && (
+        <div className="mt-4 border-t border-[var(--line)] pt-3">
+          <div className="mb-2 text-sm font-black">
+            {t("lmPendingPayments")} ({pending.length})
+          </div>
+          <div className="space-y-2">
+            {pending.map((payment) => (
+              <div key={payment.id} className="flex flex-wrap items-center gap-2 rounded-[8px] border border-[var(--line)] bg-[var(--surface-raised)] px-3 py-2 text-[12px] font-bold">
+                <span className="font-black">{payment.refName}</span>
+                <span>R$ {payment.amount.toFixed(2)}</span>
+                <span className="text-[var(--muted)]">{payment.weekFrom} ~ {payment.weekTo}</span>
+                <span className="min-w-0 flex-1 truncate text-[var(--muted)]" title={payment.note}>{payment.note}</span>
+                <button type="button" disabled={busy} className="tag" onClick={() => void confirmPay(payment.id)}>
+                  {t("lmConfirmPay")}
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </SectionCard>
   );
 }

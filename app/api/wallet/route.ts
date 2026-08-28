@@ -146,6 +146,15 @@ export async function GET(request: Request) {
     return jsonResponse({ data: { franchise: statementFranchise, from, to, rows, total } });
   }
 
+  // Leader Mode: pending weekly settlements awaiting franchise review.
+  if (url.searchParams.get("leaderPending") === "1") {
+    const scope = await scopeFromRequest(request);
+    const pending = memory.walletPayments.filter(
+      (p) => p.target === "leader" && p.status === "pending" && (!scope.franchise || p.franchise === scope.franchise),
+    );
+    return jsonResponse({ data: pending });
+  }
+
   // Raw payment records in a window (paid-status lookup for T+1 board).
   if (url.searchParams.get("payments") === "1") {
     const from = url.searchParams.get("from") || today();
@@ -412,7 +421,8 @@ type Body =
   | { action: "confirmPayment"; withdrawalId: string; note?: string }
   | { action: "rejectWithdrawal"; withdrawalId: string; note?: string }
   | { action: "recordPayment"; target: "franchise" | "rider"; refName: string; franchise?: string; amount: number; period?: "weekly" | "daily"; weekFrom: string; weekTo: string; note?: string }
-  | { action: "generateLeaderSettlements"; franchise: string; week: string };
+  | { action: "generateLeaderSettlements"; franchise: string; week: string }
+  | { action: "confirmLeaderPayment"; paymentId: string; note?: string };
 
 async function handlePost(request: Request) {
   const peek = (await request.clone().json().catch(() => ({}))) as { action?: string };
@@ -500,6 +510,34 @@ async function handlePost(request: Request) {
       });
       await flushPendingToDatabase();
       return jsonResponse({ data: { week, franchise: franchiseName, generated, skippedNoPayee, alreadyGenerated } });
+    }
+
+    case "confirmLeaderPayment": {
+      // Franchise review gate: pending → paid after the PIX transfer is done.
+      const paymentId = String(body.paymentId ?? "");
+      const index = memory.walletPayments.findIndex(
+        (p) => p.id === paymentId && p.target === "leader" && p.status === "pending",
+      );
+      if (index === -1) return jsonResponse({ error: "pending leader payment not found" }, { status: 404 });
+      const stamp = new Date().toISOString().slice(0, 16).replace("T", " ");
+      const confirmed: WalletPayment = {
+        ...memory.walletPayments[index],
+        status: "paid",
+        paidBy: actor,
+        paidAt: stamp,
+        note: body.note ? `${memory.walletPayments[index].note} — ${String(body.note)}` : memory.walletPayments[index].note,
+      };
+      memory.walletPayments[index] = confirmed;
+      appendServerAudit({
+        actor,
+        action: "LEADER_SETTLEMENT_PAID",
+        entity: "WalletPayment",
+        entityId: paymentId,
+        detail: `组长结算确认支付：${confirmed.refName} R$${confirmed.amount.toFixed(2)}（${confirmed.weekFrom}~${confirmed.weekTo}）。`,
+        risk: "Medium",
+      });
+      await flushPendingToDatabase();
+      return jsonResponse({ data: confirmed });
     }
 
     case "recordPayment": {
