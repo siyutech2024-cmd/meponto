@@ -56,6 +56,7 @@ export async function GET(request: Request) {
 
 type Body =
   | { action: "addFranchise"; name: string; owner?: string; phone?: string; city?: string }
+  | { action: "setLeaderMode"; franchiseId: string; enabled: boolean }
   | { action: "deleteFranchise"; franchiseId: string }
   | { action: "depositFranchise"; franchiseId: string; amount: number; note?: string }
   | { action: "addStation"; name: string; franchise: string; address?: string; mapUrl?: string; leader?: string; bairro?: string }
@@ -87,6 +88,27 @@ async function handlePost(request: Request) {
       memory.franchises.unshift(franchise);
       appendServerAudit({ actor, action: "FRANCHISE_CREATED", entity: "Franchise", entityId: franchise.id, detail: `${franchise.name} (${franchise.city})`, risk: "Medium" });
       return jsonResponse({ data: franchise }, { status: 201 });
+    }
+
+    case "setLeaderMode": {
+      // Leader Mode is an HQ-granted operating mode (docs/leader-mode-design.md
+      // §1 D-decisions): franchise/station sessions may not flip it themselves.
+      const scope = await scopeFromRequest(request);
+      if (scope.franchise || scope.station) return jsonResponse({ error: "HQ only" }, { status: 403 });
+      const { franchiseId } = body as { franchiseId?: string };
+      const enabled = body.enabled === true;
+      const index = memory.franchises.findIndex((f) => f.id === franchiseId);
+      if (index === -1) return jsonResponse({ error: "franchise not found" }, { status: 404 });
+      memory.franchises[index] = { ...memory.franchises[index], leaderMode: enabled };
+      appendServerAudit({
+        actor,
+        action: enabled ? "LEADER_MODE_ENABLED" : "LEADER_MODE_DISABLED",
+        entity: "Franchise",
+        entityId: franchiseId ?? "",
+        detail: `${memory.franchises[index].name} · leaderMode → ${enabled ? "on" : "off"}`,
+        risk: "Medium",
+      });
+      return jsonResponse({ data: memory.franchises[index] });
     }
 
     case "depositFranchise": {

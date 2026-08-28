@@ -332,6 +332,25 @@ export default function NetworkPage() {
                   >
                     {t("pnTopUp")}
                   </button>
+                  <button
+                    type="button"
+                    className={`tag ${franchise.leaderMode ? "border-[var(--ok-ink)]/50 text-[var(--ok-ink)]" : ""}`}
+                    onClick={async () => {
+                      const enabled = !franchise.leaderMode;
+                      const ok = await dialog.confirm(
+                        t(enabled ? "pnLmOnQ" : "pnLmOffQ", { name: franchise.name }),
+                        enabled ? { message: t("pnLmOnMsg") } : { message: t("pnLmOffMsg"), tone: "danger" },
+                      );
+                      if (!ok) return;
+                      const r = await post({ action: "setLeaderMode", franchiseId: franchise.id, enabled });
+                      if (r) {
+                        setMessage({ tone: "ok", text: t("pnLmDone", { name: franchise.name, state: enabled ? "ON" : "OFF" }) });
+                        void load();
+                      }
+                    }}
+                  >
+                    {t("pnLeaderMode")}{franchise.leaderMode ? " ✓" : ""}
+                  </button>
                 </div>
               </div>
             ))}
