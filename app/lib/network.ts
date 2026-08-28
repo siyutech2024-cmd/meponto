@@ -16,6 +16,12 @@ export type Franchise = {
    *  order (sales revenue share, level 2). Capped at the product's
    *  franchiseShareBRL. 0/undefined = franchise keeps the whole share. */
   stationShareBRL?: number;
+  /**
+   * Leader Mode (docs/leader-mode-design.md): stations under this franchise
+   * operate as leader+team units (virtual stations allowed, weekly leader
+   * assessment + settlement). Default off — São Paulo untouched. Pilot: SJBV.
+   */
+  leaderMode?: boolean;
 };
 
 export const franchises: Franchise[] = [];

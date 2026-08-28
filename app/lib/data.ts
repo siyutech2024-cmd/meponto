@@ -80,6 +80,21 @@ export type Ponto = {
   status?: "pending" | "approved";
   /** Whether this Ponto is selectable as a mall pickup point (default: yes). */
   pickupEnabled?: boolean;
+  // ---- Leader Mode fields (docs/leader-mode-design.md §2.2; only meaningful
+  // ---- when the parent franchise has leaderMode=true) --------------------
+  /** Leader-mode station without a physical venue (address fields optional). */
+  virtual?: boolean;
+  /** trial: 14-day probation targets · suspended/closed: excluded from assessment. */
+  stationStatus?: "trial" | "active" | "suspended" | "closed";
+  /** Leader payout target — Pix key (CPF) OR CNPJ, one of the two (P3). */
+  leaderPixKey?: string;
+  leaderCnpj?: string;
+  /** Masked in portals (LGPD); full value service-side only. */
+  leaderCpf?: string;
+  /** Optional link to the leader's own rider record (self-ride cap D1). */
+  leaderRiderId?: string;
+  /** Trial window start (YYYY-MM-DD). */
+  trialStartedAt?: string;
 };
 export type Leader = {
   id: string;

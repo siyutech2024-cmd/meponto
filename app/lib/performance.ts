@@ -35,6 +35,14 @@ export type RiderDailyKpi = {
   caa: number | null;
   overtime: number | null;
   importedAt: string;
+  // ---- Leader Mode attribution tags (docs/leader-mode-design.md D4) ------
+  // Stamped AT IMPORT TIME from the rider's binding of that day; assessments
+  // aggregate strictly by these tags. Mid-week transfers never re-attribute
+  // history. Absent = rider unlinked or franchise not in leader mode.
+  /** ponto id the rider was bound to on `date`. */
+  stationId?: string;
+  /** franchise name the rider belonged to on `date`. */
+  stationFranchise?: string;
 };
 
 export const riderDailyKpis: RiderDailyKpi[] = [];

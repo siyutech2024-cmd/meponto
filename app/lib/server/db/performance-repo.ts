@@ -17,6 +17,8 @@ type KpiRow = {
   signed_shifts: number; signed_shift_hours: number; in_shift_online_hours: number;
   tsh: number | null; tsh_critical: number | null; ar: number | null;
   caa: number | null; overtime: number | null; imported_at: string;
+  /** Leader Mode attribution tags (design D4); null when flag off/unbound. */
+  station_id: string | null; station_franchise: string | null;
 };
 
 export function kpiToRow(k: RiderDailyKpi): KpiRow {
@@ -30,6 +32,7 @@ export function kpiToRow(k: RiderDailyKpi): KpiRow {
     in_shift_online_hours: k.inShiftOnlineHours ?? 0,
     tsh: k.tsh, tsh_critical: k.tshCritical, ar: k.ar, caa: k.caa, overtime: k.overtime,
     imported_at: k.importedAt ?? "",
+    station_id: k.stationId ?? null, station_franchise: k.stationFranchise ?? null,
   };
 }
 
@@ -47,6 +50,8 @@ export function rowToKpi(r: KpiRow): RiderDailyKpi {
     caa: r.caa === null ? null : Number(r.caa),
     overtime: r.overtime === null ? null : Number(r.overtime),
     importedAt: r.imported_at,
+    ...(r.station_id ? { stationId: r.station_id } : {}),
+    ...(r.station_franchise ? { stationFranchise: r.station_franchise } : {}),
   };
 }
 

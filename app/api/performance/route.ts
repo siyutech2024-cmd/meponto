@@ -11,6 +11,7 @@ import {
 import { defaultMallConfig, resolveRiderTierStatus } from "../../lib/mall";
 import { getAvailablePoints } from "../../lib/points";
 import { sendPushToRider } from "../../lib/server/notify";
+import { tagKpiAttribution } from "../../lib/leader-mode";
 import { callRpc, dbDirectReadEnabled, fetchRows } from "../../lib/server/db-read";
 import type { Rider } from "../../lib/data";
 import { dualWrite } from "../../lib/server/db/dual-write";
@@ -55,7 +56,8 @@ const BADGE_MILESTONES: Array<{ at: number; label: string }> = [
   { at: 600, label: "600 pedidos 👑" },
 ];
 
-const COLLECTIONS = ["riderDailyKpis", "riderDailyEarnings", "riders", "mallConfigs", "pointsLedgerEntries", "dispatchShifts", "shiftSignups", "memberMessages"];
+// pontos + franchises: needed by Leader Mode import-time attribution (D4).
+const COLLECTIONS = ["riderDailyKpis", "riderDailyEarnings", "riders", "mallConfigs", "pointsLedgerEntries", "dispatchShifts", "shiftSignups", "memberMessages", "pontos", "franchises"];
 
 type Located = { franchise: string; station: string; riderId: string | null };
 type Enriched = RiderDailyKpi & Located;
@@ -627,6 +629,9 @@ async function handlePost(request: Request) {
     let created = 0;
     let updated = 0;
     for (const record of parsed) {
+      // Leader Mode D4: stamp today's station attribution BEFORE insertion.
+      // No-op unless the rider's franchise runs leaderMode (São Paulo unchanged).
+      tagKpiAttribution(record, memory.riders, memory.pontos, memory.franchises);
       const index = memory.riderDailyKpis.findIndex((row) => row.id === record.id);
       if (index === -1) {
         memory.riderDailyKpis.unshift(record);
@@ -706,6 +711,7 @@ async function handlePost(request: Request) {
           overtime: pct(raw.overtime),
           importedAt,
         };
+        tagKpiAttribution(record, memory.riders, memory.pontos, memory.franchises); // Leader Mode D4
         const index = memory.riderDailyKpis.findIndex((row) => row.id === record.id);
         // Lifetime orders excluding this day's record (so re-imports are idempotent).
         const otherSum = memory.riderDailyKpis
