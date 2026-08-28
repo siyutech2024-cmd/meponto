@@ -22,6 +22,8 @@ export type Franchise = {
    * assessment + settlement). Default off — São Paulo untouched. Pilot: SJBV.
    */
   leaderMode?: boolean;
+  /** Leader settlement components (design §2.5); undefined = HQ defaults. */
+  leaderSettlementRules?: import("./leader-mode").LeaderSettlementComponent[];
 };
 
 export const franchises: Franchise[] = [];

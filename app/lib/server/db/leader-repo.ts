@@ -81,3 +81,12 @@ export async function closeWeekAssessments(franchise: string, week: string, clos
     { state: "closed", closed_at: closedAt, updated_at: closedAt },
   );
 }
+
+/** closed → settled once the payment order has been generated (design §2.4). */
+export async function markWeekSettled(franchise: string, week: string, at: string): Promise<void> {
+  await updateRows(
+    "leader_assessments",
+    { franchise, week, state: "closed" },
+    { state: "settled", updated_at: at },
+  );
+}

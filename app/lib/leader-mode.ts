@@ -78,6 +78,81 @@ export type LeaderAssessment = {
 };
 
 // ---------------------------------------------------------------------------
+// Settlement components (design §2.5 / decisions P1+P2)
+// ---------------------------------------------------------------------------
+
+export type LeaderSettlementComponent = {
+  key: string; // "base" | "bonus" | future additions
+  label: { zh: string; en: string; pt: string }; // tri-lingual (guardrail #7)
+  type: "per_order" | "kpi_bonus_per_order";
+  /** R$ per completed order. */
+  amountBRL: number;
+  /** kpi_bonus_per_order only pays when the week's assessment passed. */
+  requiresPassed: boolean;
+  /** P1: trial stations earn base only. */
+  paidDuringTrial: boolean;
+  /** Forced to next-cycle start on edit (hard rule 5). */
+  effectiveFrom: string;
+  version: number;
+};
+
+export const defaultLeaderSettlementRules: LeaderSettlementComponent[] = [
+  {
+    key: "base",
+    label: { zh: "基础提成", en: "Base commission", pt: "Comissão base" },
+    type: "per_order",
+    amountBRL: 0.35,
+    requiresPassed: false,
+    paidDuringTrial: true, // P1: trial settles the base component
+    effectiveFrom: "2026-01-01",
+    version: 1,
+  },
+  {
+    key: "bonus",
+    label: { zh: "考核提成", en: "Performance bonus", pt: "Bônus de desempenho" },
+    type: "kpi_bonus_per_order",
+    amountBRL: 0.15,
+    requiresPassed: true,
+    paidDuringTrial: false, // bonus starts after confirmation
+    effectiveFrom: "2026-01-01",
+    version: 1,
+  },
+];
+
+export type LeaderSettlementLine = {
+  componentKey: string;
+  label: LeaderSettlementComponent["label"];
+  orders: number;
+  amountBRL: number; // rate
+  totalBRL: number;
+  version: number;
+  skippedReason?: "not_passed" | "trial";
+};
+
+/** Pure settlement math for one closed weekly assessment (P2: weekly payout). */
+export function computeLeaderSettlement(
+  assessment: Pick<LeaderAssessment, "metrics" | "passed" | "trial">,
+  rules: LeaderSettlementComponent[],
+): { lines: LeaderSettlementLine[]; totalBRL: number } {
+  const orders = assessment.metrics.totalOrders;
+  const lines: LeaderSettlementLine[] = [];
+  for (const rule of rules) {
+    const base = { componentKey: rule.key, label: rule.label, orders, amountBRL: rule.amountBRL, version: rule.version };
+    if (assessment.trial && !rule.paidDuringTrial) {
+      lines.push({ ...base, totalBRL: 0, skippedReason: "trial" });
+      continue;
+    }
+    if (rule.requiresPassed && !assessment.passed) {
+      lines.push({ ...base, totalBRL: 0, skippedReason: "not_passed" });
+      continue;
+    }
+    lines.push({ ...base, totalBRL: Math.round(orders * rule.amountBRL * 100) / 100 });
+  }
+  const totalBRL = Math.round(lines.reduce((sum, l) => sum + l.totalBRL, 0) * 100) / 100;
+  return { lines, totalBRL };
+}
+
+// ---------------------------------------------------------------------------
 // Week helpers (ISO-8601, Monday-based)
 // ---------------------------------------------------------------------------
 

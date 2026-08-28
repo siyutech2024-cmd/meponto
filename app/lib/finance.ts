@@ -34,8 +34,9 @@ export const riderWithdrawals: RiderWithdrawal[] = [];
 /** A recorded settlement payment (HQ→franchise or franchise/HQ→rider). */
 export type WalletPayment = {
   id: string;
-  target: "franchise" | "rider";
-  /** Franchise name, or rider name when target=rider. */
+  /** "leader" = Leader Mode weekly station settlement (docs/leader-mode-design.md). */
+  target: "franchise" | "rider" | "leader";
+  /** Franchise name, rider name when target=rider, station name when target=leader. */
   refName: string;
   /** Owning franchise (used for grouping rider payments). */
   franchise: string;
@@ -47,6 +48,9 @@ export type WalletPayment = {
   note: string;
   paidBy: string;
   paidAt: string;
+  /** Leader Mode settlements are generated as "pending" and confirmed by the
+   *  franchisee (review gate). Legacy rows (undefined) mean "paid". */
+  status?: "pending" | "paid";
 };
 
 export const walletPayments: WalletPayment[] = [];

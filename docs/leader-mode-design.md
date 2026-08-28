@@ -145,7 +145,8 @@ T+1 导入成功（含站点打标）
 | PR | 内容 | 模块 | 备注 |
 | --- | --- | --- | --- |
 | PR-1 | `leaderMode` flag、站点新字段、导入打标、LeaderAssessment 集合+重算 API、归因计算、金额自检 | franchise / pontos / ninety-nine-import / 新 `app/api/leaders/assessment` | flag off 时零行为变化 |
-| PR-2 | 结算组件配置+生成 walletPayments、门户页签、加盟商待办页、总部列表、WhatsApp 日报页 | wallet / ponto portal / franchise portal | 依赖 PR-1 数据 |
+| PR-2a ✅ | 结算引擎：组件规则（P1/P2 定稿内置）+ wallet `generateLeaderSettlements`（幂等、pending 待复核、payee 校验、审计）+ 快照 settled 流转 | leader-mode / finance / wallet / leader-repo | 已实现 |
+| PR-2b | 门户"考核与结算"页签、加盟商待办页、总部列表、WhatsApp 日报页、绑定/开站申请 | ponto portal / franchise portal | 依赖 PR-2a |
 
 ## 7. 新组长申请与推荐（防晋升阻断）
 

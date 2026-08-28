@@ -15,7 +15,8 @@ import {
   perfMode,
 } from "../../lib/server/db/performance-repo";
 
-const COLLECTIONS = ["riderWithdrawals", "riderDailyEarnings", "riderDailyKpis", "riders", "franchises", "walletPayments", "franchiseDepositLedgerEntries"];
+// pontos: Leader Mode settlement needs station payee info (leaderPixKey/CNPJ).
+const COLLECTIONS = ["riderWithdrawals", "riderDailyEarnings", "riderDailyKpis", "riders", "franchises", "walletPayments", "franchiseDepositLedgerEntries", "pontos"];
 // L2 direct-read mode: the two T+1 collections (grow per rider per day) are
 // fetched as WINDOWED database rows instead of hydrated wholesale — only the
 // small collections still go through the memory refresh.
@@ -410,7 +411,8 @@ type Body =
   | { action: "requestWithdrawal"; riderId?: string; riderName?: string; amount: number }
   | { action: "confirmPayment"; withdrawalId: string; note?: string }
   | { action: "rejectWithdrawal"; withdrawalId: string; note?: string }
-  | { action: "recordPayment"; target: "franchise" | "rider"; refName: string; franchise?: string; amount: number; period?: "weekly" | "daily"; weekFrom: string; weekTo: string; note?: string };
+  | { action: "recordPayment"; target: "franchise" | "rider"; refName: string; franchise?: string; amount: number; period?: "weekly" | "daily"; weekFrom: string; weekTo: string; note?: string }
+  | { action: "generateLeaderSettlements"; franchise: string; week: string };
 
 async function handlePost(request: Request) {
   const peek = (await request.clone().json().catch(() => ({}))) as { action?: string };
@@ -425,6 +427,81 @@ async function handlePost(request: Request) {
   const actor = roleFromRequest(request);
 
   switch (body.action) {
+    case "generateLeaderSettlements": {
+      // Leader Mode weekly settlement (docs/leader-mode-design.md §3, P2):
+      // closed assessments × settlement components → ONE pending payment per
+      // station per week. Idempotent by deterministic id; franchisee confirms
+      // via the regular payment review before any money moves.
+      const franchiseName = String(body.franchise ?? "");
+      const week = String(body.week ?? "");
+      if (!/^\d{4}-W\d{2}$/.test(week) || !franchiseName) {
+        return jsonResponse({ error: "week (YYYY-Www) and franchise are required" }, { status: 400 });
+      }
+      const franchiseRec = memory.franchises.find((f) => f.name === franchiseName && f.leaderMode === true);
+      if (!franchiseRec) return jsonResponse({ error: "franchise not found or leaderMode off" }, { status: 404 });
+
+      const { listAssessments, markWeekSettled } = await import("../../lib/server/db/leader-repo");
+      const { computeLeaderSettlement, defaultLeaderSettlementRules, weekIdToDates } = await import("../../lib/leader-mode");
+
+      const closed = (await listAssessments(franchiseName, week)).filter((a) => a.state === "closed");
+      if (closed.length === 0) {
+        return jsonResponse({ error: "no closed assessments for this week — close the week first" }, { status: 409 });
+      }
+
+      const rules = franchiseRec.leaderSettlementRules ?? defaultLeaderSettlementRules;
+      const dates = weekIdToDates(week);
+      const generated: Array<{ station: string; totalBRL: number; id: string }> = [];
+      const skippedNoPayee: string[] = [];
+      const alreadyGenerated: string[] = [];
+
+      for (const assessment of closed) {
+        const station = memory.pontos.find((p) => p.id === assessment.stationId);
+        const payee = station?.leaderCnpj?.trim() || station?.leaderPixKey?.trim() || "";
+        if (!payee) {
+          skippedNoPayee.push(assessment.stationName);
+          continue;
+        }
+        const id = `lp-${assessment.stationId}-${week}`;
+        if (memory.walletPayments.some((p) => p.id === id)) {
+          alreadyGenerated.push(assessment.stationName);
+          continue;
+        }
+        const { lines, totalBRL } = computeLeaderSettlement(assessment, rules);
+        const breakdown = lines
+          .map((l) => `${l.label.pt} v${l.version}: ${l.orders}×R$${l.amountBRL.toFixed(2)}${l.skippedReason ? ` (${l.skippedReason})` : ""} = R$${l.totalBRL.toFixed(2)}`)
+          .join(" · ");
+        memory.walletPayments.unshift({
+          id,
+          target: "leader",
+          refName: assessment.stationName,
+          franchise: franchiseName,
+          amount: totalBRL,
+          period: "weekly",
+          weekFrom: dates[0] ?? "",
+          weekTo: dates[6] ?? "",
+          note: `[LeaderMode ${week}] ${breakdown} — payee: ${payee}`,
+          paidBy: "",
+          paidAt: "",
+          status: "pending",
+        });
+        generated.push({ station: assessment.stationName, totalBRL, id });
+      }
+
+      if (generated.length > 0 || alreadyGenerated.length === closed.length - skippedNoPayee.length) {
+        await markWeekSettled(franchiseName, week, new Date().toISOString());
+      }
+      appendServerAudit({
+        actor,
+        action: "LEADER_SETTLEMENT_GENERATED",
+        entity: "WalletPayment",
+        entityId: `${franchiseName}:${week}`,
+        detail: `组长周结生成：${generated.length} 张待复核付款单（合计 R$${generated.reduce((s, g) => s + g.totalBRL, 0).toFixed(2)}）；无收款信息跳过 ${skippedNoPayee.length}；已存在 ${alreadyGenerated.length}。`,
+        risk: "Medium",
+      });
+      await flushPendingToDatabase();
+      return jsonResponse({ data: { week, franchise: franchiseName, generated, skippedNoPayee, alreadyGenerated } });
+    }
+
     case "recordPayment": {
       const { target, refName, franchise = "", period = "weekly", weekFrom, weekTo, note = "" } = body as {
         target: "franchise" | "rider"; refName?: string; franchise?: string; period?: "weekly" | "daily"; weekFrom?: string; weekTo?: string; note?: string;

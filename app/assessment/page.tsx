@@ -8,6 +8,7 @@ import { readSession } from "../lib/session";
 import { useVentoStore } from "../lib/store";
 import { translate, type TranslationKey } from "../lib/i18n";
 import type { AssessmentMetric, AssessmentRule } from "../lib/assessment";
+import { isoWeekOf, type LeaderAssessment } from "../lib/leader-mode";
 
 /**
  * 考核规则 — HQ edits the quality thresholds / commission adjustments;
@@ -147,6 +148,154 @@ function Board({ rows, label, icon: Icon, rule, t, statusLabel }: { rows: BoardR
   );
 }
 
+// ---- Leader Mode weekly assessment (docs/leader-mode-design.md §7 UI) ------
+// Self-hiding: the API only returns leaderMode franchises, so São Paulo
+// portals render nothing here. Scope (franchise/station) is enforced
+// server-side via the session cookie.
+
+type LmPayload = {
+  week: string;
+  today: string;
+  franchises: Array<{ franchise: string; assessments: LeaderAssessment[]; untaggedRider99Ids: string[] }>;
+};
+
+function LeaderModeSection({ t, canManage }: { t: T; canManage: boolean }) {
+  const [payload, setPayload] = useState<LmPayload | null>(null);
+  const [weekSel, setWeekSel] = useState<"this" | "last">("this");
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState<{ tone: "ok" | "err"; text: string } | null>(null);
+
+  const weekParam = useMemo(() => {
+    const d = new Date();
+    if (weekSel === "last") d.setDate(d.getDate() - 7);
+    return isoWeekOf(d.toISOString().slice(0, 10));
+  }, [weekSel]);
+
+  const load = useCallback(async () => {
+    const response = await fetch(`/api/leaders/assessment?week=${weekParam}`, { headers: HEADERS, cache: "no-store" });
+    if (response.ok) setPayload((await response.json()).data as LmPayload);
+  }, [weekParam]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  if (!payload || payload.franchises.length === 0) return null;
+
+  const gapText = (gap: LeaderAssessment["gaps"][number]) =>
+    gap.hintKey === "recruit_more"
+      ? t("lmGapRecruit", { n: gap.deficit })
+      : gap.hintKey === "raise_volume"
+        ? t("lmGapVolume", { n: gap.deficit })
+        : t("lmGapSelfShare", { n: gap.deficit });
+
+  async function act(kind: "close" | "settle", franchise: string) {
+    setBusy(true);
+    setMsg(null);
+    const [path, body] =
+      kind === "close"
+        ? (["/api/leaders/assessment", { action: "closeWeek", week: weekParam, franchise }] as const)
+        : (["/api/wallet", { action: "generateLeaderSettlements", week: weekParam, franchise }] as const);
+    const response = await fetch(path, { method: "POST", headers: HEADERS, body: JSON.stringify(body) });
+    const data = (await response.json().catch(() => ({}))) as { error?: string };
+    setBusy(false);
+    if (!response.ok) {
+      setMsg({ tone: "err", text: String(data.error ?? response.status) });
+      return;
+    }
+    setMsg({ tone: "ok", text: t("lmActionDone") });
+    void load();
+  }
+
+  const pct = (a: LeaderAssessment) =>
+    a.metrics.leaderSelfOrdersPct === null ? "—" : `${a.metrics.leaderSelfOrdersPct}%`;
+
+  return (
+    <SectionCard
+      title={
+        <span className="inline-flex flex-wrap items-center gap-2">
+          <ClipboardCheck size={14} /> {t("lmTitle")}
+          <Chip active={weekSel === "this"} onClick={() => setWeekSel("this")}>{t("lmThisWeek")}</Chip>
+          <Chip active={weekSel === "last"} onClick={() => setWeekSel("last")}>{t("lmLastWeek")}</Chip>
+          <span className="text-[11px] font-bold text-[var(--muted)]">{payload.week}</span>
+        </span>
+      }
+      className="mb-4"
+    >
+      {msg && (
+        <div className={`mb-3 rounded-[8px] border px-3 py-2 text-sm font-bold ${msg.tone === "ok" ? "border-[var(--ok-ink)]/40 text-[var(--ok-ink)]" : "border-[var(--danger-ink)]/40 text-[var(--danger-ink)]"}`}>
+          {msg.text}
+        </div>
+      )}
+      {payload.franchises.map((group) => (
+        <div key={group.franchise} className="mb-4 last:mb-0">
+          <div className="mb-2 flex flex-wrap items-center gap-2">
+            <span className="text-sm font-black">{group.franchise}</span>
+            {canManage && weekSel === "last" && (
+              <>
+                <button type="button" disabled={busy} className="tag" onClick={() => void act("close", group.franchise)}>
+                  {t("lmCloseWeek")}
+                </button>
+                <button type="button" disabled={busy} className="tag" onClick={() => void act("settle", group.franchise)}>
+                  {t("lmGenSettle")}
+                </button>
+              </>
+            )}
+          </div>
+          {group.untaggedRider99Ids.length > 0 && (
+            <div className="mb-2 text-[12px] font-bold text-[var(--warning-ink)]">
+              {t("lmUntagged", { n: group.untaggedRider99Ids.length })}
+            </div>
+          )}
+          {group.assessments.length === 0 ? (
+            <div className="text-sm font-bold text-[var(--muted)]">{t("lmNoStations")}</div>
+          ) : (
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+              {group.assessments.map((a) => (
+                <div key={a.id} className="rounded-[10px] border border-[var(--line)] bg-[var(--surface-raised)] p-3">
+                  <div className="mb-2 flex flex-wrap items-center gap-1.5">
+                    <span className="text-sm font-black">{a.stationName}</span>
+                    {a.trial && <span className="tag text-[10px]">{t("lmTrial")}</span>}
+                    <span className={`text-[11px] font-black ${a.passed ? "text-[var(--ok-ink)]" : "text-[var(--danger-ink)]"}`}>
+                      {a.passed ? t("lmPassed") : t("lmNotPassed")}
+                    </span>
+                    <span className="text-[10px] font-bold text-[var(--muted)]">
+                      {a.state === "closed" ? t("lmClosedState") : a.state === "settled" ? t("lmSettledState") : t("lmLiveState")}
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-2 gap-x-3 gap-y-1 text-[12px] font-bold">
+                    <span className="text-[var(--muted)]">{t("lmActiveRiders")}</span>
+                    <span className={a.metrics.activeRiders < a.targetsSnapshot.minActiveRiders ? "text-[var(--danger-ink)]" : ""}>
+                      {a.metrics.activeRiders} / {a.targetsSnapshot.minActiveRiders}
+                    </span>
+                    <span className="text-[var(--muted)]">{t("lmWeeklyOrders")}</span>
+                    <span className={a.metrics.totalOrders < a.targetsSnapshot.minWeeklyOrders ? "text-[var(--danger-ink)]" : ""}>
+                      {a.metrics.totalOrders} / {a.targetsSnapshot.minWeeklyOrders}
+                    </span>
+                    <span className="text-[var(--muted)]">{t("lmAvgPerActive")}</span>
+                    <span>{a.metrics.avgOrdersPerActive}</span>
+                    <span className="text-[var(--muted)]">{t("lmDataDays")}</span>
+                    <span>{a.metrics.dataDays} / {a.metrics.expectedDataDays}</span>
+                    <span className="text-[var(--muted)]">{t("lmSelfShare")}</span>
+                    <span>{pct(a)}</span>
+                  </div>
+                  {a.gaps.length > 0 && (
+                    <ul className="mt-2 space-y-1 text-[11px] font-bold text-[var(--warning-ink)]">
+                      {a.gaps.map((gap) => (
+                        <li key={gap.metric}>· {gapText(gap)}</li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      ))}
+    </SectionCard>
+  );
+}
+
 export default function AssessmentPage() {
   const language = useVentoStore((s) => s.language);
   const t: T = (k, vars) => {
@@ -239,6 +388,8 @@ export default function AssessmentPage() {
       />
 
       {messageBanner}
+
+      <LeaderModeSection t={t} canManage={isHq || session?.portal === "franchise"} />
 
       {/* Stat row — headline rule terms */}
       {rule && (
