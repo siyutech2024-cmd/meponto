@@ -466,7 +466,21 @@ async function handlePost(request: Request) {
 
       for (const assessment of closed) {
         const station = memory.pontos.find((p) => p.id === assessment.stationId);
-        const payee = station?.leaderCnpj?.trim() || station?.leaderPixKey?.trim() || "";
+        // Payee resolution (design D1 refinement): the leader IS a rider, so
+        // fall back to their rider Pix — station-level overrides (CNPJ/Pix)
+        // only when explicitly set. Order: CNPJ > station Pix > rider record
+        // Pix > latest T+1 earnings Pix.
+        let payee = station?.leaderCnpj?.trim() || station?.leaderPixKey?.trim() || "";
+        if (!payee && station?.leaderRiderId) {
+          const leaderRider = memory.riders.find((r) => r.id === station.leaderRiderId);
+          payee = leaderRider?.pix?.trim() ?? "";
+          if (!payee && leaderRider?.ninetyNineId) {
+            const earn = memory.riderDailyEarnings.find(
+              (row) => row.rider99Id === leaderRider.ninetyNineId && String(row.pix ?? "").trim(),
+            );
+            payee = String(earn?.pix ?? "").trim();
+          }
+        }
         if (!payee) {
           skippedNoPayee.push(assessment.stationName);
           continue;
