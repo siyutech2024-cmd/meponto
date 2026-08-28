@@ -416,7 +416,10 @@ export default function RiderMonitorPage() {
         // Franchise/station sessions get THEIR OWN real-time KPI (aggregated
         // per-rider with Eastwind's formulas); HQ keeps the city-wide row.
         const scopeKpiRow = data?.scopeKpi ?? null;
-        const kpiRow = scopeKpiRow ?? kpi;
+        // Data boundary: scoped portals (franchise/station) must NEVER fall
+        // back to the city-wide row — a tenant with zero riders was seeing
+        // São Paulo's numbers. No own riders → no KPI strip at all.
+        const kpiRow = isHQ ? (scopeKpiRow ?? kpi) : scopeKpiRow;
         if (!kpiRow) return null;
         // PRO 副值三级视角同步:总部用 kpiPro(PRO 账号的城市读数,口径最准);
         // 加盟商/站点用 scopeKpiPro(**自家 PRO 骑手**按 scope 公式单独聚合,
