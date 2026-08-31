@@ -154,24 +154,28 @@ export async function GET(request: Request) {
     })();
     const { data: kpiRows } = await client
       .from("rider_kpi_snapshots")
-      .select("captured_at, source, ar, caa, accept_cnt, overtime, tsh, finished_cnt")
+      .select("captured_at, source, city_id, ar, caa, accept_cnt, overtime, tsh, finished_cnt")
       .gte("captured_at", spDayStart)
       .order("captured_at", { ascending: true })
       .limit(1000); // 两个源 × 3 分钟一批,一天最多 ~480 批
     if (kpiRows && kpiRows.length) {
-      type KRow = { captured_at: string; source?: string | null; ar: number | null; caa: number | null; accept_cnt: number | null; overtime: number | null; tsh: number | null; finished_cnt: number | null };
+      type KRow = { captured_at: string; source?: string | null; city_id?: string | null; ar: number | null; caa: number | null; accept_cnt: number | null; overtime: number | null; tsh: number | null; finished_cnt: number | null };
       // ⚠ 必须**分源**统计:两个 Eastwind 账号各有自己的城市计数器,量级差
       // 两个数量级(主号几百 vs PRO 个位数)。混在一个序列里,PRO 的小读数
       // 会被"计数明显回落"的换班检测当成换班,班段起点被反复误判。
+      // ⚠ 且必须**分城**统计(2026-08-31 多城市):主号现在每轮上报 SP + São
+      // João 两行 KPI,新城的小读数混进同一序列会被换班检测当成换班,还可能
+      // 以"最新有读数批次"的身份顶掉主城读数 —— 与当初分源的理由一模一样。
       const grouped = new Map<string, KRow[]>();
       for (const row of kpiRows as KRow[]) {
-        const src = row.source ?? "main";
-        const list = grouped.get(src) ?? [];
+        const key = `${row.source ?? "main"}|${row.city_id ?? ""}`;
+        const list = grouped.get(key) ?? [];
         list.push(row);
-        grouped.set(src, list);
+        grouped.set(key, list);
       }
       const perSource: KRow[] = [];
-      for (const [src, rows] of grouped.entries()) {
+      for (const [key, rows] of grouped.entries()) {
+        const src = key.slice(0, key.indexOf("|"));
         // 定位当前班段起点:计数从高位明显回落 = 新班段开始。
         let slotStart = 0;
         let acceptMax = 0, finishedMax = 0;

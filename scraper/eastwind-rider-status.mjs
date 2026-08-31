@@ -196,7 +196,7 @@ function inShiftWindow() {
 let pulling = false; // re-entrancy guard: a slow round must not overlap the next tick
 let roundStartedAt = 0;
 const ROUND_HANG_MS = 10 * 60_000; // watchdog: a round wedged past this is dead
-async function pull(ctx, city = null) {
+async function pull(ctx, city = null, roundCapturedAt = null) {
   if (pulling) {
     // WATCHDOG (2026-08-22): a Playwright await can wedge forever, which used
     // to leave `pulling` stuck true and every later round skipped — the board
@@ -215,9 +215,21 @@ async function pull(ctx, city = null) {
   }
   pulling = true;
   roundStartedAt = Date.now();
-  const capturedAt = new Date().toISOString();
+  // SAME BATCH KEY FOR THE WHOLE ROUND (2026-08-31): each city used to stamp
+  // its own capture time, so a round produced one batch per city and the live
+  // board — which reads only the latest batch per source — would flip-flop
+  // between cities as soon as the new city has riders. All cities in a round
+  // now share one capturedAt; the ingest scopes its delete by city_id, so the
+  // cities coexist inside the batch instead of wiping each other.
+  const capturedAt = roundCapturedAt ?? new Date().toISOString();
   const cityId = city?.id || cfg.cityId;
-  const page = await ctx.newPage();
+  let page;
+  try {
+    page = await ctx.newPage();
+  } catch (e) {
+    pulling = false; // newPage threw before the try/finally below — don't wedge every later round
+    throw e;
+  }
 
   // Capture gateway responses fired by the rider board. Track every gateway
   // api name seen this round so we can tell "page didn't load" from "auth issue".
@@ -317,7 +329,7 @@ async function pull(ctx, city = null) {
     else _alertedAt.delete("login"); // healthy round clears the login alert throttle
   } finally {
     pulling = false;
-    await page.close();
+    await page.close().catch(() => {}); // a dead context must not mask the real error
   }
 }
 
@@ -341,13 +353,27 @@ async function main() {
   // can't be selected must never stop the others from uploading. The main
   // city is listed first, so it is always captured before any experimental
   // new-city work can go wrong.
+  // A closed browser context is unrecoverable in-process (2026-08-31 outage:
+  // the VPS rebooted, Chromium died mid-round, and the scraper sat silent for
+  // 66 minutes until a human restarted it). Exit instead — pm2 brings up a
+  // clean instance with a fresh browser in seconds, same policy as the hang
+  // watchdog.
+  const FATAL_RE = /has been closed|Target closed|browser closed|browserContext/i;
+  const fatalCheck = (e, label) => {
+    log(`pull error${label ? ` [${label}]` : ""}:`, e.message);
+    if (FATAL_RE.test(String(e.message))) {
+      log("browser context is dead — exiting for a clean pm2 restart");
+      process.exit(1);
+    }
+  };
   const round = async () => {
+    const capturedAt = new Date().toISOString(); // one batch key for every city this round
     if (cfg.cities.length === 0) {
-      await pull(ctx).catch((e) => log("pull error:", e.message));
+      await pull(ctx, null, capturedAt).catch((e) => fatalCheck(e, null));
       return;
     }
     for (const city of cfg.cities) {
-      await pull(ctx, city).catch((e) => log(`pull error [${city.label}]:`, e.message));
+      await pull(ctx, city, capturedAt).catch((e) => fatalCheck(e, city.label));
     }
   };
 

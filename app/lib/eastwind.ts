@@ -262,6 +262,57 @@ function timelineNodes(rec: AnyObj): AnyObj[] | null {
 }
 
 /**
+ * Locate the KPI metrics record inside a vendorFeatureInShift payload.
+ * Single-city accounts (pre 2026-08): the metrics sit directly on data{...} and
+ * the record is data itself. Multi-city accounts (the main account gained
+ * São João da Boa Vista, 2026-08): data nests the metrics per city inside an
+ * array — and pick() never descends into arrays, so every KPI field parsed
+ * null and the live board's KPI strip silently fell back to the PRO feed
+ * (observed 2026-08-28: kpi === kpiPro). Strategy: a direct hit wins (old
+ * shape stays byte-identical in behavior); otherwise walk nested arrays for
+ * records carrying KPI keys — prefer the record whose cityID matches ours,
+ * else the busiest one (highest accept+finished counts).
+ */
+function findKpiRecord(node: AnyObj | AnyObj[], cityId: string | null): AnyObj {
+  const root: AnyObj = Array.isArray(node) ? { list: node } : node;
+  if (!Array.isArray(node) && (pick(root, KK.ar) !== undefined || pick(root, KK.accept) !== undefined)) {
+    return root; // old single-city shape — metrics at (or one object level below) data
+  }
+  let best: AnyObj | null = null;
+  let bestScore = -1;
+  const seen = new Set<unknown>();
+  const walk = (n: unknown, depth: number): AnyObj | null => {
+    if (depth > 4 || n === null || typeof n !== "object" || seen.has(n)) return null;
+    seen.add(n);
+    const items = Array.isArray(n) ? n : Object.values(n as AnyObj);
+    for (const item of items) {
+      if (!isObj(item)) {
+        const hit = walk(item, depth + 1);
+        if (hit) return hit;
+        continue;
+      }
+      const rec = item as AnyObj;
+      const hasKpi =
+        pick(rec, KK.ar) !== undefined || pick(rec, KK.accept) !== undefined || pick(rec, KK.finished) !== undefined;
+      if (hasKpi) {
+        const recCity = str(pick(rec, ["cityID", "cityId", "city_id"]));
+        if (cityId && recCity === cityId) return rec; // exact city match — done
+        const score = (num(pick(rec, KK.accept)) ?? 0) + (num(pick(rec, KK.finished)) ?? 0);
+        if (score > bestScore) {
+          bestScore = score;
+          best = rec;
+        }
+      }
+      const hit = walk(rec, depth + 1);
+      if (hit) return hit;
+    }
+    return null;
+  };
+  const exact = walk(node, 0);
+  return exact ?? best ?? root;
+}
+
+/**
  * Parse the rider board.
  *  - ridersPayload = vendor.rider.monitor.riderList  → snapshot rows
  *  - kpiPayload    = vendor.rider.monitor.vendorFeatureInShift → KPI row
@@ -327,7 +378,8 @@ export function parseRiders(
 
   // KPI header: unwrap the gateway envelope (data{…}).
   const env = isObj(kpiPayload) ? (kpiPayload as AnyObj) : {};
-  const h = isObj(env.data) ? (env.data as AnyObj) : env;
+  const h0 = isObj(env.data) || Array.isArray(env.data) ? (env.data as AnyObj | AnyObj[]) : env;
+  const h = findKpiRecord(h0, cityId);
   const kpi: KpiRow = {
     captured_at,
     city_id: cityId,

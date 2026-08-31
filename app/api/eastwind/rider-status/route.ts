@@ -76,15 +76,18 @@ export async function POST(request: Request) {
     const { snapshots, kpi } = parseRiders(body.riderList, body.kpi, capturedAt, cityId, body.riderFeatures ?? null);
     const batch = alignToMinute(capturedAt);
 
-    // Idempotent batch PER SOURCE: only this feed's prior rows for the batch
-    // are replaced — the other VPS's rows in the same 5-min bucket survive.
-    await client.from("rider_status_snapshots").delete().eq("captured_at", batch).eq("source", source);
+    // Idempotent batch PER (SOURCE, CITY): only this feed's prior rows for the
+    // batch AND this city are replaced — the other VPS's rows survive, and,
+    // since the multi-city scraper (2026-08-31) stamps every city of a round
+    // with the SAME capturedAt, the cities coexist inside one batch instead of
+    // the second city's POST wiping the first city's rows.
+    await client.from("rider_status_snapshots").delete().eq("captured_at", batch).eq("source", source).eq("city_id", cityId);
     if (snapshots.length) {
       const { error } = await client.from("rider_status_snapshots").insert(snapshots.map((s) => ({ ...s, source })));
       if (error) return jsonResponse({ error: `rider_status_snapshots: ${error.message}` }, { status: 500 });
     }
 
-    await client.from("rider_kpi_snapshots").delete().eq("captured_at", batch).eq("source", source);
+    await client.from("rider_kpi_snapshots").delete().eq("captured_at", batch).eq("source", source).eq("city_id", cityId);
     const { error: kErr } = await client.from("rider_kpi_snapshots").insert({ ...kpi, source });
     if (kErr) return jsonResponse({ error: `rider_kpi_snapshots: ${kErr.message}` }, { status: 500 });
 
