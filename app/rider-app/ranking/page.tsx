@@ -43,10 +43,10 @@ const MEDAL = ["#f5b301", "#9fb3c8", "#d08b4f"] as const;
  * realme 品牌黄的活动皮肤;活动结束后把 CAMPAIGN_WEEKS 清空即可整体回到
  * 深色默认皮肤,不用改别的代码。
  */
-const CAMPAIGN_WEEKS = [
-  { from: "2026-08-17", to: "2026-08-23", label: "17/08 – 23/08", award: "28/08" },
-  { from: "2026-08-24", to: "2026-08-30", label: "24/08 – 30/08", award: "04/09" },
-] as const;
+// 2026-09-03 活动结束,清空 → 周榜回到默认深色皮肤 + 服务端默认当前自然周。
+// 下次活动直接往里加期次即可。类型要写显式(空数组 as const 会让 TS 把
+// `length > 0` 收窄成 false,下面的活动分支全部报错)。
+const CAMPAIGN_WEEKS: readonly { from: string; to: string; label: string; award: string }[] = [];
 const REALME_YELLOW = "linear-gradient(160deg, #FFD60A 0%, #FFC300 55%, #F5B301 100%)";
 
 /** GA4 事件(gtag 由全局 layout 注入;不存在时静默跳过,不影响页面)。 */
