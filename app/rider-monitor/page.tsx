@@ -32,6 +32,10 @@ type Payload = {
   /** Raw latest batch time per scraper source (before the freshness cutoff);
    *  null = that source never uploaded for the requested city. */
   sourceBatches?: Record<string, string | null>;
+  /** Latest KPI-row time per source = scraper liveness, even when the board
+   *  had 0 riders (off-shift). Prefer this over capturedAt for staleness. */
+  sourceHeartbeats?: Record<string, string | null>;
+  heartbeatAt?: string | null;
   kpi: { ar: number | null; caa: number | null; acceptCnt: number | null; overtime: number | null; tsh: number | null; finishedCnt: number | null } | null;
   kpiPro: { ar: number | null; caa: number | null; acceptCnt: number | null; overtime: number | null; tsh: number | null; finishedCnt: number | null } | null;
   scopeKpiPro: { ar: number | null; caa: number | null; acceptCnt: number | null; overtime: number | null; tsh: number | null; finishedCnt: number | null } | null;
@@ -172,7 +176,7 @@ export default function RiderMonitorPage() {
     // 全都不在实时快照里,会把整个名册列成"应岗未上"——那是数据缺失,不是
     // 骑手没来。任一源超过 20 分钟没批次(或从未上报)→ 隐藏,顶部本来就有
     // "数据已过期"横幅说明原因。
-    const batches = Object.values(live?.sourceBatches ?? {});
+    const batches = Object.values(live?.sourceHeartbeats ?? live?.sourceBatches ?? {});
     const feedBlind =
       !live || batches.length === 0 || batches.some((at) => !at || Date.now() - new Date(at).getTime() > 20 * 60_000);
     if (feedBlind) {
@@ -287,7 +291,9 @@ export default function RiderMonitorPage() {
     CAT_PRIORITY[a.cat] - CAT_PRIORITY[b.cat] || (a.name ?? "").localeCompare(b.name ?? ""),
   );
 
-  const staleMin = data?.capturedAt ? Math.floor((Date.now() - new Date(data.capturedAt).getTime()) / 60000) : null;
+  // 心跳优先(2026-09-03 修):看板为空(收班后/开班前)不等于抓取器死了。
+  const liveAt = data?.heartbeatAt ?? data?.capturedAt ?? null;
+  const staleMin = liveAt ? Math.floor((Date.now() - new Date(liveAt).getTime()) / 60000) : null;
   const isStale = staleMin != null && staleMin > 15;
   const batchLabel = data?.capturedAt ? new Date(data.capturedAt).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" }) : "—";
   const scopeLabel = isHQ ? t("rmScopeCity") : scopeFranchise ? `${t("rmScopeFranchise")}: ${scopeFranchise}` : `${t("rmScopePonto")}: ${scopeStation}`;

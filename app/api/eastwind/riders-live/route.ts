@@ -113,6 +113,25 @@ export async function GET(request: Request) {
   // payload so "PRO 没数据" is diagnosable at a glance: an old timestamp here
   // means that source's scraper is down; null means it never uploaded.
   const sourceBatches: Record<string, string | null> = Object.fromEntries(latestPerSource.map(({ src, at }) => [src, at]));
+  // HEARTBEAT (2026-09-03): rider snapshots only exist when the board had
+  // riders, so an EMPTY board (after the last shift, before the first one)
+  // looked identical to a dead scraper — the banner reported "780 min stale,
+  // re-login needed" at 10:59 after a night of perfectly healthy 0-rider
+  // rounds. The KPI row is written every round regardless, so it is the
+  // real liveness signal. Not city-scoped: a scraper heartbeat is global.
+  const heartbeatPerSource = await Promise.all(
+    KNOWN_SOURCES.map((src) =>
+      client
+        .from("rider_kpi_snapshots")
+        .select("captured_at")
+        .eq("source", src)
+        .order("captured_at", { ascending: false })
+        .limit(1)
+        .then((r) => ({ src, at: (r.data?.[0] as { captured_at: string } | undefined)?.captured_at ?? null })),
+    ),
+  );
+  const sourceHeartbeats: Record<string, string | null> = Object.fromEntries(heartbeatPerSource.map(({ src, at }) => [src, at]));
+  const heartbeatAt = heartbeatPerSource.map((h) => h.at).filter((x): x is string => Boolean(x)).sort().reverse()[0] ?? null;
   // 新鲜度护栏:某源断供(会话掉线/服务停)时,它的"最新批"可能是几小时
   // 前的,不能再当实时层展示。以最新的源为基准,落后超过 20 分钟的源剔除。
   // 用相对基准而不是绝对时钟,收班后(两源都停)看板仍能显示最后状态。
@@ -374,6 +393,8 @@ export async function GET(request: Request) {
     data: {
       capturedAt,
       sourceBatches,
+      sourceHeartbeats,
+      heartbeatAt,
       kpi: kpi ? { ar: kpi.ar, caa: kpi.caa, acceptCnt: kpi.accept_cnt, overtime: kpi.overtime, tsh: kpi.tsh, finishedCnt: kpi.finished_cnt } : null,
       // PRO 源当前班次读数 —— 存在才带(PRO 收班/断供时为 null,前端不显示)。
       kpiPro: kpiPro ? { ar: kpiPro.ar, caa: kpiPro.caa, acceptCnt: kpiPro.accept_cnt, overtime: kpiPro.overtime, tsh: kpiPro.tsh, finishedCnt: kpiPro.finished_cnt } : null,

@@ -33,7 +33,10 @@ restarted=0
 main_log=$(tail -n 400 /root/.pm2/logs/eastwind-scraper-out.log 2>/dev/null)
 main_age=$(age_of_last_ingest "$main_log")
 main_online=$(pm2 jlist 2>/dev/null | grep -o '"name":"eastwind-scraper"[^}]*"status":"online"' | head -1)
-if [ -z "$main_online" ] || [ "$main_age" -gt "$STALE_SEC" ]; then
+# 会话过期时重启没用(只会换个浏览器再撞一次登录页)—— 记一笔,等人工 VNC 重登
+if echo "$main_log" | tail -n 30 | grep -q "LOGIN_REQUIRED"; then
+  log "MAIN needs re-login (LOGIN_REQUIRED in log) — restart would not help, skipping"
+elif [ -z "$main_online" ] || [ "$main_age" -gt "$STALE_SEC" ]; then
   log "MAIN stale (last ingest ${main_age}s ago, online=${main_online:+yes}${main_online:-no}) — restarting"
   pm2 restart eastwind-scraper >/dev/null 2>&1 || (cd /opt/eastwind-scraper && pm2 start ecosystem.config.cjs >/dev/null 2>&1)
   restarted=1

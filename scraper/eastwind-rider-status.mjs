@@ -78,6 +78,16 @@ const cfg = {
 
 const log = (...a) => console.log(new Date().toISOString(), ...a);
 
+// page.evaluate / page.title have NO timeout in Playwright: on a page stuck in
+// a redirect loop (the didi pc-login bounce, 2026-09-03) they can pend forever
+// and the whole round goes silent — 46 minutes of blank log before a human
+// noticed. Every such call goes through here.
+const bounded = (p, ms, label) =>
+  Promise.race([p, new Promise((_, rej) => setTimeout(() => rej(new Error(`${label} timed out after ${ms}ms`)), ms))]);
+const LOGIN_URL_RE = /pc-login|\/common\/login|\/login(\b|\?|#)/i;
+const loginMsg = (url) =>
+  `LOGIN_REQUIRED — session expired (landed on ${String(url).slice(0, 90)}). Run scraper/relogin-OL老号.command (VNC).`;
+
 // Throttled alert to a generic webhook. Sends Slack- and Discord-compatible
 // payloads. Re-alerts for the same key at most once per hour to avoid spam.
 const _alertedAt = new Map();
@@ -248,8 +258,8 @@ async function pull(ctx, city = null, roundCapturedAt = null) {
 
   try {
     await page.goto(RIDERS_URL, { waitUntil: "domcontentloaded" });
-    if (!page.url().includes("/monitor/")) {
-      await alert("login", "LOGIN_REQUIRED — session expired. Re-copy .eastwind-profile (run login.mjs on a desktop, then redeploy).");
+    if (!page.url().includes("/monitor/") || LOGIN_URL_RE.test(page.url())) {
+      await alert("login", loginMsg(page.url()));
       return;
     }
 
@@ -262,19 +272,19 @@ async function pull(ctx, city = null, roundCapturedAt = null) {
     // 全部跳过,连主号上传都断了 40 分钟。cityId 是稳定的,和界面语言无关。
     if (city?.id) {
       const key = "monitorRiderlistCityID";
-      const already = await page.evaluate((k) => localStorage.getItem(k), key);
+      const already = await bounded(page.evaluate((k) => localStorage.getItem(k), key), 15_000, "read cityID");
       if (already !== String(city.id)) {
-        await page.evaluate(([k, v]) => localStorage.setItem(k, v), [key, String(city.id)]);
+        await bounded(page.evaluate(([k, v]) => localStorage.setItem(k, v), [key, String(city.id)]), 15_000, "write cityID");
         await page.reload({ waitUntil: "domcontentloaded" });
         await page.waitForResponse((r) => r.url().includes(RIDER_LIST_API), { timeout: 30000 }).catch(() => {});
         await page.waitForTimeout(2500);
       }
       // Verify against the REQUEST the board actually issued (cityID=<id> in
       // the gateway query) — never trust the click, trust the traffic.
-      const usedCity = await page.evaluate(() => {
+      const usedCity = await bounded(page.evaluate(() => {
         const hit = performance.getEntriesByType("resource").map((e) => e.name).reverse().find((u) => u.includes("riderList") && u.includes("cityID="));
         return hit ? (hit.match(/[?&]cityID=(\d+)/) || [])[1] ?? "" : "";
-      });
+      }), 15_000, "verify cityID");
       if (usedCity && usedCity !== String(city.id)) {
         log(`city switch failed: board still on cityID=${usedCity}, wanted ${city.id} — skipping`);
         await alert(`city:${city.label}`, `could not switch to ${city.label} (board on ${usedCity})`);
@@ -291,13 +301,21 @@ async function pull(ctx, city = null, roundCapturedAt = null) {
 
     const riderList = caps[RIDER_LIST_API] ?? null;
     const kpi = caps[KPI_API] ?? null;
+    // The board redirects to the didi login page CLIENT-SIDE, after
+    // domcontentloaded — the first URL check above still sees /monitor/. Seen
+    // 2026-09-03: every round reported "nothing captured" with url=pc-login
+    // instead of LOGIN_REQUIRED, so nobody knew a re-login was due.
+    if (!riderList && !kpi && LOGIN_URL_RE.test(page.url())) {
+      await alert("login", loginMsg(page.url()));
+      return;
+    }
     if (!riderList && !kpi) {
       // Diagnostics: what is the page actually showing?
       let diag = "";
       try {
         const url = page.url();
-        const title = await page.title().catch(() => "");
-        const bodyText = (await page.evaluate(() => document.body?.innerText || "").catch(() => "")).replace(/\s+/g, " ").slice(0, 220);
+        const title = await bounded(page.title(), 10_000, "title").catch(() => "");
+        const bodyText = (await bounded(page.evaluate(() => document.body?.innerText || ""), 10_000, "body").catch(() => "")).replace(/\s+/g, " ").slice(0, 220);
         diag = ` | url=${url} | title=${title} | body="${bodyText}"`;
         await page.screenshot({ path: "debug-last.png", fullPage: false }).catch(() => {});
       } catch { /* ignore */ }
@@ -366,14 +384,28 @@ async function main() {
       process.exit(1);
     }
   };
+  // HARD LIMIT per city (2026-09-03): the in-round watchdog only fires when a
+  // later tick runs pull() and finds `pulling` still true; an await that never
+  // resolves inside a round kept the feed silent for 46 minutes. This timer is
+  // independent of ticks: past the limit we exit and let pm2 bring up a fresh
+  // browser. Budget: 4-min detail deadline + waits ≪ 7 min.
+  const CITY_HARD_LIMIT_MS = 7 * 60_000;
+  const withHardLimit = (p, label) =>
+    new Promise((resolve, reject) => {
+      const t = setTimeout(() => {
+        log(`round exceeded ${CITY_HARD_LIMIT_MS / 60_000} min${label ? ` [${label}]` : ""} — exiting for a clean pm2 restart`);
+        process.exit(1);
+      }, CITY_HARD_LIMIT_MS);
+      p.then((v) => { clearTimeout(t); resolve(v); }, (e) => { clearTimeout(t); reject(e); });
+    });
   const round = async () => {
     const capturedAt = new Date().toISOString(); // one batch key for every city this round
     if (cfg.cities.length === 0) {
-      await pull(ctx, null, capturedAt).catch((e) => fatalCheck(e, null));
+      await withHardLimit(pull(ctx, null, capturedAt), null).catch((e) => fatalCheck(e, null));
       return;
     }
     for (const city of cfg.cities) {
-      await pull(ctx, city, capturedAt).catch((e) => fatalCheck(e, city.label));
+      await withHardLimit(pull(ctx, city, capturedAt), city.label).catch((e) => fatalCheck(e, city.label));
     }
   };
 
