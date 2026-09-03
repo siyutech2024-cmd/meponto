@@ -174,8 +174,10 @@ export async function GET(request: Request) {
         grouped.set(key, list);
       }
       const perSource: KRow[] = [];
+      let mainRow: KRow | null = null; // the main account's SP board — headline-rate source of truth
       for (const [key, rows] of grouped.entries()) {
         const src = key.slice(0, key.indexOf("|"));
+        const cityOfKey = key.slice(key.indexOf("|") + 1);
         // 定位当前班段起点:计数从高位明显回落 = 新班段开始。
         let slotStart = 0;
         let acceptMax = 0, finishedMax = 0;
@@ -193,6 +195,10 @@ export async function GET(request: Request) {
         const lastRated = [...slot].reverse().find((row) => row.ar != null || (row.accept_cnt ?? 0) > 0 || (row.finished_cnt ?? 0) > 0);
         if (lastRated) {
           perSource.push(lastRated);
+          // 比率口径(2026-09-03 修):主号有读数就用主号的,不再看"谁完单多"——
+          // 主号刚开班、或 PRO 单量暂时领先时,原规则会把 PRO 的比率当成全城
+          // 比率显示(AR 91.9% = PRO 91.9%,用户实测)。多城市下优先主城 SP。
+          if (src === "main" && (!mainRow || cityOfKey === "55000199")) mainRow = lastRated;
           // PRO 源单独留一份 —— KPI 条上以金色小字副值显示(业务方
           // 2026-08-10 定,与 T+1 看板顶卡的 PRO 小计同一套视觉语言)。
           if (src === "pro") kpiPro = lastRated as unknown as Record<string, unknown>;
@@ -201,7 +207,7 @@ export async function GET(request: Request) {
       if (perSource.length) {
         // 计数可加(两个账号的骑手集不相交);比率不可加,取主导源
         // (完单多的那个 —— 即主号)的读数,量级上就是全城比率。
-        const dom = perSource.reduce((a, b) => ((b.finished_cnt ?? 0) > (a.finished_cnt ?? 0) ? b : a));
+        const dom = mainRow ?? perSource.reduce((a, b) => ((b.finished_cnt ?? 0) > (a.finished_cnt ?? 0) ? b : a));
         kpi = {
           ar: dom.ar ?? null,
           caa: dom.caa ?? null,

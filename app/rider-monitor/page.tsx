@@ -29,6 +29,9 @@ type Cats = { delivering: number; online: number; notOnline: number; below: numb
 type AggRow = { name: string; total: number; pro?: number; finished: number } & Cats;
 type Payload = {
   capturedAt: string | null;
+  /** Raw latest batch time per scraper source (before the freshness cutoff);
+   *  null = that source never uploaded for the requested city. */
+  sourceBatches?: Record<string, string | null>;
   kpi: { ar: number | null; caa: number | null; acceptCnt: number | null; overtime: number | null; tsh: number | null; finishedCnt: number | null } | null;
   kpiPro: { ar: number | null; caa: number | null; acceptCnt: number | null; overtime: number | null; tsh: number | null; finishedCnt: number | null } | null;
   scopeKpiPro: { ar: number | null; caa: number | null; acceptCnt: number | null; overtime: number | null; tsh: number | null; finishedCnt: number | null } | null;
@@ -146,9 +149,34 @@ export default function RiderMonitorPage() {
       shifts: Array<{ id: string; lockedAt?: string; timeRange: string }>;
       signups: Array<{ shiftId: string; riderName: string; rider99Id: string; station: string; status: string }>;
     };
-    const lockedShifts = new Map(board.shifts.filter((s) => s.lockedAt).map((s) => [s.id, s]));
+    // 只看**正在进行中**的班次(2026-09-03 修):原来把当天所有已锁班次都拿来
+    // 比对,12:15 就把 14:00 和 18:00 班的人全列成"应岗未上"(41 人)。一个
+    // 14 点的骑手在 12 点不在看板上是正常的。班次时间是 BRT "HH:MM~HH:MM";
+    // 开班后留 10 分钟宽限,让开班后的头几批快照先落地再判。
+    const NO_SHOW_GRACE_MIN = 10;
+    const brt = new Date(Date.now() - 3 * 3600_000);
+    const brtNowMin = brt.getUTCHours() * 60 + brt.getUTCMinutes();
+    const inProgress = (range: string) => {
+      const m = range.match(/(\d{1,2}):(\d{2})\s*[~\-–]\s*(\d{1,2}):(\d{2})/);
+      if (!m) return false;
+      const start = Number(m[1]) * 60 + Number(m[2]);
+      const end = Number(m[3]) * 60 + Number(m[4]);
+      return brtNowMin >= start + NO_SHOW_GRACE_MIN && brtNowMin < end;
+    };
+    const lockedShifts = new Map(board.shifts.filter((s) => s.lockedAt && inProgress(s.timeRange)).map((s) => [s.id, s]));
     if (lockedShifts.size === 0) {
-      setNoShow(null); // roster not frozen yet → the panel stays hidden
+      setNoShow(null); // roster not frozen yet, or no locked shift in progress → the panel stays hidden
+      return;
+    }
+    // 看板"瞎了"时不判定(2026-09-03 修):某个抓取源断供后,它覆盖的骑手
+    // 全都不在实时快照里,会把整个名册列成"应岗未上"——那是数据缺失,不是
+    // 骑手没来。任一源超过 20 分钟没批次(或从未上报)→ 隐藏,顶部本来就有
+    // "数据已过期"横幅说明原因。
+    const batches = Object.values(live?.sourceBatches ?? {});
+    const feedBlind =
+      !live || batches.length === 0 || batches.some((at) => !at || Date.now() - new Date(at).getTime() > 20 * 60_000);
+    if (feedBlind) {
+      setNoShow(null);
       return;
     }
     const onlineIds = new Set((live?.riders ?? []).map((r) => String(r.riderExtId ?? "")).filter(Boolean));
