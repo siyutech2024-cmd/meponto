@@ -36,6 +36,10 @@ export async function fetchRows<T>(collection: string, filters: Filter[] = [], m
       .from("app_state_records")
       .select("data")
       .eq("collection", collection)
+      // An UNORDERED offset scan has no defined row order between pages —
+      // Postgres may hand back the same row twice and never return another.
+      // record_id is unique per collection, so it makes the paging total.
+      .order("record_id", { ascending: true })
       .range(offset, offset + PAGE - 1);
     for (const f of filters) {
       const column = `data->>${f.field}`;

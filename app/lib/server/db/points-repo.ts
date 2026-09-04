@@ -59,7 +59,8 @@ export async function ledgerByRider(riderId: string): Promise<PointsLedgerEntry[
 }
 
 export async function balanceFor(riderId: string): Promise<number> {
-  const rows = await selectRows<{ available: number }>("points_balances", { where: { rider_id: riderId } });
+  // points_balances is keyed by rider_id, not id.
+  const rows = await selectRows<{ available: number }>("points_balances", { where: { rider_id: riderId }, tiebreak: "rider_id" });
   return Number(rows[0]?.available ?? 0);
 }
 

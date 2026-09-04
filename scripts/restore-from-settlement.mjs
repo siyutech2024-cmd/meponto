@@ -97,7 +97,7 @@ async function fetchCollection(name) {
   const pageSize = 1000;
   for (let from = 0; ; from += pageSize) {
     const res = await fetch(
-      `${url}/rest/v1/${TABLE}?collection=eq.${name}&select=record_id,data&order=updated_at.desc&offset=${from}&limit=${pageSize}`,
+      `${url}/rest/v1/${TABLE}?collection=eq.${name}&select=record_id,data&order=updated_at.desc,record_id.asc&offset=${from}&limit=${pageSize}`,
       { headers },
     );
     if (!res.ok) throw new Error(`${name}: HTTP ${res.status} ${await res.text()}`);

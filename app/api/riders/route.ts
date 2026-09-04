@@ -23,9 +23,19 @@ let kpiRefreshedAt = 0;
  */
 async function mergeDuplicateRiderProfiles(): Promise<number> {
   const groups = new Map<string, Rider[]>();
+  const seenIds = new Set<string>();
   for (const rider of memory.riders) {
     const key = String(rider.ninetyNineId ?? "").trim();
     if (!key) continue;
+    // Same id twice is NOT two profiles — it is one record that entered the
+    // collection twice (a paged read that overlapped). Merging it "into
+    // itself" spliced the record out of memory and queued a delete of its own
+    // database row; the rider then rendered as an unassigned "日报·未建档"
+    // row. Only distinct ids can be duplicates of each other.
+    if (typeof rider.id === "string") {
+      if (seenIds.has(rider.id)) continue;
+      seenIds.add(rider.id);
+    }
     const list = groups.get(key) ?? [];
     list.push(rider);
     groups.set(key, list);
@@ -78,9 +88,12 @@ async function mergeDuplicateRiderProfiles(): Promise<number> {
           ponto: current.ponto && current.ponto !== "Unassigned" ? current.ponto : dup.ponto ?? current.ponto,
         };
       }
+      if (dup.id === primary.id) continue; // paranoia: never delete the survivor
       const dupIndex = memory.riders.findIndex((rider) => rider.id === dup.id);
       if (dupIndex !== -1) memory.riders.splice(dupIndex, 1);
-      persistDeleteRecord("riders", dup.id);
+      // Only queue the database delete once the id is really gone from memory
+      // — a delete for a still-present id would race the flush guard.
+      if (!memory.riders.some((rider) => rider.id === dup.id)) persistDeleteRecord("riders", dup.id);
       appendServerAudit({ actor: "System", action: "RIDER_DUPLICATE_MERGED", entity: "Rider", entityId: primary.id, detail: `99 ${key}: merged duplicate ${dup.id} into ${primary.id} (ledger/orders/cash/claims remapped).`, risk: "Medium" });
       mergedCount += 1;
     }

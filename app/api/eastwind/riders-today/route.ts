@@ -57,7 +57,12 @@ export async function GET(request: Request) {
       .from("rider_status_snapshots")
       .select("captured_at, rider_ext_id, rider_name, phone, id_no, status, shift_start, shift_end, hot_zone, vehicle, online_mins, rest_mins, finished_cnt, accept_cnt, declined_cnt, cancelled_cnt, delayed_cnt, source")
       .gte("captured_at", dayStart)
+      // captured_at is the BATCH time — every rider in one round shares it, so
+      // it is nowhere near unique. Without the id tiebreak, offset paging
+      // repeated some snapshot rows and dropped others, and the day board lost
+      // riders at random.
       .order("captured_at", { ascending: false })
+      .order("id", { ascending: false })
       .range(from, from + pageSize - 1);
     if (error) return jsonResponse({ error: error.message }, { status: 500 });
     if (!data || data.length === 0) break;

@@ -442,7 +442,15 @@ async function refreshOneCollection(supabase: SupabaseClient, name: string): Pro
         .from(TABLE)
         .select("record_id, data")
         .eq("collection", name)
+        // updated_at ALONE is not a total order: one flush stamps its whole
+        // batch with the same millisecond, so thousands of rows tie. With
+        // offset paging a tie that straddles a page boundary makes Postgres
+        // repeat some rows on the next page and DROP others entirely — which
+        // is how riders silently vanished from memory (and came back as
+        // "日报·未建档 / 未分配" rows) on some serverless instances. record_id
+        // is unique per (collection, record) and makes the order total.
         .order("updated_at", { ascending: false })
+        .order("record_id", { ascending: true })
         .range(from, from + pageSize - 1);
       if (error) throw new Error(error.message);
       if (!page || page.length === 0) break;
@@ -451,10 +459,18 @@ async function refreshOneCollection(supabase: SupabaseClient, name: string): Pro
       from += pageSize;
     }
 
-    const dbRows = ((data ?? []) as Array<{ data: AnyRecord }>)
-      .map((row) => row.data)
-      .filter((row) => row && typeof row.id === "string");
-    const dbIds = new Set(dbRows.map((row) => row.id));
+    // Defence in depth: a page overlap must never put the SAME id in the
+    // collection twice (a same-id twin makes the rider self-heal "merge" a
+    // record into itself and queue its own deletion). First row wins — the
+    // ordering above is newest-first.
+    const dbRows: AnyRecord[] = [];
+    const dbIds = new Set<string>();
+    for (const row of (data ?? []) as Array<{ data: AnyRecord }>) {
+      const record = row.data;
+      if (!record || typeof record.id !== "string" || dbIds.has(record.id)) continue;
+      dbIds.add(record.id);
+      dbRows.push(record);
+    }
     const pendingDeletes = state.pendingDeletes.get(name) ?? new Set<string>();
     // Write wins here too: a queued delete for an id that is present in the
     // local collection again means the record was re-created — unqueue it.
@@ -605,7 +621,11 @@ export function hydrateFromDatabase(): Promise<void> {
         let query = supabase
           .from(TABLE)
           .select("collection, record_id, data")
+          // Same total-order requirement as refreshOneCollection: this query
+          // pages through every non-excluded collection at once (~14k rows),
+          // and ties on updated_at silently skipped records on cold start.
           .order("updated_at", { ascending: false })
+          .order("record_id", { ascending: true })
           .range(from, from + pageSize - 1);
         // 在数据库侧就滤掉,连传输都省了(不是拉回来再丢)。
         for (const excluded of HYDRATION_EXCLUDED) query = query.neq("collection", excluded);
@@ -619,10 +639,20 @@ export function hydrateFromDatabase(): Promise<void> {
       }
 
       const byCollection = new Map<string, AnyRecord[]>();
+      const seenPerCollection = new Map<string, Set<string>>();
       for (const row of rows) {
         if (!row?.data || typeof row.data !== "object") continue;
+        const record = row.data;
+        // Drop repeated ids (see the ordering note above) — two copies of one
+        // record in memory break the duplicate self-heal and the flush dedupe.
+        if (typeof record.id === "string") {
+          const seen = seenPerCollection.get(row.collection) ?? new Set<string>();
+          if (seen.has(record.id)) continue;
+          seen.add(record.id);
+          seenPerCollection.set(row.collection, seen);
+        }
         const list = byCollection.get(row.collection) ?? [];
-        list.push(row.data);
+        list.push(record);
         byCollection.set(row.collection, list);
       }
 

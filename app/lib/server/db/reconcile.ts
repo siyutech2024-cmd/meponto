@@ -39,7 +39,7 @@ export async function reconcileCollection(
     (options.excludeIdPrefixes ?? []).some((prefix) => String(id ?? "").startsWith(prefix));
 
   const legacyRows = (await fetchRows<Record<string, unknown>>(collection)).filter((row) => !excluded(row.id));
-  const tableRows = (await selectRows<Record<string, unknown>>(table)).filter((row) => !excluded(row[idColumn]));
+  const tableRows = (await selectRows<Record<string, unknown>>(table, { tiebreak: idColumn })).filter((row) => !excluded(row[idColumn]));
   // Comparable scope on both sides: count what survived the exclusion filter.
   const tableCount = tableRows.length;
 

@@ -58,7 +58,16 @@ export type RangeFilter = { column: string; op: "gte" | "lte" | "lt" | "gt"; val
 /** Paged select — never trust a single page (PostgREST caps at 1000 rows). */
 export async function selectRows<T>(
   table: string,
-  opts: { where?: Where; range?: RangeFilter[]; orderBy?: { column: string; ascending?: boolean }; limit?: number } = {},
+  opts: {
+    where?: Where;
+    range?: RangeFilter[];
+    orderBy?: { column: string; ascending?: boolean };
+    limit?: number;
+    /** Unique column appended to ORDER BY so offset paging is a TOTAL order —
+     *  without it, ties on the sort column repeat some rows across pages and
+     *  drop others. Defaults to the usual `id` primary key. */
+    tiebreak?: string;
+  } = {},
 ): Promise<T[]> {
   const max = opts.limit ?? 50_000;
   const rows: T[] = [];
@@ -67,6 +76,8 @@ export async function selectRows<T>(
     query = applyWhere(query, opts.where);
     for (const f of opts.range ?? []) query = query[f.op](f.column, f.value);
     if (opts.orderBy) query = query.order(opts.orderBy.column, { ascending: opts.orderBy.ascending ?? true });
+    const tiebreak = opts.tiebreak ?? "id";
+    if (tiebreak !== opts.orderBy?.column) query = query.order(tiebreak, { ascending: true });
     const { data, error } = await query;
     if (error) throw new Error(`select ${table}: ${error.message}`);
     rows.push(...((data ?? []) as T[]));
