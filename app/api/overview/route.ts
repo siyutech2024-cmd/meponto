@@ -1,6 +1,8 @@
 import { jsonResponse, memory } from "../../lib/server/memory";
 import { refreshCollectionsFromDatabase } from "../../lib/server/persistence";
 import { requirePermission } from "../../lib/server/authz";
+import { defaultAssessmentRule } from "../../lib/assessment";
+import { displaySettleOf, settlementV2From } from "../../lib/settlement";
 
 const COLLECTIONS = [
   "riders",
@@ -15,6 +17,7 @@ const COLLECTIONS = [
   "riderDailyKpis",
   "riderDailyEarnings",
   "appUsers",
+  "assessmentRules", // 结算口径 v2 生效日(settleTotal 用 payableOf)
 ];
 
 function generatedAt() {
@@ -81,6 +84,9 @@ export async function GET(request: Request) {
   const lastKpiDate = kpiDates[kpiDates.length - 1] ?? null;
   const lastKpis = memory.riderDailyKpis.filter((row) => row.date === lastKpiDate);
   const lastEarnings = memory.riderDailyEarnings.filter((row) => row.date === lastKpiDate);
+  const v2From = settlementV2From(memory.assessmentRules.find((r) => r.id === "rule-active") ?? defaultAssessmentRule);
+  const byNN = new Map(memory.riders.filter((r) => r.ninetyNineId).map((r) => [r.ninetyNineId!, r]));
+  const proRateOverview = Number(memory.mallConfigs.find((c) => c.id === "mall-config")?.hqProRatePerOrder ?? 12) || 0;
 
   const pendingWithdrawals = memory.riderWithdrawals.filter((w) => w.status === "requested");
 
@@ -103,7 +109,8 @@ export async function GET(request: Request) {
         date: lastKpiDate,
         riders: lastKpis.length,
         completedOrders: lastKpis.reduce((sum, row) => sum + (row.completedOrders ?? 0), 0),
-        settleTotal: Math.round(lastEarnings.reduce((sum, row) => sum + (row.settleAmount ?? 0), 0) * 100) / 100,
+        // 与钱包周板同源:普通行 payableOf(v2 = 今日统计),PRO 行 完单 × 费率。
+        settleTotal: Math.round(lastEarnings.reduce((sum, row) => sum + displaySettleOf(row, byNN.get(row.rider99Id)?.pool, v2From, proRateOverview), 0) * 100) / 100,
         lowAr: lastKpis.filter((row) => row.ar !== null && row.ar < 95).length,
       },
       finance: {

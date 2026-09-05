@@ -22,9 +22,8 @@
 import type { RiderDailyEarning } from "./performance";
 import { commissionEffectiveFrom, type AssessmentRule } from "./assessment";
 
-export type EarningLike = Pick<
-  RiderDailyEarning,
-  "date" | "account" | "total" | "tripIncome" | "cashDebt" | "mealDeduction" | "bonus" | "tips" | "other" | "manualAdjust" | "referralBonus" | "settleAmount"
+export type EarningLike = { date: string } & Partial<
+  Pick<RiderDailyEarning, "account" | "total" | "tripIncome" | "cashDebt" | "mealDeduction" | "bonus" | "tips" | "other" | "manualAdjust" | "referralBonus" | "settleAmount">
 >;
 
 export const r2 = (n: number) => Math.round((Number.isFinite(n) ? n : 0) * 100) / 100;
@@ -63,7 +62,18 @@ export function totalIdentityHolds(row: EarningLike): boolean {
  */
 export function payableOf(row: EarningLike, v2From: string): number {
   if (row.account === "pro") return 0;
-  return r2(isV2Date(row.date, v2From) ? row.total ?? 0 : row.settleAmount ?? 0);
+  // 不在这里四舍五入:v1 周板/余额历来是"先累加原始 settleAmount 再 round",这里若逐行
+  // round,分位可能与改动前差 1 分 —— 聚合处负责 round。
+  const amount = isV2Date(row.date, v2From) ? row.total ?? 0 : row.settleAmount ?? 0;
+  return Number.isFinite(amount) ? amount : 0;
+}
+
+/**
+ * T+1 看板 / 报表等"展示用结算额"(不入账):PRO 行 = 完单 × 费率,普通行 = payableOf。
+ * 让所有只读页面显示的那个数与钱包周板、付款守卫完全同源。
+ */
+export function displaySettleOf(row: EarningLike & { orders?: number }, riderPool: string | undefined, v2From: string, proRate: number): number {
+  return poolOfRow(row, riderPool, v2From) === "pro" ? r2((row.orders ?? 0) * proRate) : r2(payableOf(row, v2From));
 }
 
 /**
@@ -76,11 +86,7 @@ export function poolOfRow(row: EarningLike, riderPool: string | undefined, v2Fro
   return riderPool === "pro" ? "pro" : "standard";
 }
 
-/** 倒扣判断:v2 看今日统计,v1 看 settleAmount。返回负数金额(>0 表示欠多少),0 = 不倒扣。 */
-export function deductionOf(row: EarningLike, v2From: string): number {
-  const amount = isV2Date(row.date, v2From) ? row.total ?? 0 : row.settleAmount ?? 0;
-  return amount < 0 ? r2(-amount) : 0;
-}
+// 倒扣判断只有一份实现:app/lib/performance.ts 的 deductionAmountOf(避免与 performance.ts 循环依赖)。
 
 /** 每日对账单 / 周结算板共用的一行拆解(全部原值,只做加总不做推导)。 */
 export type EarningBreakdown = {

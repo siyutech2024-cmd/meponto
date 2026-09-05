@@ -9,6 +9,8 @@ import { maskAuthor } from "../../../lib/partner-reviews";
 import { activityCardVisible } from "../../../lib/app-config";
 import { dbDirectReadEnabled, fetchRows } from "../../../lib/server/db-read";
 import type { RiderDailyEarning, RiderDailyKpi } from "../../../lib/performance";
+import { defaultAssessmentRule } from "../../../lib/assessment";
+import { payableOf, settlementV2From } from "../../../lib/settlement";
 import { earningsByRider99, kpisByRider99, kpisByRiderName, perfMode } from "../../../lib/server/db/performance-repo";
 
 /**
@@ -34,6 +36,7 @@ const COLLECTIONS = [
   "riderDailyKpis",
   "riderWithdrawals",
   "walletPayments",
+  "assessmentRules", // 结算口径 v2 生效日
   "crmPartners",
   "appTasks",
   "taskClaims",
@@ -240,19 +243,25 @@ export async function GET(request: Request) {
     await refreshCollectionsFromDatabase(["riderDailyEarnings"]);
     earningRows = memory.riderDailyEarnings.filter((e) => e.rider99Id === nineId || e.riderName === name);
   }
+  // 结算口径 v2:每日金额 = payableOf(今日统计),与钱包页"每日结算单"同一个数;
+  // 为负的天(现金 > 收入)显示为扣款而不是"Repasse Confirmado"。PRO 行不进现金流水。
+  const v2From = settlementV2From(memory.assessmentRules.find((r) => r.id === "rule-active") ?? defaultAssessmentRule);
   const payments = earningRows
-    .filter((e) => (e.settleAmount ?? 0) > 0)
-    .map((e) => ({
-      title: "Repasse",
-      subtitle: `${e.orders ?? 0} pedidos`,
-      amount: `+${brl(e.settleAmount)}`,
-      status: "Confirmado",
-      tone: "OK",
-      at: e.date ?? "",
-      type: "payout",
-      balanceAfter: null as number | null,
-      sourceId: e.id,
-    }));
+    .filter((e) => e.account !== "pro" && payableOf(e, v2From) !== 0)
+    .map((e) => {
+      const amount = Math.round(payableOf(e, v2From) * 100) / 100;
+      return {
+        title: amount < 0 ? "Desconto" : "Repasse",
+        subtitle: `${e.orders ?? 0} pedidos`,
+        amount: `${amount < 0 ? "−" : "+"}${brl(Math.abs(amount))}`,
+        status: amount < 0 ? "A descontar" : "Confirmado",
+        tone: amount < 0 ? "WARN" : "OK",
+        at: e.date ?? "",
+        type: "payout",
+        balanceAfter: null as number | null,
+        sourceId: e.id,
+      };
+    });
   const cashTypeMeta: Record<string, { title: string; tone: string }> = {
     topup: { title: "Recarga", tone: "OK" },
     spend: { title: "Compra", tone: "DANGER" },

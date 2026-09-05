@@ -63,3 +63,22 @@
 - `POST recordPayment`:接受 `rider99Id`;超付校验与级联口径同看板(普通 payableOf + PRO 完单×费率),级联也扣已付 PIX 提现。
 - `POST /api/performance importEarnings`:响应 `totalMismatches[]`。
 - 迁移 `20260905120000`:`wallet_payments` 加 `kind`, `commission`, `rider99_id`。
+
+## 2026-09-06 复审修正(第二轮,全链路闭环)
+
+对照评审逐条修掉的问题:
+- **T+1 考核看板**(`/performance`):普通行展示结算额改为 payableOf(v2 = 今日统计),PRO 仍 完单×费率;`批量标记已付` 金额随之同源,并带 `rider99Id`;"已付"识别优先 99ID。原表格"金额"列保留在 `sheetSettleAmount`。
+- **报表页 / 骑手详情页**:合计与导出改用 statement 的 `payable`;报表 CSV 增"应付"列。
+- **仪表盘 `settleTotal` / T+1 趋势 `settle`**:改 `displaySettleOf`(普通 payableOf + PRO 完单×费率)。
+- **骑手 App 现金流水**(`/api/rider/home`):Repasse 金额 = payableOf;负数日显示 "Desconto / A descontar",不再显示为正的 "Confirmado"。
+- **已付状态**:对账单 / PDF / 骑手 App 每日结算单 / T+1 看板的"已付"= 存在**覆盖该日**的骑手付款(单日付款、周板标记、加盟商付款级联都算);`payments=1` 改为窗口交集。
+- **wallet_payments 镜像**:`kind / commission / rider99_id` 三列每行都输出(PostgREST 批量 upsert 取键并集且缺键写 NULL,否则整批失败)。
+- **生效日**归一到自然周周一(`commissionEffectiveFrom()`),避免周板按周、付款按行两套判定在同一周打架。
+- **佣金比例与基数同源**:考核看板在佣金计算里按 KPI 行的 `account` 判池;"未关联"/"Unassigned" 对齐;不允许对 Unassigned 支付佣金。
+- **同一骑手同周普通+PRO 两行**:已付先填普通行(至其应付),余额给 PRO 行。
+- **表格缺"今日统计"列**(raw Eastwind 导出):按恒等式推导 total 并标 `totalDerived`,响应返回 `derivedTotals`,不再静默 0。
+- **重导入**保留倒扣核销标记(金额未变时)。
+- `payableOf` 不再逐行 round(v1 周合计与改前逐分一致);v1 周的 CSV/PDF 导出列与改前完全一致。
+- `t()` 占位符替换改为全量替换(`{d}` 出现两次的说明文案)。
+
+已知但**未改**(需业务决定):负数日既净额进周工资(Σ今日统计),又进"倒扣待扣"清单;核销只打标记不改金额。若预期"核销 = 从下周工资再扣一次",当前实现会少扣一次。

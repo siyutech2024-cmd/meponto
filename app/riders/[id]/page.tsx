@@ -29,7 +29,9 @@ type RiderRow = {
   source: "profile" | "report";
 };
 
-type DailyRow = { date: string; orders: number; kpiOrders: number | null; onlineHours: number | null; ar: number | null; settleAmount: number; paid: boolean };
+type DailyRow = { date: string; orders: number; kpiOrders: number | null; onlineHours: number | null; ar: number | null; settleAmount: number; payable?: number; paid: boolean };
+/** 结算口径 v2:应付 = 接口给的 payable(v2 = 今日统计),旧行回退 settleAmount。 */
+const payableOfRow = (row: DailyRow) => row.payable ?? row.settleAmount;
 type PointEntry = { id: string; type: string; points: number; status: string; sourceType: string; note: string; reasonCode: string; expiresAt: string | null; balanceAfter: number };
 type Network = { franchises: Array<{ id: string; name: string }>; stations: Array<{ id: string; name: string; franchise?: string }> };
 
@@ -146,7 +148,7 @@ export default function RiderDetailPage() {
     );
   }
 
-  const totalSettle = daily.reduce((sum, row) => sum + row.settleAmount, 0);
+  const totalSettle = daily.reduce((sum, row) => sum + payableOfRow(row), 0);
 
   return (
     <AppShell>
@@ -270,7 +272,7 @@ export default function RiderDetailPage() {
                 downloadCsv(
                   `rider-${rider.ninetyNineId}-daily`,
                   ["日期", "完单(结算)", "完单(考核)", "在线时长", "AR%", "结算金额", "付款状态"],
-                  daily.map((row) => [row.date, String(row.orders), row.kpiOrders ?? "", row.onlineHours ?? "", row.ar ?? "", row.settleAmount.toFixed(2), row.paid ? "已付" : "待付"]),
+                  daily.map((row) => [row.date, String(row.orders), row.kpiOrders ?? "", row.onlineHours ?? "", row.ar ?? "", payableOfRow(row).toFixed(2), row.paid ? "已付" : "待付"]),
                 )
               }
             >
@@ -296,7 +298,7 @@ export default function RiderDetailPage() {
                     <td className="py-2 text-right">{row.kpiOrders ?? "—"}</td>
                     <td className="py-2 text-right">{row.onlineHours ?? "—"}</td>
                     <td className="py-2 text-right">{row.ar !== null ? `${row.ar}%` : "—"}</td>
-                    <td className="py-2 text-right font-black">{money(row.settleAmount)}</td>
+                    <td className="py-2 text-right font-black">{money(payableOfRow(row))}</td>
                     <td className="py-2 text-right">{row.paid ? <span className="text-[10px] font-black uppercase text-[var(--ok-ink)]">已付</span> : <span className="text-[10px] font-black uppercase text-[var(--muted)]">待付</span>}</td>
                   </tr>
                 ))}

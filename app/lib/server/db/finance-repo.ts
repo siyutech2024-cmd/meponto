@@ -40,10 +40,11 @@ type PaymentRow = {
   id: string; target: string; ref_name: string; franchise: string; amount: number;
   period: string; week_from: string; week_to: string; note: string;
   paid_by: string; paid_at: string;
-  /** 2026-09-05 加盟商佣金(migration 20260905120000)。settlement 行不带这两列,
-   *  所以迁移未执行前既有付款的镜像照常工作,只有佣金行会被 mirror 拒绝(legacy 不受影响)。 */
-  kind?: string; commission?: WalletPayment["commission"];
-  rider99_id?: string;
+  /** 2026-09-05/06(migration 20260905120000)。PostgREST 批量 upsert 取所有对象键的
+   *  并集作列清单且缺键写 NULL,所以三列**每行都要给出**(settlement / null),否则同一批里
+   *  只要有一条佣金行,整批就会因 kind NOT NULL 失败。迁移必须先于代码上线。 */
+  kind: string; commission: WalletPayment["commission"] | null;
+  rider99_id: string | null;
 };
 
 export function paymentToRow(p: WalletPayment): PaymentRow {
@@ -52,8 +53,9 @@ export function paymentToRow(p: WalletPayment): PaymentRow {
     amount: p.amount, period: p.period ?? "weekly", week_from: p.weekFrom ?? "",
     week_to: p.weekTo ?? "", note: p.note ?? "", paid_by: p.paidBy ?? "",
     paid_at: p.paidAt ?? "",
-    ...(p.kind === "commission" ? { kind: "commission", commission: p.commission } : {}),
-    ...(p.rider99Id ? { rider99_id: p.rider99Id } : {}),
+    kind: p.kind === "commission" ? "commission" : "settlement",
+    commission: p.kind === "commission" ? p.commission ?? null : null,
+    rider99_id: p.rider99Id ?? null,
   };
 }
 

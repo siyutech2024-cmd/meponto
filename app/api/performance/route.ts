@@ -14,7 +14,7 @@ import { getAvailablePoints } from "../../lib/points";
 import { sendPushToRider } from "../../lib/server/notify";
 import { tagKpiAttribution } from "../../lib/leader-mode";
 import { defaultAssessmentRule } from "../../lib/assessment";
-import { settlementV2From } from "../../lib/settlement";
+import { displaySettleOf, isV2Date, payableOf, settlementV2From } from "../../lib/settlement";
 import { callRpc, dbDirectReadEnabled, fetchRows } from "../../lib/server/db-read";
 import type { Rider } from "../../lib/data";
 import { dualWrite } from "../../lib/server/db/dual-write";
@@ -60,7 +60,7 @@ const BADGE_MILESTONES: Array<{ at: number; label: string }> = [
 ];
 
 // pontos + franchises: needed by Leader Mode import-time attribution (D4).
-const COLLECTIONS = ["riderDailyKpis", "riderDailyEarnings", "riders", "mallConfigs", "pointsLedgerEntries", "dispatchShifts", "shiftSignups", "memberMessages", "pontos", "franchises"];
+const COLLECTIONS = ["riderDailyKpis", "riderDailyEarnings", "riders", "mallConfigs", "pointsLedgerEntries", "dispatchShifts", "shiftSignups", "memberMessages", "pontos", "franchises", "assessmentRules"];
 
 type Located = { franchise: string; station: string; riderId: string | null };
 type Enriched = RiderDailyKpi & Located;
@@ -87,10 +87,20 @@ function enrich(rows: RiderDailyKpi[], riders: Rider[] = memory.riders): Enriche
  * the caller falls back to the legacy in-memory path. Kill switch:
  * READPATH_DB_DIRECT=false.
  */
+/** 结算口径 v2 生效日:直读路径从库里取规则,legacy 路径从内存取。 */
+async function v2FromDirect(): Promise<string> {
+  const rules = await fetchRows<{ id: string; commissionEffectiveFrom?: string }>("assessmentRules", [{ op: "eq", field: "id", value: "rule-active" }]).catch(() => []);
+  return settlementV2From(rules[0] ?? defaultAssessmentRule);
+}
+function v2FromMemory(): string {
+  return settlementV2From(memory.assessmentRules.find((r) => r.id === "rule-active") ?? defaultAssessmentRule);
+}
+
 async function performanceDirect(url: URL): Promise<Response | null> {
   if (!dbDirectReadEnabled()) return null;
   // M1 read switch: fact tables when CORE_MODE_PERF=read, JSONB mirror otherwise.
   const factRead = perfMode() === "read";
+  const v2FromGet = await v2FromDirect();
   try {
     if (url.searchParams.get("ranking") !== null) {
       const top = factRead
@@ -195,7 +205,7 @@ async function performanceDirect(url: URL): Promise<Response | null> {
     // PRO 展示结算额 = 完单 × HqProRate(见 withProDerivedSettle 注释)。
     const mallCfg = (await fetchRows<{ id: string; hqProRatePerOrder?: number }>("mallConfigs", [{ op: "eq", field: "id", value: "mall-config" }]))[0];
     const proRate = Number(mallCfg?.hqProRatePerOrder ?? 12) || 0;
-    earningRows = withProDerivedSettle(earningRows, proRate, (row) => accountOf(row) === "pro");
+    earningRows = withProDerivedSettle(earningRows, proRate, (row) => accountOf(row) === "pro", v2FromGet);
 
     const groupEarnings = (field: "station" | "franchise") => {
       const map = new Map<string, EnrichedEarning[]>();
@@ -239,14 +249,20 @@ const num = (value: unknown) => {
  * **完单 × HqProRate** —— 与钱包周结同一推导、同一费率配置,两处永远一致。
  * 只改读出的展示值,不写回任何存储;打款权威仍在钱包周结(加盟商整体转账)。
  */
-const withProDerivedSettle = <T extends { orders?: number; settleAmount?: number }>(
+const withProDerivedSettle = <T extends { orders?: number; settleAmount?: number; date: string; account?: "main" | "pro"; total?: number }>(
   list: T[],
   proRate: number,
   isPro: (row: T) => boolean,
+  v2From: string,
 ): T[] =>
-  proRate > 0
-    ? list.map((row) => (isPro(row) ? { ...row, settleAmount: Math.round((row.orders ?? 0) * proRate * 100) / 100 } : row))
-    : list;
+  list.map((row) => {
+    if (isPro(row)) return proRate > 0 ? { ...row, settleAmount: Math.round((row.orders ?? 0) * proRate * 100) / 100, payable: Math.round((row.orders ?? 0) * proRate * 100) / 100, v2: isV2Date(row.date, v2From) } : { ...row, v2: isV2Date(row.date, v2From) };
+    // 结算口径 v2(2026-09-06):普通行的展示结算额 = 今日统计(加盟商实付),与钱包周板 /
+    // 对账单 / 付款守卫同源;v1 日期保持 settleAmount。原始 settleAmount 保留在 sheetSettleAmount。
+    const v2 = isV2Date(row.date, v2From);
+    const payable = Math.round(payableOf(row, v2From) * 100) / 100;
+    return { ...row, sheetSettleAmount: row.settleAmount, settleAmount: v2 ? payable : row.settleAmount, payable, v2 };
+  });
 
 /**
  * Auto-credit mall points for completed orders on T+1 import.
@@ -401,6 +417,7 @@ export async function GET(request: Request) {
   }
 
   await refreshCollectionsFromDatabase(COLLECTIONS);
+  const v2FromGet = v2FromMemory();
 
   const url = new URL(request.url);
   const date = url.searchParams.get("date");
@@ -451,7 +468,7 @@ export async function GET(request: Request) {
   if (accountFilter) earningRows = earningRows.filter((row) => accountOf(row) === accountFilter);
   // PRO 展示结算额 = 完单 × HqProRate(与 DB 直读路径同一口径)。
   const proRateLegacy = Number(memory.mallConfigs.find((c) => c.id === "mall-config")?.hqProRatePerOrder ?? 12) || 0;
-  earningRows = withProDerivedSettle(earningRows, proRateLegacy, (row) => accountOf(row) === "pro");
+  earningRows = withProDerivedSettle(earningRows, proRateLegacy, (row) => accountOf(row) === "pro", v2FromGet);
 
   const groupEarnings = (field: "station" | "franchise") => {
     const map = new Map<string, EnrichedEarning[]>();
@@ -472,6 +489,7 @@ export async function GET(request: Request) {
       )
     : null;
   const inScope = (id: string) => !scopedIds || scopedIds.has(id);
+  const byNNTrend = new Map(memory.riders.filter((r) => r.ninetyNineId).map((r) => [r.ninetyNineId!, r]));
   const trend = trendDates.map((d) => {
     const dayRows = memory.riderDailyKpis.filter((row) => row.date === d && inScope(row.rider99Id));
     return {
@@ -479,7 +497,8 @@ export async function GET(request: Request) {
       orders: dayRows.reduce((sum, row) => sum + (row.completedOrders ?? 0), 0),
       // PRO 单独一条曲线(金色)。orders 仍是总数 —— PRO 是"其中",不是"另外"。
       proOrders: dayRows.filter((row) => accountOf(row) === "pro").reduce((sum, row) => sum + (row.completedOrders ?? 0), 0),
-      settle: Math.round(memory.riderDailyEarnings.filter((row) => row.date === d && inScope(row.rider99Id)).reduce((sum, row) => sum + (row.settleAmount ?? 0), 0) * 100) / 100,
+      // 与周板同源:普通 payableOf,PRO 完单 × 费率。
+      settle: Math.round(memory.riderDailyEarnings.filter((row) => row.date === d && inScope(row.rider99Id)).reduce((sum, row) => sum + displaySettleOf(row, byNNTrend.get(row.rider99Id)?.pool, v2FromGet, proRateLegacy), 0) * 100) / 100,
     };
   });
 
@@ -678,6 +697,8 @@ async function handlePost(request: Request) {
     let created = 0;
     /** 今日统计恒等式不成立的行(仅 earnings 导入,普通池)。 */
     const mismatches: Array<{ rider99Id: string; riderName: string; total: number; recomputed: number; diff: number }> = [];
+    /** 表格缺"今日统计"列、由各列推导出 total 的行数。 */
+    let derivedTotals = 0;
     let updated = 0;
 
     const achievements: Array<{ riderName: string; label: string }> = [];
@@ -764,7 +785,14 @@ async function handlePost(request: Request) {
       for (const raw of records) {
         const rider99Id = String(raw.rider99Id ?? "").trim();
         if (!/^\d{6,}$/.test(rider99Id)) continue;
-        const total = isPro ? 0 : num(raw.total);
+        // 表格没有"今日统计"列(raw Eastwind 导出)时,按恒等式从各列推出并打 totalDerived 标记 ——
+        // 否则 v2 口径下应付会静默变 0。有该列时一律用表格原值。
+        const totalMissing = !isPro && (raw.total === undefined || raw.total === null || raw.total === "");
+        const total = isPro
+          ? 0
+          : totalMissing
+            ? Math.round((num(raw.tripIncome) + num(raw.bonus) + num(raw.tips) + num(raw.other) + num(raw.manualAdjust) + num(raw.referralBonus) - num(raw.cashDebt) - num(raw.mealDeduction)) * 100) / 100
+            : num(raw.total);
         // Raw Eastwind export has no order column: orders come from the
         // same-day KPI sheet. 金额 is NEVER computed — sheet column only.
         const kpiSameDay = memory.riderDailyKpis.find((row) => row.date === date && row.rider99Id === rider99Id);
@@ -802,7 +830,8 @@ async function handlePost(request: Request) {
         };
         // 恒等式校验(2026-09-06):今日统计 = 行程收入 + 加项 − 现金 − 餐损。不一致不拦截
         // (原值照旧入库,表格是事实源),但记差额并在响应/审计里点名,页面标红。
-        if (!isPro) {
+        if (totalMissing) { record.totalDerived = true; derivedTotals += 1; }
+        if (!isPro && !totalMissing) {
           const recomputed = record.tripIncome + record.bonus + record.tips + record.other + record.manualAdjust + record.referralBonus - record.cashDebt - record.mealDeduction;
           const diff = Math.round((record.total - recomputed) * 100) / 100;
           if (Math.abs(diff) > 0.02) {
@@ -815,6 +844,12 @@ async function handlePost(request: Request) {
           memory.riderDailyEarnings.unshift(record);
           created += 1;
         } else {
+          // 重导入整行替换,但倒扣核销标记是"对那笔负数"的操作记录:金额没变就保留,变了才作废。
+          const previous = memory.riderDailyEarnings[index];
+          if (previous.deductionSettledAt && previous.total === record.total && previous.settleAmount === record.settleAmount) {
+            record.deductionSettledAt = previous.deductionSettledAt;
+            record.deductionSettledBy = previous.deductionSettledBy;
+          }
           memory.riderDailyEarnings[index] = record;
           updated += 1;
         }
@@ -876,7 +911,7 @@ async function handlePost(request: Request) {
 
     // KPI imports may also backfill the same day's earnings orders → replay both.
     await dualWritePerfDay(date, body.action === "importEarnings" ? "earnings" : "both");
-    return jsonResponse({ data: { created, updated, parsed: created + updated, achievements: achievements.length, noShowNotices, account: importAccount, missingSource, totalMismatches: mismatches } }, { status: 201 });
+    return jsonResponse({ data: { created, updated, parsed: created + updated, achievements: achievements.length, noShowNotices, account: importAccount, missingSource, totalMismatches: mismatches, derivedTotals } }, { status: 201 });
   }
 
   // Remove ONE business day's imported rows (both T+1 tables) — for fixing
@@ -891,8 +926,7 @@ async function handlePost(request: Request) {
    */
   if (body.action === "settleDeduction") {
     const hqScope = await scopeFromRequest(request);
-    await refreshCollectionsFromDatabase(["assessmentRules"]);
-    const v2From = settlementV2From(memory.assessmentRules.find((r) => r.id === "rule-active") ?? defaultAssessmentRule);
+    const v2From = v2FromMemory();
     if (hqScope.franchise || hqScope.station) return jsonResponse({ error: "仅总部可执行此操作" }, { status: 403 });
     const ids = Array.isArray(body.earningIds) ? body.earningIds.map(String) : [];
     if (ids.length === 0) return jsonResponse({ error: "earningIds is required" }, { status: 400 });

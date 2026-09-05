@@ -75,7 +75,10 @@ function activeAssessmentRule(): AssessmentRule {
 
 /** 骑手付款记录是否属于这名骑手:优先 99ID,历史记录没有 99ID 才回退姓名(重名风险只留在历史)。 */
 const paymentIsForRider = (p: WalletPayment, rider99Id: string, name: string) =>
-  p.target === "rider" && (p.rider99Id ? p.rider99Id === rider99Id : p.refName === name);
+  p.target === "rider" && (rider99Id && p.rider99Id ? p.rider99Id === rider99Id : p.refName === name);
+
+/** 骑手付款是否覆盖某一天:单日付款(weekFrom===weekTo===date)或覆盖该日的周付款 / 级联付款。 */
+const paymentCoversDate = (p: WalletPayment, date: string) => p.weekFrom <= date && date <= p.weekTo;
 
 /** True when a walletPayments row is a franchise COMMISSION payout (总部→加盟商佣金),
  *  which must never be mixed into the rider-settlement 已付 figures. */
@@ -101,7 +104,12 @@ function computeFranchiseCommission(
 ): Map<string, FranchiseCommissionSnapshot> {
   const r2 = (n: number) => Math.round(n * 100) / 100;
   const byNinetyNine = new Map(memory.riders.filter((r) => r.ninetyNineId).map((r) => [r.ninetyNineId!, r]));
-  const board = new Map(buildAssessmentBoard(rule, win.from, win.to, "franchise", weekKpis, memory.riders, undefined, "standard").map((g) => [g.name, g]));
+  // 比例与基数同源:都按行的 account 判池(骑手中途转池,KPI 与行程收入一起留在原池)。
+  // 看板里未关联加盟商的组名是 "未关联",结算侧是 "Unassigned",这里对齐。
+  const board = new Map(
+    buildAssessmentBoard(rule, win.from, win.to, "franchise", weekKpis, memory.riders, undefined, "standard", (row) => (row.account === "pro" ? "pro" : "standard"))
+      .map((g) => [g.name === "未关联" ? "Unassigned" : g.name, g]),
+  );
   const acc = new Map<string, { tripIncome: number; payable: number; riders: Set<string>; dates: Set<string> }>();
   for (const row of weekEarnings) {
     if (row.date < win.from || row.date > win.to) continue;
@@ -196,8 +204,10 @@ export async function GET(request: Request) {
     // Union of both T+1 tables so KPI-only days still appear (data completeness).
     const keys = [...new Set([...kpiByKey.keys(), ...earnByKey.keys()])];
     // Daily rider payments inside the window → per-day paid status.
-    const dailyPayments = memory.walletPayments.filter((p) => p.target === "rider" && p.weekFrom === p.weekTo && p.weekFrom >= from && p.weekTo <= to);
-    const paidDay = (date: string, rider99Id: string, name: string) => dailyPayments.some((p) => p.weekFrom === date && paymentIsForRider(p, rider99Id, name));
+    // 某日"已付" = 存在覆盖该日的骑手付款:单日付款,或钱包周板"标记已付"/加盟商付款级联出的整周付款。
+    // (之前只认单日付款,周板标了已付、对账单/PDF 还显示"待付"。)
+    const riderPayments = memory.walletPayments.filter((p) => p.target === "rider" && p.weekTo >= from && p.weekFrom <= to);
+    const paidDay = (date: string, rider99Id: string, name: string) => riderPayments.some((p) => paymentCoversDate(p, date) && paymentIsForRider(p, rider99Id, name));
     const r2 = (n: number) => Math.round((n ?? 0) * 100) / 100;
     const rows = keys
       .map((key) => {
@@ -232,7 +242,7 @@ export async function GET(request: Request) {
           referralBonus: r2(earning?.referralBonus ?? 0),
           settleAmount: r2(earning?.settleAmount ?? 0),
           // v2(生效日起):应付 = 今日统计;之前 = settleAmount。PRO 行 0(按 完单×费率 另算)。
-          payable: earning ? payableOf(earning, v2From) : 0,
+          payable: earning ? r2(payableOf(earning, v2From)) : 0,
           v2: isV2Date(date, v2From),
           pool: earning ? poolOfRow(earning, rider?.pool, v2From) : (rider?.pool === "pro" ? "pro" : "standard"),
           consistent: earning ? breakdownOf(earning).consistent : true,
@@ -261,7 +271,8 @@ export async function GET(request: Request) {
     const from = url.searchParams.get("from") || today();
     const to = url.searchParams.get("to") || today();
     const scope = await scopeFromRequest(request);
-    const inWindow = memory.walletPayments.filter((p) => p.weekFrom >= from && p.weekTo <= to);
+    // 与窗口有交集的付款(含覆盖该日的周付款/级联付款),T+1 看板据此显示"已付"。
+    const inWindow = memory.walletPayments.filter((p) => p.weekFrom <= to && p.weekTo >= from);
     return jsonResponse({ data: scope.franchise ? inWindow.filter((p) => p.franchise === scope.franchise) : inWindow });
   }
 
@@ -383,8 +394,16 @@ export async function GET(request: Request) {
         g.wages = round(g.wages + riderSettle);
         g.wagesBreakdown = sumBreakdown(g.wagesBreakdown, r.breakdown);
       }
-      // 已付按 99ID(v2)/姓名(v1)归集。同一骑手转池后两行共享同一笔已付,只挂在普通行上,避免重复计入。
-      const paid = r.pool === "pro" && v2 && riderAgg.has(`${r.rider99Id}|standard`) ? 0 : round(paidToRider.get(riderPaidKey(r.rider99Id, r.name)) ?? 0);
+      // 已付按 99ID(v2)/姓名(v1)归集。v2 下同一骑手转池后同周有普通+PRO 两行,同一笔已付
+      // 先填普通行(至其应付),余额再给 PRO 行 —— 两行各自"待付"才对得上,且不重复计入。
+      let paid = round(paidToRider.get(riderPaidKey(r.rider99Id, r.name)) ?? 0);
+      if (v2) {
+        const sibling = riderAgg.get(`${r.rider99Id}|${r.pool === "pro" ? "standard" : "pro"}`);
+        if (sibling) {
+          const stdSettle = round(r.pool === "standard" ? r.settle : sibling.settle);
+          paid = r.pool === "standard" ? Math.min(paid, Math.max(0, stdSettle)) : round(Math.max(0, paid - Math.max(0, stdSettle)));
+        }
+      }
       g.riders.push({ name: r.name, rider99Id: r.rider99Id, station: r.station, settle: riderSettle, orders: r.orders, days: r.days, cashDebt: riderCashDebt, paid, pool: r.pool, ...(v2 && r.pool === "standard" ? { breakdown: r.breakdown } : {}) });
       groups.set(r.franchise, g);
     }
@@ -524,9 +543,9 @@ export async function GET(request: Request) {
       .map((row) => ({
         date: row.date,
         orders: row.orders ?? 0,
-        payable: payableOf(row, v2From),
+        payable: Math.round(payableOf(row, v2From) * 100) / 100,
         ...breakdownOf(row),
-        paid: memory.walletPayments.some((p) => p.weekFrom === row.date && p.weekTo === row.date && paymentIsForRider(p, rider.ninetyNineId!, rider.name)),
+        paid: memory.walletPayments.some((p) => paymentCoversDate(p, row.date) && paymentIsForRider(p, rider.ninetyNineId!, rider.name)),
       }));
     // 提现停用(v2):每日由加盟商 Trampay 打款;已提交的历史提现照常展示/处理。
     const withdrawalsEnabled = !isV2Date(today(), v2From);
@@ -550,7 +569,9 @@ export async function GET(request: Request) {
   // the database (earnings_settled_totals) instead of summing the whole
   // earnings collection in memory for every rider.
   let settledBy: Map<string, number> | null = null;
-  if (dbDirectReadEnabled()) {
+  // v2 起 settled = Σ payableOf(今日统计),RPC 只会算 settle_amount,所以 v2 时代走内存路径。
+  const balV2From = settlementV2From(activeAssessmentRule());
+  if (dbDirectReadEnabled() && !isV2Date(today(), balV2From)) {
     settledBy = await (perfMode() === "read"
       ? earningsSettledTotalsT(today())
       : callRpc<Array<{ rider99Id: string; settled: number }>>("earnings_settled_totals", { p_today: today() })
@@ -563,7 +584,7 @@ export async function GET(request: Request) {
   }
   if (!settledBy) await refreshCollectionsFromDatabase(["riderDailyEarnings"]);
   const balanceFor = (nineId: string) => {
-    if (!settledBy) return computeBalance(memory.riderDailyEarnings, memory.riderWithdrawals, nineId, today());
+    if (!settledBy) return computeBalance(memory.riderDailyEarnings.map((row) => ({ rider99Id: row.rider99Id, date: row.date, settleAmount: payableOf(row, balV2From) })), memory.riderWithdrawals, nineId, today());
     const settled = settledBy.get(nineId) ?? 0;
     const held = memory.riderWithdrawals.filter((w) => w.rider99Id === nineId && w.status === "requested").reduce((sum, w) => sum + w.amount, 0);
     const paid = memory.riderWithdrawals.filter((w) => w.rider99Id === nineId && w.status === "paid").reduce((sum, w) => sum + w.amount, 0);
@@ -752,7 +773,7 @@ async function handlePost(request: Request) {
       const franchiseName = String(body.franchise ?? "").trim();
       const weekFrom = String(body.weekFrom ?? "");
       const weekTo = String(body.weekTo ?? "");
-      if (!franchiseName) return jsonResponse({ error: "请选择加盟商" }, { status: 400 });
+      if (!franchiseName || franchiseName === "Unassigned" || franchiseName === "未关联") return jsonResponse({ error: "请选择加盟商（未归属骑手不产生佣金）" }, { status: 400 });
       if (!/^\d{4}-\d{2}-\d{2}$/.test(weekFrom) || !/^\d{4}-\d{2}-\d{2}$/.test(weekTo)) return jsonResponse({ error: "结算周期无效" }, { status: 400 });
       const win = weekWindow(weekFrom);
       if (win.from !== weekFrom || win.to !== weekTo) return jsonResponse({ error: "结算周期必须是完整自然周（周一至周日）" }, { status: 400 });

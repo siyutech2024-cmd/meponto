@@ -161,7 +161,7 @@ export default function RiderWalletPage() {
         <>
           <div className="panel p-5 text-center">
             <div className="text-[10px] font-black uppercase text-[var(--muted)]">Pagamento diário pela franquia (PIX)</div>
-            <div className="text-4xl font-black text-[var(--accent)]">R$ {(daily[0]?.payable ?? 0).toFixed(2)}</div>
+            <div className={`text-4xl font-black ${(daily[0]?.payable ?? 0) < 0 ? "text-[var(--danger-ink)]" : "text-[var(--accent)]"}`}>R$ {(daily[0]?.payable ?? 0).toFixed(2)}</div>
             <div className="mt-1 text-[11px] font-bold text-[var(--muted)]">{daily[0] ? `Último dia com dados: ${daily[0].date}` : "Sem dados ainda"}</div>
             <div className="mt-2 text-[11px] font-bold text-[var(--muted)]">PIX: {me.pix || "—"} ｜ {me.station}（{me.franchise}）</div>
             <div className="mt-2 text-[11px] font-bold text-[var(--muted)]">Total do dia = renda de viagem + bônus/gorjeta/outros − pedidos em dinheiro − perda de refeição. Pago no dia seguinte pela sua franquia.</div>

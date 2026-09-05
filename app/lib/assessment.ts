@@ -46,7 +46,9 @@ export const COMMISSION_EFFECTIVE_FROM_DEFAULT = "2026-08-31";
 
 export function commissionEffectiveFrom(rule: Pick<AssessmentRule, "commissionEffectiveFrom">): string {
   const value = rule.commissionEffectiveFrom ?? "";
-  return /^\d{4}-\d{2}-\d{2}$/.test(value) ? value : COMMISSION_EFFECTIVE_FROM_DEFAULT;
+  // 归一到所在自然周的周一:周板按 win.from 判 v2、付款/对账单/倒扣按行日期判 v2,
+  // 生效日若落在周中,两套判定会在同一周内打架 —— 所以永远用周一。
+  return weekWindow(/^\d{4}-\d{2}-\d{2}$/.test(value) ? value : COMMISSION_EFFECTIVE_FROM_DEFAULT).from;
 }
 
 /** 某个周窗口(周一 from)是否落在佣金新口径生效范围内。 */
@@ -119,6 +121,7 @@ export function weekWindow(date: string): { from: string; to: string } {
 export type BoardKpiRow = {
   date: string;
   rider99Id: string;
+  account?: string | null;
   completedOrders?: number | null;
   signedShiftHours?: number | null;
   inShiftOnlineHours?: number | null;
@@ -163,6 +166,11 @@ export function buildAssessmentBoard(
   riders: BoardRider[],
   onlyFranchise?: string,
   pool?: string,
+  /**
+   * 行属于哪个池的判定。默认 = 骑手档案当前 pool(考核页既有口径)。结算 v2 传入
+   * "按 KPI 行的 account 判定",让佣金比例与佣金基数(都按行 account)同源。
+   */
+  poolOf: (row: BoardKpiRow, rider: BoardRider | undefined) => string = (_row, rider) => rider?.pool ?? "standard",
 ): BoardGroup[] {
   const byNinetyNine = new Map(riders.filter((r) => r.ninetyNineId).map((r) => [r.ninetyNineId!, r]));
   type Acc = {
@@ -175,7 +183,7 @@ export function buildAssessmentBoard(
   for (const row of kpiRows) {
     if (row.date < from || row.date > to) continue;
     const rider = byNinetyNine.get(row.rider99Id);
-    if (pool && (rider?.pool ?? "standard") !== pool) continue;
+    if (pool && poolOf(row, rider) !== pool) continue;
     const franchise = rider?.franchise ?? "未关联";
     if (onlyFranchise && franchise !== onlyFranchise) continue;
     const key = level === "franchise" ? franchise : rider?.ponto ?? "未关联";

@@ -36,6 +36,8 @@ type Row = {
   cashDebt: number;
   mealDeduction: number;
   settleAmount: number;
+  /** 结算口径 v2:该行应付(v2 = 今日统计,v1 = settleAmount),由 statement 接口给出。 */
+  payable: number;
   paid: boolean;
 };
 
@@ -90,8 +92,8 @@ export default function ReportsPage() {
     if (vars) for (const [key, val] of Object.entries(vars)) s = s.replace(`{${key}}`, String(val ?? ""));
     return s;
   };
-  const FULL_HEADERS = [t("wlCsvDate"), t("rdColRider"), "99ID", "CPF", "PIX", t("rdPhPhone"), t("rdColFranchise"), t("wlColStation"), t("rpOrdersSettle"), t("rpOrdersKpi"), t("wlCsvOnlineH"), "AR%", "%TSH", t("rpToday"), t("wlCsvTripInc"), t("wlCsvBonus"), t("wlCsvTips"), t("wlCsvCashDebt"), t("wlCsvMeal"), t("wlCsvSettle"), t("rpPayStatus")];
-  const fullRow = (r: Row) => [r.date, r.riderName, r.rider99Id, r.cpf, r.pix, r.phone, r.franchise, r.station, String(r.orders), r.kpiOrders ?? "", r.onlineHours ?? "", r.ar ?? "", r.tsh ?? "", r.total.toFixed(2), r.tripIncome.toFixed(2), r.bonus.toFixed(2), r.tips.toFixed(2), r.cashDebt.toFixed(2), r.mealDeduction.toFixed(2), r.settleAmount.toFixed(2), r.paid ? t("rpPaid") : t("rpPending")];
+  const FULL_HEADERS = [t("wlCsvDate"), t("rdColRider"), "99ID", "CPF", "PIX", t("rdPhPhone"), t("rdColFranchise"), t("wlColStation"), t("rpOrdersSettle"), t("rpOrdersKpi"), t("wlCsvOnlineH"), "AR%", "%TSH", t("rpToday"), t("wlCsvTripInc"), t("wlCsvBonus"), t("wlCsvTips"), t("wlCsvCashDebt"), t("wlCsvMeal"), t("wlCsvSettle"), t("wlCsvPayable"), t("rpPayStatus")];
+  const fullRow = (r: Row) => [r.date, r.riderName, r.rider99Id, r.cpf, r.pix, r.phone, r.franchise, r.station, String(r.orders), r.kpiOrders ?? "", r.onlineHours ?? "", r.ar ?? "", r.tsh ?? "", r.total.toFixed(2), r.tripIncome.toFixed(2), r.bonus.toFixed(2), r.tips.toFixed(2), r.cashDebt.toFixed(2), r.mealDeduction.toFixed(2), r.settleAmount.toFixed(2), (r.payable ?? r.settleAmount).toFixed(2), r.paid ? t("rpPaid") : t("rpPending")];
   const session = useMemo(() => readSession(), []);
   const scopeFranchise = session?.portal === "franchise" ? session.franchise || session.organization : "";
 
@@ -121,8 +123,10 @@ export default function ReportsPage() {
     const riders = new Set(rows.map((r) => r.rider99Id)).size;
     const orders = rows.reduce((s, r) => s + r.orders, 0);
     const kpiOrders = rows.reduce((s, r) => s + (r.kpiOrders ?? 0), 0);
-    const settle = r2(rows.reduce((s, r) => s + r.settleAmount, 0));
-    const paid = r2(rows.filter((r) => r.paid).reduce((s, r) => s + r.settleAmount, 0));
+    // 应结按行口径(v2 = 今日统计),与钱包周板 / 对账单同源。
+    const pay = (r: Row) => r.payable ?? r.settleAmount;
+    const settle = r2(rows.reduce((s, r) => s + pay(r), 0));
+    const paid = r2(rows.filter((r) => r.paid).reduce((s, r) => s + pay(r), 0));
     const ars = rows.map((r) => r.ar).filter((v): v is number => v !== null);
     const ar = ars.length ? Math.round((ars.reduce((s, v) => s + v, 0) / ars.length) * 10) / 10 : null;
     return { riders, orders, kpiOrders, settle, paid, pending: r2(settle - paid), ar };
@@ -137,8 +141,8 @@ export default function ReportsPage() {
       cur.riders.add(r.rider99Id);
       cur.orders += r.orders;
       cur.kpiOrders += r.kpiOrders ?? 0;
-      cur.settle = r2(cur.settle + r.settleAmount);
-      if (r.paid) cur.paid = r2(cur.paid + r.settleAmount);
+      cur.settle = r2(cur.settle + (r.payable ?? r.settleAmount));
+      if (r.paid) cur.paid = r2(cur.paid + (r.payable ?? r.settleAmount));
       if (r.ar !== null) { cur.arSum += r.ar; cur.arN += 1; }
       map.set(key, cur);
     }

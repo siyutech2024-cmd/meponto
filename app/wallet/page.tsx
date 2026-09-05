@@ -60,7 +60,7 @@ function RiderPayrollWallet() {
   const language = useVentoStore((s) => s.language);
   const t = (k: TranslationKey, vars?: Record<string, string | number | undefined>) => {
     let s = translate(language, k);
-    if (vars) for (const [key, val] of Object.entries(vars)) s = s.replace(`{${key}}`, String(val ?? ""));
+    if (vars) for (const [key, val] of Object.entries(vars)) s = s.split(`{${key}}`).join(String(val ?? ""));
     return s;
   };
   const session = useMemo(() => readSession(), []);
@@ -264,7 +264,17 @@ function RiderPayrollWallet() {
   async function exportCsv(franchise: string) {
     const data = await fetchStatement(franchise);
     if (!data) return;
-    // v2 导出列 = 表格原列 + 应付(今日统计)+ 已付状态;v1 周保持原来的列(应付 = 结算金额)。
+    // v1 周(生效日之前)导出列与改动前完全一致 —— 那些周的对账单可能已经发给加盟商。
+    const isV2Week = Boolean(data.v2From && data.from >= data.v2From);
+    if (!isV2Week) {
+      const headerRowV1 = [t("wlCsvDate"), t("wlColRider"), "99ID", "CPF", "PIX", t("rdColFranchise"), t("wlColStation"), t("wlColOrders"), t("wlCsvOnlineH"), "AR%", t("wlCsvTripInc"), t("wlCsvBonus"), t("wlCsvTips"), t("wlCsvCashDebt"), t("wlCsvMeal"), t("wlCsvOther"), t("wlCsvSettle")];
+      const rowsV1 = data.rows.map((r) => [r.date, r.riderName, r.rider99Id, r.cpf, r.pix, r.franchise, r.station, String(r.orders), r.onlineHours ?? "", r.ar ?? "", r.tripIncome.toFixed(2), r.bonus.toFixed(2), r.tips.toFixed(2), r.cashDebt.toFixed(2), r.mealDeduction.toFixed(2), r.other.toFixed(2), r.settleAmount.toFixed(2)]);
+      rowsV1.push([t("wlCsvTotal"), "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", Number(data.total).toFixed(2)]);
+      downloadCsv(`statement-${franchise}-${data.from}_${data.to}`, headerRowV1, rowsV1);
+      setMessage({ tone: "ok", text: t("wlExported", { f: franchise, from: md(data.from), to: md(data.to), n: data.rows.length, money: money(Number(data.total)) }) });
+      return;
+    }
+    // v2 导出列 = 表格原列 + 应付(今日统计)+ 已付状态。
     const headerRow = [t("wlCsvDate"), t("wlColRider"), "99ID", "CPF", "PIX", t("rdColFranchise"), t("wlColStation"), t("wlColOrders"), t("wlCsvOnlineH"), "AR%", t("wlCsvTripInc"), t("wlCsvBonus"), t("wlCsvTips"), t("wlCsvOther"), t("wlCsvAdjust"), t("wlCsvReferral"), t("wlCsvCashDebt"), t("wlCsvMeal"), t("wlCsvTotalDay"), t("wlCsvSettle"), t("wlCsvPayable"), t("wlColStatus")];
     const rows = data.rows.map((r) => [r.date, r.riderName, r.rider99Id, r.cpf, r.pix, r.franchise, r.station, String(r.orders), r.onlineHours ?? "", r.ar ?? "", r.tripIncome.toFixed(2), r.bonus.toFixed(2), r.tips.toFixed(2), r.other.toFixed(2), (r.manualAdjust ?? 0).toFixed(2), (r.referralBonus ?? 0).toFixed(2), r.cashDebt.toFixed(2), r.mealDeduction.toFixed(2), (r.total ?? 0).toFixed(2), r.settleAmount.toFixed(2), r.payable.toFixed(2), r.paid ? t("wlSettled") : t("wlPending")]);
     rows.push([t("wlCsvTotal"), "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", Number(data.total).toFixed(2), ""]);
@@ -276,18 +286,29 @@ function RiderPayrollWallet() {
     const data = await fetchStatement(franchise);
     if (!data) return;
     const esc = (v: string) => String(v).replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c] ?? c));
-    const body = data.rows
+    const isV2Week = Boolean(data.v2From && data.from >= data.v2From);
+    const body = isV2Week
+      ? data.rows
       .map((r) => `<tr><td>${esc(r.date)}</td><td>${esc(r.riderName)}</td><td>${esc(r.station)}</td><td style="text-align:right">${r.orders}</td><td style="text-align:right">R$ ${r.tripIncome.toFixed(2)}</td><td style="text-align:right">R$ ${(r.bonus + r.tips + r.other + (r.manualAdjust ?? 0) + (r.referralBonus ?? 0)).toFixed(2)}</td><td style="text-align:right">−R$ ${r.cashDebt.toFixed(2)}</td><td style="text-align:right">−R$ ${r.mealDeduction.toFixed(2)}</td><td style="text-align:right"><b>R$ ${r.payable.toFixed(2)}</b></td><td>${r.paid ? "Pago" : "A pagar"}</td></tr>`)
+      .join("")
+      : data.rows
+      .map((r) => `<tr><td>${esc(r.date)}</td><td>${esc(r.riderName)}</td><td>${esc(r.station)}</td><td style="text-align:right">${r.orders}</td><td style="text-align:right">${r.ar ?? "—"}</td><td style="text-align:right">R$ ${r.settleAmount.toFixed(2)}</td></tr>`)
       .join("");
+    const thead = isV2Week
+      ? `<tr><th>Data</th><th>Entregador</th><th>Ponto</th><th style="text-align:right">Pedidos</th><th style="text-align:right">Renda de viagem</th><th style="text-align:right">Bônus/outros</th><th style="text-align:right">Dinheiro</th><th style="text-align:right">Perda</th><th style="text-align:right">A pagar</th><th>Status</th></tr>`
+      : `<tr><th>Data</th><th>Entregador</th><th>Ponto</th><th style="text-align:right">Pedidos</th><th style="text-align:right">AR</th><th style="text-align:right">Valor</th></tr>`;
+    const tfoot = isV2Week
+      ? `<tr><td colspan="8">Total</td><td style="text-align:right">R$ ${Number(data.total).toFixed(2)}</td><td></td></tr>`
+      : `<tr><td colspan="5">Total</td><td style="text-align:right">R$ ${Number(data.total).toFixed(2)}</td></tr>`;
     const html = `<!doctype html><html><head><meta charset="utf-8"><title>Extrato ${esc(franchise)} ${data.from}_${data.to}</title>
       <style>body{font-family:Inter,Arial,sans-serif;color:#111;padding:32px}h1{font-size:20px;margin:0}.sub{color:#666;font-size:12px;margin:4px 0 18px}
       table{width:100%;border-collapse:collapse;font-size:12px}th,td{border-bottom:1px solid #ddd;padding:7px;text-align:left}
       th{background:#faf7e6;font-size:10px;text-transform:uppercase}tfoot td{font-weight:800;border-top:2px solid #111}.brand{font-weight:800;margin-bottom:12px}</style></head>
       <body><div class="brand">MePonto · Extrato de repasse</div><h1>${esc(franchise)}</h1>
       <div class="sub">Semana ${data.from} a ${data.to} · gerado em ${new Date().toLocaleString("pt-BR")}</div>
-      <table><thead><tr><th>Data</th><th>Entregador</th><th>Ponto</th><th style="text-align:right">Pedidos</th><th style="text-align:right">Renda de viagem</th><th style="text-align:right">Bônus/outros</th><th style="text-align:right">Dinheiro</th><th style="text-align:right">Perda</th><th style="text-align:right">A pagar</th><th>Status</th></tr></thead>
-      <tbody>${body}</tbody><tfoot><tr><td colspan="8">Total</td><td style="text-align:right">R$ ${Number(data.total).toFixed(2)}</td><td></td></tr></tfoot></table>
-      ${data.v2From && data.from >= data.v2From ? `<p style="margin-top:14px;color:#666;font-size:11px">A pagar = Total do dia (renda de viagem + bônus/gorjeta/outros/ajuste/indicação − pedidos em dinheiro − perda de refeição). Comissão Sede → franquia é liquidada semanalmente à parte.</p>` : ""}
+      <table><thead>${thead}</thead>
+      <tbody>${body}</tbody><tfoot>${tfoot}</tfoot></table>
+      ${isV2Week ? `<p style="margin-top:14px;color:#666;font-size:11px">A pagar = Total do dia (renda de viagem + bônus/gorjeta/outros/ajuste/indicação − pedidos em dinheiro − perda de refeição). Comissão Sede → franquia é liquidada semanalmente à parte.</p>` : ""}
       <script>window.onload=function(){window.print()}</script></body></html>`;
     const win = window.open("", "_blank");
     if (!win) { setMessage({ tone: "err", text: t("wlPopupBlocked") }); return; }
@@ -862,7 +883,7 @@ function MallFinanceWallet() {
   const language = useVentoStore((s) => s.language);
   const t = (k: TranslationKey, vars?: Record<string, string | number | undefined>) => {
     let s = translate(language, k);
-    if (vars) for (const [key, val] of Object.entries(vars)) s = s.replace(`{${key}}`, String(val ?? ""));
+    if (vars) for (const [key, val] of Object.entries(vars)) s = s.split(`{${key}}`).join(String(val ?? ""));
     return s;
   };
   const session = useMemo(() => readSession(), []);

@@ -93,6 +93,8 @@ export type RiderDailyEarning = {
    * (今日统计 − 重算值),页面标红提示"表格本行有问题";一致的行不写此字段。原值照旧入库。
    */
   totalMismatch?: number;
+  /** 表格没有"今日统计"列,total 由各列按恒等式推导(导入时标记)。 */
+  totalDerived?: boolean;
   importedAt: string;
 };
 

@@ -609,7 +609,7 @@ function RiderTable({ rows }: { rows: EnrichedKpi[] }) {
   );
 }
 
-function EarningGroupTable({ rows, showFranchise }: { rows: EarningGroupRow[]; showFranchise: boolean }) {
+function EarningGroupTable({ rows, showFranchise, v2Board = false }: { rows: EarningGroupRow[]; showFranchise: boolean; v2Board?: boolean }) {
   const t = useT();
   const [sort, setSort] = useState<SortState>(null);
   const sorted = useMemo(() => sortRows(rows, sort), [rows, sort]);
@@ -624,7 +624,7 @@ function EarningGroupTable({ rows, showFranchise }: { rows: EarningGroupRow[]; s
     { key: "mealDeduction", label: t("pfHDeduction"), sortKey: "mealDeduction", align: "right", render: (row) => (row.mealDeduction ? money(row.mealDeduction) : "-") },
     { key: "bonus", label: t("pfHBonus"), sortKey: "bonus", align: "right", render: (row) => (row.bonus ? money(row.bonus) : "-") },
     { key: "tips", label: t("pfHTips"), sortKey: "tips", align: "right", render: (row) => (row.tips ? money(row.tips) : "-") },
-    { key: "settleAmount", label: t("pfHSettle"), sortKey: "settleAmount", align: "right", render: (row) => <span className="font-black text-[var(--accent)]">{money(row.settleAmount)}</span> },
+    { key: "settleAmount", label: v2Board ? t("wlColPayableV2") : t("pfHSettle"), sortKey: "settleAmount", align: "right", render: (row) => <span className="font-black text-[var(--accent)]">{money(row.settleAmount)}</span> },
   ];
   return <DataTable<EarningGroupRow> columns={columns} rows={sorted} rowKey={(row) => row.key} sort={sort} onSort={toggleSort(setSort)} minWidth={860} empty={t("pfNoEarnings")} />;
 }
@@ -647,7 +647,14 @@ function EarningsTab({ earnings, scopeFranchise, scopeStation, date, headers }: 
     const response = await fetch(`/api/wallet?payments=1&from=${date}&to=${date}`, { headers, cache: "no-store" });
     if (!response.ok) return;
     const payload = await response.json();
-    setPaidNames(new Set((payload.data as Array<{ target: string; refName: string }>).filter((p) => p.target === "rider").map((p) => p.refName)));
+    // 已付识别:优先 99ID(新记录都带),回退姓名(历史记录)。两种键都放进集合。
+    setPaidNames(
+      new Set(
+        (payload.data as Array<{ target: string; refName: string; rider99Id?: string }>)
+          .filter((p) => p.target === "rider")
+          .flatMap((p) => [`name:${p.refName}`, ...(p.rider99Id ? [`id:${p.rider99Id}`] : [])]),
+      ),
+    );
   }, [date, headers]);
 
   useEffect(() => {
@@ -655,11 +662,15 @@ function EarningsTab({ earnings, scopeFranchise, scopeStation, date, headers }: 
     void loadPaid();
   }, [loadPaid]);
 
+  const isPaid = (r: { riderName: string; rider99Id?: string }) => paidNames.has(`name:${r.riderName}`) || (!!r.rider99Id && paidNames.has(`id:${r.rider99Id}`));
+  // 结算口径 v2:接口对 v2 日期的普通行已把 settleAmount 换成"今日统计"(应付),列名随之切换。
+  const v2Board = earnings.riders.some((r) => (r as { v2?: boolean }).v2);
+
   async function markPaid() {
     // PRO 行的结算额是"完单×费率"的展示推导 —— PRO 的钱走加盟商整体转账
     // (钱包周结,净额口径),不逐骑手日结,这里必须排除,防止重复记账。
-    const rows = earnings.riders.filter((r) => selected.has(r.id) && !paidNames.has(r.riderName) && r.settleAmount > 0 && r.account !== "pro");
-    const zero = earnings.riders.filter((r) => selected.has(r.id) && !paidNames.has(r.riderName) && (r.settleAmount <= 0 || r.account === "pro")).length;
+    const rows = earnings.riders.filter((r) => selected.has(r.id) && !isPaid(r) && r.settleAmount > 0 && r.account !== "pro");
+    const zero = earnings.riders.filter((r) => selected.has(r.id) && !isPaid(r) && (r.settleAmount <= 0 || r.account === "pro")).length;
     if (rows.length === 0) {
       setNote({ tone: "err", text: zero > 0 ? t("pfErrZeroSettle", { n: zero }) : t("pfErrSelectRiders") });
       return;
@@ -670,7 +681,8 @@ function EarningsTab({ earnings, scopeFranchise, scopeStation, date, headers }: 
       const response = await fetch("/api/wallet", {
         method: "POST",
         headers,
-        body: JSON.stringify({ action: "recordPayment", target: "rider", refName: row.riderName, franchise: row.franchise, amount: row.settleAmount, period: "daily", weekFrom: date, weekTo: date, note: t("pfPayNote", { date }) }),
+        // amount = 接口给的展示结算额(v2 = 今日统计),与钱包周板 / 付款守卫同源;带 99ID 落账。
+        body: JSON.stringify({ action: "recordPayment", target: "rider", refName: row.riderName, rider99Id: row.rider99Id, franchise: row.franchise, amount: row.settleAmount, period: "daily", weekFrom: date, weekTo: date, note: t("pfPayNote", { date }) }),
       });
       if (!response.ok) failed += 1;
     }
@@ -698,7 +710,7 @@ function EarningsTab({ earnings, scopeFranchise, scopeStation, date, headers }: 
   const safePage = Math.min(page, pages);
   const pageRows = filtered.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
 
-  const selectableRows = filtered.filter((r) => !paidNames.has(r.riderName));
+  const selectableRows = filtered.filter((r) => !isPaid(r));
   const allSelected = selectableRows.length > 0 && selectableRows.every((r) => selected.has(r.id));
 
   if (earnings.riders.length === 0) {
@@ -723,7 +735,7 @@ function EarningsTab({ earnings, scopeFranchise, scopeStation, date, headers }: 
       ),
       render: (row) => (
         <span onClick={(e) => e.stopPropagation()}>
-          {paidNames.has(row.riderName) ? (
+          {isPaid(row) ? (
             <StatusBadge tone="success" label={t("pfPaid")} />
           ) : (
             <input type="checkbox" className="h-4 w-4 accent-[var(--accent)]" checked={selected.has(row.id)} onChange={() => toggle(row.id)} />
@@ -761,7 +773,7 @@ function EarningsTab({ earnings, scopeFranchise, scopeStation, date, headers }: 
     { key: "tips", label: t("pfHTips"), sortKey: "tips", align: "right", render: (row) => (row.tips ? money(row.tips) : "-") },
     { key: "manualAdjust", label: t("pfHAdjust"), sortKey: "manualAdjust", align: "right", render: (row) => (row.manualAdjust ? money(row.manualAdjust) : "-") },
     { key: "referralBonus", label: t("pfHReferral"), sortKey: "referralBonus", align: "right", render: (row) => (row.referralBonus ? money(row.referralBonus) : "-") },
-    { key: "settleAmount", label: t("pfHSettle"), sortKey: "settleAmount", align: "right", render: (row) => <span className="font-black text-[var(--accent)]">{money(row.settleAmount)}</span> },
+    { key: "settleAmount", label: v2Board ? t("wlColPayableV2") : t("pfHSettle"), sortKey: "settleAmount", align: "right", render: (row) => <span className="font-black text-[var(--accent)]">{money(row.settleAmount)}</span> },
   ];
 
   return (
@@ -788,7 +800,7 @@ function EarningsTab({ earnings, scopeFranchise, scopeStation, date, headers }: 
       {groups.map(({ title, rows, showFranchise }) => (
         <div key={title}>
           <div className="mb-2 text-xs font-black uppercase text-[var(--accent)]">{title}</div>
-          <EarningGroupTable rows={rows} showFranchise={showFranchise} />
+          <EarningGroupTable rows={rows} showFranchise={showFranchise} v2Board={v2Board} />
         </div>
       ))}
 
