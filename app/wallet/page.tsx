@@ -12,12 +12,21 @@ import { useVentoStore } from "../lib/store";
 import { translate, type TranslationKey } from "../lib/i18n";
 import type { RiderWithdrawal } from "../lib/finance";
 
-type WeeklyRider = { name: string; rider99Id: string; station: string; settle: number; orders: number; days: number; cashDebt?: number; paid: number; pool?: "standard" | "pro" };
-type WeeklyGroup = { franchise: string; settle: number; franchisePaid: number; riders: WeeklyRider[]; proSettle?: number; proOrders?: number; proCashDebt?: number; netSettle?: number };
+/** v2 · 普通池骑手的今日统计拆解(全部表格原值,只做加总):行程 + 加项 − 现金 − 餐损 = 今日统计。 */
+type Breakdown = { tripIncome: number; extras: number; cashDebt: number; mealDeduction: number; total: number; consistent: boolean };
+type WeeklyRider = { name: string; rider99Id: string; station: string; settle: number; orders: number; days: number; cashDebt?: number; paid: number; pool?: "standard" | "pro"; breakdown?: Breakdown };
+/**
+ * 加盟商佣金(2026-09-05,仅生效周起由后端附带):
+ *   commission   = 总部应付加盟商佣金 = pct% × 普通池骑手行程收入 tripIncome
+ *   riderPayable = 加盟商应付骑手(每日发)= 所有收入 − 现金单 − 餐损
+ * 两个数分开显示;status=paid 时数字来自付款记录里的冻结快照。
+ */
+type GroupCommission = { pct: number; tripIncome: number; commission: number; riderPayable: number; riders: number; days: number; minPct: number; totalAdjust: number; status: "open" | "paid"; paidAmount: number; paidAt: string; paymentId: string; frozen: boolean };
+type WeeklyGroup = { franchise: string; settle: number; franchisePaid: number; riders: WeeklyRider[]; proSettle?: number; proOrders?: number; proCashDebt?: number; netSettle?: number; commission?: GroupCommission; wages?: number; wagesBreakdown?: Breakdown };
 // 模式二: proTotal = Σ(PRO 完单 × proRate) —— 与加盟商端同源计算,两端永远一致。
 /** 倒扣待扣(派生量):负数结算且未核销的日行,按骑手归集。 */
 type PendingDeduction = { rider99Id: string; riderName: string; amount: number; days: number; rows: Array<{ id: string; date: string; amount: number }> };
-type Weekly = { week: { from: string; to: string }; franchises: WeeklyGroup[]; grandTotal: number; grandNetTotal?: number; scoped: boolean; proTotal?: number; proOrdersTotal?: number; proRate?: number; proCashDebtTotal?: number; deductions?: PendingDeduction[]; deductionTotal?: number };
+type Weekly = { week: { from: string; to: string }; franchises: WeeklyGroup[]; grandTotal: number; grandNetTotal?: number; scoped: boolean; proTotal?: number; proOrdersTotal?: number; proRate?: number; proCashDebtTotal?: number; deductions?: PendingDeduction[]; deductionTotal?: number; commission?: { effectiveFrom: string; total: number; paidTotal: number; riderPayableTotal: number; minPct: number }; settlementVersion?: 1 | 2; v2From?: string };
 
 const money = (v: number) => `R$ ${v.toFixed(2)}`;
 const md = (iso: string) => `${Number(iso.slice(5, 7))}.${Number(iso.slice(8, 10))}`;
@@ -65,7 +74,7 @@ function RiderPayrollWallet() {
   const [message, setMessage] = useState<{ tone: "ok" | "err"; text: string } | null>(null);
   const [explainOpen, setExplainOpen] = useState(false);
   // Payment modal state.
-  const [pay, setPay] = useState<{ target: "franchise" | "rider"; refName: string; franchise: string; suggested: number } | null>(null);
+  const [pay, setPay] = useState<{ target: "franchise" | "rider"; refName: string; franchise: string; suggested: number; rider99Id?: string } | null>(null);
   const [payAmount, setPayAmount] = useState("");
   const [payPeriod, setPayPeriod] = useState<"weekly" | "daily">("weekly");
   const [payNote, setPayNote] = useState("");
@@ -78,7 +87,7 @@ function RiderPayrollWallet() {
   const [stmtDrawerId, setStmtDrawerId] = useState("");
   // 倒扣待扣抽屉(总部专用)。
   const [deductionOpen, setDeductionOpen] = useState(false);
-  const [riderRef, setRiderRef] = useState<{ franchise: string; rider99Id: string } | null>(null);
+  const [riderRef, setRiderRef] = useState<{ franchise: string; rider99Id: string; pool?: "standard" | "pro" } | null>(null);
   const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({});
   // 模式二(2026-08-11):结算表按池筛选(全部 / PRO / 普通)。
   const [poolFilter, setPoolFilter] = useState<"" | "pro" | "standard">("");
@@ -157,8 +166,8 @@ function RiderPayrollWallet() {
     setAnchor(d.toISOString().slice(0, 10));
   };
 
-  function openPay(target: "franchise" | "rider", refName: string, franchise: string, suggested: number) {
-    setPay({ target, refName, franchise, suggested });
+  function openPay(target: "franchise" | "rider", refName: string, franchise: string, suggested: number, rider99Id?: string) {
+    setPay({ target, refName, franchise, suggested, rider99Id });
     setPayAmount(suggested > 0 ? suggested.toFixed(2) : "");
     setPayPeriod("weekly");
     setPayNote("");
@@ -174,7 +183,7 @@ function RiderPayrollWallet() {
     const response = await fetch("/api/wallet", {
       method: "POST",
       headers,
-      body: JSON.stringify({ action: "recordPayment", target: pay.target, refName: pay.refName, franchise: pay.franchise, amount, period: payPeriod, weekFrom: weekly.week.from, weekTo: weekly.week.to, note: payNote }),
+      body: JSON.stringify({ action: "recordPayment", target: pay.target, refName: pay.refName, rider99Id: pay.rider99Id, franchise: pay.franchise, amount, period: payPeriod, weekFrom: weekly.week.from, weekTo: weekly.week.to, note: payNote }),
     });
     const payload = await response.json().catch(() => ({}));
     if (!response.ok) {
@@ -183,6 +192,32 @@ function RiderPayrollWallet() {
     }
     setMessage({ tone: "ok", text: t("wlPayRecorded", { who: pay.target === "franchise" ? t("wlWho_franchise") : t("wlWho_rider"), name: pay.refName, money: money(amount), period: payPeriod === "weekly" ? t("wlPeriodWeekly") : t("wlPeriodDaily") }) });
     setPay(null);
+    void load();
+  }
+
+  /**
+   * 总部 → 加盟商 · 周佣金。金额由服务端按当周数据算,这里只确认;一周一次,
+   * 付过即冻结(后端 409 already_paid 兜底)。
+   */
+  async function payCommission(g: WeeklyGroup) {
+    if (!weekly || !g.commission || g.commission.status === "paid") return;
+    const c = g.commission;
+    const ok = await dialog.confirm(
+      t("wlCommissionConfirmQ", { f: g.franchise, money: money(c.commission), from: md(weekly.week.from), to: md(weekly.week.to) }),
+      { message: t("wlCommissionConfirmMsg", { base: money(c.tripIncome), pct: c.pct }), confirmText: t("wlPayCommissionBtn") },
+    );
+    if (!ok) return;
+    const response = await fetch("/api/wallet", {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ action: "payCommission", franchise: g.franchise, weekFrom: weekly.week.from, weekTo: weekly.week.to }),
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      setMessage({ tone: "err", text: payload.error ?? t("wlPayFailed", { s: response.status }) });
+      return;
+    }
+    setMessage({ tone: "ok", text: t("wlCommissionRecorded", { f: g.franchise, money: money(Number(payload.data?.amount ?? c.commission)) }) });
     void load();
   }
 
@@ -221,17 +256,18 @@ function RiderPayrollWallet() {
       setMessage({ tone: "err", text: t("wlStmtFailed") });
       return null;
     }
-    return (await r.json()).data as { from: string; to: string; total: number; rows: StatementRow[] };
+    return (await r.json()).data as { from: string; to: string; total: number; rows: StatementRow[]; v2From?: string };
   }
 
-  type StatementRow = { date: string; riderName: string; rider99Id: string; cpf: string; pix: string; franchise: string; station: string; orders: number; onlineHours: number | null; ar: number | null; tripIncome: number; bonus: number; tips: number; cashDebt: number; mealDeduction: number; other: number; settleAmount: number };
+  type StatementRow = { date: string; riderName: string; rider99Id: string; cpf: string; pix: string; franchise: string; station: string; orders: number; onlineHours: number | null; ar: number | null; total: number; tripIncome: number; bonus: number; tips: number; cashDebt: number; mealDeduction: number; other: number; manualAdjust: number; referralBonus: number; settleAmount: number; payable: number; v2: boolean; pool: "standard" | "pro"; consistent: boolean; paid: boolean };
 
   async function exportCsv(franchise: string) {
     const data = await fetchStatement(franchise);
     if (!data) return;
-    const headerRow = [t("wlCsvDate"), t("wlColRider"), "99ID", "CPF", "PIX", t("rdColFranchise"), t("wlColStation"), t("wlColOrders"), t("wlCsvOnlineH"), "AR%", t("wlCsvTripInc"), t("wlCsvBonus"), t("wlCsvTips"), t("wlCsvCashDebt"), t("wlCsvMeal"), t("wlCsvOther"), t("wlCsvSettle")];
-    const rows = data.rows.map((r) => [r.date, r.riderName, r.rider99Id, r.cpf, r.pix, r.franchise, r.station, String(r.orders), r.onlineHours ?? "", r.ar ?? "", r.tripIncome.toFixed(2), r.bonus.toFixed(2), r.tips.toFixed(2), r.cashDebt.toFixed(2), r.mealDeduction.toFixed(2), r.other.toFixed(2), r.settleAmount.toFixed(2)]);
-    rows.push([t("wlCsvTotal"), "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", Number(data.total).toFixed(2)]);
+    // v2 导出列 = 表格原列 + 应付(今日统计)+ 已付状态;v1 周保持原来的列(应付 = 结算金额)。
+    const headerRow = [t("wlCsvDate"), t("wlColRider"), "99ID", "CPF", "PIX", t("rdColFranchise"), t("wlColStation"), t("wlColOrders"), t("wlCsvOnlineH"), "AR%", t("wlCsvTripInc"), t("wlCsvBonus"), t("wlCsvTips"), t("wlCsvOther"), t("wlCsvAdjust"), t("wlCsvReferral"), t("wlCsvCashDebt"), t("wlCsvMeal"), t("wlCsvTotalDay"), t("wlCsvSettle"), t("wlCsvPayable"), t("wlColStatus")];
+    const rows = data.rows.map((r) => [r.date, r.riderName, r.rider99Id, r.cpf, r.pix, r.franchise, r.station, String(r.orders), r.onlineHours ?? "", r.ar ?? "", r.tripIncome.toFixed(2), r.bonus.toFixed(2), r.tips.toFixed(2), r.other.toFixed(2), (r.manualAdjust ?? 0).toFixed(2), (r.referralBonus ?? 0).toFixed(2), r.cashDebt.toFixed(2), r.mealDeduction.toFixed(2), (r.total ?? 0).toFixed(2), r.settleAmount.toFixed(2), r.payable.toFixed(2), r.paid ? t("wlSettled") : t("wlPending")]);
+    rows.push([t("wlCsvTotal"), "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", Number(data.total).toFixed(2), ""]);
     downloadCsv(`statement-${franchise}-${data.from}_${data.to}`, headerRow, rows);
     setMessage({ tone: "ok", text: t("wlExported", { f: franchise, from: md(data.from), to: md(data.to), n: data.rows.length, money: money(Number(data.total)) }) });
   }
@@ -241,7 +277,7 @@ function RiderPayrollWallet() {
     if (!data) return;
     const esc = (v: string) => String(v).replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c] ?? c));
     const body = data.rows
-      .map((r) => `<tr><td>${esc(r.date)}</td><td>${esc(r.riderName)}</td><td>${esc(r.station)}</td><td style="text-align:right">${r.orders}</td><td style="text-align:right">${r.ar ?? "—"}</td><td style="text-align:right">R$ ${r.settleAmount.toFixed(2)}</td></tr>`)
+      .map((r) => `<tr><td>${esc(r.date)}</td><td>${esc(r.riderName)}</td><td>${esc(r.station)}</td><td style="text-align:right">${r.orders}</td><td style="text-align:right">R$ ${r.tripIncome.toFixed(2)}</td><td style="text-align:right">R$ ${(r.bonus + r.tips + r.other + (r.manualAdjust ?? 0) + (r.referralBonus ?? 0)).toFixed(2)}</td><td style="text-align:right">−R$ ${r.cashDebt.toFixed(2)}</td><td style="text-align:right">−R$ ${r.mealDeduction.toFixed(2)}</td><td style="text-align:right"><b>R$ ${r.payable.toFixed(2)}</b></td><td>${r.paid ? "Pago" : "A pagar"}</td></tr>`)
       .join("");
     const html = `<!doctype html><html><head><meta charset="utf-8"><title>Extrato ${esc(franchise)} ${data.from}_${data.to}</title>
       <style>body{font-family:Inter,Arial,sans-serif;color:#111;padding:32px}h1{font-size:20px;margin:0}.sub{color:#666;font-size:12px;margin:4px 0 18px}
@@ -249,8 +285,9 @@ function RiderPayrollWallet() {
       th{background:#faf7e6;font-size:10px;text-transform:uppercase}tfoot td{font-weight:800;border-top:2px solid #111}.brand{font-weight:800;margin-bottom:12px}</style></head>
       <body><div class="brand">MePonto · Extrato de repasse</div><h1>${esc(franchise)}</h1>
       <div class="sub">Semana ${data.from} a ${data.to} · gerado em ${new Date().toLocaleString("pt-BR")}</div>
-      <table><thead><tr><th>Data</th><th>Entregador</th><th>Ponto</th><th style="text-align:right">Pedidos</th><th style="text-align:right">AR</th><th style="text-align:right">Valor</th></tr></thead>
-      <tbody>${body}</tbody><tfoot><tr><td colspan="5">Total</td><td style="text-align:right">R$ ${Number(data.total).toFixed(2)}</td></tr></tfoot></table>
+      <table><thead><tr><th>Data</th><th>Entregador</th><th>Ponto</th><th style="text-align:right">Pedidos</th><th style="text-align:right">Renda de viagem</th><th style="text-align:right">Bônus/outros</th><th style="text-align:right">Dinheiro</th><th style="text-align:right">Perda</th><th style="text-align:right">A pagar</th><th>Status</th></tr></thead>
+      <tbody>${body}</tbody><tfoot><tr><td colspan="8">Total</td><td style="text-align:right">R$ ${Number(data.total).toFixed(2)}</td><td></td></tr></tfoot></table>
+      ${data.v2From && data.from >= data.v2From ? `<p style="margin-top:14px;color:#666;font-size:11px">A pagar = Total do dia (renda de viagem + bônus/gorjeta/outros/ajuste/indicação − pedidos em dinheiro − perda de refeição). Comissão Sede → franquia é liquidada semanalmente à parte.</p>` : ""}
       <script>window.onload=function(){window.print()}</script></body></html>`;
     const win = window.open("", "_blank");
     if (!win) { setMessage({ tone: "err", text: t("wlPopupBlocked") }); return; }
@@ -260,6 +297,10 @@ function RiderPayrollWallet() {
 
   const pendingWithdrawals = withdrawals.filter((w) => w.status === "requested");
   const groups = weekly?.franchises ?? [];
+  // 结算口径 v2(生效周起,后端告知):普通池"应结"= 今日统计(所有收入 − 现金 − 餐损),
+  // 列名与说明随之切换;之前的周仍显示 v1 文案与数字。
+  const v2 = weekly?.settlementVersion === 2;
+  const settleLabel = v2 ? t("wlColPayableV2") : t("wlColSettle");
   // 结算口径(2026-08-11):净额 = 应结 − PRO 现金欠款,打款按净额。
   const groupNet = (g: WeeklyGroup) => g.netSettle ?? Math.round((g.settle - (g.proCashDebt ?? 0)) * 100) / 100;
   const riderNet = (r: WeeklyRider) => Math.round((r.settle - (r.cashDebt ?? 0)) * 100) / 100;
@@ -269,20 +310,47 @@ function RiderPayrollWallet() {
   const revDraftCount = revStatements.filter((s) => s.status === "draft").length;
   const riderPending = (r: WeeklyRider) => Math.max(0, Math.round((riderNet(r) - r.paid) * 100) / 100);
 
-  // 池筛选只作用于展示(表格行 + 空组隐藏);组头部金额仍是加盟商全量,
-  // 免得"看着 PRO 筛选打了全额款"。
-  const displayGroups = useMemo(
+  // 池筛选(2026-09-06 改):不只筛表格行,**所有可见金额都跟着变** —— 组头部的
+  // 应结/净额/已付/待付按筛出的骑手重算,顶部统计与工具栏合计也按筛选后的组求和。
+  // 之前只筛行、金额仍是加盟商全量,用户切来切去数字不动,看起来像坏了。
+  // "标记付加盟商"是加盟商级动作(付款记录不分池),所以只在「全部」视图提供,
+  // 避免"看着 PRO 筛选打了全额款"。
+  type DisplayGroup = WeeklyGroup & { poolScoped?: boolean; paidRiders?: number; pendingRiders?: number };
+  const displayGroups = useMemo<DisplayGroup[]>(
     () => (poolFilter
       ? groups
-          .map((g) => ({ ...g, riders: g.riders.filter((r) => (r.pool === "pro" ? "pro" : "standard") === poolFilter) }))
+          .map((g) => {
+            const riders = g.riders.filter((r) => (r.pool === "pro" ? "pro" : "standard") === poolFilter);
+            const r2 = (n: number) => Math.round(n * 100) / 100;
+            const settle = r2(riders.reduce((a, r) => a + r.settle, 0));
+            const cashDebt = poolFilter === "pro" ? r2(riders.reduce((a, r) => a + (r.cashDebt ?? 0), 0)) : 0;
+            const paidRiders = r2(riders.reduce((a, r) => a + r.paid, 0));
+            const pendingRiders = r2(riders.reduce((a, r) => a + Math.max(0, r2(r.settle - (r.cashDebt ?? 0) - r.paid)), 0));
+            return {
+              ...g,
+              riders,
+              settle,
+              proSettle: poolFilter === "pro" ? settle : 0,
+              proCashDebt: cashDebt,
+              netSettle: r2(settle - cashDebt),
+              poolScoped: true,
+              paidRiders,
+              pendingRiders,
+            };
+          })
           .filter((g) => g.riders.length > 0)
       : groups),
     [groups, poolFilter],
   );
+  // 顶部统计 / 工具栏合计:筛选时按筛出的组求和;「全部」时沿用后端全量口径。
+  const shownTotal = poolFilter ? Math.round(displayGroups.reduce((a, g) => a + g.settle, 0) * 100) / 100 : weekly?.grandTotal ?? 0;
+  const shownPaid = poolFilter ? Math.round(displayGroups.reduce((a, g) => a + (g.paidRiders ?? 0), 0) * 100) / 100 : paidTotal;
+  const shownPending = poolFilter ? Math.round(displayGroups.reduce((a, g) => a + (g.pendingRiders ?? 0), 0) * 100) / 100 : pendingTotal;
+  const poolLabel = poolFilter === "pro" ? "PRO" : poolFilter === "standard" ? t("wlPoolStd") : "";
 
   const drawerStmt = stmtDrawerId ? revStatements.find((s) => s.id === stmtDrawerId) : undefined;
   const drawerGroup = riderRef ? groups.find((g) => g.franchise === riderRef.franchise) : undefined;
-  const drawerRider = riderRef ? drawerGroup?.riders.find((r) => r.rider99Id === riderRef.rider99Id) : undefined;
+  const drawerRider = riderRef ? drawerGroup?.riders.find((r) => r.rider99Id === riderRef.rider99Id && (riderRef.pool ? (r.pool ?? "standard") === riderRef.pool : true)) : undefined;
   const drawerRiderPending = drawerRider ? riderPending(drawerRider) : 0;
 
   const stmtBadge = (status: RevStatement["status"]) => (
@@ -332,7 +400,15 @@ function RiderPayrollWallet() {
     { key: "station", label: t("wlColStation"), render: (r) => <StatusBadge tone="neutral" label={r.station} /> },
     { key: "orders", label: t("wlColOrders"), align: "right", render: (r) => r.orders },
     { key: "days", label: t("wlColDays"), align: "right", render: (r) => r.days },
-    { key: "settle", label: t("wlColSettle"), align: "right", render: (r) => <b>{money(r.settle)}</b> },
+    {
+      key: "settle", label: <span title={v2 ? t("wlPayableV2Title") : undefined}>{settleLabel}</span>, align: "right",
+      render: (r) => (
+        <span className="inline-flex items-center gap-1">
+          {r.breakdown && !r.breakdown.consistent && <span title={t("wlRowInconsistent")} className="text-[var(--danger)]">⚠</span>}
+          <b>{money(r.settle)}</b>
+        </span>
+      ),
+    },
     {
       // 模式二: PRO 现金单欠款 —— 骑手代收的顾客现金,欠加盟商的债务。
       // 只对 PRO 行显示(普通骑手的欠款已在表格结算口径内),净额=结算-欠款。
@@ -355,7 +431,7 @@ function RiderPayrollWallet() {
     },
     {
       key: "ops", label: t("wlColAction"), align: "right", render: (r) => (
-        <button type="button" className={btnOutline} onClick={(e) => { e.stopPropagation(); openPay("rider", r.name, g.franchise, riderPending(r)); }}>{t("wlMarkPaid")}</button>
+        <button type="button" className={btnOutline} onClick={(e) => { e.stopPropagation(); openPay("rider", r.name, g.franchise, riderPending(r), r.rider99Id); }}>{t("wlMarkPaid")}</button>
       ),
     },
   ];
@@ -392,9 +468,9 @@ function RiderPayrollWallet() {
 
       {/* Stat row */}
       <div className="mb-4 grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <Stat label={t("wlStatPayable")} value={weekly ? money(weekly.grandTotal) : loading ? "…" : "—"} hint={weekly ? `${md(weekly.week.from)} – ${md(weekly.week.to)} · ${t("wlNatWeek")}` : t("wlNatWeek")} />
-        <Stat label={t("wlStatPaid")} value={weekly ? money(paidTotal) : "—"} hint={t("wlPaidHqFrTitle")} />
-        <Stat label={t("wlPending")} value={weekly ? money(pendingTotal) : "—"} hint={overpaidTotal > 0 ? `${t("wlOverpaid")} +${money(overpaidTotal)}` : undefined} />
+        <Stat label={poolFilter ? `${t("wlStatPayable")} · ${poolLabel}` : t("wlStatPayable")} value={weekly ? money(shownTotal) : loading ? "…" : "—"} hint={weekly ? `${md(weekly.week.from)} – ${md(weekly.week.to)} · ${t("wlNatWeek")}` : t("wlNatWeek")} />
+        <Stat label={poolFilter ? `${t("wlStatPaid")} · ${poolLabel}` : t("wlStatPaid")} value={weekly ? money(shownPaid) : "—"} hint={poolFilter ? t("wlPaidRiderTitle") : t("wlPaidHqFrTitle")} />
+        <Stat label={poolFilter ? `${t("wlPending")} · ${poolLabel}` : t("wlPending")} value={weekly ? money(shownPending) : "—"} hint={!poolFilter && overpaidTotal > 0 ? `${t("wlOverpaid")} +${money(overpaidTotal)}` : undefined} />
         {scopeFranchise
           ? <Stat label={t("wlStatRevDraft")} value={String(revDraftCount)} hint={t("wlRsDraft")} />
           : <Stat label={t("wlStatWithdraw")} value={String(pendingWithdrawals.length)} hint="PIX" />}
@@ -419,19 +495,29 @@ function RiderPayrollWallet() {
               {f === "" ? t("wlPoolAll") : f === "pro" ? "PRO" : t("wlPoolStd")}
             </Chip>
           ))}
-          <span className="text-sm font-black text-[var(--accent)]">{t("wlWeekTotal", { money: weekly ? money(weekly.grandTotal) : loading ? "…" : "—" })}</span>
-          {/* 净额 = 总额 − PRO 现金欠款:实际打款口径 */}
-          {weekly && (weekly.proCashDebtTotal ?? 0) > 0 && (
+          <span className="text-sm font-black text-[var(--accent)]">
+            {t("wlWeekTotal", { money: weekly ? money(shownTotal) : loading ? "…" : "—" })}
+            {poolFilter && <span className="ml-1 text-[11px] font-bold text-[var(--muted)]">· {poolLabel}</span>}
+          </span>
+          {/* 净额 = 总额 − PRO 现金欠款:实际打款口径(仅全量视图) */}
+          {weekly && !poolFilter && (weekly.proCashDebtTotal ?? 0) > 0 && (
             <span className="text-sm font-black text-[#b97900]" title={t("wlCashDebtTitle")}>
               {t("wlNetShort")} {money(weekly.grandNetTotal ?? weekly.grandTotal)}
             </span>
           )}
           {/* 模式二 T3: PRO 小计 = 完单 × 费率(总部/加盟商两端同源) */}
-          {weekly && (weekly.proOrdersTotal ?? 0) > 0 && (
+          {weekly && poolFilter !== "standard" && (weekly.proOrdersTotal ?? 0) > 0 && (
             <span className="rounded-full bg-[#eda100] px-2 py-0.5 text-[11px] font-black text-[#171b33]" title={`${weekly.proOrdersTotal} × R$${(weekly.proRate ?? 0).toFixed(2)}`}>
               PRO {money(weekly.proTotal ?? 0)} · {weekly.proOrdersTotal} × R${(weekly.proRate ?? 0).toFixed(2)}
               {/* 现金欠款:代收现金冲抵后的净额,加盟商按净额结算 */}
               {(weekly.proCashDebtTotal ?? 0) > 0 && ` · ${t("wlCashDebtShort")} −${money(weekly.proCashDebtTotal ?? 0)} · ${t("wlNetShort")} ${money(Math.round(((weekly.proTotal ?? 0) - (weekly.proCashDebtTotal ?? 0)) * 100) / 100)}`}
+            </span>
+          )}
+          {/* 加盟商佣金合计(2026-09-05,仅生效周起有值):总部 → 加盟商,与骑手工资分开 */}
+          {weekly?.commission && poolFilter !== "pro" && (
+            <span className="rounded-full border border-[var(--accent)]/60 px-2 py-0.5 text-[11px] font-black text-[var(--accent)]" title={`${t("wlCommissionTitle")} · ${t("wlCommissionSince", { d: weekly.commission.effectiveFrom })}`}>
+              {t("wlCommissionWeekTotal", { money: money(weekly.commission.total) })}
+              {weekly.commission.paidTotal > 0 && ` · ${t("wlCommissionPaid")} ${money(weekly.commission.paidTotal)}`}
             </span>
           )}
           {/* 倒扣待扣:整天算下来是负数的骑手,系统里第一次能看见"谁还欠多少"。
@@ -446,7 +532,7 @@ function RiderPayrollWallet() {
             </button>
           )}
         </Toolbar>
-        {explainOpen && <div className="panel mt-2 p-3 text-xs font-bold leading-relaxed text-[var(--muted)]">{t("wlExplain")}</div>}
+        {explainOpen && <div className="panel mt-2 p-3 text-xs font-bold leading-relaxed text-[var(--muted)]">{v2 ? t("wlExplainV2", { d: weekly?.v2From ?? "" }) : t("wlExplain")}</div>}
       </div>
 
       {/* Revenue-share statements (franchise scope) */}
@@ -493,13 +579,25 @@ function RiderPayrollWallet() {
               }
               desc={
                 <span data-i18n-skip>
-                  {t("wlSettle")} <b className="text-[var(--text)]">{money(g.settle)}</b>
+                  {t("wlSettle")}{g.poolScoped && <span className="text-[var(--muted)]"> · {poolLabel}</span>} <b className="text-[var(--text)]">{money(g.settle)}</b>
                   {" · "}
-                  <span title={t("wlPaidHqFrTitle")}>{t("wlPaidHqFr")} <b className="text-[var(--success)]">{money(g.franchisePaid)}</b></span>
-                  {" · "}
-                  {overpaid > 0
-                    ? <>{t("wlOverpaid")} <b className="text-[var(--danger)]">+{money(overpaid)}</b></>
-                    : <>{t("wlPending")} <b className={pendingAmt > 0 ? "text-[var(--warn)]" : "text-[var(--muted)]"}>{money(pendingAmt)}</b></>}
+                  {g.poolScoped ? (
+                    // 分池视图:已付/待付按筛出的骑手汇总(付款记录本身按骑手记,可分池);
+                    // 加盟商级的"已付·总部→商"不分池,只在「全部」显示。
+                    <>
+                      <span title={t("wlPaidRiderTitle")}>{t("wlColPaidRider")} <b className="text-[var(--success)]">{money(g.paidRiders ?? 0)}</b></span>
+                      {" · "}
+                      {t("wlPending")} <b className={(g.pendingRiders ?? 0) > 0 ? "text-[var(--warn)]" : "text-[var(--muted)]"}>{money(g.pendingRiders ?? 0)}</b>
+                    </>
+                  ) : (
+                    <>
+                      <span title={t("wlPaidHqFrTitle")}>{t("wlPaidHqFr")} <b className="text-[var(--success)]">{money(g.franchisePaid)}</b></span>
+                      {" · "}
+                      {overpaid > 0
+                        ? <>{t("wlOverpaid")} <b className="text-[var(--danger)]">+{money(overpaid)}</b></>
+                        : <>{t("wlPending")} <b className={pendingAmt > 0 ? "text-[var(--warn)]" : "text-[var(--muted)]"}>{money(pendingAmt)}</b></>}
+                    </>
+                  )}
                   {/* 模式二: 本加盟商 PRO 现金欠款小计 + 净额 —— 打款按净额 */}
                   {(g.proCashDebt ?? 0) > 0 && (
                     <>
@@ -507,18 +605,39 @@ function RiderPayrollWallet() {
                       {" · "}<span className="text-[#b97900]">{t("wlNetShort")} <b>{money(groupNet(g))}</b></span>
                     </>
                   )}
+                  {/* 2026-09-05 · 加盟商佣金 —— 两个数分开:加盟商每日付骑手;总部每周付加盟商佣金 */}
+                  {g.commission && poolFilter !== "pro" && (
+                    <span className="mt-1 block">
+                      <span title={g.wagesBreakdown ? `${t("wlRiderPayableTitle")}\n${t("wlCsvTripInc")} ${money(g.wagesBreakdown.tripIncome)} + ${t("wlBdExtras")} ${money(g.wagesBreakdown.extras)} − ${t("wlCsvCashDebt")} ${money(g.wagesBreakdown.cashDebt)} − ${t("wlCsvMeal")} ${money(g.wagesBreakdown.mealDeduction)}` : t("wlRiderPayableTitle")}>
+                        {t("wlRiderPayable")} <b className="text-[var(--text)]">{money(g.wages ?? g.commission.riderPayable)}</b>
+                        {g.wagesBreakdown && !g.wagesBreakdown.consistent && <span title={t("wlRowInconsistent")} className="text-[var(--danger)]"> ⚠</span>}
+                      </span>
+                      {" · "}
+                      <span title={`${t("wlCommissionTitle")} · ${t("wlCommissionBreakdownRiders", { n: g.commission.riders, d: g.commission.days })}`}>
+                        {t("wlCommission")} <b className="text-[var(--accent)]">{money(g.commission.commission)}</b>
+                        <span className="text-[var(--muted)]"> ({t("wlCommissionFormula", { pct: g.commission.pct, base: money(g.commission.tripIncome) })})</span>
+                      </span>
+                      {" · "}
+                      {g.commission.status === "paid"
+                        ? <StatusBadge tone="success" label={`${t("wlCommissionPaid")} ${money(g.commission.paidAmount)}`} />
+                        : <StatusBadge tone="warn" label={t("wlCommissionOpen")} />}
+                    </span>
+                  )}
                 </span>
               }
               right={
                 <>
-                  {!scopeFranchise && <button type="button" className={`${btnOutline} !h-9`} onClick={() => openPay("franchise", g.franchise, g.franchise, pendingAmt)}>{t("wlPayFranchiseBtn")}</button>}
+                  {!scopeFranchise && !g.poolScoped && <button type="button" className={`${btnOutline} !h-9`} onClick={() => openPay("franchise", g.franchise, g.franchise, pendingAmt)}>{t("wlPayFranchiseBtn")}</button>}
+                  {!scopeFranchise && !g.poolScoped && g.commission && g.commission.status === "open" && g.commission.commission > 0 && (
+                    <button type="button" className={`${btnOutline} !h-9`} onClick={() => void payCommission(g)}>{t("wlPayCommissionBtn")}</button>
+                  )}
                   <button type="button" className={`${btnGhost} !h-9`} onClick={() => void exportCsv(g.franchise)}>CSV</button>
                   <button type="button" className={`${btnGhost} !h-9`} onClick={() => void exportPdf(g.franchise)}>PDF</button>
                 </>
               }
             >
               {expanded && (
-                <DataTable columns={riderColumns(g)} rows={g.riders} rowKey={(r) => r.rider99Id} rowAccent={(r) => (r as WeeklyRider).pool === "pro"} onRowClick={(r) => setRiderRef({ franchise: g.franchise, rider99Id: r.rider99Id })} minWidth={760} empty={t("wlNoWeekData")} />
+                <DataTable columns={riderColumns(g)} rows={g.riders} rowKey={(r) => `${r.rider99Id}|${r.pool ?? "standard"}`} rowAccent={(r) => (r as WeeklyRider).pool === "pro"} onRowClick={(r) => setRiderRef({ franchise: g.franchise, rider99Id: r.rider99Id, pool: r.pool ?? "standard" })} minWidth={760} empty={t("wlNoWeekData")} />
               )}
             </SectionCard>
           );
@@ -561,12 +680,22 @@ function RiderPayrollWallet() {
               <DetailRow label="99ID" value={drawerRider.rider99Id || "—"} />
               <DetailRow label={t("wlColOrders")} value={drawerRider.orders} />
               <DetailRow label={t("wlColDays")} value={drawerRider.days} />
-              <DetailRow label={t("wlColSettle")} value={<b>{money(drawerRider.settle)}</b>} />
+              {drawerRider.breakdown && (
+                <>
+                  {/* v2 拆解:全部表格原值,行程 + 加项 − 现金 − 餐损 = 今日统计 */}
+                  <DetailRow label={t("wlCsvTripInc")} value={money(drawerRider.breakdown.tripIncome)} />
+                  <DetailRow label={t("wlBdExtras")} value={`+ ${money(drawerRider.breakdown.extras)}`} />
+                  <DetailRow label={t("wlCsvCashDebt")} value={<span className="text-[var(--danger-ink)]">− {money(drawerRider.breakdown.cashDebt)}</span>} />
+                  <DetailRow label={t("wlCsvMeal")} value={<span className="text-[var(--danger-ink)]">− {money(drawerRider.breakdown.mealDeduction)}</span>} />
+                  {!drawerRider.breakdown.consistent && <DetailRow label="⚠" value={<span className="text-[var(--danger)]">{t("wlRowInconsistent")}</span>} />}
+                </>
+              )}
+              <DetailRow label={settleLabel} value={<b>{money(drawerRider.settle)}</b>} />
               <DetailRow label={<span title={t("wlPaidRiderTitle")}>{t("wlColPaidRider")}</span>} value={<span className="text-[var(--success)]">{money(drawerRider.paid)}</span>} />
               <DetailRow label={t("wlPending")} value={<b className={drawerRiderPending > 0 ? "text-[var(--warn)]" : ""}>{money(drawerRiderPending)}</b>} />
             </div>
             <div className="flex flex-wrap gap-2 border-t border-[var(--line)] pt-3">
-              <button type="button" className={btnPrimary} onClick={() => openPay("rider", drawerRider.name, riderRef?.franchise ?? "", drawerRiderPending)}>{t("wlMarkPaid")}</button>
+              <button type="button" className={btnPrimary} onClick={() => openPay("rider", drawerRider.name, riderRef?.franchise ?? "", drawerRiderPending, drawerRider.rider99Id)}>{t("wlMarkPaid")}</button>
             </div>
           </div>
         )}

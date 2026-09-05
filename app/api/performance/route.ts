@@ -4,6 +4,7 @@ import { requirePermission, roleFromRequest, scopeFromRequest } from "../../lib/
 import {
   aggregateEarnings,
   aggregateKpis,
+  deductionAmountOf,
   parseEastwindRiderKpis,
   type RiderDailyEarning,
   type RiderDailyKpi,
@@ -12,6 +13,8 @@ import { defaultMallConfig, resolveRiderTierStatus } from "../../lib/mall";
 import { getAvailablePoints } from "../../lib/points";
 import { sendPushToRider } from "../../lib/server/notify";
 import { tagKpiAttribution } from "../../lib/leader-mode";
+import { defaultAssessmentRule } from "../../lib/assessment";
+import { settlementV2From } from "../../lib/settlement";
 import { callRpc, dbDirectReadEnabled, fetchRows } from "../../lib/server/db-read";
 import type { Rider } from "../../lib/data";
 import { dualWrite } from "../../lib/server/db/dual-write";
@@ -673,6 +676,8 @@ async function handlePost(request: Request) {
 
     const importedAt = new Date().toISOString().slice(0, 16).replace("T", " ");
     let created = 0;
+    /** 今日统计恒等式不成立的行(仅 earnings 导入,普通池)。 */
+    const mismatches: Array<{ rider99Id: string; riderName: string; total: number; recomputed: number; diff: number }> = [];
     let updated = 0;
 
     const achievements: Array<{ riderName: string; label: string }> = [];
@@ -795,6 +800,16 @@ async function handlePost(request: Request) {
           settleAmount: isPro ? 0 : (raw.settleAmount !== undefined ? num(raw.settleAmount) : num(raw.tripIncome)),
           importedAt,
         };
+        // 恒等式校验(2026-09-06):今日统计 = 行程收入 + 加项 − 现金 − 餐损。不一致不拦截
+        // (原值照旧入库,表格是事实源),但记差额并在响应/审计里点名,页面标红。
+        if (!isPro) {
+          const recomputed = record.tripIncome + record.bonus + record.tips + record.other + record.manualAdjust + record.referralBonus - record.cashDebt - record.mealDeduction;
+          const diff = Math.round((record.total - recomputed) * 100) / 100;
+          if (Math.abs(diff) > 0.02) {
+            record.totalMismatch = diff;
+            mismatches.push({ rider99Id, riderName: record.riderName, total: record.total, recomputed: Math.round(recomputed * 100) / 100, diff });
+          }
+        }
         const index = memory.riderDailyEarnings.findIndex((row) => row.id === record.id);
         if (index === -1) {
           memory.riderDailyEarnings.unshift(record);
@@ -822,7 +837,7 @@ async function handlePost(request: Request) {
       action: body.action === "importEarnings" ? "EARNINGS_IMPORTED" : "KPI_IMPORTED",
       entity: body.action === "importEarnings" ? "RiderDailyEarning" : "RiderDailyKpi",
       entityId: date,
-      detail: `[${importAccount}] ${body.action} for ${date}: ${created} created, ${updated} updated.`,
+      detail: `[${importAccount}] ${body.action} for ${date}: ${created} created, ${updated} updated.${mismatches.length ? ` ⚠ ${mismatches.length} 行今日统计与各列不符。` : ""}`,
       risk: "Low",
     });
 
@@ -861,7 +876,7 @@ async function handlePost(request: Request) {
 
     // KPI imports may also backfill the same day's earnings orders → replay both.
     await dualWritePerfDay(date, body.action === "importEarnings" ? "earnings" : "both");
-    return jsonResponse({ data: { created, updated, parsed: created + updated, achievements: achievements.length, noShowNotices, account: importAccount, missingSource } }, { status: 201 });
+    return jsonResponse({ data: { created, updated, parsed: created + updated, achievements: achievements.length, noShowNotices, account: importAccount, missingSource, totalMismatches: mismatches } }, { status: 201 });
   }
 
   // Remove ONE business day's imported rows (both T+1 tables) — for fixing
@@ -876,6 +891,8 @@ async function handlePost(request: Request) {
    */
   if (body.action === "settleDeduction") {
     const hqScope = await scopeFromRequest(request);
+    await refreshCollectionsFromDatabase(["assessmentRules"]);
+    const v2From = settlementV2From(memory.assessmentRules.find((r) => r.id === "rule-active") ?? defaultAssessmentRule);
     if (hqScope.franchise || hqScope.station) return jsonResponse({ error: "仅总部可执行此操作" }, { status: 403 });
     const ids = Array.isArray(body.earningIds) ? body.earningIds.map(String) : [];
     if (ids.length === 0) return jsonResponse({ error: "earningIds is required" }, { status: 400 });
@@ -887,18 +904,20 @@ async function handlePost(request: Request) {
       if (index === -1) continue;
       const row = memory.riderDailyEarnings[index];
       // 只有"负数且未核销"的行才可核销 —— 重复点击、或误传正数行都是空操作。
-      if (!(row.settleAmount < 0) || row.deductionSettledAt) continue;
+      // 金额口径随 v2 生效日切换(今日统计 vs settleAmount),见 deductionAmountOf。
+      const owed = deductionAmountOf(row, v2From);
+      if (owed <= 0 || row.deductionSettledAt) continue;
       memory.riderDailyEarnings[index] = { ...row, deductionSettledAt: stamp, deductionSettledBy: actor };
       appendServerAudit({
         actor,
         action: "RIDER_DEDUCTION_SETTLED",
         entity: "RiderDailyEarning",
         entityId: row.id,
-        detail: `${row.riderName} (99 ${row.rider99Id}) ${row.date}: 倒扣 R$ ${Math.abs(row.settleAmount).toFixed(2)} 已核销。`,
+        detail: `${row.riderName} (99 ${row.rider99Id}) ${row.date}: 倒扣 R$ ${owed.toFixed(2)} 已核销。`,
         risk: "Medium",
       });
       done += 1;
-      total += Math.abs(row.settleAmount);
+      total += owed;
     }
     await flushPendingToDatabase();
     return jsonResponse({ data: { settled: done, amount: Math.round(total * 100) / 100 } });

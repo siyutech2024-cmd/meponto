@@ -7,7 +7,7 @@ import { Chip, DataTable, Drawer, SectionCard, Stat, Toolbar, type DataColumn, t
 import { readSession } from "../lib/session";
 import { useVentoStore } from "../lib/store";
 import { translate, type TranslationKey } from "../lib/i18n";
-import type { AssessmentMetric, AssessmentRule } from "../lib/assessment";
+import { COMMISSION_EFFECTIVE_FROM_DEFAULT, type AssessmentMetric, type AssessmentRule } from "../lib/assessment";
 import { isoWeekOf, type LeaderAssessment } from "../lib/leader-mode";
 
 /**
@@ -572,6 +572,8 @@ export default function AssessmentPage() {
               <label className="block"><span className="mb-1 block text-[10px] font-black uppercase text-[var(--muted)]">{t("asPeriodWeeks")}</span><input className={input} inputMode="numeric" value={draft.periodWeeks} onChange={(e) => setDraft({ ...draft, periodWeeks: Number(e.target.value) || 1 })} /></label>
               <label className="block"><span className="mb-1 block text-[10px] font-black uppercase text-[var(--muted)]">{t("asMinCommissionPct")}</span><input className={input} inputMode="decimal" value={draft.minCommissionPct} onChange={(e) => setDraft({ ...draft, minCommissionPct: Number(e.target.value) || 0 })} /></label>
               <label className="block"><span className="mb-1 block text-[10px] font-black uppercase text-[var(--muted)]">{t("asEffectiveDate")}</span><input type="date" className={input} value={draft.effectiveDate} onChange={(e) => setDraft({ ...draft, effectiveDate: e.target.value })} /></label>
+              {/* 2026-09-05 · 加盟商佣金生效周:此日期之前的周按旧口径显示,数据不动 */}
+              <label className="block"><span className="mb-1 block text-[10px] font-black uppercase text-[var(--muted)]">{t("asCommissionFrom")}</span><input type="date" className={input} value={draft.commissionEffectiveFrom ?? COMMISSION_EFFECTIVE_FROM_DEFAULT} onChange={(e) => setDraft({ ...draft, commissionEffectiveFrom: e.target.value })} /></label>
               <label className="block"><span className="mb-1 block text-[10px] font-black uppercase text-[var(--muted)]">{t("asExclusiveSign")}</span>
                 <select className={input} value={draft.exclusive ? "yes" : "no"} onChange={(e) => setDraft({ ...draft, exclusive: e.target.value === "yes" })}><option value="no">No</option><option value="yes">Yes</option></select>
               </label>

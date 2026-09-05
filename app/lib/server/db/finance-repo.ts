@@ -40,6 +40,10 @@ type PaymentRow = {
   id: string; target: string; ref_name: string; franchise: string; amount: number;
   period: string; week_from: string; week_to: string; note: string;
   paid_by: string; paid_at: string;
+  /** 2026-09-05 加盟商佣金(migration 20260905120000)。settlement 行不带这两列,
+   *  所以迁移未执行前既有付款的镜像照常工作,只有佣金行会被 mirror 拒绝(legacy 不受影响)。 */
+  kind?: string; commission?: WalletPayment["commission"];
+  rider99_id?: string;
 };
 
 export function paymentToRow(p: WalletPayment): PaymentRow {
@@ -48,6 +52,8 @@ export function paymentToRow(p: WalletPayment): PaymentRow {
     amount: p.amount, period: p.period ?? "weekly", week_from: p.weekFrom ?? "",
     week_to: p.weekTo ?? "", note: p.note ?? "", paid_by: p.paidBy ?? "",
     paid_at: p.paidAt ?? "",
+    ...(p.kind === "commission" ? { kind: "commission", commission: p.commission } : {}),
+    ...(p.rider99Id ? { rider99_id: p.rider99Id } : {}),
   };
 }
 
@@ -57,6 +63,8 @@ export function rowToPayment(r: PaymentRow): WalletPayment {
     franchise: r.franchise, amount: Number(r.amount),
     period: r.period as WalletPayment["period"], weekFrom: r.week_from,
     weekTo: r.week_to, note: r.note, paidBy: r.paid_by, paidAt: r.paid_at,
+    ...(r.kind === "commission" ? { kind: "commission" as const, commission: r.commission ?? undefined } : {}),
+    ...(r.rider99_id ? { rider99Id: r.rider99_id } : {}),
   };
 }
 

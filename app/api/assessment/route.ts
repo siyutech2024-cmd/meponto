@@ -1,7 +1,7 @@
 import { appendServerAudit, jsonResponse, memory } from "../../lib/server/memory";
 import { flushPendingToDatabase, refreshCollectionsFromDatabase } from "../../lib/server/persistence";
 import { requirePermission, roleFromRequest, scopeFromRequest } from "../../lib/server/authz";
-import { defaultAssessmentRule, evaluateMetric, weekWindow, type AssessmentMetric, type AssessmentRule } from "../../lib/assessment";
+import { buildAssessmentBoard, defaultAssessmentRule, weekWindow, type AssessmentMetric, type AssessmentRule } from "../../lib/assessment";
 
 const COLLECTIONS = ["assessmentRules", "riderDailyKpis", "riders"];
 
@@ -10,104 +10,13 @@ function activeRule(): AssessmentRule {
   return memory.assessmentRules.find((rule) => rule.id === "rule-active") ?? defaultAssessmentRule;
 }
 
-type GroupActual = {
-  name: string;
-  sub: string;
-  riders: number;
-  orders: number;
-  days: number;
-  metrics: Record<string, { actual: number | null; status: string; adjust: number }>;
-  totalAdjust: number;
-  commissionPct: number;
-};
-
-/** Orders-weighted weekly averages per group, evaluated against the rule. */
-function buildBoard(
-  rule: AssessmentRule,
-  from: string,
-  to: string,
-  level: "franchise" | "station",
-  onlyFranchise?: string,
-  /**
-   * 模式二 R10 · 周考核分池. "" = 全部(与现在完全一致), "pro" / "standard" =
-   * 只统计该池的骑手日报。PRO 与普通两套单量/AR 混在一起会让任何一边的考核
-   * 结论失真,所以按池分开看是必要的;不分池时行为一字未改。
-   * 新 OL 报表若缺 AR(N7),对应 metric 的 actual 自然为 null,规则评估已按
-   * "无数据不加不减"处理 —— 自动降级为出勤 + 完单口径,无需额外分支。
-   */
-  pool?: string,
-): GroupActual[] {
-  const byNinetyNine = new Map(memory.riders.filter((r) => r.ninetyNineId).map((r) => [r.ninetyNineId!, r]));
-  // Weekly aggregation of REAL daily data per franchise (display only):
-  //  - %TSH / %TSH critical: reconstructed from real hours (Σ in-shift online ÷
-  //    Σ signed shift hours), not a flat average.
-  //  - AR / CAA: completed-order weighted average.
-  //  - orders / online hours: summed; riders / days: distinct counts.
-  type Acc = {
-    sub: string; riders: Set<string>; orders: number; dates: Set<string>;
-    inShift: number; signedHours: number; // for %TSH reconstruction
-    w: Record<string, { sum: number; weight: number }>;
-  };
-  const groups = new Map<string, Acc>();
-
-  for (const row of memory.riderDailyKpis) {
-    if (row.date < from || row.date > to) continue;
-    const rider = byNinetyNine.get(row.rider99Id);
-    if (pool && (rider?.pool ?? "standard") !== pool) continue;
-    const franchise = rider?.franchise ?? "未关联";
-    if (onlyFranchise && franchise !== onlyFranchise) continue;
-    const key = level === "franchise" ? franchise : rider?.ponto ?? "未关联";
-    const sub = level === "station" ? franchise : "";
-    const acc = groups.get(key) ?? { sub, riders: new Set<string>(), orders: 0, dates: new Set<string>(), inShift: 0, signedHours: 0, w: {} };
-    acc.riders.add(row.rider99Id);
-    acc.orders += row.completedOrders ?? 0;
-    acc.dates.add(row.date);
-    acc.inShift += row.inShiftOnlineHours ?? 0;
-    acc.signedHours += row.signedShiftHours ?? 0;
-    const put = (metric: string, value: number | null, weight: number) => {
-      if (value === null || !Number.isFinite(value) || weight <= 0) return;
-      const cell = acc.w[metric] ?? { sum: 0, weight: 0 };
-      cell.sum += value * weight;
-      cell.weight += weight;
-      acc.w[metric] = cell;
-    };
-    const orderWeight = Math.max(1, row.completedOrders ?? 0);
-    const hourWeight = row.signedShiftHours ?? 0; // critical-shift TSH stays on the hours basis
-    put("tshCritical", row.tshCritical, hourWeight);
-    put("ar", row.ar, orderWeight);
-    put("caa", row.caa, orderWeight);
-    groups.set(key, acc);
-  }
-
-  return [...groups.entries()]
-    .map(([name, acc]) => {
-      const metrics: GroupActual["metrics"] = {};
-      let totalAdjust = 0;
-      for (const metric of rule.metrics) {
-        let actual: number | null;
-        if (metric.key === "tsh") {
-          // True weekly %TSH from real hours.
-          actual = acc.signedHours > 0 ? Math.round((acc.inShift / acc.signedHours) * 1000) / 10 : null;
-        } else {
-          const cell = acc.w[metric.key];
-          actual = cell && cell.weight > 0 ? Math.round((cell.sum / cell.weight) * 10) / 10 : null;
-        }
-        const verdict = evaluateMetric(metric, actual);
-        metrics[metric.key] = { actual, status: verdict.status, adjust: verdict.adjust };
-        totalAdjust += verdict.adjust;
-      }
-      return {
-        name,
-        sub: acc.sub,
-        riders: acc.riders.size,
-        orders: acc.orders,
-        days: acc.dates.size,
-        metrics,
-        totalAdjust,
-        commissionPct: Math.max(rule.minCommissionPct, rule.minCommissionPct + totalAdjust),
-      };
-    })
-    .sort((a, b) => b.orders - a.orders);
+/**
+ * Board computation lives in app/lib/assessment.ts (buildAssessmentBoard) since
+ * 2026-09-05: the wallet's franchise-commission line uses the same function, so
+ * the percentage here and the amount there can never disagree.
+ */
+function buildBoard(rule: AssessmentRule, from: string, to: string, level: "franchise" | "station", onlyFranchise?: string, pool?: string) {
+  return buildAssessmentBoard(rule, from, to, level, memory.riderDailyKpis, memory.riders, onlyFranchise, pool);
 }
 
 export async function GET(request: Request) {
@@ -174,6 +83,11 @@ export async function POST(request: Request) {
     exclusive: Boolean(body.exclusive ?? base.exclusive),
     note: String(body.note ?? base.note).slice(0, 300),
     metrics: base.metrics.map((fallback) => sanitizeMetric(incoming.find((m) => (m as AssessmentMetric).key === fallback.key) ?? {}, fallback)),
+    // 佣金生效周(2026-09-05):只接受 YYYY-MM-DD;缺省沿用已保存值(再缺省由
+    // commissionEffectiveFrom() 回落到 2026-08-31)。之前的周不受影响。
+    commissionEffectiveFrom: /^\d{4}-\d{2}-\d{2}$/.test(String(body.commissionEffectiveFrom ?? ""))
+      ? String(body.commissionEffectiveFrom)
+      : base.commissionEffectiveFrom,
     updatedAt: new Date().toISOString().slice(0, 16).replace("T", " "),
     updatedBy: roleFromRequest(request),
   };

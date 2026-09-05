@@ -7,6 +7,8 @@ import { readSession } from "../../lib/session";
 import type { RiderWithdrawal } from "../../lib/finance";
 
 type Me = { riderId: string; name: string; pix: string; station: string; franchise: string; settled: number; held: number; paid: number; available: number };
+/** v2 每日结算单(2026-09-06):一行 = 一天,金额 = 表格原值,应付 = 今日统计。 */
+type DailyRow = { date: string; orders: number; payable: number; tripIncome: number; extras: number; cashDebt: number; mealDeduction: number; total: number; consistent: boolean; paid: boolean };
 
 /** One line of the unified cash statement served by /api/rider/home. */
 type CashItem = {
@@ -45,6 +47,9 @@ export default function RiderWalletPage() {
   const [me, setMe] = useState<Me | null>(null);
   const [loading, setLoading] = useState(true);
   const [withdrawals, setWithdrawals] = useState<RiderWithdrawal[]>([]);
+  // v2:提现停用,钱包页改为"每日结算单"(加盟商每天 PIX 付今日统计)。后端告知。
+  const [withdrawalsEnabled, setWithdrawalsEnabled] = useState(true);
+  const [daily, setDaily] = useState<DailyRow[]>([]);
   const [cashLedger, setCashLedger] = useState<CashItem[] | null>(null);
   const [cashBalance, setCashBalance] = useState<number | null>(null);
   // 模式二 T7/N1: PRO riders are settled OFFLINE by the franchise (v3.0 R5) —
@@ -85,6 +90,8 @@ export default function RiderWalletPage() {
     if (response.ok) {
       setMe(payload.data.me);
       setWithdrawals(payload.data.withdrawals);
+      setWithdrawalsEnabled(payload.data.withdrawalsEnabled !== false);
+      setDaily(Array.isArray(payload.data.daily) ? payload.data.daily : []);
     }
   }, [headers, session]);
 
@@ -149,6 +156,52 @@ export default function RiderWalletPage() {
             Ver meus pedidos confirmados
           </Link>
         </div>
+      ) : !withdrawalsEnabled ? (
+        // v2(2026-09-06):加盟商每天通过 PIX 付"今日统计";App 只展示每日结算单与已付状态。
+        <>
+          <div className="panel p-5 text-center">
+            <div className="text-[10px] font-black uppercase text-[var(--muted)]">Pagamento diário pela franquia (PIX)</div>
+            <div className="text-4xl font-black text-[var(--accent)]">R$ {(daily[0]?.payable ?? 0).toFixed(2)}</div>
+            <div className="mt-1 text-[11px] font-bold text-[var(--muted)]">{daily[0] ? `Último dia com dados: ${daily[0].date}` : "Sem dados ainda"}</div>
+            <div className="mt-2 text-[11px] font-bold text-[var(--muted)]">PIX: {me.pix || "—"} ｜ {me.station}（{me.franchise}）</div>
+            <div className="mt-2 text-[11px] font-bold text-[var(--muted)]">Total do dia = renda de viagem + bônus/gorjeta/outros − pedidos em dinheiro − perda de refeição. Pago no dia seguinte pela sua franquia.</div>
+          </div>
+          <div className="panel p-4">
+            <div className="mb-2 text-[10px] font-black uppercase text-[var(--muted)]">Últimos 31 dias</div>
+            {daily.length === 0 && <div className="py-6 text-center text-xs font-bold text-[var(--muted)]">Sem dados de acerto.</div>}
+            <div className="divide-y divide-[var(--line)]">
+              {daily.map((d) => (
+                <div key={d.date} className="py-2">
+                  <div className="flex items-center justify-between gap-2 text-sm font-black">
+                    <span translate="no">{d.date} <span className="text-[11px] font-bold text-[var(--muted)]">· {d.orders} pedidos</span></span>
+                    <span className="inline-flex items-center gap-2">
+                      <span className={d.payable < 0 ? "text-[var(--danger-ink)]" : ""}>R$ {d.payable.toFixed(2)}</span>
+                      <span className={`rounded-[6px] px-1.5 py-[1px] text-[10px] font-black uppercase ${d.paid ? "bg-[var(--ok-bg)] text-[var(--ok-ink)]" : "bg-[var(--warning-bg)] text-[var(--warning-ink)]"}`}>{d.paid ? "Pago" : "A pagar"}</span>
+                    </span>
+                  </div>
+                  <div className="mt-0.5 text-[11px] font-bold text-[var(--muted)]" translate="no">
+                    viagem {d.tripIncome.toFixed(2)} + extras {d.extras.toFixed(2)} − dinheiro {d.cashDebt.toFixed(2)} − perda {d.mealDeduction.toFixed(2)}
+                    {!d.consistent && <span className="text-[var(--danger-ink)]"> ⚠ inconsistente</span>}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+          {withdrawals.length > 0 && (
+            <div className="panel p-4">
+              <div className="mb-2 text-[10px] font-black uppercase text-[var(--muted)]">Saques anteriores</div>
+              <div className="divide-y divide-[var(--line)]">
+                {withdrawals.map((w) => (
+                  <div key={w.id} className="flex items-center justify-between gap-2 py-2 text-xs font-bold">
+                    <span translate="no">{w.requestedAt}</span>
+                    <span>R$ {w.amount.toFixed(2)}</span>
+                    <span className="uppercase text-[var(--muted)]">{w.status}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </>
       ) : (
         <>
           <div className="panel p-5 text-center">

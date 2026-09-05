@@ -2,10 +2,18 @@ import { appendServerAudit, jsonResponse, makeServerId, memory } from "../../lib
 import { flushPendingToDatabase, refreshCollectionsFromDatabase } from "../../lib/server/persistence";
 import { requirePermission, roleFromRequest } from "../../lib/server/authz";
 import { sendPushToRider } from "../../lib/server/notify";
-import { computeBalance, type RiderWithdrawal, type WalletPayment } from "../../lib/finance";
+import { computeBalance, type FranchiseCommissionSnapshot, type RiderWithdrawal, type WalletPayment } from "../../lib/finance";
+import {
+  buildAssessmentBoard,
+  commissionActiveForWeek,
+  commissionEffectiveFrom,
+  defaultAssessmentRule,
+  type AssessmentRule,
+} from "../../lib/assessment";
 import { scopeFromRequest } from "../../lib/server/authz";
 import { callRpc, dbDirectReadEnabled, fetchRows } from "../../lib/server/db-read";
 import { pendingDeductions, type RiderDailyEarning, type RiderDailyKpi } from "../../lib/performance";
+import { addBreakdown, breakdownOf, emptyBreakdown, isV2Date, payableOf, poolOfRow, settlementV2From, sumBreakdown, type EarningBreakdown } from "../../lib/settlement";
 import {
   earningsByDateRange,
   earningsByRider99,
@@ -16,11 +24,12 @@ import {
 } from "../../lib/server/db/performance-repo";
 
 // pontos: Leader Mode settlement needs station payee info (leaderPixKey/CNPJ).
-const COLLECTIONS = ["riderWithdrawals", "riderDailyEarnings", "riderDailyKpis", "riders", "franchises", "walletPayments", "franchiseDepositLedgerEntries", "pontos"];
+// assessmentRules: 加盟商佣金比例来自考核规则(2026-09-05)。
+const COLLECTIONS = ["riderWithdrawals", "riderDailyEarnings", "riderDailyKpis", "riders", "franchises", "walletPayments", "franchiseDepositLedgerEntries", "pontos", "assessmentRules"];
 // L2 direct-read mode: the two T+1 collections (grow per rider per day) are
 // fetched as WINDOWED database rows instead of hydrated wholesale — only the
 // small collections still go through the memory refresh.
-const SMALL_COLLECTIONS = ["riderWithdrawals", "riders", "franchises", "walletPayments", "franchiseDepositLedgerEntries"];
+const SMALL_COLLECTIONS = ["riderWithdrawals", "riders", "franchises", "walletPayments", "franchiseDepositLedgerEntries", "assessmentRules"];
 
 /** Windowed T+1 rows straight from the database; falls back to a full legacy
  *  refresh + in-memory filter when direct read is off or fails. */
@@ -40,6 +49,90 @@ async function earningsWindow(from: string, to: string): Promise<RiderDailyEarni
   }
   await refreshCollectionsFromDatabase(["riderDailyEarnings"]);
   return memory.riderDailyEarnings.filter((row) => row.date >= from && row.date <= to);
+}
+
+/** Windowed KPI rows (same direct-read / legacy fallback shape as earningsWindow). */
+async function kpiWindow(from: string, to: string): Promise<RiderDailyKpi[]> {
+  if (dbDirectReadEnabled()) {
+    try {
+      return perfMode() === "read"
+        ? await kpisByDateRange(from, to)
+        : await fetchRows<RiderDailyKpi>("riderDailyKpis", [
+            { op: "gte", field: "date", value: from },
+            { op: "lte", field: "date", value: to },
+          ]);
+    } catch (error) {
+      console.warn(`[wallet] direct kpi read failed, legacy path. (${(error as Error).message})`);
+    }
+  }
+  await refreshCollectionsFromDatabase(["riderDailyKpis"]);
+  return memory.riderDailyKpis.filter((k) => k.date >= from && k.date <= to);
+}
+
+function activeAssessmentRule(): AssessmentRule {
+  return memory.assessmentRules.find((rule) => rule.id === "rule-active") ?? defaultAssessmentRule;
+}
+
+/** 骑手付款记录是否属于这名骑手:优先 99ID,历史记录没有 99ID 才回退姓名(重名风险只留在历史)。 */
+const paymentIsForRider = (p: WalletPayment, rider99Id: string, name: string) =>
+  p.target === "rider" && (p.rider99Id ? p.rider99Id === rider99Id : p.refName === name);
+
+/** True when a walletPayments row is a franchise COMMISSION payout (总部→加盟商佣金),
+ *  which must never be mixed into the rider-settlement 已付 figures. */
+const isCommissionPayment = (p: WalletPayment) => p.kind === "commission";
+
+/**
+ * 加盟商佣金 · 周口径(2026-09-05 业务方定,仅 commissionEffectiveFrom 起的周):
+ *
+ *   佣金比例      = 考核看板该加盟商当周 commissionPct(最小抽佣 ± KPI 加减,普通池)
+ *   佣金基准      = Σ 普通池骑手当周 行程收入 tripIncome
+ *   总部应付佣金  = round(基准 × 比例 / 100, 2)
+ *   加盟商应付骑手 = Σ 今日统计 total(= 所有收入 − 现金单欠款 − 餐损;加盟商每日发给骑手)
+ *
+ * 两个数字**分开显示**,互不冲抵:加盟商每天付骑手工资,总部每周付加盟商佣金。
+ * PRO 池不参与(维持 完单 × 费率;PRO 运营即将取消)。纯派生量;真正入账的只有
+ * `payCommission` 写下的那一条 kind="commission" 付款记录及其快照。
+ */
+function computeFranchiseCommission(
+  rule: AssessmentRule,
+  win: { from: string; to: string },
+  weekEarnings: RiderDailyEarning[],
+  weekKpis: RiderDailyKpi[],
+): Map<string, FranchiseCommissionSnapshot> {
+  const r2 = (n: number) => Math.round(n * 100) / 100;
+  const byNinetyNine = new Map(memory.riders.filter((r) => r.ninetyNineId).map((r) => [r.ninetyNineId!, r]));
+  const board = new Map(buildAssessmentBoard(rule, win.from, win.to, "franchise", weekKpis, memory.riders, undefined, "standard").map((g) => [g.name, g]));
+  const acc = new Map<string, { tripIncome: number; payable: number; riders: Set<string>; dates: Set<string> }>();
+  for (const row of weekEarnings) {
+    if (row.date < win.from || row.date > win.to) continue;
+    const rider = byNinetyNine.get(row.rider99Id);
+    if (poolOfRow(row, rider?.pool, settlementV2From(rule)) === "pro") continue;
+    const franchise = rider?.franchise ?? "Unassigned";
+    const cur = acc.get(franchise) ?? { tripIncome: 0, payable: 0, riders: new Set<string>(), dates: new Set<string>() };
+    cur.tripIncome = r2(cur.tripIncome + (row.tripIncome ?? 0));
+    cur.payable = r2(cur.payable + (row.total ?? 0));
+    cur.riders.add(row.rider99Id);
+    cur.dates.add(row.date);
+    acc.set(franchise, cur);
+  }
+  const out = new Map<string, FranchiseCommissionSnapshot>();
+  for (const [franchise, cur] of acc) {
+    const group = board.get(franchise);
+    // 无 KPI 数据的加盟商:所有 metric 为 na → 不加不减 → 最小抽佣。
+    const pct = group?.commissionPct ?? rule.minCommissionPct;
+    out.set(franchise, {
+      pct,
+      tripIncome: cur.tripIncome,
+      commission: r2((cur.tripIncome * pct) / 100),
+      riderPayable: cur.payable,
+      riders: cur.riders.size,
+      days: cur.dates.size,
+      minPct: rule.minCommissionPct,
+      totalAdjust: group?.totalAdjust ?? 0,
+      metrics: group?.metrics ?? {},
+    });
+  }
+  return out;
 }
 
 const today = () => new Date().toISOString().slice(0, 10);
@@ -97,14 +190,14 @@ export async function GET(request: Request) {
       kpiWin = memory.riderDailyKpis.filter((k) => k.date >= from && k.date <= to);
     }
     const earnWin = await earningsWindow(from, to);
+    const v2From = settlementV2From(activeAssessmentRule());
     const kpiByKey = new Map(kpiWin.map((k) => [`${k.date}|${k.rider99Id}`, k]));
     const earnByKey = new Map(earnWin.map((e) => [`${e.date}|${e.rider99Id}`, e]));
     // Union of both T+1 tables so KPI-only days still appear (data completeness).
     const keys = [...new Set([...kpiByKey.keys(), ...earnByKey.keys()])];
     // Daily rider payments inside the window → per-day paid status.
-    const paidDay = new Set(
-      memory.walletPayments.filter((p) => p.target === "rider" && p.weekFrom === p.weekTo && p.weekFrom >= from && p.weekTo <= to).map((p) => `${p.weekFrom}|${p.refName}`),
-    );
+    const dailyPayments = memory.walletPayments.filter((p) => p.target === "rider" && p.weekFrom === p.weekTo && p.weekFrom >= from && p.weekTo <= to);
+    const paidDay = (date: string, rider99Id: string, name: string) => dailyPayments.some((p) => p.weekFrom === date && paymentIsForRider(p, rider99Id, name));
     const r2 = (n: number) => Math.round((n ?? 0) * 100) / 100;
     const rows = keys
       .map((key) => {
@@ -138,12 +231,20 @@ export async function GET(request: Request) {
           manualAdjust: r2(earning?.manualAdjust ?? 0),
           referralBonus: r2(earning?.referralBonus ?? 0),
           settleAmount: r2(earning?.settleAmount ?? 0),
-          paid: paidDay.has(`${date}|${riderName}`),
+          // v2(生效日起):应付 = 今日统计;之前 = settleAmount。PRO 行 0(按 完单×费率 另算)。
+          payable: earning ? payableOf(earning, v2From) : 0,
+          v2: isV2Date(date, v2From),
+          pool: earning ? poolOfRow(earning, rider?.pool, v2From) : (rider?.pool === "pro" ? "pro" : "standard"),
+          consistent: earning ? breakdownOf(earning).consistent : true,
+          totalMismatch: earning?.totalMismatch ?? 0,
+          paid: paidDay(date, rider99Id, riderName),
         };
       })
       .sort((a, b) => a.date.localeCompare(b.date) || a.riderName.localeCompare(b.riderName));
-    const total = Math.round(rows.reduce((sum, row) => sum + row.settleAmount, 0) * 100) / 100;
-    return jsonResponse({ data: { franchise: statementFranchise, from, to, rows, total } });
+    // total 沿用旧字段名但按行口径求和(v2 行 = 今日统计,旧行 = settleAmount),导出与页面同源。
+    const total = Math.round(rows.reduce((sum, row) => sum + row.payable, 0) * 100) / 100;
+    const legacyTotal = Math.round(rows.reduce((sum, row) => sum + row.settleAmount, 0) * 100) / 100;
+    return jsonResponse({ data: { franchise: statementFranchise, from, to, rows, total, legacyTotal, v2From } });
   }
 
   // Leader Mode: pending weekly settlements awaiting franchise review.
@@ -188,6 +289,11 @@ export async function GET(request: Request) {
     const scope = await scopeFromRequest(request);
     const byNinetyNine = new Map(memory.riders.filter((r) => r.ninetyNineId).map((r) => [r.ninetyNineId!, r]));
     const round = (n: number) => Math.round(n * 100) / 100;
+    // 结算口径开关(app/lib/settlement.ts):生效周起 v2 —— 普通池应付 = 今日统计、池按行
+    // account 判定、骑手付款按 99ID 匹配;之前的周逐字节沿用 v1。一个日期,一套口径。
+    const rule = activeAssessmentRule();
+    const v2From = settlementV2From(rule);
+    const v2 = isV2Date(win.from, v2From);
 
     // 模式二 T3 · HqProRate: PRO settlement is NOT read from the sheet (PRO
     // rows carry zero money by design — v3.0 R6). The HQ→franchise amount is
@@ -199,7 +305,8 @@ export async function GET(request: Request) {
     ) || 0;
 
     // Sum settle per rider within the window.
-    const riderAgg = new Map<string, { name: string; rider99Id: string; franchise: string; station: string; settle: number; orders: number; days: number; cashDebt: number; pool: "standard" | "pro" }>();
+    // v2 下同一骑手同周可能既有普通行又有 PRO 行(中途转池),所以聚合键 = 99ID|池。
+    const riderAgg = new Map<string, { name: string; rider99Id: string; franchise: string; station: string; settle: number; orders: number; days: number; cashDebt: number; pool: "standard" | "pro"; breakdown: EarningBreakdown }>();
     for (const row of weekEarnings) {
       if (row.date < win.from || row.date > win.to) continue;
       const rider = byNinetyNine.get(row.rider99Id);
@@ -207,15 +314,17 @@ export async function GET(request: Request) {
       if (scope.franchise && franchise !== scope.franchise) continue;
       // 站点会话:只看本站骑手(此前站点账号会看到全网 —— 2026-08-11 补)
       if (scope.station && (rider?.ponto ?? "Unassigned") !== scope.station) continue;
-      const key = row.rider99Id;
-      const pool: "standard" | "pro" = rider?.pool === "pro" ? "pro" : "standard";
-      const cur = riderAgg.get(key) ?? { name: rider?.name ?? row.rider99Id, rider99Id: row.rider99Id, franchise, station: rider?.ponto ?? "Unassigned", settle: 0, orders: 0, days: 0, cashDebt: 0, pool };
+      const pool = poolOfRow(row, rider?.pool, v2From);
+      const key = v2 ? `${row.rider99Id}|${pool}` : row.rider99Id;
+      const cur = riderAgg.get(key) ?? { name: rider?.name ?? row.rider99Id, rider99Id: row.rider99Id, franchise, station: rider?.ponto ?? "Unassigned", settle: 0, orders: 0, days: 0, cashDebt: 0, pool, breakdown: emptyBreakdown() };
       // PRO: money comes from orders × rate, never from the sheet.
-      cur.settle += pool === "pro" ? 0 : (row.settleAmount ?? 0);
+      // 普通池:v2 = 今日统计(所有收入 − 现金 − 餐损,即加盟商每日实付);v1 = settleAmount。
+      cur.settle += pool === "pro" ? 0 : payableOf(row, v2From);
       // 模式二(2026-08-11):PRO 的现金单欠款单独累计 —— 骑手代收的顾客
       // 现金,欠加盟商的债务;结算单必须能看见,加盟商才能净额结算。
-      // 普通骑手不在此列(他们的欠款已体现在表格结算金额的口径里)。
+      // 普通池:v2 的今日统计已经扣掉现金,不再单列;v1 沿用旧注释的口径不动。
       if (pool === "pro") cur.cashDebt += row.cashDebt ?? 0;
+      else if (v2) cur.breakdown = addBreakdown(cur.breakdown, row);
       cur.orders += row.orders ?? 0;
       cur.days += 1;
       riderAgg.set(key, cur);
@@ -230,9 +339,16 @@ export async function GET(request: Request) {
     const paymentsInWindow = memory.walletPayments.filter((p) => p.weekFrom >= win.from && p.weekTo <= win.to);
     const paidToRider = new Map<string, number>();
     const paidToFranchise = new Map<string, number>();
+    // 骑手已付:v2 按 99ID 归集(记录缺 99ID 时回退姓名),v1 沿用姓名。
+    const riderPaidKey = (rider99Id: string, name: string) => (v2 ? rider99Id : name);
+    const idByNameWeekly = new Map(memory.riders.filter((r) => r.ninetyNineId).map((r) => [r.name, r.ninetyNineId!]));
     for (const p of paymentsInWindow) {
-      if (p.target === "rider") paidToRider.set(p.refName, (paidToRider.get(p.refName) ?? 0) + p.amount);
-      else paidToFranchise.set(p.refName, (paidToFranchise.get(p.refName) ?? 0) + p.amount);
+      // 佣金付款(kind=commission)是另一条线,不算进"已付·总部→商"(2026-09-05)。
+      if (isCommissionPayment(p)) continue;
+      if (p.target === "rider") {
+        const k = v2 ? (p.rider99Id || idByNameWeekly.get(p.refName) || p.refName) : p.refName;
+        paidToRider.set(k, (paidToRider.get(k) ?? 0) + p.amount);
+      } else paidToFranchise.set(p.refName, (paidToFranchise.get(p.refName) ?? 0) + p.amount);
     }
     // A PAID PIX withdrawal IS the franchise paying the rider, so it must count
     // as rider "已付" too — otherwise the settlement board and the rider wallet
@@ -243,28 +359,65 @@ export async function GET(request: Request) {
       const paidDate = (w.paidAt ?? "").slice(0, 10);
       if (!paidDate || paidDate < win.from || paidDate > win.to) continue;
       if (scope.franchise && (w.franchise ?? "Unassigned") !== scope.franchise) continue;
-      paidToRider.set(w.riderName, (paidToRider.get(w.riderName) ?? 0) + w.amount);
+      const k = v2 ? w.rider99Id || w.riderName : w.riderName;
+      paidToRider.set(k, (paidToRider.get(k) ?? 0) + w.amount);
     }
 
     // Group into franchise → riders (each row carries its pool so the board
     // can show a PRO sub-total next to the standard one — 分池对账).
-    const groups = new Map<string, { franchise: string; settle: number; proSettle: number; proOrders: number; proCashDebt: number; riders: Array<{ name: string; rider99Id: string; station: string; settle: number; orders: number; days: number; cashDebt: number; paid: number; pool: "standard" | "pro" }> }>();
+    type WeeklyRiderRow = { name: string; rider99Id: string; station: string; settle: number; orders: number; days: number; cashDebt: number; paid: number; pool: "standard" | "pro"; breakdown?: EarningBreakdown };
+    const groups = new Map<string, { franchise: string; settle: number; proSettle: number; proOrders: number; proCashDebt: number; wages: number; wagesBreakdown: EarningBreakdown; riders: WeeklyRiderRow[] }>();
     for (const r of riderAgg.values()) {
       // Round each rider's settle FIRST, then sum, so the franchise total always
       // equals the sum of the displayed rider rows (no cent drift).
       const riderSettle = round(r.settle);
       const riderCashDebt = round(r.cashDebt);
-      const g = groups.get(r.franchise) ?? { franchise: r.franchise, settle: 0, proSettle: 0, proOrders: 0, proCashDebt: 0, riders: [] };
+      const g = groups.get(r.franchise) ?? { franchise: r.franchise, settle: 0, proSettle: 0, proOrders: 0, proCashDebt: 0, wages: 0, wagesBreakdown: emptyBreakdown(), riders: [] };
       g.settle = round(g.settle + riderSettle);
       if (r.pool === "pro") {
         g.proSettle = round(g.proSettle + riderSettle);
         g.proOrders += r.orders;
         g.proCashDebt = round(g.proCashDebt + riderCashDebt);
+      } else if (v2) {
+        // v2 · 骑手工资(普通池)= Σ 今日统计;拆解只做加总,供加盟商逐项对表。
+        g.wages = round(g.wages + riderSettle);
+        g.wagesBreakdown = sumBreakdown(g.wagesBreakdown, r.breakdown);
       }
-      g.riders.push({ name: r.name, rider99Id: r.rider99Id, station: r.station, settle: riderSettle, orders: r.orders, days: r.days, cashDebt: riderCashDebt, paid: round(paidToRider.get(r.name) ?? 0), pool: r.pool });
+      // 已付按 99ID(v2)/姓名(v1)归集。同一骑手转池后两行共享同一笔已付,只挂在普通行上,避免重复计入。
+      const paid = r.pool === "pro" && v2 && riderAgg.has(`${r.rider99Id}|standard`) ? 0 : round(paidToRider.get(riderPaidKey(r.rider99Id, r.name)) ?? 0);
+      g.riders.push({ name: r.name, rider99Id: r.rider99Id, station: r.station, settle: riderSettle, orders: r.orders, days: r.days, cashDebt: riderCashDebt, paid, pool: r.pool, ...(v2 && r.pool === "standard" ? { breakdown: r.breakdown } : {}) });
       groups.set(r.franchise, g);
     }
+    // ---- 加盟商佣金(2026-09-05,仅生效周起) ----------------------------------
+    // 生效周之前:下面这段完全不执行,返回体与改动前逐字节一致 —— 那些周已经按旧
+    // 口径结算过了。生效周起:每个加盟商附加 commission 字段。已经付过佣金的周读
+    // 付款记录里的快照(冻结),没付的周实时计算。
+    const commissionActive = commissionActiveForWeek(rule, win.from);
+    let liveCommission = new Map<string, FranchiseCommissionSnapshot>();
+    if (commissionActive) {
+      const weekKpis = await kpiWindow(win.from, win.to);
+      liveCommission = computeFranchiseCommission(rule, win, weekEarnings, weekKpis);
+    }
+    const commissionPaidRows = paymentsInWindow.filter((p) => isCommissionPayment(p) && p.weekFrom === win.from && p.weekTo === win.to);
+    const commissionFor = (franchise: string) => {
+      if (!commissionActive) return undefined;
+      const paid = commissionPaidRows.filter((p) => p.refName === franchise);
+      const frozen = paid.find((p) => p.commission)?.commission;
+      const snapshot = frozen ?? liveCommission.get(franchise);
+      if (!snapshot) return undefined;
+      return {
+        ...snapshot,
+        status: paid.length ? ("paid" as const) : ("open" as const),
+        paidAmount: round(paid.reduce((sum, p) => sum + p.amount, 0)),
+        paidAt: paid[0]?.paidAt ?? "",
+        paymentId: paid[0]?.id ?? "",
+        frozen: Boolean(frozen),
+      };
+    };
+
     const franchises = [...groups.values()]
+      // v1 周不暴露 v2 字段(wages / wagesBreakdown),返回体与改动前一致。
+      .map(({ wages, wagesBreakdown, ...g }) => ({ ...g, ...(v2 ? { wages, wagesBreakdown } : {}) }))
       .map((g) => ({
         ...g,
         riders: g.riders.sort((a, b) => b.settle - a.settle),
@@ -272,8 +425,18 @@ export async function GET(request: Request) {
         // 结算口径(2026-08-11 业务方定):净额 = 应结 − PRO 现金欠款。
         // 加盟商按净额打款;应结与欠款保持各自原值,账目可追溯。
         netSettle: round(g.settle - g.proCashDebt),
+        ...(commissionActive ? { commission: commissionFor(g.franchise) } : {}),
       }))
       .sort((a, b) => b.settle - a.settle);
+    const commissionSummary = commissionActive
+      ? {
+          effectiveFrom: commissionEffectiveFrom(rule),
+          total: round(franchises.reduce((s, g) => s + (g.commission?.commission ?? 0), 0)),
+          paidTotal: round(franchises.reduce((s, g) => s + (g.commission?.paidAmount ?? 0), 0)),
+          riderPayableTotal: round(franchises.reduce((s, g) => s + (g.commission?.riderPayable ?? 0), 0)),
+          minPct: rule.minCommissionPct,
+        }
+      : undefined;
     const grandTotal = round(franchises.reduce((s, g) => s + g.settle, 0));
     const proTotal = round(franchises.reduce((s, g) => s + g.proSettle, 0));
     const proOrdersTotal = franchises.reduce((s, g) => s + g.proOrders, 0);
@@ -285,7 +448,7 @@ export async function GET(request: Request) {
     // 倒扣待扣:某天算下来是负数 = 骑手当天不但没拿到钱,还欠了一笔。
     // 以前这种行只在显示层被过滤掉,系统里查不到"谁还欠多少"。这里按窗口外
     // 的全量算(欠款不会因为翻到下一周就消失),未核销的才算。
-    const deductions = pendingDeductions(memory.riderDailyEarnings);
+    const deductions = pendingDeductions(memory.riderDailyEarnings, v2From);
     const deductionTotal = round(deductions.reduce((sum, d) => sum + d.amount, 0));
 
     return jsonResponse({
@@ -296,6 +459,10 @@ export async function GET(request: Request) {
         // 倒扣待扣(派生量,全量口径)
         deductions, deductionTotal,
         payments: paymentsInWindow, scoped: Boolean(scope.franchise || scope.station),
+        // 加盟商佣金汇总(仅生效周起出现;之前的周没有这个字段)
+        ...(commissionSummary ? { commission: commissionSummary } : {}),
+        // 结算口径版本:v2 = 应付按今日统计;页面据此切换文案与列。
+        settlementVersion: v2 ? 2 : 1, v2From,
       },
     });
   }
@@ -341,12 +508,36 @@ export async function GET(request: Request) {
     } else {
       riderEarnings = memory.riderDailyEarnings;
     }
-    const balance = computeBalance(riderEarnings, memory.riderWithdrawals, rider.ninetyNineId, today());
+    // v2(2026-09-06):骑手看到的每一天 = 今日统计(所有收入 − 现金 − 餐损),与加盟商每日
+    // Trampay 实付同一个数;余额沿用旧字段名但按行口径求值(v2 行 = 今日统计)。
+    const v2From = settlementV2From(activeAssessmentRule());
+    const myRows = riderEarnings.filter((row) => row.rider99Id === rider.ninetyNineId);
+    const balance = computeBalance(myRows.map((row) => ({ rider99Id: row.rider99Id, date: row.date, settleAmount: payableOf(row, v2From) })), memory.riderWithdrawals, rider.ninetyNineId, today());
     const withdrawals = memory.riderWithdrawals
       .filter((w) => w.rider99Id === rider.ninetyNineId)
       .sort((a, b) => b.requestedAt.localeCompare(a.requestedAt));
+    // 最近 31 天逐日明细 + 每日已付状态(加盟商标记),给 App 钱包页做"每日结算单"。
+    const sinceDaily = new Date(Date.now() - 31 * 86400000).toISOString().slice(0, 10);
+    const daily = myRows
+      .filter((row) => row.date >= sinceDaily && row.account !== "pro")
+      .sort((a, b) => b.date.localeCompare(a.date))
+      .map((row) => ({
+        date: row.date,
+        orders: row.orders ?? 0,
+        payable: payableOf(row, v2From),
+        ...breakdownOf(row),
+        paid: memory.walletPayments.some((p) => p.weekFrom === row.date && p.weekTo === row.date && paymentIsForRider(p, rider.ninetyNineId!, rider.name)),
+      }));
+    // 提现停用(v2):每日由加盟商 Trampay 打款;已提交的历史提现照常展示/处理。
+    const withdrawalsEnabled = !isV2Date(today(), v2From);
     return jsonResponse({
-      data: { me: { riderId: rider.id, name: rider.name, cpf: rider.cpf ?? "", pix: rider.pix ?? "", phone: rider.phone ?? "", isComplete: !!rider.cpf && !!rider.pix && !!rider.phone, station: rider.ponto, franchise: rider.franchise, ...balance }, withdrawals },
+      data: {
+        me: { riderId: rider.id, name: rider.name, cpf: rider.cpf ?? "", pix: rider.pix ?? "", phone: rider.phone ?? "", isComplete: !!rider.cpf && !!rider.pix && !!rider.phone, station: rider.ponto, franchise: rider.franchise, ...balance },
+        withdrawals,
+        daily,
+        withdrawalsEnabled,
+        settlementVersion: withdrawalsEnabled ? 1 : 2,
+      },
     });
   }
 
@@ -422,7 +613,8 @@ type Body =
   | { action: "rejectWithdrawal"; withdrawalId: string; note?: string }
   | { action: "recordPayment"; target: "franchise" | "rider"; refName: string; franchise?: string; amount: number; period?: "weekly" | "daily"; weekFrom: string; weekTo: string; note?: string }
   | { action: "generateLeaderSettlements"; franchise: string; week: string }
-  | { action: "confirmLeaderPayment"; paymentId: string; note?: string };
+  | { action: "confirmLeaderPayment"; paymentId: string; note?: string }
+  | { action: "payCommission"; franchise: string; weekFrom: string; weekTo: string; note?: string };
 
 async function handlePost(request: Request) {
   const peek = (await request.clone().json().catch(() => ({}))) as { action?: string };
@@ -554,6 +746,57 @@ async function handlePost(request: Request) {
       return jsonResponse({ data: confirmed });
     }
 
+    case "payCommission": {
+      // 总部 → 加盟商 · 周佣金(2026-09-05)。金额由服务端按当周数据计算,不接受
+      // 客户端传入;一周一个加盟商只能付一次(幂等 409);写入即冻结快照。
+      const franchiseName = String(body.franchise ?? "").trim();
+      const weekFrom = String(body.weekFrom ?? "");
+      const weekTo = String(body.weekTo ?? "");
+      if (!franchiseName) return jsonResponse({ error: "请选择加盟商" }, { status: 400 });
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(weekFrom) || !/^\d{4}-\d{2}-\d{2}$/.test(weekTo)) return jsonResponse({ error: "结算周期无效" }, { status: 400 });
+      const win = weekWindow(weekFrom);
+      if (win.from !== weekFrom || win.to !== weekTo) return jsonResponse({ error: "结算周期必须是完整自然周（周一至周日）" }, { status: 400 });
+      const scope = await scopeFromRequest(request);
+      if (scope.franchise || scope.station) return jsonResponse({ error: "仅总部可支付加盟商佣金" }, { status: 403 });
+      const rule = activeAssessmentRule();
+      if (!commissionActiveForWeek(rule, win.from)) {
+        return jsonResponse({ error: `该周早于佣金口径生效日 ${commissionEffectiveFrom(rule)}，已按旧口径结算，不再变动。`, code: "before_effective" }, { status: 409 });
+      }
+      const duplicate = memory.walletPayments.find((p) => isCommissionPayment(p) && p.refName === franchiseName && p.weekFrom === win.from && p.weekTo === win.to);
+      if (duplicate) return jsonResponse({ error: "该加盟商本周佣金已支付", code: "already_paid", payment: duplicate }, { status: 409 });
+      const weekEarnings = await earningsWindow(win.from, win.to);
+      const weekKpis = await kpiWindow(win.from, win.to);
+      const snapshot = computeFranchiseCommission(rule, win, weekEarnings, weekKpis).get(franchiseName);
+      if (!snapshot) return jsonResponse({ error: "该加盟商本周没有普通池结算数据" }, { status: 404 });
+      if (snapshot.commission <= 0) return jsonResponse({ error: "本周佣金为 0，无需支付" }, { status: 409 });
+      const payment: WalletPayment = {
+        id: makeServerId("pay", memory.walletPayments.length + 1),
+        target: "franchise",
+        kind: "commission",
+        refName: franchiseName,
+        franchise: franchiseName,
+        amount: snapshot.commission,
+        period: "weekly",
+        weekFrom: win.from,
+        weekTo: win.to,
+        note: String(body.note ?? "").slice(0, 200),
+        paidBy: actor,
+        paidAt: nowStamp(),
+        commission: snapshot,
+      };
+      memory.walletPayments.unshift(payment);
+      appendServerAudit({
+        actor,
+        action: "FRANCHISE_COMMISSION_PAID",
+        entity: "WalletPayment",
+        entityId: payment.id,
+        detail: `加盟商佣金：${franchiseName} ${win.from}~${win.to} R$${snapshot.commission.toFixed(2)}（行程收入 R$${snapshot.tripIncome.toFixed(2)} × ${snapshot.pct}%）。`,
+        risk: "Medium",
+      });
+      await flushPendingToDatabase();
+      return jsonResponse({ data: payment }, { status: 201 });
+    }
+
     case "recordPayment": {
       const { target, refName, franchise = "", period = "weekly", weekFrom, weekTo, note = "" } = body as {
         target: "franchise" | "rider"; refName?: string; franchise?: string; period?: "weekly" | "daily"; weekFrom?: string; weekTo?: string; note?: string;
@@ -565,28 +808,40 @@ async function handlePost(request: Request) {
 
       // Over-payment guard: a payment may not exceed what is still owed for this
       // target in the window (应结 − 已付). Keeps 已付 ≤ 应结.
+      // 口径与周结算板完全同源(payableOf / poolOfRow / 完单×费率),两边不会再出现
+      // "看板一个数、校验另一个数"(2026-09-05 实测过 1304.08 vs 1382.62)。
+      const v2From = settlementV2From(activeAssessmentRule());
+      const payWeekV2 = isV2Date(weekFrom!, v2From);
+      const riderRef = (body as { rider99Id?: string }).rider99Id ? String((body as { rider99Id?: string }).rider99Id) : "";
+      await refreshCollectionsFromDatabase(["mallConfigs"]);
+      const proRateGuard = Number(memory.mallConfigs.find((c) => c.id === "mall-config")?.hqProRatePerOrder ?? 12) || 0;
       {
         const r2 = (n: number) => Math.round(n * 100) / 100;
         const byNN = new Map(memory.riders.filter((r) => r.ninetyNineId).map((r) => [r.ninetyNineId!, r]));
         let settleTotal = 0;
+        let proOrders = 0;
         for (const row of memory.riderDailyEarnings) {
           if (row.date < weekFrom! || row.date > weekTo!) continue;
           const rider = byNN.get(row.rider99Id);
           const fname = rider?.franchise ?? "Unassigned";
           const rname = rider?.name ?? row.riderName ?? row.rider99Id;
           if (target === "franchise" && fname !== refName.trim()) continue;
-          if (target === "rider" && rname !== refName.trim()) continue;
-          settleTotal = r2(settleTotal + (row.settleAmount ?? 0));
+          if (target === "rider" && (riderRef ? row.rider99Id !== riderRef : rname !== refName.trim())) continue;
+          if (poolOfRow(row, rider?.pool, v2From) === "pro") proOrders += row.orders ?? 0;
+          else settleTotal = r2(settleTotal + payableOf(row, v2From));
         }
+        settleTotal = r2(settleTotal + proOrders * proRateGuard);
         let alreadyPaid = 0;
         for (const p of memory.walletPayments) {
-          if (p.target !== target || p.refName !== refName.trim()) continue;
+          if (isCommissionPayment(p)) continue; // 佣金不是结算款
+          if (p.target !== target) continue;
+          if (target === "rider" ? !paymentIsForRider(p, riderRef, refName.trim()) : p.refName !== refName.trim()) continue;
           if (p.weekFrom < weekFrom! || p.weekTo > weekTo!) continue;
           alreadyPaid = r2(alreadyPaid + p.amount);
         }
         if (target === "rider") {
           for (const w of memory.riderWithdrawals) {
-            if (w.status !== "paid" || w.riderName !== refName.trim()) continue;
+            if (w.status !== "paid" || (riderRef ? w.rider99Id !== riderRef : w.riderName !== refName.trim())) continue;
             const pd = (w.paidAt ?? "").slice(0, 10);
             if (pd < weekFrom! || pd > weekTo!) continue;
             alreadyPaid = r2(alreadyPaid + w.amount);
@@ -601,6 +856,7 @@ async function handlePost(request: Request) {
         id: makeServerId("pay", memory.walletPayments.length + 1),
         target,
         refName: refName.trim(),
+        ...(target === "rider" && riderRef ? { rider99Id: riderRef } : {}),
         franchise: (target === "franchise" ? refName : franchise).trim(),
         amount,
         period: period === "daily" ? "daily" : "weekly",
@@ -622,18 +878,33 @@ async function handlePost(request: Request) {
         // the sole cause of the phantom negative balances (-R$123k). Deposit
         // movements now happen ONLY through explicit top-up/adjust entries.
         const byNinetyNine = new Map(memory.riders.filter((r) => r.ninetyNineId).map((r) => [r.ninetyNineId!, r]));
+        const idByName = new Map(memory.riders.filter((r) => r.ninetyNineId).map((r) => [r.name, r.ninetyNineId!]));
+        // key = v2: 99ID / v1: 姓名;金额口径同看板(普通池 payableOf,PRO 完单×费率)。
         const settleByRider = new Map<string, number>();
+        const nameOfKey = new Map<string, string>();
         for (const row of memory.riderDailyEarnings) {
           if (row.date < payment.weekFrom || row.date > payment.weekTo) continue;
           const rider = byNinetyNine.get(row.rider99Id);
           if ((rider?.franchise ?? "Unassigned") !== refName.trim()) continue;
           const name = rider?.name ?? row.riderName ?? row.rider99Id;
-          settleByRider.set(name, Math.round(((settleByRider.get(name) ?? 0) + (row.settleAmount ?? 0)) * 100) / 100);
+          const key = payWeekV2 ? row.rider99Id : name;
+          nameOfKey.set(key, name);
+          const amount = poolOfRow(row, rider?.pool, v2From) === "pro" ? (row.orders ?? 0) * proRateGuard : payableOf(row, v2From);
+          settleByRider.set(key, Math.round(((settleByRider.get(key) ?? 0) + amount) * 100) / 100);
         }
         const paidByRider = new Map<string, number>();
         for (const p of memory.walletPayments) {
           if (p.target !== "rider" || p.weekFrom < payment.weekFrom || p.weekTo > payment.weekTo) continue;
-          paidByRider.set(p.refName, (paidByRider.get(p.refName) ?? 0) + p.amount);
+          const key = payWeekV2 ? (p.rider99Id || idByName.get(p.refName) || p.refName) : p.refName;
+          paidByRider.set(key, (paidByRider.get(key) ?? 0) + p.amount);
+        }
+        // 已付 PIX 提现也是"加盟商已付给骑手"(与看板同口径,之前这里漏了 → 级联双标)。
+        for (const w of memory.riderWithdrawals) {
+          if (w.status !== "paid") continue;
+          const pd = (w.paidAt ?? "").slice(0, 10);
+          if (pd < payment.weekFrom || pd > payment.weekTo) continue;
+          const key = payWeekV2 ? w.rider99Id || w.riderName : w.riderName;
+          paidByRider.set(key, (paidByRider.get(key) ?? 0) + w.amount);
         }
         // Distribute the ACTUAL franchise payment across riders in proportion to
         // their unpaid settle — never more than a rider's remaining, never more
@@ -646,7 +917,7 @@ async function handlePost(request: Request) {
         const totalRemaining = r2c(remainingByRider.reduce((sum, [, remaining]) => sum + remaining, 0));
         const pool = Math.min(amount, totalRemaining);
         let distributed = 0;
-        remainingByRider.forEach(([name, remaining], index) => {
+        remainingByRider.forEach(([key, remaining], index) => {
           const isLast = index === remainingByRider.length - 1;
           const raw = isLast ? r2c(pool - distributed) : r2c((pool * remaining) / totalRemaining);
           const share = Math.min(raw, remaining);
@@ -656,7 +927,8 @@ async function handlePost(request: Request) {
           memory.walletPayments.unshift({
             id: makeServerId("pay", memory.walletPayments.length + 1),
             target: "rider",
-            refName: name,
+            refName: nameOfKey.get(key) ?? key,
+            ...(payWeekV2 ? { rider99Id: key } : {}),
             franchise: refName.trim(),
             amount: share,
             period: payment.period,
@@ -673,6 +945,11 @@ async function handlePost(request: Request) {
     }
 
     case "requestWithdrawal": {
+      // v2(2026-09-06 业务方定):App 提现停用,每日由加盟商 Trampay 打款为准。
+      // 已提交的提现不受影响(confirmPayment / rejectWithdrawal 照常)。
+      if (isV2Date(today(), settlementV2From(activeAssessmentRule()))) {
+        return jsonResponse({ error: "Saque pelo app desativado — o pagamento é feito diariamente pela franquia via PIX.", code: "withdrawals_disabled" }, { status: 409 });
+      }
       const { riderId, riderName } = body as { riderId?: string; riderName?: string };
       // Identity from the AUTHENTICATED session when present (closes IDOR — a
       // rider can only withdraw their own balance); body fallback for demo only.

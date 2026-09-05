@@ -88,6 +88,11 @@ export type RiderDailyEarning = {
    */
   deductionSettledAt?: string;
   deductionSettledBy?: string;
+  /**
+   * 导入时恒等式校验(2026-09-06):今日统计 ≠ 行程收入 + 加项 − 现金 − 餐损 时记录差额
+   * (今日统计 − 重算值),页面标红提示"表格本行有问题";一致的行不写此字段。原值照旧入库。
+   */
+  totalMismatch?: number;
   importedAt: string;
 };
 
@@ -285,10 +290,21 @@ export type PendingDeduction = {
   rows: Array<{ id: string; date: string; amount: number }>;
 };
 
-export function pendingDeductions(rows: RiderDailyEarning[]): PendingDeduction[] {
+/**
+ * @param v2From 结算口径 v2 生效日(见 app/lib/settlement.ts)。该日起"倒扣"看 今日统计
+ *   (所有收入 − 现金 − 餐损,现金多于收入时才会为负);之前看 settleAmount(= 行程收入,
+ *   实际永不为负 —— 这就是为什么老口径下普通骑手的倒扣从未触发)。不传 = 全部按老口径。
+ */
+export function deductionAmountOf(row: Pick<RiderDailyEarning, "date" | "total" | "settleAmount" | "account">, v2From?: string): number {
+  if (row.account === "pro") return 0;
+  const amount = v2From && row.date >= v2From ? row.total ?? 0 : row.settleAmount ?? 0;
+  return amount < 0 ? Math.round(-amount * 100) / 100 : 0;
+}
+
+export function pendingDeductions(rows: RiderDailyEarning[], v2From?: string): PendingDeduction[] {
   const byRider = new Map<string, PendingDeduction>();
   for (const row of rows) {
-    if (!(row.settleAmount < 0) || row.deductionSettledAt) continue;
+    if (deductionAmountOf(row, v2From) <= 0 || row.deductionSettledAt) continue;
     const entry = byRider.get(row.rider99Id) ?? {
       rider99Id: row.rider99Id,
       riderName: row.riderName,
@@ -296,7 +312,7 @@ export function pendingDeductions(rows: RiderDailyEarning[]): PendingDeduction[]
       days: 0,
       rows: [],
     };
-    const amount = Math.abs(row.settleAmount);
+    const amount = deductionAmountOf(row, v2From);
     entry.amount = Math.round((entry.amount + amount) * 100) / 100;
     entry.days += 1;
     entry.rows.push({ id: row.id, date: row.date, amount });
