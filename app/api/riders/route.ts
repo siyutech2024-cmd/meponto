@@ -220,17 +220,26 @@ export async function GET(request: Request) {
       source: "report" as const,
     }));
 
+  // CPF 搜索(2026-09-06,提报骑手选择器):客户端只拿到脱敏 CPF(***.***.***-39),
+  // 无法自己按 CPF 找人,所以由服务端用完整 CPF 做包含匹配,只返回**命中的骑手 id**,
+  // CPF 本身仍按脱敏规则输出。至少 4 位数字才搜,避免 1~2 位把全员都命中。
+  const cpfSearch = (new URL(request.url).searchParams.get("cpfSearch") ?? "").replace(/\D/g, "");
+  const cpfMatchIds = cpfSearch.length >= 4
+    ? new Set(memory.riders.filter((rider) => (rider.cpf ?? "").replace(/\D/g, "").includes(cpfSearch)).map((rider) => rider.id))
+    : null;
+  const withCpfMatch = <T extends { id: string }>(rows: T[]) => (cpfMatchIds ? rows.filter((rider) => cpfMatchIds.has(rider.id)) : rows);
+
   // Franchise/station portals only see their own riders; report-only riders
   // (unassigned by definition) belong to HQ.
   const scope = await scopeFromRequest(request);
   if (scope.station) {
-    return jsonResponse({ data: data.filter((rider) => rider.ponto === scope.station), scoped: true });
+    return jsonResponse({ data: withCpfMatch(data.filter((rider) => rider.ponto === scope.station)), scoped: true });
   }
   if (scope.franchise) {
-    return jsonResponse({ data: data.filter((rider) => rider.franchise === scope.franchise), scoped: true });
+    return jsonResponse({ data: withCpfMatch(data.filter((rider) => rider.franchise === scope.franchise)), scoped: true });
   }
 
-  return jsonResponse({ data: [...data, ...reportOnly] });
+  return jsonResponse({ data: cpfMatchIds ? withCpfMatch(data) : [...data, ...reportOnly] });
 }
 
 type AssignBody = { action: "assign" | "updateProfile"; riderId: string; ponto?: string; franchise?: string; status?: string; pool?: "standard" | "pro" };

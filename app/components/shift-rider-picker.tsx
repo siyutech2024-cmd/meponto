@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Search, Send, UserCheck } from "lucide-react";
 import type { DispatchShift, ShiftSignup } from "../lib/dispatch";
+import { maskCpf } from "../lib/masking";
 
 /**
  * Right-hand rider picker: select a shift on the left, tick riders here and
@@ -36,6 +37,23 @@ export function ShiftRiderPicker({
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [query, setQuery] = useState("");
   const [busy, setBusy] = useState(false);
+  // CPF 搜索:客户端只有脱敏 CPF,输入 ≥4 位数字时向服务端要"命中的骑手 id"(去抖 300ms)。
+  const [cpfMatchIds, setCpfMatchIds] = useState<Set<string> | null>(null);
+  const queryDigits = query.replace(/\D/g, "");
+  useEffect(() => {
+    if (queryDigits.length < 4) {
+      setCpfMatchIds(null);
+      return;
+    }
+    const timer = setTimeout(() => {
+      void fetch(`/api/riders?cpfSearch=${queryDigits}`, { headers, cache: "no-store" })
+        .then((response) => (response.ok ? response.json() : null))
+        .then((payload) => payload && setCpfMatchIds(new Set((payload.data as RiderRow[]).map((rider) => rider.id))))
+        .catch(() => undefined);
+    }, 300);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [queryDigits]);
 
   useEffect(() => {
     void fetch("/api/riders", { headers, cache: "no-store" })
@@ -53,14 +71,21 @@ export function ShiftRiderPicker({
   const shiftIsPro = shift?.pool === "pro";
   const pool = useMemo(() => {
     const term = query.trim().toLowerCase();
+    // CPF 命中来自服务端(cpfMatchIds);姓名 / 99ID 仍在本地匹配。
     return riders
       .filter((rider) => rider.ninetyNineId)
       .filter((rider) => (shiftIsPro ? rider.pool === "pro" : rider.pool !== "pro"))
       .filter((rider) => !franchise || rider.franchise === franchise)
       .filter((rider) => !fixedStation || rider.ponto === fixedStation)
-      .filter((rider) => !term || rider.name.toLowerCase().includes(term) || String(rider.ninetyNineId).includes(term))
+      .filter(
+        (rider) =>
+          !term ||
+          rider.name.toLowerCase().includes(term) ||
+          String(rider.ninetyNineId).includes(term) ||
+          (cpfMatchIds?.has(rider.id) ?? false),
+      )
       .sort((a, b) => a.ponto.localeCompare(b.ponto) || a.name.localeCompare(b.name));
-  }, [riders, franchise, fixedStation, query, shiftIsPro]);
+  }, [riders, franchise, fixedStation, query, shiftIsPro, cpfMatchIds]);
 
   // Riders already signed up for the selected shift can't be re-submitted.
   const alreadyIn = useMemo(() => {
@@ -176,7 +201,7 @@ export function ShiftRiderPicker({
         <input
           value={query}
           onChange={(e) => setQuery(e.target.value)}
-          placeholder="搜索骑手姓名 / 99ID"
+          placeholder="搜索骑手姓名 / 99ID / CPF"
           className="h-10 w-full rounded-[8px] border border-[var(--line)] bg-[var(--surface-raised)] pl-9 pr-3 text-sm font-bold text-[var(--text)] outline-none focus:border-[var(--accent)]"
         />
       </div>
@@ -223,7 +248,8 @@ export function ShiftRiderPicker({
               )}
               <span className="min-w-0 flex-1 truncate text-sm font-black">{rider.name}</span>
               {!fixedStation && <span className="tag shrink-0">{rider.ponto}</span>}
-              <span className="shrink-0 font-mono text-[10px] font-bold text-[var(--muted)]">{rider.ninetyNineId}</span>
+              <span className="shrink-0 font-mono text-[10px] font-bold text-[var(--muted)]" translate="no">{rider.ninetyNineId}</span>
+              {rider.cpf && <span className="shrink-0 font-mono text-[10px] font-bold text-[var(--muted)]" translate="no" title="CPF">{/^\d{11}$/.test(rider.cpf.replace(/\D/g, "")) ? maskCpf(rider.cpf) : rider.cpf}</span>}
             </label>
           );
         })}
