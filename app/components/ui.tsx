@@ -131,6 +131,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const acknowledgeNotification = useVentoStore((state) => state.acknowledgeNotification);
   const auditLog = useVentoStore((state) => state.auditLog);
   const unreadCount = useMemo(() => notifications.filter((notification) => !notification.readAt).length, [notifications]);
+  // 待处理 = 未确认;已确认的折叠进"已处理"(最近 20 条),小铃铛队列只留真正要动的。
+  const pendingNotifications = useMemo(() => notifications.filter((notification) => !notification.acknowledgedAt), [notifications]);
+  const handledNotifications = useMemo(() => notifications.filter((notification) => notification.acknowledgedAt).slice(0, 20), [notifications]);
   const t = (key: TranslationKey) => translate(language, key);
   const nextTheme = theme === "dark" ? "light" : "dark";
   const activeRole = sessionUser?.role ?? currentRole;
@@ -339,8 +342,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               <div>
                 <div className="mb-2 text-[10px] font-bold uppercase tracking-wider text-[var(--muted)]">{t("operationsQueue")}</div>
                 <div className="space-y-2">
-                  {notifications.length ? (
-                    notifications.map((notification) => {
+                  {pendingNotifications.length ? (
+                    pendingNotifications.map((notification) => {
                       const status = getNotificationStatus(notification);
                       return (
                         <div
@@ -385,6 +388,25 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                     <div className="rounded-[8px] border border-[var(--line)] bg-[var(--surface-raised)] p-3 text-xs text-[var(--muted-strong)]">{t("noActiveNotifications")}</div>
                   )}
                 </div>
+                {/* 已确认的通知折叠到"已处理",不再和待处理混在一个队列里常驻 */}
+                {handledNotifications.length > 0 && (
+                  <details className="mt-3">
+                    <summary className="cursor-pointer text-[10px] font-bold uppercase tracking-wider text-[var(--muted)]">{t("ntfHandled").replace("{n}", String(handledNotifications.length))}</summary>
+                    <div className="mt-2 space-y-2">
+                      {handledNotifications.map((notification) => (
+                        <div key={notification.id} className="rounded-[8px] border border-[var(--line)] bg-[var(--surface-raised)]/50 p-3 opacity-70">
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="min-w-0 flex-1">
+                              <span className="block truncate text-sm font-bold text-[var(--text)]">{notification.title}</span>
+                              <span className="mt-1 block text-[10px] text-[var(--muted)]">{notification.createdAt} · {notification.acknowledgedAt}</span>
+                            </div>
+                            <Badge value={notification.severity} />
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </details>
+                )}
               </div>
               <div>
                 <div className="mb-2 text-[10px] font-bold uppercase tracking-wider text-[var(--muted)]">{t("latestAuditEvents")}</div>

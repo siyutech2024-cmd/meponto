@@ -20,6 +20,8 @@ import {
   type Severity,
 } from "./data";
 import { notificationFromIncident, seedNotificationsFromIncidents, type NotificationItem } from "./notifications";
+
+const demoSeedsOnClient = process.env.NEXT_PUBLIC_APP_ENV === "development" || process.env.NODE_ENV === "development";
 import type { Language } from "./i18n";
 import type { Role } from "./rbac";
 import { syncToServer } from "./sync";
@@ -143,10 +145,12 @@ export const useVentoStore = create<VentoState>()(
       riders: seedRiders,
       pontos: seedPontos,
       leaders: seedLeaders,
-      incidents: seedIncidents,
+      // 演示事故/通知只在本地开发灌入;线上初始为空,由 StoreHydrator 从接口填充,
+      // 否则 localStorage 里会一直躺着 2026-05 的演示告警。
+      incidents: demoSeedsOnClient ? seedIncidents : [],
       rewardRules: seedRewards as RewardRule[],
       ledgerEntries: seedLedgerEntries,
-      notifications: seedNotificationsFromIncidents(seedIncidents),
+      notifications: demoSeedsOnClient ? seedNotificationsFromIncidents(seedIncidents) : [],
       auditLog: seedAuditLog,
       setLanguage: (language) => set({ language }),
       setTheme: (theme) => set({ theme }),

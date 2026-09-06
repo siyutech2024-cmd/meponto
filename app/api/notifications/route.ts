@@ -1,12 +1,31 @@
-import { jsonResponse, memory } from "../../lib/server/memory";
-import { flushPendingToDatabase } from "../../lib/server/persistence";
+import { DEMO_NOTIFICATION_IDS, demoSeedsActive, jsonResponse, memory } from "../../lib/server/memory";
+import { flushPendingToDatabase, persistDeleteRecord, refreshCollectionsFromDatabase } from "../../lib/server/persistence";
 import { requirePermission } from "../../lib/server/authz";
 
 function nowStamp() {
   return new Date().toISOString().slice(0, 16).replace("T", " ");
 }
 
-export function GET() {
+/** 生产库里残留的演示通知(2026-05 的 Felipe Rocha / Carlos Mendes)读一次就清掉。 */
+function purgeDemoNotifications() {
+  if (demoSeedsActive()) return;
+  // 就地 splice:memory.* 是持久化代理数组,整个替换引用会脱离跟踪。
+  let removed = 0;
+  for (let i = memory.notifications.length - 1; i >= 0; i -= 1) {
+    const n = memory.notifications[i];
+    if (!DEMO_NOTIFICATION_IDS.has(n.id)) continue;
+    memory.notifications.splice(i, 1);
+    persistDeleteRecord("notifications", n.id);
+    removed += 1;
+  }
+  return removed > 0;
+}
+
+export async function GET(request: Request) {
+  const forbidden = requirePermission(request, "view_dashboard");
+  if (forbidden) return forbidden;
+  await refreshCollectionsFromDatabase(["notifications"]);
+  if (purgeDemoNotifications()) await flushPendingToDatabase();
   const unreadCount = memory.notifications.filter((notification) => !notification.readAt).length;
   const unacknowledgedCount = memory.notifications.filter((notification) => !notification.acknowledgedAt).length;
 

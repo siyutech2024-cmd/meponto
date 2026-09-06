@@ -30,6 +30,13 @@ function scheduleResponseFlush() {
   }
 }
 import { seedNotificationsFromIncidents, type NotificationItem } from "../notifications";
+
+/** 演示种子只在未开持久化(本地 / 冒烟)时灌入;生产从数据库水合。 */
+const demoSeedsEnabled = process.env.USE_SUPABASE !== "true";
+/** 演示事故 id(app/lib/data.ts);生产库里若还残留,读取时清掉。 */
+export const DEMO_INCIDENT_IDS = new Set(["inc-9001", "inc-9002", "inc-9003"]);
+export const DEMO_NOTIFICATION_IDS = new Set([...DEMO_INCIDENT_IDS].map((id) => `ntf-${id}`));
+export const demoSeedsActive = () => demoSeedsEnabled;
 import { crmPartners, crmCategories, type CrmPartner, type CrmCategory } from "../crm";
 import {
   marketplaceOrders,
@@ -163,12 +170,14 @@ export const memory =
   globalState.ventoMemory ??
   (globalState.ventoMemory = {
     riders: trackCollection("riders", [...riders]),
-    incidents: trackCollection("incidents", [...incidents]),
+    // 生产(USE_SUPABASE=true)不再灌演示事故/通知:此前每次冷启动都把 2026-05 的
+    // "Felipe Rocha 严重事故" 等演示数据塞回内存,小铃铛永远亮着几个月前的提示。
+    incidents: trackCollection("incidents", demoSeedsEnabled ? [...incidents] : []),
     pontos: trackCollection("pontos", [...pontos]),
     leaders: trackCollection("leaders", [...leaders]),
     rewards: trackCollection("rewards", [...rewards]),
     ledgerEntries: trackCollection("ledgerEntries", [...ledgerEntries]),
-    notifications: trackCollection("notifications", seedNotificationsFromIncidents(incidents)),
+    notifications: trackCollection("notifications", demoSeedsEnabled ? seedNotificationsFromIncidents(incidents) : []),
     crmPartners: trackCollection("crmPartners", [...crmPartners]),
     crmCategories: trackCollection("crmCategories", [...crmCategories]),
     pointsLedgerEntries: trackCollection("pointsLedgerEntries", [...pointsLedgerEntries]),
@@ -229,7 +238,7 @@ export const memory =
 void hydrateFromDatabase();
 
 memory.ledgerEntries ??= [...ledgerEntries];
-memory.notifications ??= seedNotificationsFromIncidents(memory.incidents);
+memory.notifications ??= demoSeedsEnabled ? seedNotificationsFromIncidents(memory.incidents) : [];
 memory.crmPartners ??= [...crmPartners];
 memory.crmCategories ??= [...crmCategories];
 memory.pointsLedgerEntries ??= [...pointsLedgerEntries];
