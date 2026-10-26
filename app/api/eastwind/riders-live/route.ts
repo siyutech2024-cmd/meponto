@@ -91,7 +91,11 @@ export async function GET(request: Request) {
   // 原来是拉"最近 60 行"再归类找各源最新批 —— 但快照是**一行一骑手**,
   // 主号一批就是 63 行;只要主号批次比 PRO 新,60 行窗口全被主号占满,
   // PRO 层整层消失。谁的批次新谁就把对方挤掉。现在按源各查最新一批。
-  const KNOWN_SOURCES = ["main", "pro"] as const;
+  //
+  // 2026-10-26 新OL 并入 Boa Vista:PRO 池暂停,PRO 实例改跑 Boa Vista 账号
+  // (source "sjbv",组长模式)。PRO 不再列为实时源 —— 否则它的心跳永远过期,
+  // 「应岗未上」面板会因"有源断供"被永久隐藏。恢复 PRO 时把 "pro" 加回来即可。
+  const KNOWN_SOURCES = ["main", "sjbv"] as const;
   const latestBySource = new Map<string, string>();
   const latestPerSource = await Promise.all(
     KNOWN_SOURCES.map((src) =>
@@ -174,6 +178,7 @@ export async function GET(request: Request) {
     const { data: kpiRows } = await client
       .from("rider_kpi_snapshots")
       .select("captured_at, source, city_id, ar, caa, accept_cnt, overtime, tsh, finished_cnt")
+      .in("source", [...KNOWN_SOURCES]) // a paused feed's last reading must not keep counting
       .gte("captured_at", spDayStart)
       .order("captured_at", { ascending: true })
       .limit(1000); // 两个源 × 3 分钟一批,一天最多 ~480 批

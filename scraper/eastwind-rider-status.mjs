@@ -18,6 +18,7 @@
  *   MEPONTO_INGEST_TOKEN  shared secret (matches EASTWIND_INGEST_TOKEN on the server)
  *   PROFILE_DIR           persistent browser profile dir (default ./.eastwind-profile)
  *   CITY_ID               default 55000199
+ *   SOURCE_ACCOUNT        "sjbv" on the Boa Vista leader-mode instance; unset elsewhere
  *   INTERVAL_MIN          default 5
  *   SHIFT_START / SHIFT_END  local hours, default 0 / 24 (all day)
  *   TZ                    default America/Sao_Paulo
@@ -66,6 +67,12 @@ const cfg = {
       const idx = entry.lastIndexOf(":");
       return idx === -1 ? { label: entry, id: "" } : { label: entry.slice(0, idx).trim(), id: entry.slice(idx + 1).trim() };
     }),
+  /**
+   * Ingest lane override (2026-10-26). Only "sjbv" is honoured by the server:
+   * the Boa Vista leader-mode instance sets SOURCE_ACCOUNT=sjbv so its riders
+   * land in their own feed. Unset (old OL) = lane decided by the token alone.
+   */
+  sourceAccount: (process.env.SOURCE_ACCOUNT || "").trim(),
   intervalMin: Number(process.env.INTERVAL_MIN || 5),
   shiftStartMin: hmToMin(process.env.SHIFT_START, 0),     // e.g. "10:30"
   shiftEndMin: hmToMin(process.env.SHIFT_END, 24 * 60),   // e.g. "22:30"
@@ -337,7 +344,7 @@ async function pull(ctx, city = null, roundCapturedAt = null) {
     const res = await fetch(cfg.ingestUrl, {
       method: "POST",
       headers: { "Content-Type": "application/json", "x-ingest-token": cfg.ingestToken },
-      body: JSON.stringify({ capturedAt, cityId, riderList, kpi, riderFeatures }),
+      body: JSON.stringify({ capturedAt, cityId, riderList, kpi, riderFeatures, ...(cfg.sourceAccount ? { sourceAccount: cfg.sourceAccount } : {}) }),
       // A hanging ingest request must not wedge the round forever.
       signal: AbortSignal.timeout(60_000),
     });

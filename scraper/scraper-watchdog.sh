@@ -41,13 +41,17 @@ elif [ -z "$main_online" ] || [ "$main_age" -gt "$STALE_SEC" ]; then
   pm2 restart eastwind-scraper >/dev/null 2>&1 || (cd /opt/eastwind-scraper && pm2 start ecosystem.config.cjs >/dev/null 2>&1)
   restarted=1
 fi
-# ── PRO(systemd)
-pro_log=$(journalctl -u eastwind-scraper-pro -n 400 --no-pager 2>/dev/null)
-pro_age=$(age_of_last_ingest "$pro_log")
-if ! systemctl is-active --quiet eastwind-scraper-pro || [ "$pro_age" -gt "$STALE_SEC" ]; then
-  log "PRO stale (last ingest ${pro_age}s ago, active=$(systemctl is-active eastwind-scraper-pro)) — restarting"
-  systemctl restart eastwind-scraper-pro
-  restarted=1
+# ── Boa Vista 组长模式(systemd)—— 2026-10-26 起取代 PRO 实例(PRO 暂停,不再看护)
+if systemctl list-unit-files eastwind-scraper-sjbv.service >/dev/null 2>&1 && systemctl is-enabled --quiet eastwind-scraper-sjbv 2>/dev/null; then
+  sj_log=$(journalctl -u eastwind-scraper-sjbv -n 400 --no-pager 2>/dev/null)
+  sj_age=$(age_of_last_ingest "$sj_log")
+  if echo "$sj_log" | tail -n 30 | grep -q "LOGIN_REQUIRED"; then
+    log "SJBV needs re-login (LOGIN_REQUIRED in log) — restart would not help, skipping"
+  elif ! systemctl is-active --quiet eastwind-scraper-sjbv || [ "$sj_age" -gt "$STALE_SEC" ]; then
+    log "SJBV stale (last ingest ${sj_age}s ago, active=$(systemctl is-active eastwind-scraper-sjbv)) — restarting"
+    systemctl restart eastwind-scraper-sjbv
+    restarted=1
+  fi
 fi
 [ "$restarted" = 1 ] && echo "$now" > "$STATE"
 exit 0

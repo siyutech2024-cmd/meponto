@@ -23,37 +23,56 @@ import {
  */
 
 const DEFAULT_CITY = "55000199";
+/** São João da Boa Vista — the only city the leader-mode feed may report. */
+const SJBV_CITY = "55000174";
+
+type Source = "main" | "pro" | "sjbv";
 
 /**
- * Two realtime scrapers feed this endpoint (two VPSes, two Eastwind accounts):
- *  - EASTWIND_INGEST_TOKEN      → source "main" (the original all-riders board)
- *  - EASTWIND_INGEST_TOKEN_PRO  → source "pro"  (the PRO-pool monitoring VPS)
- * The SOURCE comes from which token matched — scrapers need zero code changes,
- * the new VPS just uses the PRO token in its .env. Batches are delete-then-
- * insert scoped to (captured_at, source), so the two feeds never wipe each
- * other. Returns the resolved source, or null when unauthorized.
+ * Realtime scrapers feeding this endpoint (one VPS, separate Eastwind accounts):
+ *  - EASTWIND_INGEST_TOKEN       → source "main" (old OL, São Paulo board)
+ *  - EASTWIND_INGEST_TOKEN_PRO   → source "pro"  (new OL / PRO pool — PAUSED 2026-10-26)
+ *  - EASTWIND_INGEST_TOKEN_SJBV  → source "sjbv" (Boa Vista account, leader mode)
+ * The SOURCE comes from which token matched. Batches are delete-then-insert
+ * scoped to (captured_at, source, city_id), so the feeds never wipe each other.
+ * Returns the authenticated source, or null when unauthorized.
  */
-function resolveSource(request: Request): "main" | "pro" | null {
+function resolveSource(request: Request): Source | null {
   const main = process.env.EASTWIND_INGEST_TOKEN;
   const pro = process.env.EASTWIND_INGEST_TOKEN_PRO;
-  if (!main && !pro) return "main"; // unset → open (local/dev)
+  const sjbv = process.env.EASTWIND_INGEST_TOKEN_SJBV;
+  if (!main && !pro && !sjbv) return "main"; // unset → open (local/dev)
   const token =
     request.headers.get("x-ingest-token") ??
     (request.headers.get("authorization") ?? "").replace(/^Bearer\s+/i, "");
+  if (sjbv && token === sjbv) return "sjbv";
   if (pro && token === pro) return "pro";
   if (main && token === main) return "main";
   return null;
 }
 
+/**
+ * 新OL 并入 Boa Vista(业务方 2026-10-26 定):PRO 池暂停,原 PRO 实例的位置改跑
+ * Boa Vista 专用账号(组长模式)。该实例在 .env 写 SOURCE_ACCOUNT=sjbv,抓取器把它
+ * 随 payload 上报为 `sourceAccount`。任何已认证的抓取器都可以**只**声明进 "sjbv"
+ * 这一条道 —— 不能借此冒充 main/pro —— 这样不必等 Vercel 新增 token 就能上线;
+ * 配了 EASTWIND_INGEST_TOKEN_SJBV 之后两种方式等价。
+ * 关键点:sjbv 骑手**不**走 PRO 自动打标(那会把他们的金额全部清零)。
+ */
+function laneOf(authenticated: Source, declared: unknown): Source {
+  return declared === "sjbv" ? "sjbv" : authenticated;
+}
+
 export async function POST(request: Request) {
-  const source = resolveSource(request);
-  if (!source) {
+  const authSource = resolveSource(request);
+  if (!authSource) {
     return jsonResponse({ error: "Unauthorized" }, { status: 401 });
   }
 
   let body: {
     capturedAt?: string;
     cityId?: string;
+    sourceAccount?: string; // "sjbv" = Boa Vista leader-mode feed (see laneOf)
     riderList?: unknown; // vendor.rider.monitor.riderList payload
     kpi?: unknown;       // vendor.rider.monitor.vendorFeatureInShift payload
     riderFeatures?: Record<string, unknown>; // per-rider detail responses keyed by riderID
@@ -65,8 +84,15 @@ export async function POST(request: Request) {
     return jsonResponse({ error: "Invalid JSON body" }, { status: 400 });
   }
 
+  const source = laneOf(authSource, body.sourceAccount);
   const capturedAt = body.capturedAt ?? new Date().toISOString();
-  const cityId = body.cityId ?? DEFAULT_CITY;
+  const cityId = body.cityId ?? (source === "sjbv" ? SJBV_CITY : DEFAULT_CITY);
+  // The Boa Vista account must only ever write Boa Vista rows: if its board
+  // drifted to another city, refuse rather than mix another city's riders
+  // into the leader-mode feed (the scraper logs the 409 and alerts).
+  if (source === "sjbv" && cityId !== SJBV_CITY) {
+    return jsonResponse({ error: `sjbv feed only accepts cityId ${SJBV_CITY}, got ${cityId}` }, { status: 409 });
+  }
   const client = getSupabaseServerClient();
 
   const result: Record<string, unknown> = { capturedAt: alignToMinute(capturedAt) };
@@ -136,6 +162,10 @@ export function GET() {
       expects: { capturedAt: "ISO", cityId: "optional", riders: "raw JSON", delivery: "raw JSON" },
       tables: ["rider_status_snapshots", "rider_kpi_snapshots", "eastwind_deliveries"],
       authHeader: "x-ingest-token",
+      // Read by scraper/switch-to-boavista.command: the Boa Vista instance is
+      // only started once production reports the "sjbv" lane — on older code
+      // its PRO token would land the riders in the PRO pool.
+      lanes: ["main", "pro", "sjbv"],
     },
   });
 }
