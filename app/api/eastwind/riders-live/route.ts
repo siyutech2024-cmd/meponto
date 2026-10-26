@@ -56,6 +56,7 @@ type SnapshotRow = {
   finished_cnt: number | null; lat: number | null; lng: number | null;
   error_show: string | null; raw: unknown;
   source?: string | null;
+  city_id?: string | null;
 };
 
 export async function GET(request: Request) {
@@ -175,10 +176,15 @@ export async function GET(request: Request) {
       const sp = new Date(Date.now() - 3 * 3600_000);
       return new Date(Date.UTC(sp.getUTCFullYear(), sp.getUTCMonth(), sp.getUTCDate(), 3)).toISOString();
     })();
-    const { data: kpiRows } = await client
+    let kpiQuery = client
       .from("rider_kpi_snapshots")
       .select("captured_at, source, city_id, ar, caa, accept_cnt, overtime, tsh, finished_cnt")
-      .in("source", [...KNOWN_SOURCES]) // a paused feed's last reading must not keep counting
+      .in("source", [...KNOWN_SOURCES]); // a paused feed's last reading must not keep counting
+    // Region menus ask for one city: its KPI strip shows THAT city's counters
+    // (Boa Vista no longer shows São Paulo's AR, São Paulo no longer adds
+    // Boa Vista's order counts). Read-only narrowing.
+    if (cityId) kpiQuery = kpiQuery.eq("city_id", cityId);
+    const { data: kpiRows } = await kpiQuery
       .gte("captured_at", spDayStart)
       .order("captured_at", { ascending: true })
       .limit(1000); // 两个源 × 3 分钟一批,一天最多 ~480 批
@@ -272,6 +278,9 @@ export async function GET(request: Request) {
       shift: [s.shift_start, s.shift_end].filter(Boolean).join("-"),
       hotZone: s.hot_zone, vehicle: s.vehicle, onlineMins: s.online_mins, restMins: s.rest_mins,
       finishedCnt: s.finished_cnt, lat: s.lat, lng: s.lng,
+      // Eastwind city of the snapshot — lets the riders page put a rider with
+      // no franchise yet into the right region menu (São Paulo / Boa Vista).
+      city: s.city_id ?? null,
       franchise: match?.franchise || "", ponto: match?.ponto || "", leader: match?.leader || "",
       // 模式二: pool membership for the PRO realtime monitor view.
       // 规则(业务方 2026-08-10 定):在新 Eastwind(PRO 账号)看板上出现

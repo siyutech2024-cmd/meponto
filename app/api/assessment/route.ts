@@ -1,6 +1,7 @@
 import { appendServerAudit, jsonResponse, memory } from "../../lib/server/memory";
 import { flushPendingToDatabase, refreshCollectionsFromDatabase } from "../../lib/server/persistence";
 import { requirePermission, roleFromRequest, scopeFromRequest } from "../../lib/server/authz";
+import { regionFilter } from "../../lib/server/regions";
 import { buildAssessmentBoard, defaultAssessmentRule, weekWindow, type AssessmentMetric, type AssessmentRule } from "../../lib/assessment";
 
 const COLLECTIONS = ["assessmentRules", "riderDailyKpis", "riders"];
@@ -45,8 +46,11 @@ export async function GET(request: Request) {
     return jsonResponse({ data: { rule, week: win, scoped: true, franchises: franchiseBoard, stations: stationBoard } });
   }
 
-  const franchiseBoard = buildBoard(rule, win.from, win.to, "franchise", undefined, pool);
-  const stationBoard = buildBoard(rule, win.from, win.to, "station", undefined, pool);
+  // Region menus: HQ's São Paulo page shows São Paulo franchises only (Boa
+  // Vista runs leader-mode assessment, see /assessment/boavista). Read-only.
+  const inRegion = await regionFilter(request, url);
+  const franchiseBoard = buildBoard(rule, win.from, win.to, "franchise", undefined, pool).filter((row) => !inRegion || inRegion(row.name));
+  const stationBoard = buildBoard(rule, win.from, win.to, "station", undefined, pool).filter((row) => !inRegion || inRegion(row.sub));
   return jsonResponse({ data: { rule, week: win, scoped: false, franchises: franchiseBoard, stations: stationBoard } });
 }
 

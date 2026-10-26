@@ -3,6 +3,8 @@
 import React, { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { BarChart3, Building2, CircleDollarSign, FileSpreadsheet, MapPin, RefreshCcw, Upload, Users } from "lucide-react";
 import { AppShell, PageTitle } from "../components/ui";
+import { usePathname } from "next/navigation";
+import { regionFromPath } from "../lib/regions";
 import { Chip, DataTable, Drawer, Pager, SearchInput, SectionCard, Stat, StatusBadge, TodoCard, Toolbar, type BadgeTone, type DataColumn, type SortState } from "../components/kit";
 import { downloadCsv } from "../lib/csv";
 import { useDialog } from "../components/dialog";
@@ -273,6 +275,11 @@ export default function PerformancePage() {
   const scopeFranchise = session?.portal === "franchise" ? session.franchise || session.organization : "";
   const scopeStation = session?.portal === "ponto" ? session.station || session.organization : "";
 
+  // Region menu (app/lib/regions.ts): HQ's São Paulo page excludes Boa Vista,
+  // the Boa Vista page shows only Boa Vista. Server-side read filter, so the
+  // totals, settlement sums and trend are computed on the region's rows only.
+  const region = regionFromPath(usePathname());
+  const isBoaVista = region === "sjbv";
   const [tab, setTab] = useState<TabId>(scopeStation ? "riders" : "franchises");
   const [data, setData] = useState<Payload | null>(null);
   const [date, setDate] = useState("");
@@ -295,6 +302,7 @@ export default function PerformancePage() {
       if (scopeFranchise) params.set("franchise", scopeFranchise);
       if (scopeStation) params.set("station", scopeStation);
       if (account) params.set("account", account);
+      if (!scopeFranchise && !scopeStation) params.set("region", region);
       const response = await fetch(`/api/performance?${params}`, { headers, cache: "no-store" });
       const payload = await response.json();
       if (response.ok) {
@@ -302,7 +310,7 @@ export default function PerformancePage() {
         setDate(payload.data.date ?? "");
       }
     },
-    [headers, scopeFranchise, scopeStation, account],
+    [headers, scopeFranchise, scopeStation, account, region],
   );
 
   useEffect(() => {
@@ -336,7 +344,7 @@ export default function PerformancePage() {
   return (
     <AppShell>
       <PageTitle
-        title={t("pfTitle")}
+        title={isBoaVista ? `${t("navBvPerformance")} · ${t("regionBoaVista")}` : t("pfTitle")}
         eyebrow={scopeStation ? t("pfEyebrowStation", { x: scopeStation }) : scopeFranchise ? t("pfEyebrowFranchise", { x: scopeFranchise }) : t("pfEyebrowDefault")}
         action={
           <div className="flex gap-2">
@@ -433,7 +441,7 @@ export default function PerformancePage() {
           ))}
           {/* 模式二 · 分池看数。和 tab 同一行,不新增菜单也不新增卡片。
               导入 tab 上没有意义(那里有自己的来源选择器),所以隐藏。 */}
-          {tab !== "import" && (
+          {tab !== "import" && !isBoaVista && (
             <span className="ml-2 inline-flex items-center gap-1.5 border-l border-[var(--line)] pl-3">
               {([["", "fmChipAll"], ["pro", null], ["main", "rdPoolStandard"]] as const).map(([value, key]) => (
                 <Chip key={value || "all"} active={account === value} onClick={() => setAccount(value)}>
@@ -461,7 +469,7 @@ export default function PerformancePage() {
         <EarningsTab earnings={data.earnings} scopeFranchise={scopeFranchise} scopeStation={scopeStation} date={data.date ?? ""} headers={headers} />
       )}
 
-      {tab === "import" && <ImportTab headers={headers} onDone={(text) => { setMessage({ tone: "ok", text }); void load(); }} onError={(text) => setMessage({ tone: "err", text })} />}
+      {tab === "import" && <ImportTab headers={headers} boaVista={isBoaVista} onDone={(text) => { setMessage({ tone: "ok", text }); void load(); }} onError={(text) => setMessage({ tone: "err", text })} />}
     </AppShell>
   );
 }
@@ -897,7 +905,7 @@ function EarningsTab({ earnings, scopeFranchise, scopeStation, date, headers }: 
   );
 }
 
-function ImportTab({ headers, onDone, onError }: { headers: Record<string, string>; onDone: (text: string) => void; onError: (text: string) => void }) {
+function ImportTab({ headers, onDone, onError, boaVista = false }: { headers: Record<string, string>; onDone: (text: string) => void; onError: (text: string) => void; boaVista?: boolean }) {
   const t = useT();
   const dialog = useDialog();
   const [raw, setRaw] = useState("");
@@ -1015,13 +1023,17 @@ function ImportTab({ headers, onDone, onError }: { headers: Record<string, strin
               >
                 {t("pfImpAccountMain")}
               </button>
-              <button
-                type="button"
-                onClick={() => setAccount("pro")}
-                className={`inline-flex h-8 items-center rounded-full px-3 text-xs font-black ${account === "pro" ? "bg-[#eda100] text-[#171b33]" : "border border-[var(--line)] text-[var(--muted-strong)]"}`}
-              >
-                {t("pfImpAccountPro")}
-              </button>
+              {/* Boa Vista has no PRO pool: its reports always import as the
+                  standard pool, so the zero-money PRO option can't be picked by mistake. */}
+              {!boaVista && (
+                <button
+                  type="button"
+                  onClick={() => setAccount("pro")}
+                  className={`inline-flex h-8 items-center rounded-full px-3 text-xs font-black ${account === "pro" ? "bg-[#eda100] text-[#171b33]" : "border border-[var(--line)] text-[var(--muted-strong)]"}`}
+                >
+                  {t("pfImpAccountPro")}
+                </button>
+              )}
             </div>
             <div className="mt-2 text-[11px] font-bold text-[var(--muted)]">
               {account === "pro" ? t("pfImpAccountProHint") : t("pfImpAccountMainHint")}

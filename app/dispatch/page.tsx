@@ -12,6 +12,8 @@ import type { Ponto } from "../lib/data";
 import { useVentoStore } from "../lib/store";
 import { translate, type TranslationKey } from "../lib/i18n";
 import { canonicalCity, DEFAULT_CITY, type City } from "../lib/cities";
+import { regionFromPath, REGION_CITY } from "../lib/regions";
+import { usePathname } from "next/navigation";
 import { HOT_ZONES } from "../rider-monitor/hot-zones";
 
 function useT() {
@@ -167,7 +169,10 @@ export default function DispatchPage() {
    * 城市切换 —— 每次 GET 都带上 city,服务端按城市过滤 shifts/quotas/signups/swaps
    * 和 summary,所以顶部统计卡自动跟着城市走(前端不再另算一份全量口径)。
    */
-  const [city, setCity] = useState<City>(DEFAULT_CITY);
+  // Region menu (app/lib/regions.ts): HQ's São Paulo menu schedules São Paulo,
+  // the Boa Vista menu schedules Boa Vista — no in-page city switching for HQ.
+  const region = regionFromPath(usePathname());
+  const [city, setCity] = useState<City>(REGION_CITY[region] ?? DEFAULT_CITY);
   /**
    * 换人待确认 —— 直接用服务端 summary,不在前端另算一份。服务端已经在 GET 时
    * 把过期的 pending 关掉了,所以这个数字只会因为"被处理"或"班次已过"而下降,
@@ -209,11 +214,18 @@ export default function DispatchPage() {
 
   // 服务端说了算:如果当前选中的城市不在这个调用方的可见列表里(比如只在新城市
   // 运营的租户,默认值是圣保罗),就跟着服务端返回的城市走。
+  // Locked when the caller can see the menu's city (HQ). A tenant that only
+  // operates elsewhere keeps following the server's list, exactly as before.
+  const lockedCity = board.cities.some((item) => canonicalCity(item) === REGION_CITY[region]) ? REGION_CITY[region] : null;
   useEffect(() => {
+    if (lockedCity) {
+      if (canonicalCity(city) !== lockedCity) setCity(lockedCity);
+      return;
+    }
     if (board.cities.length === 0) return;
     if (board.cities.some((item) => canonicalCity(item) === canonicalCity(city))) return;
     setCity(canonicalCity(board.city ?? board.cities[0]));
-  }, [board.cities, board.city, city]);
+  }, [board.cities, board.city, city, lockedCity]);
 
   useEffect(() => {
     fetch("/api/network", { headers, cache: "no-store" })
@@ -282,7 +294,7 @@ export default function DispatchPage() {
   return (
     <AppShell>
       <PageTitle
-        title={t("dpTitle")}
+        title={region === "sjbv" ? `${t("dpTitle")} · ${t("regionBoaVista")}` : t("dpTitle")}
         eyebrow={t("dpEyebrow")}
         action={
           <button type="button" onClick={() => void load()} className="tag inline-flex items-center gap-1">
@@ -304,7 +316,7 @@ export default function DispatchPage() {
       <div className="mb-3 flex flex-wrap items-center gap-2">
         {/* 城市切换 —— 只在调用方能看到多座城市时出现;单城市租户不该看到一个
             没有第二个选项的控件。列表由服务端给(board.cities)。 */}
-        {board.cities.length > 1 && (
+        {!lockedCity && board.cities.length > 1 && (
           <>
             <span className="text-[11px] font-black uppercase text-[var(--muted)]">{t("dpCity")}</span>
             <div className="flex overflow-hidden rounded-full border border-[var(--line)]">
@@ -322,6 +334,7 @@ export default function DispatchPage() {
             <span className="mx-1 h-5 w-px bg-[var(--line)]" aria-hidden />
           </>
         )}
+        {region !== "sjbv" && (<>
         <span className="text-[11px] font-black uppercase text-[var(--muted)]">{t("dpPoolTable")}</span>
         <button
           type="button"
@@ -340,6 +353,7 @@ export default function DispatchPage() {
         {pool === "pro" && (
           <span className="text-[11px] font-bold text-[var(--muted)]">{t("dpPoolProHint")}</span>
         )}
+        </>)}
       </div>
 
       <div className="mb-4 flex flex-wrap gap-2">

@@ -68,6 +68,15 @@ const navItems: Array<{
   { href: "/reports", labelKey: "navReports", icon: FileBarChart2, permission: "view_analytics" },
   { href: "/access-control", labelKey: "navAccessControl", icon: ShieldCheck, permission: "view_audit" },
   { href: "/app-config", labelKey: "navAppConfig", icon: Smartphone, permission: "view_audit" },
+  // Boa Vista (leader mode) — its own menu, same pages scoped by the /boavista
+  // URL segment (app/lib/regions.ts). São Paulo entries above stay São Paulo-only.
+  { href: "/rider-monitor/boavista", labelKey: "navBvMonitor", icon: Bike, permission: "manage_riders" },
+  { href: "/dispatch/boavista", labelKey: "navBvDispatch", icon: CalendarDays, permission: "manage_slots" },
+  { href: "/performance/boavista", labelKey: "navBvPerformance", icon: BarChart3, permission: "view_analytics" },
+  { href: "/riders/boavista", labelKey: "navBvRiders", icon: Bike, permission: "manage_riders" },
+  { href: "/pontos/boavista", labelKey: "navBvPontos", icon: MapPinned, permission: "manage_pontos" },
+  { href: "/assessment/boavista", labelKey: "navBvAssessment", icon: BarChart3, permission: "view_analytics" },
+  { href: "/wallet/boavista", labelKey: "navBvWallet", icon: CircleDollarSign, permission: "view_finance" },
 ];
 
 const navGroups: Array<{
@@ -90,6 +99,12 @@ const navGroups: Array<{
         "/franchise",
         ].includes(item.href),
     ),
+  },
+  {
+    // Boa Vista — leader-mode operation with its own settlement logic, kept
+    // out of the São Paulo pages entirely (业务方 2026-10-26).
+    title: "Boa Vista · Leader",
+    items: navItems.filter((item) => item.href.endsWith("/boavista")),
   },
   {
     // Mall & partner ecosystem.

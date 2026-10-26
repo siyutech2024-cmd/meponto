@@ -6,6 +6,9 @@ import {
   alignToMinute,
   type DeliveryRow,
 } from "../../../lib/eastwind";
+import { withinZone } from "../../../lib/geo";
+import { SJBV_ZONE_ID } from "../../../lib/regions";
+import { HOT_ZONES } from "../../../rider-monitor/hot-zones";
 
 /**
  * Ingest endpoint for the Eastwind (99Food) real-time monitor scraper.
@@ -63,6 +66,48 @@ function laneOf(authenticated: Source, declared: unknown): Source {
   return declared === "sjbv" ? "sjbv" : authenticated;
 }
 
+/**
+ * Boa Vista zone filter (业务方 2026-10-26:"只抓取这个区域内的骑手")。
+ *
+ * The Boa Vista account's board also lists riders in neighbouring towns
+ * (e.g. Águas da Prata). The sjbv feed keeps a rider only when:
+ *   - their GPS is inside the Boa Vista hot area (+0.5 km margin — the zone is
+ *     traced, not surveyed), OR the board gives no position for them, OR
+ *   - they were already kept earlier TODAY — a delivery that briefly leaves
+ *     the area must not cut a rider's day in half.
+ * Affects NEW sjbv rows only: no stored row is read-modified or deleted
+ * beyond this batch's own idempotent replace. Kill switch: SJBV_ZONE_FILTER=off.
+ */
+const SJBV_ZONE_MARGIN_KM = 0.5;
+async function keepInsideBoaVista<T extends { rider_ext_id: string | null; lat: number | null; lng: number | null }>(
+  client: ReturnType<typeof getSupabaseServerClient>,
+  snapshots: T[],
+): Promise<{ kept: T[]; dropped: number }> {
+  const zone = HOT_ZONES.find((z) => z.id === SJBV_ZONE_ID);
+  if (!zone || process.env.SJBV_ZONE_FILTER === "off") return { kept: snapshots, dropped: 0 };
+  // Fail-open: a rider whose position is unknown can't be judged, so they are
+  // kept — only riders the board PLACES outside the area are dropped. (A new
+  // account whose payload carried no GPS would otherwise lose the whole board.)
+  const noGps = (s: T) => s.lat == null || s.lng == null;
+  const inside = (s: T) => noGps(s) || withinZone(s.lat, s.lng, zone.points, SJBV_ZONE_MARGIN_KM);
+  const outsideIds = [...new Set(snapshots.filter((s) => !inside(s)).map((s) => s.rider_ext_id).filter((id): id is string => Boolean(id)))];
+  const seenToday = new Set<string>();
+  if (outsideIds.length) {
+    const sp = new Date(Date.now() - 3 * 3600_000);
+    const dayStart = new Date(Date.UTC(sp.getUTCFullYear(), sp.getUTCMonth(), sp.getUTCDate(), 3)).toISOString();
+    const { data } = await client
+      .from("rider_status_snapshots")
+      .select("rider_ext_id")
+      .eq("source", "sjbv")
+      .gte("captured_at", dayStart)
+      .in("rider_ext_id", outsideIds)
+      .limit(5000);
+    for (const row of (data ?? []) as Array<{ rider_ext_id: string | null }>) if (row.rider_ext_id) seenToday.add(row.rider_ext_id);
+  }
+  const kept = snapshots.filter((s) => inside(s) || (s.rider_ext_id != null && seenToday.has(s.rider_ext_id)));
+  return { kept, dropped: snapshots.length - kept.length };
+}
+
 export async function POST(request: Request) {
   const authSource = resolveSource(request);
   if (!authSource) {
@@ -99,7 +144,14 @@ export async function POST(request: Request) {
 
   // --- riders → snapshots + kpi -------------------------------------------
   if (body.riderList != null || body.kpi != null) {
-    const { snapshots, kpi } = parseRiders(body.riderList, body.kpi, capturedAt, cityId, body.riderFeatures ?? null);
+    const parsed = parseRiders(body.riderList, body.kpi, capturedAt, cityId, body.riderFeatures ?? null);
+    const { kpi } = parsed;
+    let snapshots = parsed.snapshots;
+    if (source === "sjbv") {
+      const { kept, dropped } = await keepInsideBoaVista(client, snapshots);
+      snapshots = kept;
+      result.outsideZoneDropped = dropped;
+    }
     const batch = alignToMinute(capturedAt);
 
     // Idempotent batch PER (SOURCE, CITY): only this feed's prior rows for the

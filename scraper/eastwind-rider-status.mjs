@@ -36,7 +36,15 @@ const KPI_API = "vendor.rider.monitor.vendorFeatureInShift";      // header KPIs
 // If Eastwind renames it, rounds log 0/N plus a "gateway apis seen" diagnostic —
 // update the constant from that line.
 const RIDER_TARGET_API = "vendor.rider.monitor.riderTarget";
-const isDetailApi = (api) => api === RIDER_TARGET_API;
+// Station-level (组长 / leader-mode) accounts — e.g. the Boa Vista account —
+// get a station-scoped board that loads the SAME data through station-prefixed
+// gateway apis (seen live 2026-10-26: stationRiderList / stationFeatureInShift).
+// Both names are accepted; the operator account's board is unaffected.
+const RIDER_LIST_APIS = [RIDER_LIST_API, "vendor.rider.monitor.stationRiderList"];
+const KPI_APIS = [KPI_API, "vendor.rider.monitor.stationFeatureInShift"];
+const isRiderListUrl = (u) => RIDER_LIST_APIS.some((api) => u.includes(api));
+const isDetailApi = (api) => api === RIDER_TARGET_API || /^vendor\.rider\.monitor\.station.*RiderTarget$/i.test(api);
+let loggedShape = false;
 
 // Parse "HH:MM" (or "HH") into minutes-of-day. Falls back to `def`.
 function hmToMin(s, def) {
@@ -93,7 +101,9 @@ const bounded = (p, ms, label) =>
   Promise.race([p, new Promise((_, rej) => setTimeout(() => rej(new Error(`${label} timed out after ${ms}ms`)), ms))]);
 const LOGIN_URL_RE = /pc-login|\/common\/login|\/login(\b|\?|#)/i;
 const loginMsg = (url) =>
-  `LOGIN_REQUIRED — session expired (landed on ${String(url).slice(0, 90)}). Run scraper/relogin-OL老号.command (VNC).`;
+  `LOGIN_REQUIRED — session expired (landed on ${String(url).slice(0, 90)}). Run scraper/${
+    process.env.SOURCE_ACCOUNT === "sjbv" ? "relogin-BoaVista组长.command" : "relogin-OL老号.command"
+  } (VNC).`;
 
 // Throttled alert to a generic webhook. Sends Slack- and Discord-compatible
 // payloads. Re-alerts for the same key at most once per hour to avoid spam.
@@ -258,8 +268,10 @@ async function pull(ctx, city = null, roundCapturedAt = null) {
     const m = u.match(/[?&]api=([^&]+)/);
     const api = m ? decodeURIComponent(m[1]) : "";
     if (api) seenApis.add(api);
-    if (api === RIDER_LIST_API || api === KPI_API) {
-      try { caps[api] = await r.json(); } catch { /* non-json */ }
+    if (RIDER_LIST_APIS.includes(api)) {
+      try { caps.riderList = await r.json(); caps.riderListApi = api; } catch { /* non-json */ }
+    } else if (KPI_APIS.includes(api)) {
+      try { caps.kpi = await r.json(); } catch { /* non-json */ }
     }
   });
 
@@ -283,13 +295,13 @@ async function pull(ctx, city = null, roundCapturedAt = null) {
       if (already !== String(city.id)) {
         await bounded(page.evaluate(([k, v]) => localStorage.setItem(k, v), [key, String(city.id)]), 15_000, "write cityID");
         await page.reload({ waitUntil: "domcontentloaded" });
-        await page.waitForResponse((r) => r.url().includes(RIDER_LIST_API), { timeout: 30000 }).catch(() => {});
+        await page.waitForResponse((r) => isRiderListUrl(r.url()), { timeout: 30000 }).catch(() => {});
         await page.waitForTimeout(2500);
       }
       // Verify against the REQUEST the board actually issued (cityID=<id> in
       // the gateway query) — never trust the click, trust the traffic.
       const usedCity = await bounded(page.evaluate(() => {
-        const hit = performance.getEntriesByType("resource").map((e) => e.name).reverse().find((u) => u.includes("riderList") && u.includes("cityID="));
+        const hit = performance.getEntriesByType("resource").map((e) => e.name).reverse().find((u) => /riderlist/i.test(u) && u.includes("cityID="));
         return hit ? (hit.match(/[?&]cityID=(\d+)/) || [])[1] ?? "" : "";
       }), 15_000, "verify cityID");
       if (usedCity && usedCity !== String(city.id)) {
@@ -302,12 +314,28 @@ async function pull(ctx, city = null, roundCapturedAt = null) {
     // Wait explicitly for the rider list response (cold start / slow networks
     // can take much longer than a fixed delay). Then a short settle for KPI.
     await page
-      .waitForResponse((r) => r.url().includes(RIDER_LIST_API), { timeout: 30000 })
+      .waitForResponse((r) => isRiderListUrl(r.url()), { timeout: 30000 })
       .catch(() => {});
     await page.waitForTimeout(2500);
 
-    const riderList = caps[RIDER_LIST_API] ?? null;
-    const kpi = caps[KPI_API] ?? null;
+    const riderList = caps.riderList ?? null;
+    const kpi = caps.kpi ?? null;
+    // One-time shape line per process (no personal data — counts and key names
+    // only) so a new account's payload can be checked from the log.
+    if (riderList && !loggedShape) {
+      loggedShape = true;
+      const pairs = riderPairs(riderList);
+      const firstKeys = (() => {
+        const walk = (n, d) => {
+          if (d > 6 || !n || typeof n !== "object") return null;
+          if (Array.isArray(n)) return n.length && typeof n[0] === "object" ? Object.keys(n[0]).slice(0, 40) : null;
+          for (const k of Object.keys(n)) { const hit = walk(n[k], d + 1); if (hit) return hit; }
+          return null;
+        };
+        return walk(riderList, 0) ?? [];
+      })();
+      log(`riderList via ${caps.riderListApi}: ${pairs.length} riders recognised; record keys=[${firstKeys.join(",")}]`);
+    }
     // The board redirects to the didi login page CLIENT-SIDE, after
     // domcontentloaded — the first URL check above still sees /monitor/. Seen
     // 2026-09-03: every round reported "nothing captured" with url=pc-login

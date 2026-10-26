@@ -1,6 +1,7 @@
 import { appendServerAudit, jsonResponse, makeServerId, memory } from "../../lib/server/memory";
 import { flushPendingToDatabase, refreshCollectionsFromDatabase } from "../../lib/server/persistence";
 import { requirePermission, roleFromRequest } from "../../lib/server/authz";
+import { regionFilter } from "../../lib/server/regions";
 import { sendPushToRider } from "../../lib/server/notify";
 import { computeBalance, type FranchiseCommissionSnapshot, type RiderWithdrawal, type WalletPayment } from "../../lib/finance";
 import {
@@ -170,6 +171,11 @@ export async function GET(request: Request) {
 
   const franchiseScope = url.searchParams.get("franchise") ?? "";
   const stationScope = url.searchParams.get("station") ?? "";
+  // Region menus (São Paulo / Boa Vista, app/lib/regions.ts): HQ's settlement
+  // views split by the rider's franchise. Read-only narrowing — amounts, paid
+  // status and ledgers are computed exactly as before, just per region. Null
+  // when absent or for tenant portals (unchanged response).
+  const inRegion = await regionFilter(request, url);
 
   // Periodic billing statement: per-rider daily settle rows for one franchise.
   let statementFranchise = url.searchParams.get("statement") ?? "";
@@ -323,6 +329,7 @@ export async function GET(request: Request) {
       const rider = byNinetyNine.get(row.rider99Id);
       const franchise = rider?.franchise ?? "Unassigned";
       if (scope.franchise && franchise !== scope.franchise) continue;
+      if (inRegion && !inRegion(franchise)) continue;
       // 站点会话:只看本站骑手(此前站点账号会看到全网 —— 2026-08-11 补)
       if (scope.station && (rider?.ponto ?? "Unassigned") !== scope.station) continue;
       const pool = poolOfRow(row, rider?.pool, v2From);
@@ -370,6 +377,7 @@ export async function GET(request: Request) {
       const paidDate = (w.paidAt ?? "").slice(0, 10);
       if (!paidDate || paidDate < win.from || paidDate > win.to) continue;
       if (scope.franchise && (w.franchise ?? "Unassigned") !== scope.franchise) continue;
+      if (inRegion && !inRegion(w.franchise ?? "Unassigned")) continue;
       const k = v2 ? w.rider99Id || w.riderName : w.riderName;
       paidToRider.set(k, (paidToRider.get(k) ?? 0) + w.amount);
     }
@@ -467,7 +475,9 @@ export async function GET(request: Request) {
     // 倒扣待扣:某天算下来是负数 = 骑手当天不但没拿到钱,还欠了一笔。
     // 以前这种行只在显示层被过滤掉,系统里查不到"谁还欠多少"。这里按窗口外
     // 的全量算(欠款不会因为翻到下一周就消失),未核销的才算。
-    const deductions = pendingDeductions(memory.riderDailyEarnings, v2From);
+    const deductions = pendingDeductions(memory.riderDailyEarnings, v2From).filter(
+      (d) => !inRegion || inRegion(byNinetyNine.get(d.rider99Id)?.franchise ?? "Unassigned"),
+    );
     const deductionTotal = round(deductions.reduce((sum, d) => sum + d.amount, 0));
 
     return jsonResponse({
@@ -477,7 +487,10 @@ export async function GET(request: Request) {
         proTotal, proOrdersTotal, proRate, proCashDebtTotal, grandNetTotal,
         // 倒扣待扣(派生量,全量口径)
         deductions, deductionTotal,
-        payments: paymentsInWindow, scoped: Boolean(scope.franchise || scope.station),
+        payments: inRegion
+          ? paymentsInWindow.filter((p) => inRegion(p.franchise || (p.target === "franchise" ? p.refName : byNinetyNine.get(p.rider99Id ?? "")?.franchise) || "Unassigned"))
+          : paymentsInWindow,
+        scoped: Boolean(scope.franchise || scope.station),
         // 加盟商佣金汇总(仅生效周起出现;之前的周没有这个字段)
         ...(commissionSummary ? { commission: commissionSummary } : {}),
         // 结算口径版本:v2 = 应付按今日统计;页面据此切换文案与列。
@@ -564,6 +577,7 @@ export async function GET(request: Request) {
   let riders = memory.riders.filter((rider) => rider.ninetyNineId);
   if (franchiseScope) riders = riders.filter((rider) => (rider.franchise ?? "Unassigned") === franchiseScope);
   if (stationScope) riders = riders.filter((rider) => (rider.ponto ?? "Unassigned") === stationScope);
+  if (inRegion) riders = riders.filter((rider) => inRegion(rider.franchise ?? "Unassigned"));
 
   // Direct read: per-rider settled totals come from ONE grouped aggregate in
   // the database (earnings_settled_totals) instead of summing the whole
@@ -607,6 +621,7 @@ export async function GET(request: Request) {
   let withdrawals = memory.riderWithdrawals.slice().sort((a, b) => b.requestedAt.localeCompare(a.requestedAt));
   if (franchiseScope) withdrawals = withdrawals.filter((w) => w.franchise === franchiseScope);
   if (stationScope) withdrawals = withdrawals.filter((w) => w.station === stationScope);
+  if (inRegion) withdrawals = withdrawals.filter((w) => inRegion(w.franchise ?? "Unassigned"));
 
   // HQ settles with FRANCHISES: payable = riders' settled − franchise paid out.
   const franchiseMap = new Map<string, { settled: number; paid: number; held: number }>();

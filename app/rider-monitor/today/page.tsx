@@ -7,6 +7,8 @@ import MonitorTabs from "../MonitorTabs";
 import { readSession } from "../../lib/session";
 import { useVentoStore } from "../../lib/store";
 import { translate, type TranslationKey } from "../../lib/i18n";
+import { regionFromPath, REGION_CITY_ID } from "../../lib/regions";
+import { usePathname } from "next/navigation";
 
 /**
  * READ-ONLY daily accumulation view: every rider that appeared in today's
@@ -55,6 +57,9 @@ export default function RiderTodayPage() {
   const scopeStation = session?.portal === "ponto" ? session.station || session.organization : "";
   const isHQ = !scopeFranchise && !scopeStation;
 
+  // Region menu: HQ sees only this menu's city (São Paulo / Boa Vista).
+  // Tenant portals stay scoped to their own riders as before.
+  const region = regionFromPath(usePathname());
   const [data, setData] = useState<Payload | null>(null);
   const [query, setQuery] = useState("");
   const [loading, setLoading] = useState(false);
@@ -67,12 +72,13 @@ export default function RiderTodayPage() {
       const params = new URLSearchParams();
       if (scopeFranchise) params.set("franchise", scopeFranchise);
       if (scopeStation) params.set("ponto", scopeStation);
+      if (isHQ) params.set("cityId", REGION_CITY_ID[region]);
       const res = await fetch(`/api/eastwind/riders-today?${params}`, { headers, cache: "no-store" });
       if (res.ok) setData((await res.json()).data);
     } finally {
       setLoading(false);
     }
-  }, [headers, scopeFranchise, scopeStation]);
+  }, [headers, scopeFranchise, scopeStation, isHQ, region]);
 
   useEffect(() => {
     void load();
@@ -98,7 +104,7 @@ export default function RiderTodayPage() {
     <AppShell>
       <MonitorTabs />
       <PageTitle
-        title={t("rtTitle")}
+        title={region === "sjbv" ? `${t("rtTitle")} · ${t("regionBoaVista")}` : t("rtTitle")}
         eyebrow={`${data?.date ?? ""} · ${scopeLabel} · ${t("rtReadOnly")}`}
         action={
           <div className="flex items-center gap-3 text-xs text-[var(--muted)]">

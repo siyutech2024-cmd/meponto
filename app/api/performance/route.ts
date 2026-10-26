@@ -1,6 +1,7 @@
 import { appendServerAudit, jsonResponse, makeServerId, memory } from "../../lib/server/memory";
 import { flushPendingToDatabase, persistDeleteRecord, refreshCollectionsFromDatabase } from "../../lib/server/persistence";
 import { requirePermission, roleFromRequest, scopeFromRequest } from "../../lib/server/authz";
+import { regionFilter, regionParam } from "../../lib/server/regions";
 import {
   aggregateEarnings,
   aggregateKpis,
@@ -96,7 +97,21 @@ function v2FromMemory(): string {
   return settlementV2From(memory.assessmentRules.find((r) => r.id === "rule-active") ?? defaultAssessmentRule);
 }
 
-async function performanceDirect(url: URL): Promise<Response | null> {
+/** Region menu context (app/lib/regions.ts): read-only narrowing of a GET. */
+type RegionCtx = { sjbv: boolean; inRegion: (franchise: string | null | undefined) => boolean } | null;
+
+/** Per-day trend points: a − b (São Paulo = network − Boa Vista riders). */
+type TrendPoint = { date: string; orders: number; proOrders: number; settle: number };
+function subtractTrend(all: TrendPoint[], minus: TrendPoint[]): TrendPoint[] {
+  const byDate = new Map(minus.map((p) => [p.date, p]));
+  return all.map((p) => {
+    const m = byDate.get(p.date);
+    if (!m) return p;
+    return { ...p, orders: p.orders - m.orders, proOrders: p.proOrders - m.proOrders, settle: Math.round((p.settle - m.settle) * 100) / 100 };
+  });
+}
+
+async function performanceDirect(url: URL, regionCtx: RegionCtx = null): Promise<Response | null> {
   if (!dbDirectReadEnabled()) return null;
   // M1 read switch: fact tables when CORE_MODE_PERF=read, JSONB mirror otherwise.
   const factRead = perfMode() === "read";
@@ -159,6 +174,22 @@ async function performanceDirect(url: URL): Promise<Response | null> {
           .map((r) => String(r.ninetyNineId))
       : null;
 
+    // Region menu trend (only when no franchise/station narrows it already):
+    // Boa Vista = its riders; São Paulo = network − Boa Vista riders, so riders
+    // without a profile keep counting on the São Paulo side exactly as before.
+    const trendFor = (ids: string[] | null) =>
+      factRead
+        ? perfTrendT(30, ids)
+        : callRpc<TrendPoint[]>("perf_trend", { p_days: 30, p_rider_ids: ids });
+    const boaVistaTrendIds = regionCtx && !(franchise || station)
+      ? riders.filter((r) => r.ninetyNineId && (regionCtx.sjbv ? regionCtx.inRegion(r.franchise) : !regionCtx.inRegion(r.franchise))).map((r) => String(r.ninetyNineId))
+      : null;
+    const regionTrend = boaVistaTrendIds
+      ? regionCtx!.sjbv
+        ? trendFor(boaVistaTrendIds)
+        : Promise.all([trendFor(null), trendFor(boaVistaTrendIds)]).then(([all, bv]) => subtractTrend(all, bv))
+      : null;
+
     const [kpiRaw, earnRaw, trend] = await Promise.all([
       !activeDate
         ? Promise.resolve([] as RiderDailyKpi[])
@@ -170,12 +201,11 @@ async function performanceDirect(url: URL): Promise<Response | null> {
         : factRead
           ? earningsByDate(activeDate)
           : fetchRows<RiderDailyEarning>("riderDailyEarnings", [{ op: "eq", field: "date", value: activeDate }]),
-      factRead
-        ? perfTrendT(30, scopedTrendIds)
-        : callRpc<Array<{ date: string; orders: number; proOrders: number; settle: number }>>("perf_trend", { p_days: 30, p_rider_ids: scopedTrendIds }),
+      regionTrend ?? trendFor(scopedTrendIds),
     ]);
 
     let rows = enrich(kpiRaw, riders);
+    if (regionCtx) rows = rows.filter((row) => regionCtx.inRegion(row.franchise));
     if (franchise) rows = rows.filter((row) => row.franchise === franchise);
     if (station) rows = rows.filter((row) => row.station === station);
     if (accountFilter) rows = rows.filter((row) => accountOf(row) === accountFilter);
@@ -199,6 +229,7 @@ async function performanceDirect(url: URL): Promise<Response | null> {
         ...locate(row.rider99Id, riders),
       };
     });
+    if (regionCtx) earningRows = earningRows.filter((row) => regionCtx.inRegion(row.franchise));
     if (franchise) earningRows = earningRows.filter((row) => row.franchise === franchise);
     if (station) earningRows = earningRows.filter((row) => row.station === station);
     if (accountFilter) earningRows = earningRows.filter((row) => accountOf(row) === accountFilter);
@@ -411,8 +442,13 @@ export async function GET(request: Request) {
   const forbidden = requirePermission(request, "view_analytics");
   if (forbidden) return forbidden;
 
+  // Region menus (São Paulo / Boa Vista) — null when absent or for tenant
+  // portals, i.e. the response is exactly what it was before.
+  const regionPredicate = await regionFilter(request);
+  const regionCtx: RegionCtx = regionPredicate ? { sjbv: regionParam(new URL(request.url)) === "sjbv", inRegion: regionPredicate } : null;
+
   {
-    const direct = await performanceDirect(new URL(request.url));
+    const direct = await performanceDirect(new URL(request.url), regionCtx);
     if (direct) return direct;
   }
 
@@ -430,6 +466,7 @@ export async function GET(request: Request) {
   const activeDate = date && dates.includes(date) ? date : dates[0] ?? null;
 
   let rows = enrich(memory.riderDailyKpis.filter((row) => !activeDate || row.date === activeDate));
+  if (regionCtx) rows = rows.filter((row) => regionCtx.inRegion(row.franchise));
   if (franchise) rows = rows.filter((row) => row.franchise === franchise);
   if (station) rows = rows.filter((row) => row.station === station);
   if (accountFilter) rows = rows.filter((row) => accountOf(row) === accountFilter);
@@ -463,6 +500,7 @@ export async function GET(request: Request) {
         ...locate(row.rider99Id),
       };
     });
+  if (regionCtx) earningRows = earningRows.filter((row) => regionCtx.inRegion(row.franchise));
   if (franchise) earningRows = earningRows.filter((row) => row.franchise === franchise);
   if (station) earningRows = earningRows.filter((row) => row.station === station);
   if (accountFilter) earningRows = earningRows.filter((row) => accountOf(row) === accountFilter);
@@ -488,8 +526,8 @@ export async function GET(request: Request) {
           .map((r) => String(r.ninetyNineId)),
       )
     : null;
-  const inScope = (id: string) => !scopedIds || scopedIds.has(id);
   const byNNTrend = new Map(memory.riders.filter((r) => r.ninetyNineId).map((r) => [r.ninetyNineId!, r]));
+  const inScope = (id: string) => (!scopedIds || scopedIds.has(id)) && (!regionCtx || regionCtx.inRegion(byNNTrend.get(id)?.franchise));
   const trend = trendDates.map((d) => {
     const dayRows = memory.riderDailyKpis.filter((row) => row.date === d && inScope(row.rider99Id));
     return {

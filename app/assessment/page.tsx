@@ -3,6 +3,8 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Building2, ClipboardCheck, MapPin, Pencil, RefreshCcw } from "lucide-react";
 import { AppShell, PageTitle } from "../components/ui";
+import { usePathname } from "next/navigation";
+import { regionFromPath } from "../lib/regions";
 import { Chip, DataTable, Drawer, SectionCard, Stat, Toolbar, type DataColumn, type SortState } from "../components/kit";
 import { readSession } from "../lib/session";
 import { useVentoStore } from "../lib/store";
@@ -422,6 +424,11 @@ export default function AssessmentPage() {
   const statusLabel: Record<string, string> = { meet: t("asStMeet"), fail: t("asStFail"), mid: t("asStMid"), na: t("asStNa") };
   const session = useMemo(() => readSession(), []);
   const isHq = session?.portal === "pontosys" || !session?.portal;
+  // Region menus (HQ only): São Paulo = commission rules for São Paulo
+  // franchises; Boa Vista = leader-mode weekly assessment + leader settlement.
+  // Tenant portals keep seeing exactly what they saw before.
+  const region = regionFromPath(usePathname());
+  const boaVistaHq = isHq && region === "sjbv";
 
   const [data, setData] = useState<Payload | null>(null);
   const [anchor, setAnchor] = useState(() => new Date().toISOString().slice(0, 10));
@@ -437,9 +444,9 @@ export default function AssessmentPage() {
   const [pool, setPool] = useState("");
 
   const load = useCallback(async () => {
-    const response = await fetch(`/api/assessment?week=${anchor}${pool ? `&pool=${pool}` : ""}`, { headers: HEADERS, cache: "no-store" });
+    const response = await fetch(`/api/assessment?week=${anchor}${pool ? `&pool=${pool}` : ""}${isHq ? `&region=${region}` : ""}`, { headers: HEADERS, cache: "no-store" });
     if (response.ok) setData((await response.json()).data);
-  }, [anchor, pool]);
+  }, [anchor, pool, isHq, region]);
 
   useEffect(() => {
     void load();
@@ -478,6 +485,16 @@ export default function AssessmentPage() {
     { key: "fail", label: t("asFailDown"), render: (metric) => <span className="font-black text-[var(--danger-ink)]">{t("asFailLine", { op: metric.failOp, th: metric.failThreshold, adj: metric.failAdjust })}</span> },
   ];
 
+  if (boaVistaHq) {
+    return (
+      <AppShell>
+        <PageTitle title={`${t("navBvAssessment")} · ${t("regionBoaVista")}`} eyebrow={t("regionBvOnlyNote")} />
+        {messageBanner}
+        <LeaderModeSection t={t} canManage />
+      </AppShell>
+    );
+  }
+
   return (
     <AppShell>
       <PageTitle
@@ -505,7 +522,8 @@ export default function AssessmentPage() {
 
       {messageBanner}
 
-      <LeaderModeSection t={t} canManage={isHq || session?.portal === "franchise"} />
+      {/* HQ: leader mode lives in the Boa Vista menu; tenants keep it here. */}
+      {!isHq && <LeaderModeSection t={t} canManage={session?.portal === "franchise"} />}
 
       {/* Stat row — headline rule terms */}
       {rule && (

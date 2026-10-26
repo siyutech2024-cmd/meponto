@@ -9,6 +9,8 @@ import { downloadCsv } from "../lib/csv";
 import { useDialog } from "../components/dialog";
 import { useVentoStore } from "../lib/store";
 import { translate, type TranslationKey } from "../lib/i18n";
+import { useRegion } from "../lib/useRegion";
+import { REGION_CITY_ID } from "../lib/regions";
 
 type RiderRow = {
   id: string;
@@ -35,6 +37,7 @@ type Network = { franchises: Array<{ id: string; name: string }>; stations: Arra
 
 const HEADERS = { "Content-Type": "application/json", "x-vento-role": "Super Admin" };
 const isUnassigned = (value?: string) => !value || value === "Unassigned";
+const BOA_VISTA_CITY_ID = REGION_CITY_ID.sjbv;
 const STATUS_OPTIONS = ["Active", "Inactive", "Risk", "Night Shift"] as const;
 
 const statusTone = (status: string): BadgeTone =>
@@ -48,6 +51,9 @@ export default function RidersPage() {
     if (vars) for (const [key, val] of Object.entries(vars)) s = s.replace(`{${key}}`, String(val));
     return s;
   };
+  // Region menu (São Paulo vs Boa Vista · 组长模式) — view-layer split only,
+  // see app/lib/regions.ts. Nothing about a rider's record changes.
+  const rg = useRegion(HEADERS);
   const [riders, setRiders] = useState<RiderRow[]>([]);
   const [network, setNetwork] = useState<Network>({ franchises: [], stations: [] });
   const [query, setQuery] = useState("");
@@ -94,8 +100,12 @@ export default function RidersPage() {
   // Live riders (Eastwind board) with NO MePonto profile — surfaced here so
   // operations can onboard them and assign a franchise. Loaded after the main
   // data to stay off the critical path.
-  type LiveUnmatched = { riderExtId: string | null; name: string | null; phone: string | null; hotZone: string | null; matched?: boolean };
+  type LiveUnmatched = { riderExtId: string | null; name: string | null; phone: string | null; hotZone: string | null; matched?: boolean; city?: string | null };
   const [liveUnmatched, setLiveUnmatched] = useState<LiveUnmatched[]>([]);
+  // 99 IDs seen on the Boa Vista board today — decides the menu of riders that
+  // have no franchise yet (an unassigned Boa Vista rider must not sit in the
+  // São Paulo list). Assigned riders follow their franchise.
+  const [boaVistaSeen, setBoaVistaSeen] = useState<Set<string>>(new Set());
   useEffect(() => {
     const timer = window.setTimeout(async () => {
       try {
@@ -104,6 +114,13 @@ export default function RidersPage() {
         const payload = (await res.json()).data as { riders?: LiveUnmatched[] } | LiveUnmatched[];
         const rows = Array.isArray(payload) ? payload : payload?.riders ?? [];
         setLiveUnmatched(rows.filter((row) => row.matched === false));
+        const seen = new Set(rows.filter((row) => row.city === BOA_VISTA_CITY_ID && row.riderExtId).map((row) => String(row.riderExtId)));
+        const today = await fetch(`/api/eastwind/riders-today?cityId=${BOA_VISTA_CITY_ID}`, { headers: HEADERS, cache: "no-store" }).catch(() => null);
+        if (today?.ok) {
+          const list = ((await today.json()).data?.riders ?? []) as Array<{ riderExtId?: string | null }>;
+          for (const r of list) if (r.riderExtId) seen.add(String(r.riderExtId));
+        }
+        setBoaVistaSeen(seen);
       } catch {
         // Live board unavailable — section simply stays hidden.
       }
@@ -118,8 +135,21 @@ export default function RidersPage() {
       phone: row.phone ?? "",
       cpf: "",
       ponto: "",
-      franchise: "",
+      franchise: defaultFranchise(),
     });
+    setAddOpen(true);
+  }
+
+  // In the Boa Vista menu a new rider starts on the Boa Vista franchise when
+  // there is exactly one (the usual case); São Paulo keeps the empty default.
+  function defaultFranchise(): string {
+    if (!rg.isBoaVista) return "";
+    const own = network.franchises.filter((f) => rg.inRegion(f.name));
+    return own.length === 1 ? own[0].name : "";
+  }
+
+  function openAdd() {
+    setForm((current) => (current.franchise ? current : { ...current, franchise: defaultFranchise() }));
     setAddOpen(true);
   }
 
@@ -255,10 +285,52 @@ export default function RidersPage() {
     void load();
   }
 
+  const riderInRegion = useCallback(
+    (rider: RiderRow) => {
+      if (rg.scoped) return true; // tenant portals: already scoped server-side
+      if (isUnassigned(rider.franchise) && boaVistaSeen.has(String(rider.ninetyNineId ?? ""))) return rg.isBoaVista;
+      return rg.inRegion(rider.franchise);
+    },
+    [rg, boaVistaSeen],
+  );
+  const regionFranchises = useMemo(() => network.franchises.filter((f) => rg.inRegion(f.name)), [network.franchises, rg]);
+  const regionStations = useMemo(() => network.stations.filter((s) => rg.inRegion(s.franchise)), [network.stations, rg]);
+  const regionLive = useMemo(
+    () => liveUnmatched.filter((row) => rg.scoped || (row.city === BOA_VISTA_CITY_ID) === rg.isBoaVista),
+    [liveUnmatched, rg],
+  );
+
+  // Boa Vista menu: riders here with no franchise yet are pre-filled with the
+  // Boa Vista franchise (when there is exactly one) instead of a blank — staged
+  // only; the sticky bar's 确认保存 writes them, nothing is saved silently.
+  // Only the CURRENT assignment of unassigned riders is set; T+1 rows already
+  // imported keep the attribution they were stamped with.
+  useEffect(() => {
+    if (!rg.isBoaVista || rg.scoped || !rg.ready) return;
+    const own = network.franchises.filter((f) => rg.inRegion(f.name));
+    if (own.length !== 1) return;
+    const target = own[0].name;
+    const toStage = riders.filter(
+      (r) => r.source === "profile" && String(r.ninetyNineId ?? "").trim() !== "" && isUnassigned(r.franchise) && riderInRegion(r),
+    );
+    if (toStage.length === 0) return;
+    setPending((current) => {
+      let changed = false;
+      const next = { ...current };
+      for (const r of toStage) {
+        if (next[r.id]) continue;
+        next[r.id] = { name: r.name, franchise: target };
+        changed = true;
+      }
+      return changed ? next : current;
+    });
+  }, [rg, network.franchises, riders, riderInRegion]);
+
   const filtered = useMemo(() => {
     const term = query.trim().toLowerCase();
     return riders
       .filter((rider) => {
+        if (!riderInRegion(rider)) return false;
         // Riders without a 99 ID stay off this operational page — they remain
         // visible in the Members page for profile completion.
         if (String(rider.ninetyNineId ?? "").trim() === "") return false;
@@ -277,12 +349,12 @@ export default function RidersPage() {
         const bUn = isUnassigned(b.ponto) || isUnassigned(b.franchise) ? 0 : 1;
         return aUn - bUn || b.totalOrders - a.totalOrders;
       });
-  }, [riders, query, stationFilter, franchiseFilter, statusFilter, poolFilter, onlyUnassigned]);
+  }, [riders, riderInRegion, query, stationFilter, franchiseFilter, statusFilter, poolFilter, onlyUnassigned]);
 
   // Stats use the SAME base as the table (99ID-bearing riders + report rows),
   // otherwise the "unassigned" card counts hidden no-99ID profiles and the
   // click-through list shows fewer rows than the card promises.
-  const visibleBase = useMemo(() => riders.filter((rider) => String(rider.ninetyNineId ?? "").trim() !== ""), [riders]);
+  const visibleBase = useMemo(() => riders.filter((rider) => String(rider.ninetyNineId ?? "").trim() !== "" && riderInRegion(rider)), [riders, riderInRegion]);
   const unassignedCount = visibleBase.filter((rider) => isUnassigned(rider.ponto) || isUnassigned(rider.franchise)).length;
   const reportOnlyCount = visibleBase.filter((rider) => rider.source === "report").length;
 
@@ -421,23 +493,25 @@ export default function RidersPage() {
   return (
     <AppShell>
       <PageTitle
-        title={t("rdTitle")}
+        title={rg.isBoaVista ? `${t("navBvRiders")} · ${t("regionBoaVista")}` : t("rdTitle")}
         eyebrow={t("rdEyebrow", { n: visibleBase.length })}
         action={
           <div className="flex gap-2">
-            {/* 模式二 T1: 批量标记 PRO 池(总部专属;粘贴 99 名单) */}
-            <button type="button" className="tag" onClick={() => setPoolBulkOpen(true)}>
-              {t("rdPoolBulk")}
-            </button>
+            {/* 模式二 T1: 批量标记 PRO 池(总部专属;粘贴 99 名单)—— PRO 只属于圣保罗 */}
+            {!rg.isBoaVista && (
+              <button type="button" className="tag" onClick={() => setPoolBulkOpen(true)}>
+                {t("rdPoolBulk")}
+              </button>
+            )}
             <button
               type="button"
               className="tag"
-              onClick={() => downloadCsv(`riders-${new Date().toISOString().slice(0, 10)}`, [t("rdColRider"), "99ID", "CPF", t("rdPhPhone"), t("rdColFranchise"), t("rdColStation"), t("rdColStatus"), "Pool", t("rdColOrders"), t("rdColLastReport"), t("rdColPoints")], filtered.map((r) => [r.name, r.ninetyNineId ?? "", r.cpf, r.phone, r.franchise ?? "", r.ponto, r.status, r.pool === "pro" ? "PRO" : "", String(r.totalOrders), r.lastReportDate, String(r.pointsBalance)]))}
+              onClick={() => downloadCsv(`riders${rg.isBoaVista ? "-boavista" : ""}-${new Date().toISOString().slice(0, 10)}`, [t("rdColRider"), "99ID", "CPF", t("rdPhPhone"), t("rdColFranchise"), t("rdColStation"), t("rdColStatus"), "Pool", t("rdColOrders"), t("rdColLastReport"), t("rdColPoints")], filtered.map((r) => [r.name, r.ninetyNineId ?? "", r.cpf, r.phone, r.franchise ?? "", r.ponto, r.status, r.pool === "pro" ? "PRO" : "", String(r.totalOrders), r.lastReportDate, String(r.pointsBalance)]))}
             >
               {t("rdExport")}
             </button>
             <button type="button" className="tag inline-flex items-center gap-1" onClick={() => void load()}><RefreshCcw size={13} /> {t("rdRefresh")}</button>
-            <button type="button" onClick={() => setAddOpen(true)} className="inline-flex h-9 items-center gap-1 rounded-[8px] bg-[var(--accent)] px-4 text-xs font-black uppercase text-[var(--accent-ink)]">
+            <button type="button" onClick={() => openAdd()} className="inline-flex h-9 items-center gap-1 rounded-[8px] bg-[var(--accent)] px-4 text-xs font-black uppercase text-[var(--accent-ink)]">
               <Plus size={14} /> {t("rdAddRider")}
             </button>
           </div>
@@ -465,7 +539,7 @@ export default function RidersPage() {
             <select value={stationFilter} onChange={(e) => setStationFilter(e.target.value)} className={input}>
               <option value="">{t("rdAllStation")}</option>
               <option value="Unassigned">{t("rdUnassignedOpt")}</option>
-              {network.stations.map((s) => <option key={s.id} value={s.name}>{s.name}</option>)}
+              {regionStations.map((s) => <option key={s.id} value={s.name}>{s.name}</option>)}
             </select>
           }
         >
@@ -473,14 +547,16 @@ export default function RidersPage() {
           <select value={franchiseFilter} onChange={(e) => setFranchiseFilter(e.target.value)} className={input}>
             <option value="">{t("rdAllFranchise")}</option>
             <option value="Unassigned">{t("rdUnassignedOpt")}</option>
-            {network.franchises.map((f) => <option key={f.id} value={f.name}>{f.name}</option>)}
+            {regionFranchises.map((f) => <option key={f.id} value={f.name}>{f.name}</option>)}
           </select>
-          {/* 模式二: 池筛选 — 选 PRO 即单独查看全部 PRO 骑手(零新增菜单) */}
-          <select value={poolFilter} onChange={(e) => setPoolFilter(e.target.value)} className={input}>
-            <option value="">{t("rdAllPool")}</option>
-            <option value="pro">PRO</option>
-            <option value="standard">{t("rdPoolStandard")}</option>
-          </select>
+          {/* 模式二: 池筛选 — 选 PRO 即单独查看全部 PRO 骑手(零新增菜单);Boa Vista 无 PRO 池 */}
+          {!rg.isBoaVista && (
+            <select value={poolFilter} onChange={(e) => setPoolFilter(e.target.value)} className={input}>
+              <option value="">{t("rdAllPool")}</option>
+              <option value="pro">PRO</option>
+              <option value="standard">{t("rdPoolStandard")}</option>
+            </select>
+          )}
           <Chip active={statusFilter === ""} onClick={() => setStatusFilter("")}>{t("rdAllStatus")}</Chip>
           {STATUS_OPTIONS.map((status) => (
             <Chip key={status} active={statusFilter === status} onClick={() => setStatusFilter(statusFilter === status ? "" : status)}>{status}</Chip>
@@ -489,11 +565,11 @@ export default function RidersPage() {
       </div>
 
       {/* Live riders with no profile: onboard + assign in two clicks */}
-      {liveUnmatched.length > 0 && (
+      {regionLive.length > 0 && (
         <div className="mt-4">
-          <SectionCard title={t("rdLiveTitle", { n: liveUnmatched.length })} desc={t("rdLiveDesc")}>
+          <SectionCard title={t("rdLiveTitle", { n: regionLive.length })} desc={t("rdLiveDesc")}>
             <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
-              {liveUnmatched.map((row, index) => (
+              {regionLive.map((row, index) => (
                 <div key={`${row.riderExtId ?? index}`} className="flex items-center gap-3 rounded-[10px] border border-[var(--warn)] bg-[var(--surface-raised)] px-3 py-2">
                   <div className="min-w-0 flex-1">
                     <div className="truncate text-sm font-black">{row.name || "—"}</div>
@@ -575,11 +651,11 @@ export default function RidersPage() {
           <input className={input} placeholder="CPF" value={form.cpf} onChange={(e) => setForm({ ...form, cpf: e.target.value })} />
           <select className={input} value={form.franchise} onChange={(e) => setForm({ ...form, franchise: e.target.value })}>
             <option value="">{t("rdFranchiseOpt")}</option>
-            {network.franchises.map((f) => <option key={f.id} value={f.name}>{f.name}</option>)}
+            {regionFranchises.map((f) => <option key={f.id} value={f.name}>{f.name}</option>)}
           </select>
           <select className={input} value={form.ponto} onChange={(e) => setForm({ ...form, ponto: e.target.value })}>
             <option value="">{t("rdStationOpt")}</option>
-            {network.stations.map((s) => <option key={s.id} value={s.name}>{s.name}</option>)}
+            {regionStations.filter((s) => !form.franchise || s.franchise === form.franchise).map((s) => <option key={s.id} value={s.name}>{s.name}</option>)}
           </select>
           <button
             type="button"

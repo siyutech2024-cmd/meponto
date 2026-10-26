@@ -39,6 +39,9 @@ export async function GET(request: Request) {
   const url = new URL(request.url);
   const franchise = url.searchParams.get("franchise")?.trim() || "";
   const ponto = url.searchParams.get("ponto")?.trim() || "";
+  // Optional Eastwind city (region menus: São Paulo / Boa Vista). Absent = all
+  // cities, exactly as before. Read-only narrowing of the scan below.
+  const cityId = url.searchParams.get("cityId")?.trim() || "";
 
   // Start of "today" in São Paulo, expressed in UTC.
   const now = new Date();
@@ -53,10 +56,12 @@ export async function GET(request: Request) {
   const pageSize = 1000;
   const scan: ScanRow[] = [];
   for (let from = 0; ; from += pageSize) {
-    const { data, error } = await client
+    let scanQuery = client
       .from("rider_status_snapshots")
       .select("captured_at, rider_ext_id, rider_name, phone, id_no, status, shift_start, shift_end, hot_zone, vehicle, online_mins, rest_mins, finished_cnt, accept_cnt, declined_cnt, cancelled_cnt, delayed_cnt, source")
-      .gte("captured_at", dayStart)
+      .gte("captured_at", dayStart);
+    if (cityId) scanQuery = scanQuery.eq("city_id", cityId);
+    const { data, error } = await scanQuery
       // captured_at is the BATCH time — every rider in one round shares it, so
       // it is nowhere near unique. Without the id tiebreak, offset paging
       // repeated some snapshot rows and dropped others, and the day board lost

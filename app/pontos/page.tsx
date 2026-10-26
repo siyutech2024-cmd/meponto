@@ -10,6 +10,7 @@ import { useVentoStore } from "../lib/store";
 import { translate, type TranslationKey } from "../lib/i18n";
 import type { Franchise } from "../lib/network";
 import type { Ponto } from "../lib/data";
+import { useRegion } from "../lib/useRegion";
 
 type FranchiseRow = Franchise & { stationCount: number };
 
@@ -27,10 +28,15 @@ export default function NetworkPage() {
   const headers = useMemo(() => ({ "Content-Type": "application/json", "x-vento-role": session?.role ?? "Super Admin" }), [session]);
   const franchiseScope = session?.portal === "franchise" ? session.franchise || session.organization : "";
 
-  const [franchises, setFranchises] = useState<FranchiseRow[]>([]);
-  const [stations, setStations] = useState<Ponto[]>([]);
+  // Region menu (app/lib/regions.ts): the São Paulo page lists São Paulo
+  // franchises/stations, the Boa Vista page lists Boa Vista's. View-only split.
+  const rg = useRegion(headers);
+  const [allFranchises, setFranchises] = useState<FranchiseRow[]>([]);
+  const [allStations, setStations] = useState<Ponto[]>([]);
+  const franchises = useMemo(() => allFranchises.filter((f) => rg.inRegion(f.name)), [allFranchises, rg]);
+  const stations = useMemo(() => allStations.filter((s) => rg.inRegion(s.franchise)), [allStations, rg]);
   const [message, setMessage] = useState<{ tone: "ok" | "err"; text: string } | null>(null);
-  const [franchiseForm, setFranchiseForm] = useState({ name: "", owner: "", phone: "", city: "São Paulo" });
+  const [franchiseForm, setFranchiseForm] = useState({ name: "", owner: "", phone: "", city: rg.city as string });
   const [stationForm, setStationForm] = useState({ name: "", franchise: "", address: "", mapUrl: "", leader: "" });
   const [stationOpen, setStationOpen] = useState(false);
   const [franchiseOpen, setFranchiseOpen] = useState(false);
@@ -232,14 +238,19 @@ export default function NetworkPage() {
   return (
     <AppShell>
       <PageTitle
-        title={t("pnTitle")}
+        title={rg.isBoaVista ? `${t("navBvPontos")} · ${t("regionBoaVista")}` : t("pnTitle")}
         eyebrow={isHq ? t("pnEyebrowHq") : t("pnEyebrowFr", { f: franchiseScope })}
         action={
           <div className="flex gap-2">
             <button type="button" onClick={() => void load()} className="tag inline-flex items-center gap-1"><RefreshCcw size={13} /> {t("pnRefresh")}</button>
             <button
               type="button"
-              onClick={() => setStationOpen(true)}
+              onClick={() => {
+                // Boa Vista menu: a new station/leader belongs to the Boa Vista
+                // franchise by default when there is just one — no blank field.
+                if (rg.isBoaVista && !stationForm.franchise && franchises.length === 1) setStationForm({ ...stationForm, franchise: franchises[0].name });
+                setStationOpen(true);
+              }}
               className="inline-flex h-9 items-center gap-1 rounded-[8px] bg-[var(--accent)] px-4 text-xs font-black uppercase text-[var(--accent-ink)] hover:bg-[var(--accent-strong)]"
             >
               <Plus size={14} /> {t("pnCreateStation")}
@@ -437,7 +448,7 @@ export default function NetworkPage() {
               const r = await post({ action: "addFranchise", ...franchiseForm });
               if (r) {
                 setMessage({ tone: "ok", text: t("pnFrCreated", { name: franchiseForm.name }) });
-                setFranchiseForm({ name: "", owner: "", phone: "", city: "São Paulo" });
+                setFranchiseForm({ name: "", owner: "", phone: "", city: rg.city as string });
                 setFranchiseOpen(false);
               }
             }}

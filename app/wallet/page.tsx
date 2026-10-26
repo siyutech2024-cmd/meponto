@@ -3,6 +3,8 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { Banknote, Building2, ChevronDown, Info, RefreshCcw, Store, Wallet } from "lucide-react";
 import { AppShell, PageTitle } from "../components/ui";
+import { usePathname } from "next/navigation";
+import { regionFromPath } from "../lib/regions";
 import { Chip, DataTable, Drawer, ProBadge, SectionCard, Stat, StatusBadge, Toolbar, type BadgeTone, type DataColumn } from "../components/kit";
 import { downloadCsv } from "../lib/csv";
 import { readSession } from "../lib/session";
@@ -67,6 +69,11 @@ function RiderPayrollWallet() {
   const scopeFranchise = session?.portal === "franchise" ? session.franchise || session.organization : "";
   const headers = useMemo(() => ({ "Content-Type": "application/json", "x-vento-role": session?.role ?? "Super Admin" }), [session]);
 
+  // Region menus (app/lib/regions.ts): HQ's São Paulo settlement excludes Boa
+  // Vista, the Boa Vista menu's settlement shows only Boa Vista. The split is
+  // a server-side READ filter — no amount, payment or ledger is touched.
+  const region = regionFromPath(usePathname());
+  const regionQs = scopeFranchise ? "" : `region=${region}`;
   const [anchor, setAnchor] = useState(""); // "" → backend picks the latest week with data
   const [weekly, setWeekly] = useState<Weekly | null>(null);
   const [loading, setLoading] = useState(false);
@@ -135,8 +142,8 @@ function RiderPayrollWallet() {
     setLoading(true);
     try {
       const [weeklyResponse, listResponse] = await Promise.all([
-        fetch(`/api/wallet?view=weekly${anchor ? `&week=${anchor}` : ""}`, { headers, cache: "no-store" }),
-        fetch(`/api/wallet?${scopeFranchise ? `franchise=${encodeURIComponent(scopeFranchise)}` : ""}`, { headers, cache: "no-store" }),
+        fetch(`/api/wallet?view=weekly${anchor ? `&week=${anchor}` : ""}${regionQs ? `&${regionQs}` : ""}`, { headers, cache: "no-store" }),
+        fetch(`/api/wallet?${scopeFranchise ? `franchise=${encodeURIComponent(scopeFranchise)}` : regionQs}`, { headers, cache: "no-store" }),
       ]);
       if (weeklyResponse.ok) {
         const w = (await weeklyResponse.json()).data as Weekly;
@@ -148,7 +155,7 @@ function RiderPayrollWallet() {
     } finally {
       setLoading(false);
     }
-  }, [headers, anchor, scopeFranchise]);
+  }, [headers, anchor, scopeFranchise, regionQs]);
 
   useEffect(() => {
     void load();
@@ -476,7 +483,7 @@ function RiderPayrollWallet() {
   return (
     <AppShell>
       <PageTitle
-        title={t("wlTitle")}
+        title={region === "sjbv" && !scopeFranchise ? `${t("navBvWallet")} · ${t("regionBoaVista")}` : t("wlTitle")}
         eyebrow={scopeFranchise ? t("wlEyebrowFr", { f: scopeFranchise }) : t("wlEyebrowHq")}
         action={<button type="button" onClick={() => void load()} className="tag inline-flex items-center gap-1"><RefreshCcw size={13} /> {t("wlRefresh")}</button>}
       />
@@ -511,7 +518,7 @@ function RiderPayrollWallet() {
           <button type="button" className={btnGhost} onClick={() => shiftWeek(7)}>{t("wlNextWeek")}</button>
           <span className="text-[11px] font-bold text-[var(--muted)]">{t("wlNatWeek")}</span>
           {/* 模式二: 池筛选(全部 / PRO / 普通)—— 只筛表格展示 */}
-          {(["", "pro", "standard"] as const).map((f) => (
+          {(region === "sjbv" ? [] : (["", "pro", "standard"] as const)).map((f) => (
             <Chip key={f || "all"} active={poolFilter === f} onClick={() => setPoolFilter(f)}>
               {f === "" ? t("wlPoolAll") : f === "pro" ? "PRO" : t("wlPoolStd")}
             </Chip>

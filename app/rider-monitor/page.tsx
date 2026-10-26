@@ -5,6 +5,8 @@ import { RefreshCcw, Search, Bike, X, MapPin, Phone } from "lucide-react";
 import { AppShell, DataTable, PageTitle } from "../components/ui";
 import RiderMap, { type MapRider } from "./RiderMap";
 import MonitorTabs from "./MonitorTabs";
+import { regionFromPath, REGION_CITY } from "../lib/regions";
+import { usePathname } from "next/navigation";
 import { CITY_IDS, CITY_VIEW, HOT_ZONES, ZONE_CITIES, type ZoneCity } from "./hot-zones";
 import { readSession } from "../lib/session";
 import { useVentoStore } from "../lib/store";
@@ -123,7 +125,10 @@ export default function RiderMonitorPage() {
   const [zoneAssign, setZoneAssign] = useState<Record<string, string[]>>({});
   // City switcher: zones (and the map view) are scoped to the selected city so
   // a new small-city operation doesn't clutter the São Paulo board.
-  const [city, setCity] = useState<ZoneCity>("São Paulo");
+  // Region menu (app/lib/regions.ts): the São Paulo menu shows São Paulo only,
+  // the Boa Vista menu shows Boa Vista only — HQ no longer flips between them.
+  const region = regionFromPath(usePathname());
+  const [city, setCity] = useState<ZoneCity>(REGION_CITY[region]);
   const [showZonePanel, setShowZonePanel] = useState(false);
   /**
    * 模式二 T6 · 应岗未上 (rostered but not online).
@@ -259,7 +264,13 @@ export default function RiderMonitorPage() {
     return names;
   }, [city, zoneAssign]);
   const cityHasAssignments = cityFranchises.size > 0;
-  const inCity = useCallback((franchise: string) => !isHQ || !cityHasAssignments || cityFranchises.has(franchise), [isHQ, cityHasAssignments, cityFranchises]);
+  // Boa Vista menu: the snapshots are already limited to Boa Vista's board, and
+  // new riders arrive with no franchise yet — they must stay visible there so
+  // ops can onboard them. São Paulo keeps its existing rule unchanged.
+  const inCity = useCallback(
+    (franchise: string) => !isHQ || !cityHasAssignments || cityFranchises.has(franchise) || (region === "sjbv" && (!franchise || franchise === "未归属" || franchise === "Unassigned")),
+    [isHQ, cityHasAssignments, cityFranchises, region],
+  );
 
   const riders = (data?.riders ?? []).filter((r) => inCity(r.franchise));
   // Recompute the status counts on the city-scoped rider set; falls back to the
@@ -330,14 +341,14 @@ export default function RiderMonitorPage() {
   // (server-scoped) rider rows.
   const sessionFranchise = scopeFranchise || (scopeStation ? data?.riders.find((r) => r.ponto === scopeStation && r.franchise && r.franchise !== "未归属")?.franchise ?? "" : "");
   const allowedCities = useMemo<ZoneCity[]>(() => {
-    if (isHQ) return [...ZONE_CITIES];
+    if (isHQ) return [REGION_CITY[region]];
     const owned = ZONE_CITIES.filter((c) =>
       HOT_ZONES.some((z) => z.city === c && (zoneAssign[z.id] ?? []).includes(sessionFranchise)),
     );
     // No zone assigned anywhere (legacy tenants before zone assignment):
     // default to São Paulo only — never expose the newer cities by accident.
     return owned.length > 0 ? owned : ["São Paulo"];
-  }, [isHQ, zoneAssign, sessionFranchise]);
+  }, [isHQ, zoneAssign, sessionFranchise, region]);
   useEffect(() => {
     if (!allowedCities.includes(city)) setCity(allowedCities[0]);
   }, [allowedCities, city]);
@@ -385,7 +396,7 @@ export default function RiderMonitorPage() {
     <AppShell>
       <MonitorTabs />
       <PageTitle
-        title={t("rmTitle")}
+        title={region === "sjbv" ? `${t("navBvMonitor")} · ${t("regionBoaVista")}` : t("rmTitle")}
         eyebrow={`Eastwind · ${scopeLabel}`}
         action={
           <div className="flex items-center gap-3 text-xs text-[var(--muted)]">
@@ -628,7 +639,7 @@ export default function RiderMonitorPage() {
           </button>
         ))}
         {/* 模式二: 池筛选 chip —— 三级后台共用,加盟商/站点会话自动只见自己域内 */}
-        {(["", "pro", "standard"] as const).map((p) => (
+        {(region === "sjbv" ? [] : (["", "pro", "standard"] as const)).map((p) => (
           <button
             key={p || "all"}
             type="button"
