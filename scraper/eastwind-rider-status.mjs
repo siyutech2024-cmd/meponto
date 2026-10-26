@@ -45,6 +45,10 @@ const KPI_APIS = [KPI_API, "vendor.rider.monitor.stationFeatureInShift"];
 const isRiderListUrl = (u) => RIDER_LIST_APIS.some((api) => u.includes(api));
 const isDetailApi = (api) => api === RIDER_TARGET_API || /^vendor\.rider\.monitor\.station.*RiderTarget$/i.test(api);
 let loggedShape = false;
+// The board's own hot-area polygon (vendor.rider.monitor.hotArea). Saved to a
+// local file per city so the platform's zone outline can be traced from the
+// real Eastwind geometry instead of a screenshot. Local file only — never sent.
+const HOT_AREA_API = "vendor.rider.monitor.hotArea";
 
 // Parse "HH:MM" (or "HH") into minutes-of-day. Falls back to `def`.
 function hmToMin(s, def) {
@@ -271,7 +275,19 @@ async function pull(ctx, city = null, roundCapturedAt = null) {
     if (RIDER_LIST_APIS.includes(api)) {
       try { caps.riderList = await r.json(); caps.riderListApi = api; } catch { /* non-json */ }
     } else if (KPI_APIS.includes(api)) {
-      try { caps.kpi = await r.json(); } catch { /* non-json */ }
+      try {
+        caps.kpi = await r.json();
+        // Local copy of the board's own KPI payload (aggregates only, no rider
+        // data) so field names can be checked against the platform's parser.
+        const { writeFileSync } = await import("node:fs");
+        writeFileSync(`kpi-last-${cityId}.json`, JSON.stringify({ capturedAt: new Date().toISOString(), api, body: caps.kpi }, null, 1));
+      } catch { /* non-json */ }
+    } else if (api === HOT_AREA_API) {
+      try {
+        const body = await r.json();
+        const { writeFileSync } = await import("node:fs");
+        writeFileSync(`hot-area-${cityId}.json`, JSON.stringify({ capturedAt: new Date().toISOString(), url: u.slice(0, 300), body }, null, 1));
+      } catch { /* non-json */ }
     }
   });
 

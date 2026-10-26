@@ -1,0 +1,279 @@
+{
+ "capturedAt": "2026-10-26T20:09:23.608Z",
+ "url": "https://eastwind.99app.com/gateway?api=vendor.rider.monitor.hotArea&country=BR&timezone=America%2FSao_Paulo&locale=pt-BR&urlPath=https:%2F%2Feastwind.99app.com%2Fmonitor%2Friders%2Flist&cityID=55000174&vendorID=5764814907727940615&workTypes[]=2&t1793045362358=1&wsgsig=dd05-0hsbpZ3cgBzqKqt5HftZf3%2BY",
+ "body": {
+  "errno": 0,
+  "errmsg": "ok",
+  "time": 1793045362,
+  "traceId": "0a9d308f6adfb3722a2f5e270bcee002",
+  "reqParams": {
+   "/gateway": "",
+   "api": "vendor.rider.monitor.hotArea",
+   "country": "BR",
+   "timezone": "America/Sao_Paulo",
+   "locale": "pt-BR",
+   "urlPath": "https://eastwind.99app.com/monitor/riders/list",
+   "cityID": "55000174",
+   "vendorID": "5764814907727940615",
+   "workTypes": [
+    "2"
+   ],
+   "t1793045362358": "1",
+   "wsgsig": "dd05-0hsbpZ3cgBzqKqt5HftZf3+YD5GFSZY58c29ieF1VCsooeD1V77KIDhse+VPg1EFuuE5ZIcRnieV2l0eKeDdF3vPDIiZXYxle0ZMrfe1XenQkBfMmK7J2DBvA1Frb6e6vz9dqIfnOnAS+VtB9es/C6QqJ6mEwv1Pec2FtfkB/fWppCjBsJKtaBkCdJFZ16qSyuEeO7DDp/VPKUC12CDSD37A0NGarvPqMCM1pdAFc9np3+0UAbpgXfhRH6hSAcn6RwU1i2GoYslAG/sF8gC9G7RAeH0HXhIhea2LjD/2nAsCoBtLWK7i2ghsgMFlN5eaZyeIl6tvp/kxa/X15dm1G4Qea6fropH2NGZeyCFekAnopBWenJyW4edQdIEFE6qdhRqLWHcnRiVh3lgIDej5A4Jw75mHxuHrHbZltgk9QECpuAG2TK7W5csC6IATE8Gk/Q/YOKDvSllPElGPdgtBp64Zb2mZfvYVdcPFsfFdqACoRBChl7oN2gdmdMeTd69SSSAHtKcvojlP5lXFegjBp64ZD2mZfvYVdcPFsfFdtCiWOBihh7+32fkoeJle36q2FSBeTMj+SiUF+UWagaDw013OE5WqvZOVHcZeVeF1k0jRY9sIoeoy6eEuaLlhe5qO/Q9YOKccnllZ3lgBJetdD13TQNg2SSTHN95LkDVYqBntYBDLq8NQ3fhmg1Frd6/euzqLqImpRXla8",
+   "secdd-challenge": "4|1.6.2||||||",
+   "secdd-authentication": "2e0ce763d0222a4ddfbefd102c4a545e2bf95c9c549f1e2301dfa5e9dacf57ef51083fada904e5597fbbc56ce17c93c950e9d479a101000001000000"
+  },
+  "data": [
+   {
+    "areaID": 242071373948,
+    "name": "São João da Boa Vista",
+    "PoiInfo": [
+     {
+      "lat": -22.007977361,
+      "lng": -46.7562777962
+     },
+     {
+      "lat": -22.0111633408,
+      "lng": -46.7503484288
+     },
+     {
+      "lat": -22.0174081266,
+      "lng": -46.7504704815
+     },
+     {
+      "lat": -22.0204668861,
+      "lng": -46.756522736
+     },
+     {
+      "lat": -22.0172804256,
+      "lng": -46.7624524694
+     },
+     {
+      "lat": -22.020338727,
+      "lng": -46.7685050641
+     },
+     {
+      "lat": -22.0171518552,
+      "lng": -46.774434303
+     },
+     {
+      "lat": -22.0202096983,
+      "lng": -46.7804872375
+     },
+     {
+      "lat": -22.0170224153,
+      "lng": -46.7864159814
+     },
+     {
+      "lat": -22.0107777703,
+      "lng": -46.7862914256
+     },
+     {
+      "lat": -22.0075905575,
+      "lng": -46.7922193092
+     },
+     {
+      "lat": -22.0013464164,
+      "lng": -46.7920943623
+     },
+     {
+      "lat": -21.9981592742,
+      "lng": -46.7980213856
+     },
+     {
+      "lat": -22.0012157918,
+      "lng": -46.8040737204
+     },
+     {
+      "lat": -21.9980282393,
+      "lng": -46.8100002479
+     },
+     {
+      "lat": -21.9917846504,
+      "lng": -46.8098740763
+     },
+     {
+      "lat": -21.9885971692,
+      "lng": -46.8157997436
+     },
+     {
+      "lat": -21.9823540852,
+      "lng": -46.8156731814
+     },
+     {
+      "lat": -21.9791666757,
+      "lng": -46.8215979885
+     },
+     {
+      "lat": -21.972924097,
+      "lng": -46.8214710361
+     },
+     {
+      "lat": -21.9697367596,
+      "lng": -46.8273949831
+     },
+     {
+      "lat": -21.9727915194,
+      "lng": -46.8334462461
+     },
+     {
+      "lat": -21.9696037728,
+      "lng": -46.8393696964
+     },
+     {
+      "lat": -21.9633617482,
+      "lng": -46.8392415205
+     },
+     {
+      "lat": -21.9603074216,
+      "lng": -46.8331907276
+     },
+     {
+      "lat": -21.9634946864,
+      "lng": -46.8272676405
+     },
+     {
+      "lat": -21.9604399023,
+      "lng": -46.8212171843
+     },
+     {
+      "lat": -21.9636267581,
+      "lng": -46.8152936009
+     },
+     {
+      "lat": -21.9605715167,
+      "lng": -46.8092434819
+     },
+     {
+      "lat": -21.9543298529,
+      "lng": -46.8091174157
+     },
+     {
+      "lat": -21.9512745878,
+      "lng": -46.8030681035
+     },
+     {
+      "lat": -21.945033382,
+      "lng": -46.8029424802
+     },
+     {
+      "lat": -21.9419780938,
+      "lng": -46.7968939748
+     },
+     {
+      "lat": -21.9451635777,
+      "lng": -46.7909706239
+     },
+     {
+      "lat": -21.9421078329,
+      "lng": -46.7849224567
+     },
+     {
+      "lat": -21.9452929077,
+      "lng": -46.7789986112
+     },
+     {
+      "lat": -21.9515342085,
+      "lng": -46.7791225683
+     },
+     {
+      "lat": -21.954719355,
+      "lng": -46.7731978638
+     },
+     {
+      "lat": -21.9516627198,
+      "lng": -46.7671495671
+     },
+     {
+      "lat": -21.9548474567,
+      "lng": -46.7612243686
+     },
+     {
+      "lat": -21.951790365,
+      "lng": -46.7551764115
+     },
+     {
+      "lat": -21.9549746921,
+      "lng": -46.7492507196
+     },
+     {
+      "lat": -21.9519171441,
+      "lng": -46.7432031025
+     },
+     {
+      "lat": -21.9551010612,
+      "lng": -46.7372769176
+     },
+     {
+      "lat": -21.952043057,
+      "lng": -46.7312296412
+     },
+     {
+      "lat": -21.955226564,
+      "lng": -46.7253029639
+     },
+     {
+      "lat": -21.9614685557,
+      "lng": -46.7254231969
+     },
+     {
+      "lat": -21.9645269946,
+      "lng": -46.7314709404
+     },
+     {
+      "lat": -21.9707694451,
+      "lng": -46.7315916153
+     },
+     {
+      "lat": -21.9738278621,
+      "lng": -46.7376401672
+     },
+     {
+      "lat": -21.970643394,
+      "lng": -46.7435675769
+     },
+     {
+      "lat": -21.9737013544,
+      "lng": -46.7496164697
+     },
+     {
+      "lat": -21.9799442172,
+      "lng": -46.7497384203
+     },
+     {
+      "lat": -21.9830021549,
+      "lng": -46.7557881213
+     },
+     {
+      "lat": -21.9892454756,
+      "lng": -46.7559105144
+     },
+     {
+      "lat": -21.9923033904,
+      "lng": -46.7619610237
+     },
+     {
+      "lat": -21.9985471686,
+      "lng": -46.7620838594
+     },
+     {
+      "lat": -22.0017330788,
+      "lng": -46.7561553518
+     }
+    ],
+    "effectTime": 1785157200,
+    "extend": "",
+    "areaType": 25,
+    "centerPoi": {
+     "lat": -21.977701,
+     "lng": -46.780409
+    },
+    "area": 58.46,
+    "countyGroupID": 550001740001,
+    "geoWktInfo": null,
+    "versionID": 10919086105,
+    "containIds": null
+   }
+  ]
+ }
+}
