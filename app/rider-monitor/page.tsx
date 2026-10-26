@@ -145,10 +145,20 @@ export default function RiderMonitorPage() {
   /** 模式二 T6 · 应岗未上. Reads today's dispatch board and keeps only the
    *  LOCKED shifts — see the state declaration for why unlocked is skipped. */
   const loadNoShow = useCallback(async (live: Payload | null) => {
+    // Boa Vista runs without shift scheduling (业务方 2026-10-26:"SJBV 不再有排班"),
+    // so there is no roster to compare against — the panel stays off there.
+    if (region === "sjbv") {
+      setNoShow(null);
+      return;
+    }
     const today = new Date(Date.now() - 3 * 3600_000).toISOString().slice(0, 10); // BRT
     const params = new URLSearchParams({ from: today, to: today });
     if (scopeFranchise) params.set("franchise", scopeFranchise);
     if (scopeStation) params.set("station", scopeStation);
+    // Only THIS board's city (2026-10-26): the Boa Vista board compares its
+    // live riders against São Paulo's roster otherwise, and lists every São
+    // Paulo station as "应岗未上". Same param the dispatch page already uses.
+    params.set("city", REGION_CITY[region]);
     const res = await fetch(`/api/dispatch?${params}`, { headers, cache: "no-store" });
     if (!res.ok) {
       setNoShow(null);
@@ -194,7 +204,7 @@ export default function RiderMonitorPage() {
       .filter((s) => !onlineIds.has(String(s.rider99Id)))
       .map((s) => ({ name: s.riderName, rider99Id: s.rider99Id, station: s.station, timeRange: lockedShifts.get(s.shiftId)?.timeRange ?? "" }));
     setNoShow(missing);
-  }, [headers, scopeFranchise, scopeStation]);
+  }, [headers, scopeFranchise, scopeStation, region]);
 
   const load = useCallback(async () => {
     const params = new URLSearchParams();

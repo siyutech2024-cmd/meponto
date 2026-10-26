@@ -71,7 +71,6 @@ const navItems: Array<{
   // Boa Vista (leader mode) — its own menu, same pages scoped by the /boavista
   // URL segment (app/lib/regions.ts). São Paulo entries above stay São Paulo-only.
   { href: "/rider-monitor/boavista", labelKey: "navBvMonitor", icon: Bike, permission: "manage_riders" },
-  { href: "/dispatch/boavista", labelKey: "navBvDispatch", icon: CalendarDays, permission: "manage_slots" },
   { href: "/performance/boavista", labelKey: "navBvPerformance", icon: BarChart3, permission: "view_analytics" },
   { href: "/riders/boavista", labelKey: "navBvRiders", icon: Bike, permission: "manage_riders" },
   { href: "/pontos/boavista", labelKey: "navBvPontos", icon: MapPinned, permission: "manage_pontos" },

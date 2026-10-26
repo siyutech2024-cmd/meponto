@@ -66,7 +66,6 @@ export const portalConfigs: Record<PortalId, PortalConfig> = {
       { href: "/assessment", label: "考核规则", description: "服务质量阈值与抽佣调整规则。", permission: "view_analytics" },
       // ---- Boa Vista(组长模式)独立菜单 —— 同一批页面按 /boavista 段限定区域 ----
       { href: "/rider-monitor/boavista", label: "Boa Vista 实时看板", description: "Boa Vista 区域实时骑手与当日数据。", permission: "manage_riders" },
-      { href: "/dispatch/boavista", label: "Boa Vista 运力排班", description: "Boa Vista 班次、配额与报名。", permission: "manage_slots" },
       { href: "/performance/boavista", label: "Boa Vista T+1 数据与骑手结算", description: "Boa Vista 骑手 T+1 KPI 与每日结算。", permission: "view_analytics" },
       { href: "/riders/boavista", label: "Boa Vista 骑手清单", description: "Boa Vista 骑手建档、分配与状态。", permission: "manage_riders" },
       { href: "/pontos/boavista", label: "Boa Vista 组长与站点", description: "Boa Vista 加盟商、组长站点。", permission: "manage_pontos" },
