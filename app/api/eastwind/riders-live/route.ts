@@ -37,7 +37,11 @@ const CAT_BY_CODE: Record<string, { cat: Cat; label: string }> = {
 // 修完之后:未上线卡 = 99 看板 Não está online 的原数。
 function classify(statusCode: string | null, statusStr: string | null): { cat: Cat; label: string } {
   const s = (statusStr || "").toLowerCase();
-  if (/entregando|em rota/.test(s)) return { cat: "delivering", label: "配送中" };
+  // 配送中 must win over the "fora" (outside) check below: Boa Vista runs with
+  // no schedule, so its delivering riders read "Entregas fora do agendamento"
+  // (deliveries outside the schedule) — that is a rider on a delivery, not a
+  // rider outside the area (2026-10-26: the card showed 0 for a whole day).
+  if (/entreg|em rota/.test(s)) return { cat: "delivering", label: "配送中" };
   if (/não está online|nao esta online|não conectado|nao conectado|offline|desconect|未履约|未上线|未在线/.test(s))
     return { cat: "notOnline", label: "未上线" };
   if (/conectado|em pausa|pausa|ausente|\bonline\b/.test(s)) return { cat: "online", label: "在线" };
@@ -67,6 +71,14 @@ export async function GET(request: Request) {
   // Eastwind city_id. The board asks for one city at a time so São Paulo's
   // riders never leak into a small-city view (and vice versa).
   const cityId = url.searchParams.get("cityId")?.trim() || "";
+  // light=1 (2026-10-26): first paint of the board. Skips the heavy `raw`
+  // column (full Eastwind record + per-rider detail card per row — the bulk
+  // of the 8 s / 137 KB response for Boa Vista's ~240 riders), so status
+  // cards and the map show up in a second; the page then fetches the full
+  // payload in the background for the per-rider performance drawer.
+  const light = url.searchParams.get("light") === "1";
+  const SNAPSHOT_COLS = "id, captured_at, source, city_id, rider_ext_id, rider_name, phone, id_no, status, status_code, shift_start, shift_end, hot_zone, vehicle, online_mins, rest_mins, finished_cnt, lat, lng, error_show";
+  const tStart = Date.now();
 
   // ---- Session scope enforcement (same rule as /api/mall) -----------------
   // The query params exist for the dashboards' convenience, but the SESSION
@@ -156,9 +168,9 @@ export async function GET(request: Request) {
     const batches = await Promise.all(
       [...latestBySource.entries()].map(([src, at]) =>
         (cityId
-          ? client.from("rider_status_snapshots").select("*").eq("captured_at", at).eq("source", src).eq("city_id", cityId)
-          : client.from("rider_status_snapshots").select("*").eq("captured_at", at).eq("source", src)
-        ).then((r) => (r.data ?? []) as SnapshotRow[]),
+          ? client.from("rider_status_snapshots").select(light ? SNAPSHOT_COLS : "*").eq("captured_at", at).eq("source", src).eq("city_id", cityId)
+          : client.from("rider_status_snapshots").select(light ? SNAPSHOT_COLS : "*").eq("captured_at", at).eq("source", src)
+        ).then((r) => (r.data ?? []) as unknown as SnapshotRow[]),
       ),
     );
     snapshots = batches.flat();
@@ -297,7 +309,8 @@ export async function GET(request: Request) {
       matched: Boolean(match),
       // Per-rider "Performance in Current Shift" detail (tolerant extraction
       // from the stored raw record; missing fields are null → shown as N/A).
-      perf: extractRiderPerf(s.raw),
+      // light: perf fields all null (same shape — the detail drawer just shows N/A until phase 2)
+      perf: light ? extractRiderPerf(null) : extractRiderPerf(s.raw),
     };
   });
 
@@ -406,6 +419,8 @@ export async function GET(request: Request) {
   return jsonResponse({
     data: {
       capturedAt,
+      light,
+      serverMs: Date.now() - tStart,
       sourceBatches,
       sourceHeartbeats,
       heartbeatAt,

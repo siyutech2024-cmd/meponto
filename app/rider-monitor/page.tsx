@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { RefreshCcw, Search, Bike, X, MapPin, Phone } from "lucide-react";
 import { AppShell, DataTable, PageTitle } from "../components/ui";
 import RiderMap, { type MapRider } from "./RiderMap";
@@ -112,6 +112,7 @@ export default function RiderMonitorPage() {
   const isHQ = !scopeFranchise && !scopeStation;
 
   const [data, setData] = useState<Payload | null>(null);
+  const loadSeq = useRef(0); // drops a stale response that lands after a newer load started
   const [query, setQuery] = useState("");
   const [catFilter, setCatFilter] = useState<Cat | "">("");
   const [onlyUnassigned, setOnlyUnassigned] = useState(false);
@@ -215,12 +216,28 @@ export default function RiderMonitorPage() {
     // so the board shows an empty state instead of another city's riders.
     const wantCityId = CITY_IDS[city] || "__pending__";
     params.set("cityId", wantCityId);
-    const res = await fetch(`/api/eastwind/riders-live?${params}`, { headers, cache: "no-store" });
-    if (res.ok) {
-      const live = (await res.json()).data as Payload;
+    // Two-phase load (2026-10-26, Boa Vista board took 8 s to first paint):
+    // phase 1 asks for the light payload (no per-rider detail) so the status
+    // cards, KPI strip and map render right away; phase 2 fetches the full
+    // payload in the background and swaps it in for the detail drawer.
+    const seq = ++loadSeq.current;
+    const light = new URLSearchParams(params);
+    light.set("light", "1");
+    const resLight = await fetch(`/api/eastwind/riders-live?${light}`, { headers, cache: "no-store" });
+    if (resLight.ok && seq === loadSeq.current) {
+      const live = (await resLight.json()).data as Payload;
       setData(live);
       setUpdatedAt(new Date().toLocaleTimeString("pt-BR", { timeZone: "America/Sao_Paulo" }));
       void loadNoShow(live); // 模式二 T6: recompute against the same snapshot
+    }
+    const res = await fetch(`/api/eastwind/riders-live?${params}`, { headers, cache: "no-store" });
+    if (res.ok && seq === loadSeq.current) {
+      const live = (await res.json()).data as Payload;
+      setData(live);
+      if (!resLight.ok) {
+        setUpdatedAt(new Date().toLocaleTimeString("pt-BR", { timeZone: "America/Sao_Paulo" }));
+        void loadNoShow(live);
+      }
     }
   }, [headers, scopeFranchise, scopeStation, loadNoShow, city]);
 
