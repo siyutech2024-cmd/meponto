@@ -48,6 +48,7 @@ export default function RiderMap({
   focusKey,
   onSelect,
   view,
+  lockToZones = false,
 }: {
   riders: MapRider[];
   /** Hot zones visible to this portal (HQ: all; franchise: assigned only). */
@@ -58,6 +59,9 @@ export default function RiderMap({
   zoneLabel?: (zoneId: string) => string | null;
   focusKey: string | null;
   onSelect: (key: string) => void;
+  /** Frame the map on the visible zones and keep it there (no panning or
+   *  zooming out beyond them) — the Boa Vista board shows only its own area. */
+  lockToZones?: boolean;
 }) {
   const mapDiv = useRef<HTMLDivElement>(null);
   const mapRef = useRef<any>(null);
@@ -123,9 +127,9 @@ export default function RiderMap({
   // Recentre when the operator switches city.
   useEffect(() => {
     const map = mapRef.current;
-    if (!ready || !map || !view) return;
+    if (!ready || !map || !view || lockToZones) return;
     map.setView(view.center, view.zoom);
-  }, [ready, view]);
+  }, [ready, view, lockToZones]);
 
   // (Re)draw the hot-zone polygons whenever the visible zone set changes
   // (e.g. HQ re-assigns a zone, or a franchise portal loads its own subset).
@@ -149,7 +153,19 @@ export default function RiderMap({
     zoneBoundsRef.current = zones.length
       ? (window as any).L.latLngBounds(zones.flatMap((z) => z.points.map(([lng, lat]) => [lat, lng])))
       : null;
-  }, [zones, ready]);
+    if (lockToZones && zoneBoundsRef.current) {
+      const bounds = zoneBoundsRef.current;
+      map.setMaxBounds(null);
+      map.setMinZoom(0);
+      map.fitBounds(bounds, { padding: [12, 12] });
+      // A small margin so edge markers stay clickable; nothing beyond it.
+      map.setMaxBounds(bounds.pad(0.08));
+      map.setMinZoom(map.getZoom());
+    } else if (!lockToZones) {
+      map.setMaxBounds(null);
+      map.setMinZoom(0);
+    }
+  }, [zones, ready, lockToZones]);
 
   // Sync markers whenever riders change (and once the map is ready).
   useEffect(() => {

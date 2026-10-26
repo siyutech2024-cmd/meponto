@@ -267,8 +267,12 @@ export default function RiderMonitorPage() {
   // Boa Vista menu: the snapshots are already limited to Boa Vista's board, and
   // new riders arrive with no franchise yet — they must stay visible there so
   // ops can onboard them. São Paulo keeps its existing rule unchanged.
+  // Boa Vista menu: every rider the server returns is already Boa Vista-only
+  // (Boa Vista board + city filter + in-area filter at ingest), so nobody is
+  // hidden here — riders with no franchise yet, or still on another franchise,
+  // stay visible. São Paulo keeps its existing rule unchanged.
   const inCity = useCallback(
-    (franchise: string) => !isHQ || !cityHasAssignments || cityFranchises.has(franchise) || (region === "sjbv" && (!franchise || franchise === "未归属" || franchise === "Unassigned")),
+    (franchise: string) => region === "sjbv" || !isHQ || !cityHasAssignments || cityFranchises.has(franchise),
     [isHQ, cityHasAssignments, cityFranchises, region],
   );
 
@@ -580,6 +584,7 @@ export default function RiderMonitorPage() {
           riders={mapRiders}
           zones={visibleZones}
           view={CITY_VIEW[city]}
+          lockToZones={region === "sjbv"}
           zoneLabel={(zoneId) => (zoneAssign[zoneId]?.length ? zoneAssign[zoneId].join(" · ") : null)}
           focusKey={detailKey}
           onSelect={setDetailKey}

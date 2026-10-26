@@ -173,6 +173,24 @@ export async function POST(request: Request) {
     result.kpiCaptured = true;
     result.source = source;
 
+    // Boa Vista default binding (app/lib/server/boavista-binding.ts): riders
+    // kept by the in-area filter above are bound to the Boa Vista franchise
+    // when they have no binding yet. Best-effort — the snapshot is the primary
+    // product and is already stored; a binding failure only shows in the reply.
+    if (source === "sjbv" && snapshots.length) {
+      try {
+        const { bindBoaVistaRiders } = await import("../../../lib/server/boavista-binding");
+        const binding = await bindBoaVistaRiders(snapshots);
+        result.boaVistaBinding = binding;
+        if (binding.created || binding.bound) {
+          const { flushPendingToDatabase } = await import("../../../lib/server/persistence");
+          await flushPendingToDatabase();
+        }
+      } catch (error) {
+        result.boaVistaBindingError = (error as Error).message;
+      }
+    }
+
     // 模式二规则(业务方 2026-08-10 定):出现在新 Eastwind(PRO 账号)看板
     // 上的骑手 = PRO 骑手,档案 pool 自动置 'pro',不再人工维护。
     // DB 端定点 UPDATE(见迁移 20260810120000),幂等;失败不阻塞入库 ——
