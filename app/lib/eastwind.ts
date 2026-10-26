@@ -423,7 +423,8 @@ const KP = {
   declined: ["declineOrderCnt", "declinedOrderCnt", "refuseOrderCnt", "rejectOrderCnt", "declineCnt", "refuseCnt"],
   cancelled: ["cancelOrderCnt", "cancelledOrderCnt", "cancelCnt", "cancelNum"],
   delayed: ["delayOrderCnt", "delayedOrderCnt", "timeoutOrderCnt", "overtimeOrderCnt", "delayCnt"],
-  joinTime: ["shiftJoinTime", "joinShiftTime", "joinTime", "checkInTime", "clockInTime", "signInTime", "punchInTime"],
+  // riderJoinScheduleDateTime: station-level (leader-mode) detail card, seen 2026-10-26.
+  joinTime: ["shiftJoinTime", "joinShiftTime", "joinTime", "checkInTime", "clockInTime", "signInTime", "punchInTime", "riderJoinScheduleDateTime"],
 };
 
 export function extractRiderPerf(raw: unknown): RiderShiftPerf {

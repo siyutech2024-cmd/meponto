@@ -130,6 +130,19 @@ async function alert(key, text) {
   }
 }
 
+// Raw rider records of the captured riderList (shape-tolerant walk; records = objects with a rider id + name).
+function riderPairsRaw(payload) {
+  const out = [];
+  const walk = (node, depth) => {
+    if (!node || typeof node !== "object" || depth > 6) return;
+    if (Array.isArray(node)) { node.forEach((x) => walk(x, depth + 1)); return; }
+    if ((node.riderID ?? node.riderId ?? node.driverId) != null && (node.riderName ?? node.name)) { out.push(node); return; }
+    for (const k of Object.keys(node)) walk(node[k], depth + 1);
+  };
+  walk(payload, 0);
+  return out;
+}
+
 // Pull [{id, name, phone}] out of the captured riderList JSON (shape-tolerant walk).
 function riderPairs(payload) {
   const out = [];
@@ -141,7 +154,7 @@ function riderPairs(payload) {
     const id = node.riderID ?? node.riderId ?? node.driverId;
     const name = node.riderName ?? node.name;
     if (id != null && name) {
-      out.push({ id: String(id), name: String(name), phone: node.phoneNumber ? String(node.phoneNumber) : null });
+      out.push({ id: String(id), name: String(name), phone: node.phoneNumber ? String(node.phoneNumber) : null, code: String(node.workStatus ?? node.statusCode ?? "") });
     }
     for (const k of Object.keys(node)) walk(node[k], depth + 1);
   };
@@ -157,7 +170,12 @@ function riderPairs(payload) {
  */
 async function captureRiderDetails(page, riderList) {
   const features = {};
-  const riders = riderPairs(riderList).slice(0, cfg.detailMax);
+  // Working riders first (Eastwind workStatus 2 = delivering, 4 = online): the
+  // detail cap used to be spent on the first N rows of the list, which on a
+  // 300-rider all-day board are mostly disconnected riders — so the riders
+  // whose AR/CAA actually matter never got a detail card (2026-10-26).
+  const rank = (r) => (r.code === "2" ? 0 : r.code === "4" ? 1 : 2);
+  const riders = riderPairs(riderList).sort((a, b) => rank(a) - rank(b)).slice(0, cfg.detailMax);
   if (!riders.length) return features;
   const apiOf = (u) => {
     const m = u.match(/[?&]api=([^&]+)/);
@@ -199,6 +217,18 @@ async function captureRiderDetails(page, riderList) {
       detailApisSeen.add(apiOf(resp.url()));
       features[id] = await resp.json();
       captured++;
+      if (captured === 1) {
+        // Local diagnostic: one detail-card payload with identifying fields
+        // blanked, so the platform's per-rider metric parser can be checked
+        // against this account's field names.
+        try {
+          const redact = (n) => Array.isArray(n) ? n.map(redact) : n && typeof n === "object"
+            ? Object.fromEntries(Object.entries(n).map(([k, v]) => [k, /name|phone|idno|cpf|headimg|mobile|wsgsig|secdd/i.test(k) ? "<redacted>" : redact(v)]))
+            : n;
+          const { writeFileSync } = await import("node:fs");
+          writeFileSync(`rider-target-sample-${process.env.CITY_ID || cfg.cities[0]?.id || "default"}.json`, JSON.stringify({ capturedAt: new Date().toISOString(), api: apiOf(resp.url()), body: redact(features[id]) }, null, 1));
+        } catch { /* diagnostics only */ }
+      }
       await page.keyboard.press("Escape").catch(() => {}); // close the card
       await page.waitForTimeout(200); // gentle pacing — avoid hammering the gateway
     } catch {
@@ -273,7 +303,19 @@ async function pull(ctx, city = null, roundCapturedAt = null) {
     const api = m ? decodeURIComponent(m[1]) : "";
     if (api) seenApis.add(api);
     if (RIDER_LIST_APIS.includes(api)) {
-      try { caps.riderList = await r.json(); caps.riderListApi = api; } catch { /* non-json */ }
+      try {
+        caps.riderList = await r.json(); caps.riderListApi = api;
+        // Local diagnostic: how many riders per (status text, status code) —
+        // aggregated counts only, no names / phones / ids. Used to verify the
+        // platform's status classification against Eastwind's own values.
+        const tally = {};
+        for (const rec of riderPairsRaw(caps.riderList)) {
+          const key = `${rec.statusStr ?? rec.status ?? ""} | code=${rec.workStatus ?? rec.statusCode ?? ""} | err=${rec.errorShow ?? ""}`;
+          tally[key] = (tally[key] ?? 0) + 1;
+        }
+        const { writeFileSync } = await import("node:fs");
+        writeFileSync(`status-tally-${cityId}.json`, JSON.stringify({ capturedAt: new Date().toISOString(), api, tally }, null, 1));
+      } catch { /* non-json */ }
     } else if (KPI_APIS.includes(api)) {
       try {
         caps.kpi = await r.json();
