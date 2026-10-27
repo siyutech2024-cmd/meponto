@@ -109,12 +109,20 @@ export async function GET(request: Request) {
   // (source "sjbv",组长模式)。PRO 不再列为实时源 —— 否则它的心跳永远过期,
   // 「应岗未上」面板会因"有源断供"被永久隐藏。恢复 PRO 时把 "pro" 加回来即可。
   const KNOWN_SOURCES = ["main", "sjbv"] as const;
+  // RECENT ROWS ONLY (2026-10-26 — the Boa Vista board took 8 s): "latest batch
+  // of source X for city Y" has no (source, city) index, so when a source has
+  // NEVER reported that city (old OL ↔ Boa Vista) Postgres walked the source's
+  // entire history before answering "none". The board only shows batches from
+  // the last 20 minutes anyway, so a 24 h floor is behaviour-neutral and keeps
+  // every one of these lookups inside today's rows.
+  const recentFloor = new Date(Date.now() - 24 * 3600_000).toISOString();
   const latestBySource = new Map<string, string>();
   const latestPerSource = await Promise.all(
     KNOWN_SOURCES.map((src) =>
       (cityId
         ? client.from("rider_status_snapshots").select("captured_at").eq("source", src).eq("city_id", cityId)
         : client.from("rider_status_snapshots").select("captured_at").eq("source", src))
+        .gte("captured_at", recentFloor)
         .order("captured_at", { ascending: false })
         .limit(1)
         .then((r) => ({ src, at: (r.data?.[0] as { captured_at: string } | undefined)?.captured_at ?? null, error: r.error })),
@@ -142,6 +150,7 @@ export async function GET(request: Request) {
         .from("rider_kpi_snapshots")
         .select("captured_at")
         .eq("source", src)
+        .gte("captured_at", recentFloor)
         .order("captured_at", { ascending: false })
         .limit(1)
         .then((r) => ({ src, at: (r.data?.[0] as { captured_at: string } | undefined)?.captured_at ?? null })),

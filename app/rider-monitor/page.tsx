@@ -116,6 +116,10 @@ export default function RiderMonitorPage() {
   const [query, setQuery] = useState("");
   const [catFilter, setCatFilter] = useState<Cat | "">("");
   const [onlyUnassigned, setOnlyUnassigned] = useState(false);
+  // Table folds the not-online riders away by default (2026-10-26: on an
+  // all-day board 3 in 4 riders are offline; ops wants the working ones first).
+  // The status cards and the map still count/show everyone.
+  const [showOffline, setShowOffline] = useState(false);
   // 模式二: "" 全部 / "pro" 仅 PRO 池 / "standard" 仅普通池.
   const [poolFilter, setPoolFilter] = useState("");
   const [updatedAt, setUpdatedAt] = useState("");
@@ -318,8 +322,11 @@ export default function RiderMonitorPage() {
   // source — shown as a subtitle on the existing "on shift" card.
   const proOnline = riders.filter((r) => r.pool === "pro").length;
 
+  const offlineFolded = !showOffline && !catFilter && !query;
+  const offlineCount = riders.filter((r) => r.cat === "notOnline").length;
   const filtered = riders.filter((r) => {
     if (catFilter && r.cat !== catFilter) return false;
+    if (offlineFolded && r.cat === "notOnline") return false;
     // 模式二: PRO / 普通 池筛选(两个 OL 抓取源在同一看板上并存)
     if (poolFilter && (r.pool === "pro" ? "pro" : "standard") !== poolFilter) return false;
     if (onlyUnassigned && r.assigned) return false;
@@ -696,6 +703,13 @@ export default function RiderMonitorPage() {
         ) : null}
         <span className="ml-auto text-xs text-[var(--muted)]">{filtered.length} {t("rmRidersUnit")}</span>
       </div>
+      {!catFilter && !query && offlineCount > 0 && (
+        <div className="mb-2">
+          <button type="button" className="tag" onClick={() => setShowOffline((v) => !v)}>
+            {showOffline ? t("rmHideOffline", { n: offlineCount }) : t("rmShowOffline", { n: offlineCount })}
+          </button>
+        </div>
+      )}
 
       <DataTable
         headers={[t("rmColRider"), t("rmColStatus"), t("rmColShift"), t("rmColZone"), t("rmColVehicle"), t("rmColOnlineMin"), t("rmColFinished"), t("rmScopeFranchise"), t("rmScopePonto")]}
