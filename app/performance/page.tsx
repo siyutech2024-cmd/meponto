@@ -321,6 +321,8 @@ export default function PerformancePage() {
     if (item.id === "import" && (scopeFranchise || scopeStation)) return false; // 导入仅总部
     if (item.id === "franchises" && (scopeFranchise || scopeStation)) return false;
     if (item.id === "stations" && scopeStation) return false;
+    // Boa Vista riders are paid outside PontoSys (业务方 2026-10-30) — no rider pay tab there.
+    if (item.id === "earnings" && isBoaVista) return false;
     return true;
   });
 

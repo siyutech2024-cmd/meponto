@@ -78,6 +78,10 @@ export default function RidersPage() {
   // Assignment edits are staged here and saved to the DB only after 确认保存.
   const [pending, setPending] = useState<Record<string, { name: string; ponto?: string; franchise?: string }>>({});
   const [saving, setSaving] = useState(false);
+  // Boa Vista: tick riders, pick a leader station, stage them all at once —
+  // the existing confirm bar writes them (nothing is saved on tick).
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [bulkStation, setBulkStation] = useState("");
   const [page, setPage] = useState(1);
   const PAGE_SIZE = 20;
 
@@ -368,7 +372,52 @@ export default function RidersPage() {
 
   const input = "h-10 rounded-[8px] border border-[var(--line)] bg-[var(--surface-raised)] px-3 text-sm font-bold text-[var(--text)] outline-none focus:border-[var(--accent)]";
 
+  const bulkMode = rg.isBoaVista && !rg.scoped;
+  const pageIds = pageRows.filter((r) => r.source === "profile").map((r) => r.id);
+  const allPageSelected = pageIds.length > 0 && pageIds.every((id) => selected.has(id));
+  const selectColumn: DataColumn<RiderRow> = {
+    key: "select",
+    label: (
+      <input
+        type="checkbox"
+        aria-label={t("rdSelectPage")}
+        checked={allPageSelected}
+        onChange={() =>
+          setSelected((cur) => {
+            const next = new Set(cur);
+            if (allPageSelected) pageIds.forEach((id) => next.delete(id));
+            else pageIds.forEach((id) => next.add(id));
+            return next;
+          })
+        }
+      />
+    ),
+    render: (rider) =>
+      rider.source === "profile" ? (
+        <input
+          type="checkbox"
+          checked={selected.has(rider.id)}
+          onChange={() =>
+            setSelected((cur) => {
+              const next = new Set(cur);
+              if (next.has(rider.id)) next.delete(rider.id);
+              else next.add(rider.id);
+              return next;
+            })
+          }
+        />
+      ) : null,
+  };
+  function bulkAssign() {
+    if (!bulkStation) return;
+    for (const rider of riders) {
+      if (selected.has(rider.id)) stage(rider, { ponto: bulkStation });
+    }
+    setSelected(new Set());
+  }
+
   const columns: Array<DataColumn<RiderRow>> = [
+    ...(bulkMode ? [selectColumn] : []),
     {
       key: "rider",
       label: t("rdColRider"),
@@ -584,6 +633,18 @@ export default function RidersPage() {
               ))}
             </div>
           </SectionCard>
+        </div>
+      )}
+
+      {bulkMode && (
+        <div className="mt-4 flex flex-wrap items-center gap-2">
+          <select value={bulkStation} onChange={(e) => setBulkStation(e.target.value)} className={input}>
+            <option value="">{t("rdBulkPick")}</option>
+            {regionStations.map((st) => <option key={st.id} value={st.name}>{st.name}</option>)}
+          </select>
+          <button type="button" className="tag border-[var(--accent)] text-[var(--accent)] disabled:opacity-50" disabled={!bulkStation || selected.size === 0} onClick={bulkAssign}>
+            {t("rdBulkAssign", { n: selected.size })}
+          </button>
         </div>
       )}
 

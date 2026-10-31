@@ -48,6 +48,7 @@ const COLLECTIONS = [
   "mallCoupons",
   "cashLedgerEntries",
   "slotEnrollments",
+  "franchises", // Leader Mode: is this rider's franchise in leader mode (home card)
   // A4 · 活动入口卡 lives inside the app-splash record (see lib/app-config.ts).
   "appSplashConfigs",
 ];
@@ -58,7 +59,7 @@ const COLLECTIONS = [
 // points balance riders wait for after login) and `riderDailyKpis` are served
 // by L2 rider-scoped direct reads when READPATH_DB_DIRECT is on, so they drop
 // out of the wholesale refresh entirely on that path.
-const HOT_COLLECTIONS = ["riders", "appTasks", "taskClaims", "mallConfigs", "mallCoupons", "slotEnrollments"];
+const HOT_COLLECTIONS = ["riders", "appTasks", "taskClaims", "mallConfigs", "mallCoupons", "slotEnrollments", "pontos", "franchises"];
 const HEAVY_TTL_MS = 60_000;
 let heavyRefreshedAt = 0;
 
@@ -502,10 +503,28 @@ export async function GET(request: Request) {
       // clock or on the client knowing what a pool is. Null when there is
       // nothing to show, so old clients (which ignore the field) and new ones
       // behave identically.
+      // Leader Mode entries ride the same single card slot (no app release —
+      // 业务方 2026-10-30): a leader sees "Minha equipe" first, then any
+      // marketing activity, and only then a leader-mode rider sees the
+      // apply / join-a-team entry. Links open in the app's logged-in WebView.
       activityCard: (() => {
+        // Rider pages live on app.meponto.com (proxy.ts riderSections); local/dev keeps its own origin.
+        const origin = new URL(request.url).origin;
+        const riderPage = (page: string) => (/meponto\.com$/.test(new URL(request.url).hostname) ? `https://app.meponto.com/${page}` : `${origin}/rider-app/${page}`);
+        const myStation = memory.pontos.find(
+          (p) => p.leaderRiderId === rider.id && p.stationStatus !== "closed" && p.stationStatus !== "suspended",
+        );
+        if (myStation) {
+          return { title: "Minha equipe", subtitle: `${myStation.name} · pedidos e resumo da equipe`, badge: "Líder", linkURL: riderPage("team") };
+        }
         const card = memory.appSplashConfigs[0]?.activityCard;
         const today = new Date(Date.now() - 3 * 3600_000).toISOString().slice(0, 10); // BRT
-        return activityCardVisible(card, rider.pool ?? "standard", today) ? card : null;
+        if (activityCardVisible(card, rider.pool ?? "standard", today)) return card;
+        const leaderModeRider = memory.franchises.some((f) => f.name === rider.franchise && f.leaderMode === true);
+        if (leaderModeRider) {
+          return { title: "Seja líder ou entre numa equipe", subtitle: "Abra sua estação, entre numa equipe ou troque de equipe", badge: "Novo", linkURL: riderPage("leader-apply") };
+        }
+        return null;
       })(),
     },
   });

@@ -39,6 +39,10 @@ export default function NetworkPage() {
   const [franchiseForm, setFranchiseForm] = useState({ name: "", owner: "", phone: "", city: rg.city as string });
   const [stationForm, setStationForm] = useState({ name: "", franchise: "", address: "", mapUrl: "", leader: "" });
   const [stationOpen, setStationOpen] = useState(false);
+  // Leader-mode station setup (HQ): leader rider, payee, trial/active.
+  const [leaderEdit, setLeaderEdit] = useState<Ponto | null>(null);
+  const [leaderForm, setLeaderForm] = useState({ rider: "", pix: "", cpf: "", cnpj: "", status: "active" });
+  const [franchiseRiders, setFranchiseRiders] = useState<Array<{ id: string; name: string; ninetyNineId?: string; franchise?: string }>>([]);
   const [franchiseOpen, setFranchiseOpen] = useState(false);
   const [onlyPending, setOnlyPending] = useState(false);
 
@@ -109,6 +113,15 @@ export default function NetworkPage() {
         <div>
           <div className="truncate font-black">{station.name}</div>
           <div className="truncate text-[11px] font-bold text-[var(--muted)]">{station.bairro}</div>
+          {rg.isBoaVista && (
+            <div className="mt-1 flex flex-wrap gap-1">
+              <span className="text-[10px] font-black uppercase text-[var(--muted-strong)]">
+                {station.stationStatus === "trial" ? t("lmStTrial") : station.stationStatus === "suspended" ? t("lmStSuspended") : station.stationStatus === "closed" ? t("lmStClosed") : t("lmStActive")}
+              </span>
+              {!station.leaderRiderId && <span className="text-[10px] font-black uppercase text-[var(--danger-ink)]">{t("lmNoLeader")}</span>}
+              {!station.leaderPixKey && !station.leaderCnpj && <span className="text-[10px] font-black uppercase text-[var(--warning-ink)]">{t("lmNoPayee")}</span>}
+            </div>
+          )}
         </div>
       ),
     },
@@ -195,6 +208,26 @@ export default function NetworkPage() {
                 {t("pnReject")}
               </button>
             </>
+          )}
+          {isHq && rg.isBoaVista && (
+            <button
+              type="button"
+              className="tag border-[var(--accent)] text-[var(--accent)]"
+              onClick={async () => {
+                setLeaderEdit(station);
+                setLeaderForm({ rider: "", pix: station.leaderPixKey ?? "", cpf: station.leaderCpf ?? "", cnpj: station.leaderCnpj ?? "", status: station.stationStatus ?? "active" });
+                const r = await fetch("/api/riders", { headers, cache: "no-store" });
+                if (r.ok) {
+                  const list = ((await r.json()).data ?? []) as Array<{ id: string; name: string; ninetyNineId?: string; franchise?: string }>;
+                  const own = list.filter((x) => x.franchise === station.franchise);
+                  setFranchiseRiders(own);
+                  const cur = own.find((x) => x.id === station.leaderRiderId);
+                  if (cur) setLeaderForm((f) => ({ ...f, rider: `${cur.name} · ${cur.ninetyNineId ?? ""}` }));
+                }
+              }}
+            >
+              {t("lmLeaderSetup")}
+            </button>
           )}
           {isHq && (
             <>
@@ -408,7 +441,7 @@ export default function NetworkPage() {
           <input className={input} placeholder={t("pnStLeaderPh")} value={stationForm.leader} onChange={(e) => setStationForm({ ...stationForm, leader: e.target.value })} />
           <button
             type="button"
-            disabled={!stationForm.name.trim() || !stationForm.franchise || (!stationForm.address.trim() && !stationForm.mapUrl.trim())}
+            disabled={!stationForm.name.trim() || !stationForm.franchise || (!rg.isBoaVista && !stationForm.address.trim() && !stationForm.mapUrl.trim())}
             onClick={async () => {
               const r = await post({ action: "addStation", ...stationForm });
               if (r) {
@@ -455,6 +488,72 @@ export default function NetworkPage() {
             className="inline-flex h-11 items-center justify-center gap-1 rounded-[8px] bg-[var(--accent)] px-6 text-xs font-black uppercase text-[var(--accent-ink)] hover:bg-[var(--accent-strong)] disabled:opacity-50"
           >
             <Plus size={14} /> {t("pnAddFr")}
+          </button>
+        </div>
+      </Drawer>
+      {/* 组长设置抽屉 (HQ · Boa Vista leader mode) */}
+      <Drawer
+        open={Boolean(leaderEdit)}
+        onClose={() => setLeaderEdit(null)}
+        title={<div className="text-sm font-black uppercase">{t("lmLeaderSetup")} · {leaderEdit?.name}</div>}
+        ariaLabel={t("lmLeaderSetup")}
+      >
+        <div className="grid gap-2">
+          <label className="grid gap-1 text-[11px] font-bold text-[var(--muted)]">
+            {t("lmLeaderRider")}
+            <input className={input} list="leader-rider-options" placeholder={t("lmLeaderRiderPh")} value={leaderForm.rider} onChange={(e) => setLeaderForm({ ...leaderForm, rider: e.target.value })} />
+            <datalist id="leader-rider-options">
+              {franchiseRiders.map((r) => <option key={r.id} value={`${r.name} · ${r.ninetyNineId ?? ""}`} />)}
+            </datalist>
+          </label>
+          <label className="grid gap-1 text-[11px] font-bold text-[var(--muted)]">
+            {t("lmPix")}
+            <input className={input} value={leaderForm.pix} onChange={(e) => setLeaderForm({ ...leaderForm, pix: e.target.value })} />
+          </label>
+          <label className="grid gap-1 text-[11px] font-bold text-[var(--muted)]">
+            {t("lmCpf")}
+            <input className={input} value={leaderForm.cpf} onChange={(e) => setLeaderForm({ ...leaderForm, cpf: e.target.value })} />
+          </label>
+          <label className="grid gap-1 text-[11px] font-bold text-[var(--muted)]">
+            {t("lmCnpj")}
+            <input className={input} value={leaderForm.cnpj} onChange={(e) => setLeaderForm({ ...leaderForm, cnpj: e.target.value })} />
+          </label>
+          <label className="grid gap-1 text-[11px] font-bold text-[var(--muted)]">
+            {t("lmStatus")}
+            <select className={input} value={leaderForm.status} onChange={(e) => setLeaderForm({ ...leaderForm, status: e.target.value })}>
+              <option value="trial">{t("lmStTrial")}</option>
+              <option value="active">{t("lmStActive")}</option>
+              <option value="suspended">{t("lmStSuspended")}</option>
+              <option value="closed">{t("lmStClosed")}</option>
+            </select>
+          </label>
+          <button
+            type="button"
+            className="inline-flex h-11 items-center justify-center rounded-[8px] bg-[var(--accent)] px-4 text-xs font-black uppercase text-[var(--accent-ink)]"
+            onClick={async () => {
+              if (!leaderEdit) return;
+              const picked = franchiseRiders.find((r) => `${r.name} · ${r.ninetyNineId ?? ""}` === leaderForm.rider.trim());
+              if (leaderForm.rider.trim() && !picked) {
+                setMessage({ tone: "err", text: t("lmLeaderRiderPh") });
+                return;
+              }
+              const r = await post({
+                action: "updateLeaderStation",
+                stationId: leaderEdit.id,
+                // Never clear a leader just because the rider list failed to load.
+                ...(picked ? { leaderRiderId: picked.id } : franchiseRiders.length > 0 ? { leaderRiderId: "" } : {}),
+                leaderPixKey: leaderForm.pix,
+                leaderCpf: leaderForm.cpf,
+                leaderCnpj: leaderForm.cnpj,
+                stationStatus: leaderForm.status,
+              });
+              if (r) {
+                setMessage({ tone: "ok", text: t("lmSaved") });
+                setLeaderEdit(null);
+              }
+            }}
+          >
+            {t("lmSave")}
           </button>
         </div>
       </Drawer>

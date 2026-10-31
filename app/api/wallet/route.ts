@@ -272,6 +272,16 @@ export async function GET(request: Request) {
     return jsonResponse({ data: pending });
   }
 
+  // Leader Mode: every leader weekly payment (pending + paid), newest first —
+  // the Boa Vista settlement page (riders there are paid outside PontoSys).
+  if (url.searchParams.get("leaderPayments") === "1") {
+    const scope = await scopeFromRequest(request);
+    const rows = memory.walletPayments
+      .filter((p) => p.target === "leader" && (!scope.franchise || p.franchise === scope.franchise) && (!inRegion || inRegion(p.franchise)))
+      .sort((a, b) => b.weekFrom.localeCompare(a.weekFrom) || a.refName.localeCompare(b.refName));
+    return jsonResponse({ data: rows });
+  }
+
   // Raw payment records in a window (paid-status lookup for T+1 board).
   if (url.searchParams.get("payments") === "1") {
     const from = url.searchParams.get("from") || today();
@@ -678,22 +688,94 @@ async function handlePost(request: Request) {
       const franchiseRec = memory.franchises.find((f) => f.name === franchiseName && f.leaderMode === true);
       if (!franchiseRec) return jsonResponse({ error: "franchise not found or leaderMode off" }, { status: 404 });
 
-      const { listAssessments, markWeekSettled } = await import("../../lib/server/db/leader-repo");
-      const { computeLeaderSettlement, defaultLeaderSettlementRules, weekIdToDates } = await import("../../lib/leader-mode");
+      const { listAssessments, markStationsSettled } = await import("../../lib/server/db/leader-repo");
+      const { computeLeaderSettlement, leaderSegmentsForWeek, mergeLeaderWeekRows, rulesForWeek, weekIdToDates } = await import("../../lib/leader-mode");
 
       const closed = (await listAssessments(franchiseName, week)).filter((a) => a.state === "closed");
       if (closed.length === 0) {
         return jsonResponse({ error: "no closed assessments for this week — close the week first" }, { status: 409 });
       }
 
-      const rules = franchiseRec.leaderSettlementRules ?? defaultLeaderSettlementRules;
       const dates = weekIdToDates(week);
+      // Rates in force for THIS week (versioned; edits only reach later weeks).
+      const rules = rulesForWeek(franchiseRec.leaderSettlementRules, dates[0] ?? "");
       const generated: Array<{ station: string; totalBRL: number; id: string }> = [];
       const skippedNoPayee: string[] = [];
       const alreadyGenerated: string[] = [];
+      const settledStationIds: string[] = [];
 
+      const zeroAmount: string[] = [];
+      let weekDayRows: RiderDailyKpi[] | undefined;
       for (const assessment of closed) {
         const station = memory.pontos.find((p) => p.id === assessment.stationId);
+        // Nothing to pay (e.g. base R$0 and targets missed): settle the week
+        // without creating an empty order to "confirm" — payee not required.
+        if (computeLeaderSettlement(assessment, rules).totalBRL <= 0) {
+          zeroAmount.push(assessment.stationName);
+          settledStationIds.push(assessment.stationId);
+          continue;
+        }
+        // Decision 11 · leader changed during the week → one order per leader,
+        // orders split by the days each one led; the pass/fail of the week is
+        // the station's (shared). Days with no leader pay nobody.
+        const segments = station ? leaderSegmentsForWeek(station.leaderHistory, station.leaderRiderId, dates) : [];
+        if (station && segments.length > 1) {
+          weekDayRows ??= await (async () => {
+            const { fetchRows: readRows } = await import("../../lib/server/db-read");
+            const { loadLeaderDaily } = await import("../../lib/server/leader-daily");
+            const [t1, live] = await Promise.all([
+              readRows<RiderDailyKpi>("riderDailyKpis", [{ op: "gte", field: "date", value: dates[0] }, { op: "lte", field: "date", value: dates[6] }]),
+              loadLeaderDaily(dates[0], dates[6]),
+            ]);
+            const ids = new Set(memory.riders.filter((r) => r.franchise === franchiseName && r.ninetyNineId).map((r) => String(r.ninetyNineId)));
+            return mergeLeaderWeekRows({ franchise: franchiseName, dates, t1Rows: t1, liveRows: live, franchiseRider99Ids: ids }).rows;
+          })();
+          let allDone = true;
+          for (const seg of segments) {
+            if (!seg.riderId) continue; // leaderless days
+            const orders = weekDayRows.filter((r) => r.stationId === station.id && seg.days.includes(r.date)).reduce((n, r) => n + (r.completedOrders ?? 0), 0);
+            const part = computeLeaderSettlement({ metrics: { ...assessment.metrics, totalOrders: orders }, passed: assessment.passed, trial: assessment.trial }, rules);
+            if (part.totalBRL <= 0) continue;
+            const segRider = memory.riders.find((r) => r.id === seg.riderId);
+            const isCurrent = seg.riderId === station.leaderRiderId;
+            let segPayee = (isCurrent ? station.leaderCnpj?.trim() || station.leaderPixKey?.trim() : "") || segRider?.pix?.trim() || "";
+            if (!segPayee && segRider?.ninetyNineId) {
+              segPayee = String(memory.riderDailyEarnings.find((row) => row.rider99Id === segRider.ninetyNineId && String(row.pix ?? "").trim())?.pix ?? "").trim();
+            }
+            const segName = `${assessment.stationName} · ${segRider?.name ?? seg.riderId}`;
+            if (!segPayee) {
+              skippedNoPayee.push(segName);
+              allDone = false;
+              continue;
+            }
+            const segId = `lp-${assessment.stationId}-${week}-${seg.riderId}`;
+            if (memory.walletPayments.some((p) => p.id === segId)) {
+              alreadyGenerated.push(segName);
+              continue;
+            }
+            const breakdown = part.lines
+              .map((l) => `${l.label.pt} v${l.version}: ${l.orders}×R$${l.amountBRL.toFixed(2)}${l.skippedReason ? ` (${l.skippedReason})` : ""} = R$${l.totalBRL.toFixed(2)}`)
+              .join(" · ");
+            memory.walletPayments.unshift({
+              id: segId,
+              target: "leader",
+              refName: segName,
+              franchise: franchiseName,
+              amount: part.totalBRL,
+              period: "weekly",
+              weekFrom: dates[0] ?? "",
+              weekTo: dates[6] ?? "",
+              note: `[LeaderMode ${week}] ${seg.days[0]}~${seg.days[seg.days.length - 1]} (${seg.days.length}d) ${breakdown} — payee: ${segPayee}`,
+              paidBy: "",
+              paidAt: "",
+              status: "pending",
+            });
+            generated.push({ station: segName, totalBRL: part.totalBRL, id: segId });
+          }
+          if (allDone) settledStationIds.push(assessment.stationId);
+          continue;
+        }
+
         // Payee resolution (design D1 refinement): the leader IS a rider, so
         // fall back to their rider Pix — station-level overrides (CNPJ/Pix)
         // only when explicitly set. Order: CNPJ > station Pix > rider record
@@ -716,6 +798,7 @@ async function handlePost(request: Request) {
         const id = `lp-${assessment.stationId}-${week}`;
         if (memory.walletPayments.some((p) => p.id === id)) {
           alreadyGenerated.push(assessment.stationName);
+          settledStationIds.push(assessment.stationId);
           continue;
         }
         const { lines, totalBRL } = computeLeaderSettlement(assessment, rules);
@@ -737,21 +820,23 @@ async function handlePost(request: Request) {
           status: "pending",
         });
         generated.push({ station: assessment.stationName, totalBRL, id });
+        settledStationIds.push(assessment.stationId);
       }
 
-      if (generated.length > 0 || alreadyGenerated.length === closed.length - skippedNoPayee.length) {
-        await markWeekSettled(franchiseName, week, new Date().toISOString());
-      }
+      // Only stations that now HAVE a payment order move to settled; a station
+      // skipped for missing payee info stays closed and is picked up next run.
+      await flushPendingToDatabase();
+      await markStationsSettled(franchiseName, week, settledStationIds, new Date().toISOString());
       appendServerAudit({
         actor,
         action: "LEADER_SETTLEMENT_GENERATED",
         entity: "WalletPayment",
         entityId: `${franchiseName}:${week}`,
-        detail: `组长周结生成：${generated.length} 张待复核付款单（合计 R$${generated.reduce((s, g) => s + g.totalBRL, 0).toFixed(2)}）；无收款信息跳过 ${skippedNoPayee.length}；已存在 ${alreadyGenerated.length}。`,
+        detail: `组长周结生成：${generated.length} 张待复核付款单（合计 R$${generated.reduce((s, g) => s + g.totalBRL, 0).toFixed(2)}）；无收款信息跳过 ${skippedNoPayee.length}；已存在 ${alreadyGenerated.length}；本周应付 R$0 直接结清 ${zeroAmount.length}。`,
         risk: "Medium",
       });
       await flushPendingToDatabase();
-      return jsonResponse({ data: { week, franchise: franchiseName, generated, skippedNoPayee, alreadyGenerated } });
+      return jsonResponse({ data: { week, franchise: franchiseName, generated, skippedNoPayee, alreadyGenerated, zeroAmount } });
     }
 
     case "confirmLeaderPayment": {

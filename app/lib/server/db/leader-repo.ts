@@ -82,11 +82,18 @@ export async function closeWeekAssessments(franchise: string, week: string, clos
   );
 }
 
-/** closed → settled once the payment order has been generated (design §2.4). */
-export async function markWeekSettled(franchise: string, week: string, at: string): Promise<void> {
-  await updateRows(
-    "leader_assessments",
-    { franchise, week, state: "closed" },
-    { state: "settled", updated_at: at },
-  );
+/**
+ * closed → settled for the stations whose payment order now exists (design
+ * §2.4). Per station (2026-10-30 fix): the old week-wide update also settled
+ * stations SKIPPED for missing payee info, so they could never be paid for
+ * that week. A skipped station stays "closed" and is generated on a later run.
+ */
+export async function markStationsSettled(franchise: string, week: string, stationIds: string[], at: string): Promise<void> {
+  for (const stationId of stationIds) {
+    await updateRows(
+      "leader_assessments",
+      { franchise, week, station_id: stationId, state: "closed" },
+      { state: "settled", updated_at: at },
+    );
+  }
 }

@@ -19,11 +19,15 @@ import { fetchRows } from "../../../lib/server/db-read";
 import { closeWeekAssessments, listAssessments, upsertAssessments } from "../../../lib/server/db/leader-repo";
 import {
   computeStationWeek,
+  computeTrialProgress,
   defaultLeaderTargets,
+  type TrialProgress,
   isoWeekOf,
+  mergeLeaderWeekRows,
   weekIdToDates,
   type LeaderAssessment,
 } from "../../../lib/leader-mode";
+import { loadLeaderDaily } from "../../../lib/server/leader-daily";
 import type { RiderDailyKpi } from "../../../lib/performance";
 import type { Ponto, Rider } from "../../../lib/data";
 import type { Franchise } from "../../../lib/network";
@@ -64,10 +68,12 @@ export async function GET(request: Request) {
   if (franchiseParam) franchises = franchises.filter((f) => f.name === franchiseParam);
   if (franchises.length === 0) return jsonResponse({ data: { week, today, franchises: [] } });
 
-  const [pontos, riders, weekRowsAll] = await Promise.all([
+  const weekDays = weekIdToDates(week);
+  const [pontos, riders, t1RowsAll, liveRowsAll] = await Promise.all([
     fetchRows<Ponto>("pontos"),
     fetchRows<Rider>("riders"),
     loadWeekKpiRows(week),
+    weekDays.length ? loadLeaderDaily(weekDays[0], weekDays[6]) : Promise.resolve([]),
   ]);
 
   const result: Array<{
@@ -76,10 +82,18 @@ export async function GET(request: Request) {
     /** Rows this week with no station tag but a rider bound to this franchise
      *  today — usually "binding happened after import" (未匹配/待回算队列). */
     untaggedRider99Ids: string[];
+    /** Which days came from T+1 vs the live ledger (decision 6). */
+    t1Dates: string[];
+    liveDates: string[];
+    /** Trial stations: 14-day progress toward promotion (decision 9). */
+    trialProgress: Record<string, TrialProgress>;
   }> = [];
 
   const toPersist: LeaderAssessment[] = [];
   for (const franchise of franchises) {
+    const franchiseRider99Ids = new Set(riders.filter((r) => r.franchise === franchise.name && r.ninetyNineId).map((r) => String(r.ninetyNineId)));
+    const merged = mergeLeaderWeekRows({ franchise: franchise.name, dates: weekDays, t1Rows: t1RowsAll, liveRows: liveRowsAll, franchiseRider99Ids });
+    const weekRowsAll = merged.rows;
     const weekRows = weekRowsAll.filter((row) => row.stationFranchise === franchise.name);
     const stored = await listAssessments(franchise.name, week);
 
@@ -125,7 +139,25 @@ export async function GET(request: Request) {
       if (rider?.franchise === franchise.name) untagged.add(row.rider99Id);
     }
 
-    result.push({ franchise: franchise.name, assessments, untaggedRider99Ids: Array.from(untagged) });
+    // Trial progress over each trial station's own 14-day window (may span two
+    // ISO weeks, so it reads its own date range; same T+1-else-live merge).
+    const trialProgress: Record<string, TrialProgress> = {};
+    const trialStations = stations.filter((st) => st.stationStatus === "trial" && st.trialStartedAt);
+    if (trialStations.length) {
+      const from = trialStations.map((st) => st.trialStartedAt!).sort()[0];
+      const [t1Trial, liveTrial] = await Promise.all([
+        fetchRows<RiderDailyKpi>("riderDailyKpis", [{ op: "gte", field: "date", value: from }, { op: "lte", field: "date", value: today }]),
+        loadLeaderDaily(from, today),
+      ]);
+      const span: string[] = [];
+      for (let d = new Date(`${from}T12:00:00Z`); d.toISOString().slice(0, 10) <= today; d = new Date(d.getTime() + 864e5)) span.push(d.toISOString().slice(0, 10));
+      const trialRows = mergeLeaderWeekRows({ franchise: franchise.name, dates: span, t1Rows: t1Trial, liveRows: liveTrial, franchiseRider99Ids }).rows;
+      for (const st of trialStations) {
+        trialProgress[st.id] = computeTrialProgress({ stationId: st.id, startedAt: st.trialStartedAt!, today, rows: trialRows, minOrdersPerActiveRider: defaultLeaderTargets.minOrdersPerActiveRider });
+      }
+    }
+
+    result.push({ franchise: franchise.name, assessments, untaggedRider99Ids: Array.from(untagged), t1Dates: merged.t1Dates, liveDates: merged.liveDates, trialProgress });
   }
 
   await upsertAssessments(toPersist);
@@ -157,19 +189,18 @@ export async function POST(request: Request) {
 
   const stored = await listAssessments(franchiseName, week);
   const provisional = stored.filter((row) => row.state === "provisional");
-  const incomplete = provisional.filter((row) => row.metrics.dataDays < row.metrics.expectedDataDays);
-  if (incomplete.length > 0) {
-    return jsonResponse(
-      {
-        error: "data incomplete — missing T+1 imports for some days",
-        stations: incomplete.map((row) => ({
-          stationId: row.stationId,
-          dataDays: row.metrics.dataDays,
-          expected: row.metrics.expectedDataDays,
-        })),
-      },
-      { status: 409 },
-    );
+  // Completeness gate = "this city's T+1 report was imported for all 7 days"
+  // (2026-10-30). The old per-station check could never pass for a small team
+  // that simply had nobody riding on one day — the week stayed open forever.
+  // A day counts when it has the T+1 import OR the frozen live ledger.
+  const dates = weekIdToDates(week);
+  const [weekRows, riders, liveRows] = await Promise.all([loadWeekKpiRows(week), fetchRows<Rider>("riders"), loadLeaderDaily(dates[0], dates[6])]);
+  const franchiseRiders = new Set(riders.filter((r) => r.franchise === franchiseName && r.ninetyNineId).map((r) => String(r.ninetyNineId)));
+  const merged = mergeLeaderWeekRows({ franchise: franchiseName, dates, t1Rows: weekRows, liveRows, franchiseRider99Ids: franchiseRiders });
+  const importedDays = new Set([...merged.t1Dates, ...merged.liveDates]);
+  const missingDays = dates.filter((d) => !importedDays.has(d));
+  if (missingDays.length > 0) {
+    return jsonResponse({ error: "data incomplete — missing T+1 imports for some days", missingDays }, { status: 409 });
   }
 
   const closedAt = new Date().toISOString();

@@ -12,7 +12,7 @@ import { mallHubPortals } from "../lib/portals";
 import { useDialog } from "../components/dialog";
 import { useVentoStore } from "../lib/store";
 import { translate, type TranslationKey } from "../lib/i18n";
-import type { RiderWithdrawal } from "../lib/finance";
+import type { RiderWithdrawal, WalletPayment } from "../lib/finance";
 
 /** v2 · 普通池骑手的今日统计拆解(全部表格原值,只做加总):行程 + 加项 − 现金 − 餐损 = 今日统计。 */
 type Breakdown = { tripIncome: number; extras: number; cashDebt: number; mealDeduction: number; total: number; consistent: boolean };
@@ -1075,8 +1075,72 @@ function MallFinanceWallet() {
   );
 }
 
+// Boa Vista settlement (业务方 2026-10-30): Boa Vista riders are paid outside
+// PontoSys, so this menu settles ONLY the leaders' weekly commission — the
+// payment orders generated from closed weekly assessments, confirmed after
+// the Pix transfer. Read + confirm only; amounts come from the frozen order.
+function LeaderSettlementWallet() {
+  const language = useVentoStore((s) => s.language);
+  const t = (k: TranslationKey, vars?: Record<string, string | number | undefined>) => {
+    let s = translate(language, k);
+    if (vars) for (const [key, val] of Object.entries(vars)) s = s.split(`{${key}}`).join(String(val ?? ""));
+    return s;
+  };
+  const session = useMemo(() => readSession(), []);
+  const headers = useMemo(() => ({ "Content-Type": "application/json", "x-vento-role": session?.role ?? "Super Admin" }), [session]);
+  const [rows, setRows] = useState<WalletPayment[]>([]);
+  const [message, setMessage] = useState<{ tone: "ok" | "err"; text: string } | null>(null);
+  const load = useCallback(async () => {
+    const r = await fetch("/api/wallet?leaderPayments=1&region=sjbv", { headers, cache: "no-store" });
+    if (r.ok) setRows(((await r.json()).data ?? []) as WalletPayment[]);
+  }, [headers]);
+  useEffect(() => {
+    void load();
+  }, [load]);
+  const columns: Array<DataColumn<WalletPayment>> = [
+    { key: "week", label: t("lmColWeek"), render: (p) => <span className="font-bold" data-i18n-skip>{p.weekFrom} – {p.weekTo}</span> },
+    { key: "station", label: t("rdColStation"), render: (p) => <span className="font-black">{p.refName}</span> },
+    { key: "amount", label: t("wlColAmount"), align: "right", render: (p) => <span className="font-black">R$ {p.amount.toFixed(2)}</span> },
+    { key: "detail", label: t("lmColDetail"), className: "max-w-[420px]", render: (p) => <span className="block truncate text-[11px] font-bold text-[var(--muted)]" title={p.note}>{p.note}</span> },
+    {
+      key: "status",
+      label: t("rdColStatus"),
+      align: "right",
+      render: (p) =>
+        p.status === "pending" ? (
+          <button
+            type="button"
+            className="tag border-[var(--accent)] text-[var(--accent)]"
+            onClick={async () => {
+              const r = await fetch("/api/wallet", { method: "POST", headers, body: JSON.stringify({ action: "confirmLeaderPayment", paymentId: p.id }) });
+              const payload = await r.json().catch(() => ({}));
+              setMessage(r.ok ? { tone: "ok", text: `${p.refName} · R$ ${p.amount.toFixed(2)} ✓` } : { tone: "err", text: payload.error ?? `HTTP ${r.status}` });
+              void load();
+            }}
+          >
+            {t("lmConfirmPaid")}
+          </button>
+        ) : (
+          <span className="text-xs font-black text-[var(--ok-ink)]">✓ {p.paidAt}</span>
+        ),
+    },
+  ];
+  return (
+    <AppShell>
+      <PageTitle title={`${t("navBvWallet")} · ${t("regionBoaVista")}`} eyebrow={t("lmLeaderOnlyNote")} action={<button type="button" onClick={() => void load()} className="tag inline-flex items-center gap-1"><RefreshCcw size={13} /> {t("wlRefresh")}</button>} />
+      {message && <div className={`mb-3 rounded-[8px] border px-4 py-3 text-sm font-black ${message.tone === "ok" ? "border-[var(--ok)] text-[var(--ok-ink)]" : "border-[var(--danger)] text-[var(--danger-ink)]"}`}>{message.text}</div>}
+      <DataTable columns={columns} rows={rows} rowKey={(p) => p.id} minWidth={820} />
+    </AppShell>
+  );
+}
+
 export default function WalletPage() {
   const session = useMemo(() => readSession(), []);
+  const pathname = usePathname();
   const isMallOffice = !!session && session.portal === "pontomall" && mallHubPortals.includes(session.portal);
-  return isMallOffice ? <MallFinanceWallet /> : <RiderPayrollWallet />;
+  if (isMallOffice) return <MallFinanceWallet />;
+  // HQ in the Boa Vista menu → leader settlement only.
+  const hq = !session?.portal || session.portal === "pontosys";
+  if (hq && regionFromPath(pathname) === "sjbv") return <LeaderSettlementWallet />;
+  return <RiderPayrollWallet />;
 }

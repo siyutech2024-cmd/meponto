@@ -10,7 +10,7 @@ import { readSession } from "../lib/session";
 import { useVentoStore } from "../lib/store";
 import { translate, type TranslationKey } from "../lib/i18n";
 import { COMMISSION_EFFECTIVE_FROM_DEFAULT, type AssessmentMetric, type AssessmentRule } from "../lib/assessment";
-import { isoWeekOf, type LeaderAssessment } from "../lib/leader-mode";
+import { defaultLeaderTargets, isoWeekOf, nextMonday, rulesForWeek, weekDates, type LeaderAssessment, type LeaderSettlementComponent } from "../lib/leader-mode";
 
 /**
  * 考核规则 — HQ edits the quality thresholds / commission adjustments;
@@ -158,7 +158,14 @@ function Board({ rows, label, icon: Icon, rule, t, statusLabel }: { rows: BoardR
 type LmPayload = {
   week: string;
   today: string;
-  franchises: Array<{ franchise: string; assessments: LeaderAssessment[]; untaggedRider99Ids: string[] }>;
+  franchises: Array<{
+    franchise: string;
+    assessments: LeaderAssessment[];
+    untaggedRider99Ids: string[];
+    t1Dates?: string[];
+    liveDates?: string[];
+    trialProgress?: Record<string, { startedAt: string; day: number; days: number; orders: number; activeRiders: number; eligible: boolean }>;
+  }>;
 };
 
 type LmPendingPayment = {
@@ -171,6 +178,87 @@ type LmApplication = {
   applicantName: string; targetStationId?: string; proposedStationName?: string;
   eligibility: { orders28d: number; activeDays28d: number }; createdAt: string;
 };
+
+// ---- KPI 设置 · 组长提成 (业务方 2026-10-30) --------------------------------
+// Two components only — base + performance bonus, R$ per completed order.
+// Edits append a new version effective next Monday; the running week, closed
+// weeks and paid weeks never change. Targets are fixed (shown read-only).
+function LeaderKpiSettings({ t }: { t: T }) {
+  type Fr = { id: string; name: string; leaderMode?: boolean; leaderSettlementRules?: LeaderSettlementComponent[] };
+  const [franchises, setFranchises] = useState<Fr[]>([]);
+  const [draft, setDraft] = useState<Record<string, { base: string; bonus: string }>>({});
+  const [note, setNote] = useState<{ tone: "ok" | "err"; text: string } | null>(null);
+  const today = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Sao_Paulo" }).format(new Date());
+  const thisMonday = weekDates(today)[0];
+  const upcoming = nextMonday(today);
+  const load = useCallback(async () => {
+    const r = await fetch("/api/network", { headers: HEADERS, cache: "no-store" });
+    if (!r.ok) return;
+    const list = ((await r.json()).data?.franchises ?? []) as Fr[];
+    setFranchises(list.filter((f) => f.leaderMode === true));
+  }, []);
+  useEffect(() => {
+    void load();
+  }, [load]);
+  const amount = (rules: LeaderSettlementComponent[], key: string) => (rules.find((r) => r.key === key)?.amountBRL ?? 0).toFixed(2);
+  const tg = defaultLeaderTargets;
+  return (
+    <SectionCard title={<span className="text-sm font-black uppercase">{t("lmKpiTitle")}</span>} className="!p-4 mb-4">
+      <div className="mb-3 text-xs font-bold text-[var(--muted-strong)]">
+        {t("lmTargetsLine", { a: tg.minActiveRiders, n: tg.minOrdersPerActiveRider, o: tg.minWeeklyOrders, s: tg.selfOrdersCapPct })}
+      </div>
+      {note && <div className={`mb-2 text-xs font-black ${note.tone === "ok" ? "text-[var(--ok-ink)]" : "text-[var(--danger-ink)]"}`}>{note.text}</div>}
+      {franchises.map((f) => {
+        const now = rulesForWeek(f.leaderSettlementRules, thisMonday);
+        const next = rulesForWeek(f.leaderSettlementRules, upcoming);
+        const changed = amount(now, "base") !== amount(next, "base") || amount(now, "bonus") !== amount(next, "bonus");
+        const d = draft[f.id] ?? { base: amount(next, "base"), bonus: amount(next, "bonus") };
+        return (
+          <div key={f.id} className="flex flex-wrap items-end gap-3 border-t border-[var(--line)] py-3 first:border-t-0">
+            <div className="min-w-[120px]">
+              <div className="text-sm font-black">{f.name}</div>
+              <div className="text-[11px] font-bold text-[var(--muted)]">{t("lmRatesThisWeek", { b: amount(now, "base"), k: amount(now, "bonus") })}</div>
+              {changed && <div className="text-[11px] font-bold text-[var(--warning-ink)]">{t("lmNextWeek", { d: upcoming, b: amount(next, "base"), k: amount(next, "bonus") })}</div>}
+            </div>
+            <label className="grid gap-1 text-[11px] font-bold text-[var(--muted)]">
+              {t("lmBase")}
+              <input className="h-9 w-28 rounded-[8px] border border-[var(--line)] bg-[var(--surface-raised)] px-2 text-sm font-bold" inputMode="decimal" value={d.base} onChange={(e) => setDraft({ ...draft, [f.id]: { ...d, base: e.target.value } })} />
+            </label>
+            <label className="grid gap-1 text-[11px] font-bold text-[var(--muted)]">
+              {t("lmBonus")}
+              <input className="h-9 w-28 rounded-[8px] border border-[var(--line)] bg-[var(--surface-raised)] px-2 text-sm font-bold" inputMode="decimal" value={d.bonus} onChange={(e) => setDraft({ ...draft, [f.id]: { ...d, bonus: e.target.value } })} />
+            </label>
+            <button
+              type="button"
+              className="tag border-[var(--accent)] text-[var(--accent)]"
+              onClick={async () => {
+                const r = await fetch("/api/network", {
+                  method: "POST",
+                  headers: HEADERS,
+                  body: JSON.stringify({ action: "setLeaderRates", franchiseId: f.id, baseBRL: Number(d.base.replace(",", ".")), bonusBRL: Number(d.bonus.replace(",", ".")) }),
+                });
+                const payload = await r.json().catch(() => ({}));
+                if (!r.ok) {
+                  setNote({ tone: "err", text: payload.error ?? `HTTP ${r.status}` });
+                  return;
+                }
+                setNote({ tone: "ok", text: t("lmRatesSaved", { d: payload.data?.effectiveFrom ?? upcoming }) });
+                setDraft((cur) => {
+                  const nextDraft = { ...cur };
+                  delete nextDraft[f.id];
+                  return nextDraft;
+                });
+                void load();
+              }}
+            >
+              {t("lmSaveRates")}
+            </button>
+          </div>
+        );
+      })}
+    </SectionCard>
+  );
+}
 
 function LeaderModeSection({ t, canManage }: { t: T; canManage: boolean }) {
   const [payload, setPayload] = useState<LmPayload | null>(null);
@@ -215,11 +303,20 @@ function LeaderModeSection({ t, canManage }: { t: T; canManage: boolean }) {
       kind === "close"
         ? (["/api/leaders/assessment", { action: "closeWeek", week: weekParam, franchise }] as const)
         : (["/api/wallet", { action: "generateLeaderSettlements", week: weekParam, franchise }] as const);
-    const response = await fetch(path, { method: "POST", headers: HEADERS, body: JSON.stringify(body) });
-    const data = (await response.json().catch(() => ({}))) as { error?: string };
+    let response = await fetch(path, { method: "POST", headers: HEADERS, body: JSON.stringify(body) });
+    let data = (await response.json().catch(() => ({}))) as { error?: string; missingDays?: string[] };
+    // Close blocked by missing days: record those days from the live board
+    // (insert-only, past days only), then try once more. Days still missing
+    // after that genuinely have no data and are reported as such.
+    if (kind === "close" && response.status === 409 && data.missingDays?.length) {
+      const days = [...data.missingDays].sort();
+      await fetch(`/api/cron/leader-daily?from=${days[0]}&to=${days[days.length - 1]}`, { headers: HEADERS, cache: "no-store" }).catch(() => null);
+      response = await fetch(path, { method: "POST", headers: HEADERS, body: JSON.stringify(body) });
+      data = (await response.json().catch(() => ({}))) as { error?: string; missingDays?: string[] };
+    }
     setBusy(false);
     if (!response.ok) {
-      setMsg({ tone: "err", text: String(data.error ?? response.status) });
+      setMsg({ tone: "err", text: data.missingDays?.length ? t("lmMissingDays", { d: data.missingDays.join(", ") }) : String(data.error ?? response.status) });
       return;
     }
     setMsg({ tone: "ok", text: t("lmActionDone") });
@@ -316,6 +413,11 @@ function LeaderModeSection({ t, canManage }: { t: T; canManage: boolean }) {
               </button>
             )}
           </div>
+          {((group.t1Dates?.length ?? 0) > 0 || (group.liveDates?.length ?? 0) > 0) && (
+            <div className="mb-2 text-[11px] font-bold text-[var(--muted)]">
+              {t("lmSourceLine", { t1: group.t1Dates?.length ?? 0, live: group.liveDates?.length ?? 0 })}
+            </div>
+          )}
           {group.untaggedRider99Ids.length > 0 && (
             <div className="mb-2 text-[12px] font-bold text-[var(--warning-ink)]">
               {t("lmUntagged", { n: group.untaggedRider99Ids.length })}
@@ -337,6 +439,33 @@ function LeaderModeSection({ t, canManage }: { t: T; canManage: boolean }) {
                       {a.state === "closed" ? t("lmClosedState") : a.state === "settled" ? t("lmSettledState") : t("lmLiveState")}
                     </span>
                   </div>
+                  {a.trial && group.trialProgress?.[a.stationId] && (() => {
+                    const tp = group.trialProgress[a.stationId];
+                    return (
+                      <div className="mb-2 flex flex-wrap items-center gap-2 text-[11px] font-bold">
+                        <span className={tp.eligible ? "text-[var(--ok-ink)]" : "text-[var(--muted)]"}>
+                          {t("lmTrialProgress", { d: tp.day, n: tp.days, o: tp.orders, a: tp.activeRiders })}
+                        </span>
+                        {tp.eligible && canManage && (
+                          <button
+                            type="button"
+                            disabled={busy}
+                            className="tag border-[var(--accent)] text-[var(--accent)]"
+                            onClick={async () => {
+                              setBusy(true);
+                              const r = await fetch("/api/network", { method: "POST", headers: HEADERS, body: JSON.stringify({ action: "updateLeaderStation", stationId: a.stationId, stationStatus: "active" }) });
+                              const p = await r.json().catch(() => ({}));
+                              setMsg(r.ok ? { tone: "ok", text: t("lmPromoted", { s: a.stationName }) } : { tone: "err", text: p.error ?? `HTTP ${r.status}` });
+                              setBusy(false);
+                              void load();
+                            }}
+                          >
+                            {t("lmPromote")}
+                          </button>
+                        )}
+                      </div>
+                    );
+                  })()}
                   <div className="grid grid-cols-2 gap-x-3 gap-y-1 text-[12px] font-bold">
                     <span className="text-[var(--muted)]">{t("lmActiveRiders")}</span>
                     <span className={a.metrics.activeRiders < a.targetsSnapshot.minActiveRiders ? "text-[var(--danger-ink)]" : ""}>
@@ -490,6 +619,7 @@ export default function AssessmentPage() {
       <AppShell>
         <PageTitle title={`${t("navBvAssessment")} · ${t("regionBoaVista")}`} eyebrow={t("regionBvOnlyNote")} />
         {messageBanner}
+        <LeaderKpiSettings t={t} />
         <LeaderModeSection t={t} canManage />
       </AppShell>
     );

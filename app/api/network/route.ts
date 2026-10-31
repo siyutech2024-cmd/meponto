@@ -4,7 +4,7 @@ import { requirePermission, roleFromRequest, scopeFromRequest } from "../../lib/
 import { postFranchiseDeposit } from "../../lib/server/franchise-deposit";
 import type { Franchise } from "../../lib/network";
 
-const COLLECTIONS = ["franchises", "pontos", "franchiseDepositLedgerEntries"];
+const COLLECTIONS = ["franchises", "pontos", "franchiseDepositLedgerEntries", "riders"];
 const nowStamp = () => new Date().toISOString().slice(0, 16).replace("T", " ");
 
 export async function GET(request: Request) {
@@ -35,7 +35,15 @@ export async function GET(request: Request) {
     riderCountByStation.set(key, (riderCountByStation.get(key) ?? 0) + 1);
   }
 
-  let stations = memory.pontos.map((ponto) => ({ ...ponto, ridersCount: riderCountByStation.get(ponto.name) ?? 0 }));
+  // Leader payee data (Pix / CPF / CNPJ) is HQ-only; tenant portals get it
+  // masked (LGPD — design §5 rule 8).
+  const tenantView = Boolean(scope.franchise || scope.station);
+  const mask = (v?: string) => (v ? `${v.slice(0, 3)}***${v.slice(-2)}` : v);
+  let stations = memory.pontos.map((ponto) => ({
+    ...ponto,
+    ridersCount: riderCountByStation.get(ponto.name) ?? 0,
+    ...(tenantView ? { leaderPixKey: mask(ponto.leaderPixKey), leaderCpf: mask(ponto.leaderCpf), leaderCnpj: mask(ponto.leaderCnpj) } : {}),
+  }));
   let franchiseRows = memory.franchises;
   if (scope.station) {
     stations = stations.filter((ponto) => ponto.name === scope.station);
@@ -63,7 +71,9 @@ type Body =
   | { action: "updateStation"; stationId: string; franchise?: string; address?: string; mapUrl?: string; leader?: string; name?: string }
   | { action: "approveStation"; stationId: string }
   | { action: "rejectStation"; stationId: string }
-  | { action: "deleteStation"; stationId: string; force?: boolean };
+  | { action: "deleteStation"; stationId: string; force?: boolean }
+  | { action: "setLeaderRates"; franchiseId: string; baseBRL: number; bonusBRL: number }
+  | { action: "updateLeaderStation"; stationId: string; leaderRiderId?: string; leaderPixKey?: string; leaderCpf?: string; leaderCnpj?: string; stationStatus?: string };
 
 async function handlePost(request: Request) {
   const forbidden = requirePermission(request, "manage_pontos");
@@ -109,6 +119,110 @@ async function handlePost(request: Request) {
         risk: "Medium",
       });
       return jsonResponse({ data: memory.franchises[index] });
+    }
+
+    case "setLeaderRates": {
+      // Leader commission rates (业务方 2026-10-30): exactly two components,
+      // base + performance bonus, R$ per completed order. Append-only versions
+      // effective NEXT Monday (hard rule 5) — a week already running, closed or
+      // paid never changes. HQ only.
+      const scope = await scopeFromRequest(request);
+      if (scope.franchise || scope.station) return jsonResponse({ error: "HQ only" }, { status: 403 });
+      const { franchiseId } = body as { franchiseId?: string };
+      const index = memory.franchises.findIndex((f) => f.id === franchiseId && f.leaderMode === true);
+      if (index === -1) return jsonResponse({ error: "franchise not found or leaderMode off" }, { status: 404 });
+      const baseBRL = Math.round(Number(body.baseBRL) * 100) / 100;
+      const bonusBRL = Math.round(Number(body.bonusBRL) * 100) / 100;
+      if (![baseBRL, bonusBRL].every((v) => Number.isFinite(v) && v >= 0 && v <= 20)) {
+        return jsonResponse({ error: "金额无效(每单 R$0–20)" }, { status: 400 });
+      }
+      const { defaultLeaderSettlementRules, nextMonday, rulesForWeek } = await import("../../lib/leader-mode");
+      const today = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Sao_Paulo" }).format(new Date());
+      const effectiveFrom = nextMonday(today);
+      const franchise = memory.franchises[index];
+      const history = franchise.leaderSettlementRules ?? [];
+      const current = rulesForWeek(history, effectiveFrom);
+      const appended = defaultLeaderSettlementRules.map((def) => {
+        const prior = current.find((r) => r.key === def.key) ?? def;
+        // Same-week re-edit replaces the not-yet-effective version instead of
+        // stacking several versions on one Monday.
+        const pendingSameDay = history.find((r) => r.key === def.key && r.effectiveFrom === effectiveFrom);
+        return { ...prior, amountBRL: def.key === "base" ? baseBRL : bonusBRL, effectiveFrom, version: pendingSameDay ? pendingSameDay.version : prior.version + 1 };
+      });
+      const kept = history.filter((r) => r.effectiveFrom !== effectiveFrom);
+      memory.franchises[index] = { ...franchise, leaderSettlementRules: [...kept, ...appended] };
+      appendServerAudit({
+        actor,
+        action: "LEADER_RATES_SET",
+        entity: "Franchise",
+        entityId: franchiseId ?? "",
+        detail: `${franchise.name} · 组长提成 基础 R$${baseBRL.toFixed(2)} + 考核 R$${bonusBRL.toFixed(2)} /单,${effectiveFrom} 起生效`,
+        risk: "Medium",
+      });
+      return jsonResponse({ data: { franchise: memory.franchises[index], effectiveFrom } });
+    }
+
+    case "updateLeaderStation": {
+      // Leader-mode station setup (HQ): who the leader is, where the weekly
+      // commission is paid, trial → active. The leader is a rider; binding them
+      // also places their own rider record in the station when it has none.
+      const scope = await scopeFromRequest(request);
+      if (scope.franchise || scope.station) return jsonResponse({ error: "HQ only" }, { status: 403 });
+      const { stationId } = body as { stationId?: string };
+      const index = memory.pontos.findIndex((p) => p.id === stationId);
+      if (index === -1) return jsonResponse({ error: "station not found" }, { status: 404 });
+      const station = memory.pontos[index];
+      if (!memory.franchises.some((f) => f.name === station.franchise && f.leaderMode === true)) {
+        return jsonResponse({ error: "not a leader-mode station" }, { status: 400 });
+      }
+      const patch: Partial<typeof station> = {};
+      const str = (v: unknown, max: number) => String(v ?? "").trim().slice(0, max);
+      if (body.leaderRiderId !== undefined) {
+        const riderId = str(body.leaderRiderId, 80);
+        if (riderId) {
+          const rider = memory.riders.find((r) => r.id === riderId);
+          if (!rider) return jsonResponse({ error: "rider not found" }, { status: 404 });
+          if (rider.franchise !== station.franchise) return jsonResponse({ error: "组长必须是本加盟商的骑手" }, { status: 400 });
+          const taken = memory.pontos.find((p) => p.id !== station.id && p.leaderRiderId === riderId);
+          if (taken) return jsonResponse({ error: `该骑手已是「${taken.name}」的组长` }, { status: 409 });
+          patch.leaderRiderId = riderId;
+          patch.leader = rider.name;
+          const riderIndex = memory.riders.findIndex((r) => r.id === riderId);
+          if (riderIndex !== -1 && (!rider.ponto || rider.ponto === "Unassigned")) {
+            memory.riders[riderIndex] = { ...rider, ponto: station.name };
+          }
+        } else {
+          patch.leaderRiderId = undefined;
+        }
+      }
+      if (body.leaderPixKey !== undefined) patch.leaderPixKey = str(body.leaderPixKey, 120);
+      if (body.leaderCpf !== undefined) patch.leaderCpf = str(body.leaderCpf, 20).replace(/\D/g, "");
+      if (body.leaderCnpj !== undefined) patch.leaderCnpj = str(body.leaderCnpj, 30);
+      if (body.stationStatus !== undefined) {
+        const next = String(body.stationStatus);
+        if (!["trial", "active", "suspended", "closed"].includes(next)) return jsonResponse({ error: "invalid stationStatus" }, { status: 400 });
+        patch.stationStatus = next as NonNullable<typeof station.stationStatus>;
+        if (next === "trial" && !station.trialStartedAt) patch.trialStartedAt = new Date().toISOString().slice(0, 10);
+      }
+      // Leader change → append to the station's leader history (decision 11).
+      if (patch.leaderRiderId !== undefined || ("leaderRiderId" in patch && patch.leaderRiderId === undefined)) {
+        const nextLeader = patch.leaderRiderId ?? "";
+        if (nextLeader !== (station.leaderRiderId ?? "")) {
+          const today = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Sao_Paulo" }).format(new Date());
+          const history = station.leaderHistory ?? (station.leaderRiderId ? [{ riderId: station.leaderRiderId, from: station.trialStartedAt ?? "2000-01-01" }] : []);
+          patch.leaderHistory = [...history.filter((h) => h.from !== today), { riderId: nextLeader, from: today }];
+        }
+      }
+      memory.pontos[index] = { ...station, ...patch, virtual: true };
+      appendServerAudit({
+        actor,
+        action: "LEADER_STATION_UPDATED",
+        entity: "Ponto",
+        entityId: station.id,
+        detail: `${station.name}: ${Object.keys(patch).filter((k) => !/pix|cpf|cnpj/i.test(k)).join(", ")}${Object.keys(patch).some((k) => /pix|cpf|cnpj/i.test(k)) ? " +收款信息" : ""}`,
+        risk: "Medium",
+      });
+      return jsonResponse({ data: memory.pontos[index] });
     }
 
     case "depositFranchise": {
@@ -169,7 +283,10 @@ async function handlePost(request: Request) {
       if (!franchise?.trim() || !memory.franchises.some((f) => f.name === franchise.trim())) {
         return jsonResponse({ error: "必须绑定一个已存在的上级加盟商" }, { status: 400 });
       }
-      if (!address?.trim() && !mapUrl?.trim()) {
+      // Leader-mode franchises run virtual (leader + team) stations with no
+      // premises (design §2.2) — an address is only required for physical Pontos.
+      const leaderModeFranchise = memory.franchises.some((f) => f.name === franchise?.trim() && f.leaderMode === true);
+      if (!leaderModeFranchise && !address?.trim() && !mapUrl?.trim()) {
         return jsonResponse({ error: "请填写站点地址或 Google Maps 链接" }, { status: 400 });
       }
       if (memory.pontos.some((p) => p.name === name.trim())) return jsonResponse({ error: "该站点已存在" }, { status: 409 });
@@ -190,6 +307,7 @@ async function handlePost(request: Request) {
         address: address.trim().slice(0, 160),
         mapUrl: mapUrl.trim().slice(0, 300),
         status: needsApproval ? "pending" : "approved",
+        ...(leaderModeFranchise ? { virtual: true, stationStatus: "active" as const } : {}),
       } as (typeof memory.pontos)[number];
       memory.pontos.unshift(station);
       appendServerAudit({ actor, action: needsApproval ? "STATION_SUBMITTED" : "STATION_CREATED", entity: "Ponto", entityId: station.id, detail: `${station.name} → ${franchise} (${station.address || station.mapUrl})${needsApproval ? " [pending HQ approval]" : ""}`, risk: "Medium" });

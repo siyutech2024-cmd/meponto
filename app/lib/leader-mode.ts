@@ -101,7 +101,10 @@ export const defaultLeaderSettlementRules: LeaderSettlementComponent[] = [
     key: "base",
     label: { zh: "基础提成", en: "Base commission", pt: "Comissão base" },
     type: "per_order",
-    amountBRL: 0.35,
+    // 业务方 2026-10-30 定稿:默认基础 R$0 + 考核 R$0.15/单,只有这两项;金额在
+    // KPI 设置页按加盟商调整(新版本下周一生效)。从未生成过任何组长付款单,
+    // 改默认值不影响历史。
+    amountBRL: 0,
     requiresPassed: false,
     paidDuringTrial: true, // P1: trial settles the base component
     effectiveFrom: "2026-01-01",
@@ -113,11 +116,92 @@ export const defaultLeaderSettlementRules: LeaderSettlementComponent[] = [
     type: "kpi_bonus_per_order",
     amountBRL: 0.15,
     requiresPassed: true,
-    paidDuringTrial: false, // bonus starts after confirmation
+    // 业务方 2026-10-30 (decision 2): trial stations also earn the bonus, without
+    // the pass line — computeStationWeek already reports trial weeks as passed.
+    paidDuringTrial: true,
     effectiveFrom: "2026-01-01",
     version: 1,
   },
 ];
+
+/**
+ * Trial → active (design §7.3): within the 14-day trial window the team reaches
+ * ≥5 active riders (≥ minOrdersPerActiveRider orders each) and ≥600 orders.
+ * 业务方 2026-10-30 (decision 9): the system only SIGNALS eligibility; HQ
+ * confirms the promotion with one click (never automatic).
+ */
+export const TRIAL_RULES = { days: 14, minActiveRiders: 5, minOrders: 600 } as const;
+
+export type TrialProgress = { startedAt: string; day: number; days: number; orders: number; activeRiders: number; eligible: boolean };
+
+export function computeTrialProgress(args: { stationId: string; startedAt: string; today: string; rows: RiderDailyKpi[]; minOrdersPerActiveRider: number }): TrialProgress {
+  const { stationId, startedAt, today, rows, minOrdersPerActiveRider } = args;
+  const end = new Date(new Date(`${startedAt}T12:00:00Z`).getTime() + (TRIAL_RULES.days - 1) * 864e5).toISOString().slice(0, 10);
+  const byRider = new Map<string, number>();
+  for (const r of rows) {
+    if (r.stationId !== stationId || r.date < startedAt || r.date > end) continue;
+    byRider.set(String(r.rider99Id), (byRider.get(String(r.rider99Id)) ?? 0) + (r.completedOrders ?? 0));
+  }
+  const orders = [...byRider.values()].reduce((a, b) => a + b, 0);
+  const activeRiders = [...byRider.values()].filter((n) => n >= minOrdersPerActiveRider).length;
+  const day = Math.max(1, Math.min(TRIAL_RULES.days, Math.round((new Date(`${today}T12:00:00Z`).getTime() - new Date(`${startedAt}T12:00:00Z`).getTime()) / 864e5) + 1));
+  return { startedAt, day, days: TRIAL_RULES.days, orders, activeRiders, eligible: orders >= TRIAL_RULES.minOrders && activeRiders >= TRIAL_RULES.minActiveRiders };
+}
+
+/**
+ * Who led the station on each day of the week (decision 11). With no history
+ * the current leader covers the whole week. Returns one segment per leader;
+ * riderId "" marks days with no leader (nobody is paid for those).
+ */
+export function leaderSegmentsForWeek(
+  history: Array<{ riderId: string; from: string }> | undefined,
+  currentLeaderId: string | undefined,
+  dates: string[],
+): Array<{ riderId: string; days: string[] }> {
+  const sorted = [...(history ?? [])].sort((a, b) => a.from.localeCompare(b.from));
+  const out = new Map<string, string[]>();
+  for (const d of dates) {
+    let who: string | undefined;
+    if (sorted.length === 0) who = currentLeaderId ?? "";
+    else {
+      const entry = [...sorted].reverse().find((h) => h.from <= d);
+      // Days before the first recorded change belong to whoever led then —
+      // unknown, so the earliest recorded leader is not assumed for them.
+      who = entry ? entry.riderId : "";
+    }
+    const list = out.get(who ?? "") ?? [];
+    list.push(d);
+    out.set(who ?? "", list);
+  }
+  return [...out.entries()].map(([riderId, days]) => ({ riderId, days }));
+}
+
+/** The two (and only two) leader components — 业务方 2026-10-30:"不再增加". */
+export const LEADER_COMPONENT_KEYS = ["base", "bonus"] as const;
+
+/**
+ * Rules in force for a week. `rules` is an append-only version history (each
+ * edit appends a new version with effectiveFrom = next Monday — hard rule 5);
+ * per component the latest version effective on or before the week's Monday
+ * wins. A franchise with no history uses the defaults.
+ */
+export function rulesForWeek(rules: LeaderSettlementComponent[] | undefined, weekMonday: string): LeaderSettlementComponent[] {
+  const history = [...defaultLeaderSettlementRules, ...(rules ?? [])];
+  return LEADER_COMPONENT_KEYS.map((key) => {
+    const candidates = history
+      .filter((r) => r.key === key && r.effectiveFrom <= weekMonday)
+      .sort((a, b) => a.effectiveFrom.localeCompare(b.effectiveFrom) || a.version - b.version);
+    return candidates[candidates.length - 1];
+  }).filter((r): r is LeaderSettlementComponent => Boolean(r));
+}
+
+/** Monday (YYYY-MM-DD, São Paulo calendar) of the week AFTER `today`. */
+export function nextMonday(today: string): string {
+  const d = new Date(`${today}T12:00:00Z`);
+  const day = d.getUTCDay() || 7;
+  d.setUTCDate(d.getUTCDate() + (8 - day));
+  return d.toISOString().slice(0, 10);
+}
 
 export type LeaderSettlementLine = {
   componentKey: string;
@@ -224,6 +308,42 @@ export function tagKpiAttribution(
   if (!ponto) return;
   record.stationId = ponto.id;
   record.stationFranchise = franchise.name;
+}
+
+// ---------------------------------------------------------------------------
+// Source merge (业务方 2026-10-30, decision 6): per DAY, the official T+1 rows
+// win when that day was imported for the franchise; otherwise the frozen live
+// ledger (leaderDailyOrders) stands in. Pure — returns KPI-shaped rows.
+// ---------------------------------------------------------------------------
+
+export type LiveDailyRow = { date: string; rider99Id: string; completedOrders: number; stationId?: string; stationFranchise: string };
+
+export function mergeLeaderWeekRows(args: {
+  franchise: string;
+  dates: string[];
+  t1Rows: RiderDailyKpi[];
+  liveRows: LiveDailyRow[];
+  /** 99 ids bound to the franchise today — a T+1 row for one of them marks that day as imported. */
+  franchiseRider99Ids: Set<string>;
+}): { rows: RiderDailyKpi[]; t1Dates: string[]; liveDates: string[] } {
+  const { franchise, dates, t1Rows, liveRows, franchiseRider99Ids } = args;
+  const t1Dates = new Set(
+    t1Rows.filter((r) => r.stationFranchise === franchise || franchiseRider99Ids.has(String(r.rider99Id))).map((r) => r.date),
+  );
+  const rows: RiderDailyKpi[] = t1Rows.filter((r) => t1Dates.has(r.date));
+  const liveDates = new Set<string>();
+  for (const live of liveRows) {
+    if (live.stationFranchise !== franchise || t1Dates.has(live.date) || !dates.includes(live.date)) continue;
+    liveDates.add(live.date);
+    rows.push({
+      date: live.date,
+      rider99Id: live.rider99Id,
+      completedOrders: live.completedOrders,
+      stationId: live.stationId,
+      stationFranchise: live.stationFranchise,
+    } as unknown as RiderDailyKpi);
+  }
+  return { rows, t1Dates: [...t1Dates].sort(), liveDates: [...liveDates].sort() };
 }
 
 // ---------------------------------------------------------------------------

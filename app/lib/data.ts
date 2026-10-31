@@ -95,6 +95,9 @@ export type Ponto = {
   leaderRiderId?: string;
   /** Trial window start (YYYY-MM-DD). */
   trialStartedAt?: string;
+  /** Append-only leader changes (decision 11: a mid-week change splits that
+   *  week's commission by day). riderId "" = no leader from that day. */
+  leaderHistory?: Array<{ riderId: string; from: string }>;
 };
 export type Leader = {
   id: string;
