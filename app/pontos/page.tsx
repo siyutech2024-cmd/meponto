@@ -44,6 +44,17 @@ export default function NetworkPage() {
   const [leaderForm, setLeaderForm] = useState({ rider: "", pix: "", cpf: "", cnpj: "", status: "active" });
   const [franchiseRiders, setFranchiseRiders] = useState<Array<{ id: string; name: string; ninetyNineId?: string; franchise?: string }>>([]);
   const [franchiseOpen, setFranchiseOpen] = useState(false);
+  // One station, many leaders: "增加组长" creates a leader team under a station.
+  const [teamParent, setTeamParent] = useState<Ponto | null>(null);
+  const [teamForm, setTeamForm] = useState({ rider: "", name: "", pix: "", cpf: "", cnpj: "", status: "trial" });
+  async function loadFranchiseRiders(franchise?: string) {
+    const r = await fetch("/api/riders", { headers, cache: "no-store" });
+    if (!r.ok) return [] as Array<{ id: string; name: string; ninetyNineId?: string; franchise?: string }>;
+    const list = ((await r.json()).data ?? []) as Array<{ id: string; name: string; ninetyNineId?: string; franchise?: string }>;
+    const own = list.filter((x) => x.franchise === franchise);
+    setFranchiseRiders(own);
+    return own;
+  }
   const [onlyPending, setOnlyPending] = useState(false);
 
   const load = useCallback(async () => {
@@ -100,6 +111,20 @@ export default function NetworkPage() {
       (!stationQuery.trim() || s.name.toLowerCase().includes(stationQuery.trim().toLowerCase()) || (s.franchise ?? "").toLowerCase().includes(stationQuery.trim().toLowerCase())),
   );
   const isHq = !franchiseScope;
+  // Boa Vista: list each station followed by its leader teams.
+  const teamsOf = (id: string) => stations.filter((s) => s.parentStationId === id);
+  const orderedStations = rg.isBoaVista
+    ? (() => {
+        const shownIds = new Set(shownStations.map((s) => s.id));
+        const out: Ponto[] = [];
+        for (const s of shownStations) {
+          if (s.parentStationId && shownIds.has(s.parentStationId)) continue; // placed under its parent
+          out.push(s);
+          if (!s.parentStationId) out.push(...shownStations.filter((c) => c.parentStationId === s.id));
+        }
+        return out;
+      })()
+    : shownStations;
 
   const ridersLabel = t("pnRiders", { n: "" }).trim();
   const safetyLabel = t("pnSafety", { n: "" }).replace("/100", "").trim();
@@ -111,9 +136,18 @@ export default function NetworkPage() {
       className: "max-w-[220px]",
       render: (station) => (
         <div>
-          <div className="truncate font-black">{station.name}</div>
-          <div className="truncate text-[11px] font-bold text-[var(--muted)]">{station.bairro}</div>
-          {rg.isBoaVista && (
+          <div className={`truncate font-black ${rg.isBoaVista && station.parentStationId ? "pl-4" : ""}`}>{rg.isBoaVista && station.parentStationId ? "↳ " : ""}{station.name}</div>
+          <div className="truncate text-[11px] font-bold text-[var(--muted)]">
+            {rg.isBoaVista && station.parentStationId
+              ? t("lmParentOf", { x: stations.find((p) => p.id === station.parentStationId)?.name ?? "—" })
+              : station.bairro}
+          </div>
+          {rg.isBoaVista && !station.leaderRiderId && (teamsOf(station.id).length > 0 || station.name === station.franchise) ? (
+            <div className="mt-1 flex flex-wrap gap-1">
+              {station.name === station.franchise && <span className="text-[10px] font-black uppercase text-[var(--muted-strong)]">{t("lmPool")}</span>}
+              <span className="text-[10px] font-black uppercase text-[var(--muted-strong)]">{t("lmTeamsCount", { n: teamsOf(station.id).length })}</span>
+            </div>
+          ) : rg.isBoaVista && (
             <div className="mt-1 flex flex-wrap gap-1">
               <span className="text-[10px] font-black uppercase text-[var(--muted-strong)]">
                 {station.stationStatus === "trial" ? t("lmStTrial") : station.stationStatus === "suspended" ? t("lmStSuspended") : station.stationStatus === "closed" ? t("lmStClosed") : t("lmStActive")}
@@ -209,7 +243,20 @@ export default function NetworkPage() {
               </button>
             </>
           )}
-          {isHq && rg.isBoaVista && (
+          {isHq && rg.isBoaVista && !station.parentStationId && !station.leaderRiderId && (
+            <button
+              type="button"
+              className="tag border-[var(--accent)] bg-[var(--accent)] text-[var(--accent-ink)]"
+              onClick={async () => {
+                setTeamParent(station);
+                setTeamForm({ rider: "", name: "", pix: "", cpf: "", cnpj: "", status: "trial" });
+                await loadFranchiseRiders(station.franchise);
+              }}
+            >
+              <Plus size={12} /> {t("lmAddLeader")}
+            </button>
+          )}
+          {isHq && rg.isBoaVista && (!!station.parentStationId || !!station.leaderRiderId || (teamsOf(station.id).length === 0 && station.name !== station.franchise)) && (
             <button
               type="button"
               className="tag border-[var(--accent)] text-[var(--accent)]"
@@ -414,7 +461,7 @@ export default function NetworkPage() {
       <div className="mt-4">
         <DataTable<Ponto>
           columns={columns}
-          rows={shownStations}
+          rows={orderedStations}
           rowKey={(station) => station.id}
           minWidth={1080}
           empty={t("pnNoStations")}
@@ -488,6 +535,78 @@ export default function NetworkPage() {
             className="inline-flex h-11 items-center justify-center gap-1 rounded-[8px] bg-[var(--accent)] px-6 text-xs font-black uppercase text-[var(--accent-ink)] hover:bg-[var(--accent-strong)] disabled:opacity-50"
           >
             <Plus size={14} /> {t("pnAddFr")}
+          </button>
+        </div>
+      </Drawer>
+      {/* 增加组长抽屉 (HQ · Boa Vista):一个站点多个组长,每人一个团队 */}
+      <Drawer
+        open={Boolean(teamParent)}
+        onClose={() => setTeamParent(null)}
+        title={<div className="text-sm font-black uppercase">{t("lmAddLeaderTitle", { x: teamParent?.name ?? "" })}</div>}
+        ariaLabel={t("lmAddLeader")}
+      >
+        <div className="grid gap-2">
+          <p className="text-[12px] font-bold text-[var(--muted)]">{t("lmAddLeaderHint")}</p>
+          <label className="grid gap-1 text-[11px] font-bold text-[var(--muted)]">
+            {t("lmLeaderRider")}
+            <input className={input} list="team-leader-options" placeholder={t("lmLeaderRiderPh")} value={teamForm.rider} onChange={(e) => setTeamForm({ ...teamForm, rider: e.target.value })} />
+            <datalist id="team-leader-options">
+              {franchiseRiders
+                .filter((r) => !stations.some((s) => s.leaderRiderId === r.id && s.stationStatus !== "closed"))
+                .map((r) => <option key={r.id} value={`${r.name} · ${r.ninetyNineId ?? ""}`} />)}
+            </datalist>
+          </label>
+          <label className="grid gap-1 text-[11px] font-bold text-[var(--muted)]">
+            {t("lmTeamName")}
+            <input className={input} value={teamForm.name} onChange={(e) => setTeamForm({ ...teamForm, name: e.target.value })} />
+          </label>
+          <label className="grid gap-1 text-[11px] font-bold text-[var(--muted)]">
+            {t("lmPix")}
+            <input className={input} value={teamForm.pix} onChange={(e) => setTeamForm({ ...teamForm, pix: e.target.value })} />
+          </label>
+          <label className="grid gap-1 text-[11px] font-bold text-[var(--muted)]">
+            {t("lmCpf")}
+            <input className={input} value={teamForm.cpf} onChange={(e) => setTeamForm({ ...teamForm, cpf: e.target.value })} />
+          </label>
+          <label className="grid gap-1 text-[11px] font-bold text-[var(--muted)]">
+            {t("lmCnpj")}
+            <input className={input} value={teamForm.cnpj} onChange={(e) => setTeamForm({ ...teamForm, cnpj: e.target.value })} />
+          </label>
+          <label className="grid gap-1 text-[11px] font-bold text-[var(--muted)]">
+            {t("lmStatus")}
+            <select className={input} value={teamForm.status} onChange={(e) => setTeamForm({ ...teamForm, status: e.target.value })}>
+              <option value="trial">{t("lmStTrial")}</option>
+              <option value="active">{t("lmStActive")}</option>
+            </select>
+          </label>
+          <button
+            type="button"
+            disabled={!teamForm.rider.trim()}
+            className="inline-flex h-11 items-center justify-center gap-1 rounded-[8px] bg-[var(--accent)] px-4 text-xs font-black uppercase text-[var(--accent-ink)] disabled:opacity-50"
+            onClick={async () => {
+              if (!teamParent) return;
+              const picked = franchiseRiders.find((r) => `${r.name} · ${r.ninetyNineId ?? ""}` === teamForm.rider.trim());
+              if (!picked) {
+                setMessage({ tone: "err", text: t("lmLeaderRiderPh") });
+                return;
+              }
+              const r = await post({
+                action: "addLeaderTeam",
+                parentStationId: teamParent.id,
+                leaderRiderId: picked.id,
+                teamName: teamForm.name,
+                leaderPixKey: teamForm.pix,
+                leaderCpf: teamForm.cpf,
+                leaderCnpj: teamForm.cnpj,
+                stationStatus: teamForm.status,
+              });
+              if (r) {
+                setMessage({ tone: "ok", text: t("lmTeamCreated", { name: (r as { data?: { name?: string } }).data?.name ?? "" }) });
+                setTeamParent(null);
+              }
+            }}
+          >
+            <Plus size={14} /> {t("lmAddLeader")}
           </button>
         </div>
       </Drawer>

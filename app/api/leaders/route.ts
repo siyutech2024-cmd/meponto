@@ -18,9 +18,11 @@ export async function GET(request: Request) {
     if (!rider) return jsonResponse({ data: { eligible: false } });
     const franchise = memory.franchises.find((f) => f.name === rider.franchise && f.leaderMode === true);
     if (!franchise) return jsonResponse({ data: { eligible: false } });
+    // Joinable = leader teams (a station with a leader). The pool / parent
+    // stations have no leader, so there is nothing to "join" there.
     const stations = memory.pontos
-      .filter((p) => p.franchise === franchise.name && (p.stationStatus === undefined || p.stationStatus === "active" || p.stationStatus === "trial"))
-      .map((p) => ({ id: p.id, name: p.name }));
+      .filter((p) => p.franchise === franchise.name && !!p.leaderRiderId && (p.stationStatus === undefined || p.stationStatus === "active" || p.stationStatus === "trial"))
+      .map((p) => ({ id: p.id, name: p.leader ? `${p.name} (líder: ${p.leader})` : p.name }));
     const mine = await listApplications({ applicantRiderId: rider.id });
     return jsonResponse({
       data: {
@@ -150,7 +152,10 @@ async function postImpl(request: Request) {
         }
         // Create the trial station and bind the applicant as its leader.
         const stationId = makeServerId("p", memory.pontos.length + 1);
-        const today = new Date().toISOString().slice(0, 10);
+        const today = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Sao_Paulo" }).format(new Date());
+        // One station, many leaders: the new team sits under the franchise's
+        // pool station (same name as the franchise) when there is one.
+        const pool = memory.pontos.find((p) => p.franchise === application.franchise && p.name === application.franchise && !p.parentStationId);
         memory.pontos.unshift({
           id: stationId,
           name: application.proposedStationName ?? `Estação ${application.applicantName}`,
@@ -167,6 +172,8 @@ async function postImpl(request: Request) {
           stationStatus: "trial",
           trialStartedAt: today,
           leaderRiderId: application.applicantRiderId,
+          leaderHistory: [{ riderId: application.applicantRiderId, from: today }],
+          ...(pool ? { parentStationId: pool.id } : {}),
         });
         memory.riders[riderIndex] = { ...memory.riders[riderIndex], ponto: application.proposedStationName ?? `Estação ${application.applicantName}` };
       } else {

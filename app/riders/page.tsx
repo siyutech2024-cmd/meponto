@@ -33,7 +33,7 @@ type RiderRow = {
   pool?: "standard" | "pro";
 };
 
-type Network = { franchises: Array<{ id: string; name: string }>; stations: Array<{ id: string; name: string; franchise?: string; leaderRiderId?: string; leaderPixKey?: string }> };
+type Network = { franchises: Array<{ id: string; name: string }>; stations: Array<{ id: string; name: string; franchise?: string; leaderRiderId?: string; leaderPixKey?: string; leader?: string; parentStationId?: string; stationStatus?: string }> };
 
 const HEADERS = { "Content-Type": "application/json", "x-vento-role": "Super Admin" };
 const isUnassigned = (value?: string) => !value || value === "Unassigned";
@@ -56,6 +56,9 @@ export default function RidersPage() {
   const rg = useRegion(HEADERS);
   const [riders, setRiders] = useState<RiderRow[]>([]);
   const [network, setNetwork] = useState<Network>({ franchises: [], stations: [] });
+  // Leader teams read "↳ Team · líder X" so ops can tell the pool from a team.
+  const stationLabel = (s: Network["stations"][number]) =>
+    s.parentStationId ? `↳ ${s.name}${s.leader ? ` · ${s.leader}` : ""}` : s.leaderRiderId && s.leader ? `${s.name} · ${s.leader}` : s.name;
   const [query, setQuery] = useState("");
   const [stationFilter, setStationFilter] = useState("");
   const [franchiseFilter, setFranchiseFilter] = useState("");
@@ -504,7 +507,7 @@ export default function RidersPage() {
             className={`h-9 max-w-[170px] rounded-[8px] border bg-[var(--surface-raised)] px-2 text-xs font-bold outline-none ${staged ? "border-[var(--warning)]" : isUnassigned(rider.ponto) ? "border-[var(--danger)] text-[var(--danger-ink)]" : "border-[var(--line)] text-[var(--text)]"}`}
           >
             <option value="">{t("rdUnassignedOpt")}</option>
-            {stationOptions.map((s) => <option key={s.id} value={s.name}>{s.name}</option>)}
+            {stationOptions.map((s) => <option key={s.id} value={s.name}>{stationLabel(s)}</option>)}
           </select>
         );
       },
@@ -645,7 +648,7 @@ export default function RidersPage() {
         <div className="mt-4 flex flex-wrap items-center gap-2">
           <select value={bulkStation} onChange={(e) => setBulkStation(e.target.value)} className={input}>
             <option value="">{t("rdBulkPick")}</option>
-            {regionStations.map((st) => <option key={st.id} value={st.name}>{st.name}</option>)}
+            {regionStations.map((st) => <option key={st.id} value={st.name}>{stationLabel(st)}</option>)}
           </select>
           <button type="button" className="tag border-[var(--accent)] text-[var(--accent)] disabled:opacity-50" disabled={!bulkStation || selected.size === 0} onClick={bulkAssign}>
             {t("rdBulkAssign", { n: selected.size })}

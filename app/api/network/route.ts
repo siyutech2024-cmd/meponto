@@ -73,7 +73,8 @@ type Body =
   | { action: "rejectStation"; stationId: string }
   | { action: "deleteStation"; stationId: string; force?: boolean }
   | { action: "setLeaderRates"; franchiseId: string; baseBRL: number; bonusBRL: number }
-  | { action: "updateLeaderStation"; stationId: string; leaderRiderId?: string; leaderPixKey?: string; leaderCpf?: string; leaderCnpj?: string; stationStatus?: string };
+  | { action: "updateLeaderStation"; stationId: string; leaderRiderId?: string; leaderPixKey?: string; leaderCpf?: string; leaderCnpj?: string; stationStatus?: string }
+  | { action: "addLeaderTeam"; parentStationId: string; leaderRiderId: string; teamName?: string; leaderPixKey?: string; leaderCpf?: string; leaderCnpj?: string; stationStatus?: string };
 
 async function handlePost(request: Request) {
   const forbidden = requirePermission(request, "manage_pontos");
@@ -179,6 +180,14 @@ async function handlePost(request: Request) {
       const str = (v: unknown, max: number) => String(v ?? "").trim().slice(0, max);
       if (body.leaderRiderId !== undefined) {
         const riderId = str(body.leaderRiderId, 80);
+        // A station that holds leader teams (or the franchise pool every
+        // unassigned rider sits in) never gets a leader itself — that would
+        // hand all of its riders to one person. Leaders go in as teams.
+        const isPool = station.name === station.franchise;
+        const hasTeams = memory.pontos.some((p) => p.parentStationId === station.id);
+        if (riderId && (isPool || hasTeams) && !station.leaderRiderId) {
+          return jsonResponse({ error: "这是上级站点 / 待分配池,不能直接设组长 —— 请用「增加组长」建一个组长团队" }, { status: 400 });
+        }
         if (riderId) {
           const rider = memory.riders.find((r) => r.id === riderId);
           if (!rider) return jsonResponse({ error: "rider not found" }, { status: 404 });
@@ -223,6 +232,74 @@ async function handlePost(request: Request) {
         risk: "Medium",
       });
       return jsonResponse({ data: memory.pontos[index] });
+    }
+
+    case "addLeaderTeam": {
+      // One station, many leaders (业务方 2026-10-31): each leader gets a team
+      // under the station. HQ only. Creates NEW records only (a team station,
+      // its leader history from today); the leader's own rider record moves
+      // into the team so their orders count there (self-ride cap applies).
+      const scope = await scopeFromRequest(request);
+      if (scope.franchise || scope.station) return jsonResponse({ error: "HQ only" }, { status: 403 });
+      const b = body as Extract<Body, { action: "addLeaderTeam" }>;
+      const str = (v: unknown, max: number) => String(v ?? "").trim().slice(0, max);
+      const parent = memory.pontos.find((p) => p.id === b.parentStationId);
+      if (!parent) return jsonResponse({ error: "上级站点不存在" }, { status: 404 });
+      if (parent.parentStationId) return jsonResponse({ error: "组长团队下不能再建团队" }, { status: 400 });
+      if (!memory.franchises.some((f) => f.name === parent.franchise && f.leaderMode === true)) {
+        return jsonResponse({ error: "该站点所属加盟商未开启组长模式" }, { status: 400 });
+      }
+      if (parent.leaderRiderId) return jsonResponse({ error: `「${parent.name}」本身已有组长,不能再挂团队` }, { status: 409 });
+      const riderId = str(b.leaderRiderId, 80);
+      const riderIndex = memory.riders.findIndex((r) => r.id === riderId);
+      if (riderIndex === -1) return jsonResponse({ error: "请选择组长骑手" }, { status: 400 });
+      const rider = memory.riders[riderIndex];
+      if (rider.franchise !== parent.franchise) return jsonResponse({ error: "组长必须是本加盟商的骑手" }, { status: 400 });
+      const taken = memory.pontos.find((p) => p.leaderRiderId === riderId && p.stationStatus !== "closed");
+      if (taken) return jsonResponse({ error: `该骑手已是「${taken.name}」的组长` }, { status: 409 });
+      const firstName = rider.name.trim().split(/\s+/)[0] ?? rider.name;
+      const toTitle = (w: string) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase();
+      const name = (str(b.teamName, 60) || `${parent.name} · ${toTitle(firstName)}`).trim();
+      // Station names are the binding key (rider.ponto) — must be unique.
+      if (memory.pontos.some((p) => p.name.trim().toLowerCase() === name.toLowerCase())) {
+        return jsonResponse({ error: `团队名「${name}」已存在,请换一个` }, { status: 409 });
+      }
+      const status = ["trial", "active"].includes(String(b.stationStatus)) ? (String(b.stationStatus) as "trial" | "active") : "trial";
+      const today = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Sao_Paulo" }).format(new Date());
+      const team = {
+        id: makeServerId("pt", memory.pontos.length + 1),
+        name,
+        bairro: parent.bairro ?? "",
+        ridersCount: 0,
+        nightShiftLevel: "—",
+        leader: rider.name,
+        safetyScore: 0,
+        lat: parent.lat ?? 0,
+        lng: parent.lng ?? 0,
+        franchise: parent.franchise,
+        status: "approved",
+        virtual: true,
+        parentStationId: parent.id,
+        stationStatus: status,
+        ...(status === "trial" ? { trialStartedAt: today } : {}),
+        leaderRiderId: rider.id,
+        leaderHistory: [{ riderId: rider.id, from: today }],
+        ...(str(b.leaderPixKey, 120) ? { leaderPixKey: str(b.leaderPixKey, 120) } : {}),
+        ...(str(b.leaderCpf, 20).replace(/\D/g, "") ? { leaderCpf: str(b.leaderCpf, 20).replace(/\D/g, "") } : {}),
+        ...(str(b.leaderCnpj, 30) ? { leaderCnpj: str(b.leaderCnpj, 30) } : {}),
+      } as (typeof memory.pontos)[number];
+      memory.pontos.unshift(team);
+      const fromStation = rider.ponto || "Unassigned";
+      memory.riders[riderIndex] = { ...rider, ponto: team.name };
+      appendServerAudit({
+        actor,
+        action: "LEADER_TEAM_CREATED",
+        entity: "Ponto",
+        entityId: team.id,
+        detail: `${parent.name} 新增组长团队「${team.name}」,组长 ${rider.name}(${status === "trial" ? "试运营" : "正式"});组长本人 ${fromStation} → ${team.name}${team.leaderPixKey || team.leaderCnpj ? " +收款信息" : ""}`,
+        risk: "Medium",
+      });
+      return jsonResponse({ data: team }, { status: 201 });
     }
 
     case "depositFranchise": {

@@ -98,6 +98,11 @@ export type Ponto = {
   /** Append-only leader changes (decision 11: a mid-week change splits that
    *  week's commission by day). riderId "" = no leader from that day. */
   leaderHistory?: Array<{ riderId: string; from: string }>;
+  /** Leader team under a station (业务方 2026-10-31: one station, many
+   *  leaders). A team is itself a virtual station — riders bind to it by name
+   *  (rider.ponto) and assessment / settlement / the leader's team page all
+   *  run per team. The parent (e.g. the SJBV pool) has no leader of its own. */
+  parentStationId?: string;
 };
 export type Leader = {
   id: string;
