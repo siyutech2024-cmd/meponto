@@ -12,6 +12,8 @@ import type { RiderDailyEarning, RiderDailyKpi } from "../../../lib/performance"
 import { defaultAssessmentRule } from "../../../lib/assessment";
 import { payableOf, settlementV2From } from "../../../lib/settlement";
 import { earningsByRider99, kpisByRider99, kpisByRiderName, perfMode } from "../../../lib/server/db/performance-repo";
+import { isLeaderModeRider } from "../../../lib/leader-mode";
+import { brtToday, loadLeaderDaily } from "../../../lib/server/leader-daily";
 
 /**
  * Rider Home dashboard aggregate (session-scoped). One read powering the
@@ -97,6 +99,9 @@ export async function GET(request: Request) {
   if (!rider) return jsonResponse({ error: "Cadastro não encontrado.", code: "not_found" }, { status: 404 });
   const name = rider.name;
   const nineId = rider.ninetyNineId ?? "";
+  // Boa Vista (leader mode): no PontoSys wages, and no T+1 tables yet — KPI
+  // falls back to the frozen daily live ledger (T+1 wins per day once imported).
+  const leaderModeCity = isLeaderModeRider(rider, memory.franchises);
 
   // --- Performance (latest KPI for rates, week sum for totals) ---
   let kpiRows: RiderDailyKpi[] | null = null;
@@ -167,7 +172,31 @@ export async function GET(request: Request) {
   }
   // Read-only ledger sum (same math as PontoMall me.balance) — never mutated.
   const pointsAvailable = getAvailablePoints(riderLedger, rider.id);
-  const latest = kpis[0];
+  // Leader-mode riders: days without a T+1 row take the frozen live count
+  // (orders only — AR/CAA/hours stay empty until a T+1 table exists). These
+  // synthetic rows feed ONLY the performance panel, never tasks/points.
+  let perfKpis = kpis;
+  let perfSource: "t1" | "live" | "mixed" = "t1";
+  const liveDates = new Set<string>();
+  if (leaderModeCity && nineId) {
+    try {
+      const since = new Date(Date.now() - 9 * 864e5).toISOString().slice(0, 10);
+      const yesterday = new Date(Date.parse(`${brtToday()}T12:00:00Z`) - 864e5).toISOString().slice(0, 10);
+      const live = (await loadLeaderDaily(since, yesterday)).filter((r) => String(r.rider99Id) === nineId);
+      const t1Dates = new Set(kpis.map((k) => k.date));
+      const extra = live
+        .filter((r) => !t1Dates.has(r.date))
+        .map((r) => ({ date: r.date, rider99Id: nineId, riderName: name, completedOrders: r.completedOrders ?? 0 }) as unknown as RiderDailyKpi);
+      if (extra.length) {
+        for (const r of extra) liveDates.add(r.date);
+        perfKpis = [...kpis, ...extra].sort((a, b) => (a.date < b.date ? 1 : -1));
+        perfSource = kpis.length ? "mixed" : "live";
+      }
+    } catch (error) {
+      console.warn(`[rider/home] leader daily read failed. (${(error as Error).message})`);
+    }
+  }
+  const latest = perfKpis[0];
   // Every KPI block reads the LATEST imported day (T+1 = yesterday): orders,
   // TSH hours, acceptance rate and cancellations all describe the same day,
   // matching what the rider remembers doing.
@@ -175,7 +204,7 @@ export async function GET(request: Request) {
   // report; onlineHours is the actual hours figure. (tshHours used to carry
   // the tsh percent — v1.3 displayed it as hours. It now carries real hours
   // so older clients render correctly; tshPercent is the explicit new field.)
-  const week = kpis.filter((k) => k.date > new Date(Date.now() - 8 * 864e5).toISOString().slice(0, 10));
+  const week = perfKpis.filter((k) => k.date > new Date(Date.now() - 8 * 864e5).toISOString().slice(0, 10));
   const performance = latest
     ? {
         date: latest.date,
@@ -194,6 +223,9 @@ export async function GET(request: Request) {
         overtimePercent: latest.overtime,
         weekOrders: week.reduce((s2, k) => s2 + (k.completedOrders ?? 0), 0),
         weekOnlineHours: Math.round(week.reduce((s2, k) => s2 + (k.onlineHours ?? 0), 0) * 10) / 10,
+        // "t1" = imported table; "live" = realtime board, frozen daily (no AR/CAA/hours).
+        source: liveDates.has(latest.date) ? "live" : "t1",
+        weekSource: perfSource,
       }
     : null;
   const onlineHoursWeek = kpis.slice(0, 7).reduce((s, k) => s + (k.onlineHours ?? 0), 0);
@@ -247,8 +279,9 @@ export async function GET(request: Request) {
   // 结算口径 v2:每日金额 = payableOf(今日统计),与钱包页"每日结算单"同一个数;
   // 为负的天(现金 > 收入)显示为扣款而不是"Repasse Confirmado"。PRO 行不进现金流水。
   const v2From = settlementV2From(memory.assessmentRules.find((r) => r.id === "rule-active") ?? defaultAssessmentRule);
+  // Boa Vista riders are paid by 99, not PontoSys → no "Repasse" lines.
   const payments = earningRows
-    .filter((e) => e.account !== "pro" && payableOf(e, v2From) !== 0)
+    .filter((e) => !leaderModeCity && e.account !== "pro" && payableOf(e, v2From) !== 0)
     .map((e) => {
       const amount = Math.round(payableOf(e, v2From) * 100) / 100;
       return {

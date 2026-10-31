@@ -122,7 +122,7 @@ export function countDayOrders(readings: Array<{ at: string; value: number }>, d
  * Freeze one past day. Insert-only: a day already frozen keeps its records.
  * Returns how many records were offered for insert.
  */
-export async function freezeLeaderDay(date: string): Promise<{ date: string; riders: number; withStation: number; skipped?: string }> {
+export async function freezeLeaderDay(date: string): Promise<{ date: string; riders: number; withStation: number; pointsCredited?: number; points?: number; skipped?: string }> {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return { date, riders: 0, withStation: 0, skipped: "bad date" };
   if (date >= brtToday()) return { date, riders: 0, withStation: 0, skipped: "day not over yet" };
 
@@ -163,7 +163,11 @@ export async function freezeLeaderDay(date: string): Promise<{ date: string; rid
       if (error) throw new Error(`leaderDailyOrders: ${error.message}`);
     }
   }
-  return { date, riders: records.length, withStation: records.filter((r) => r.stationId).length };
+  // Order points (1 per order) from what is STORED for the day — a re-run
+  // credits the frozen counts, never a fresh recount. Insert-only.
+  const { creditLeaderDailyPoints } = await import("./leader-points");
+  const pts = await creditLeaderDailyPoints(await loadLeaderDaily(date, date));
+  return { date, riders: records.length, withStation: records.filter((r) => r.stationId).length, pointsCredited: pts.credited, points: pts.points };
 }
 
 export async function loadLeaderDaily(from: string, to: string): Promise<LeaderDailyOrders[]> {

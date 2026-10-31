@@ -310,7 +310,11 @@ function creditOrderPoints(riderId: string, rider99Id: string, date: string, com
   // 模式二: PRO 保底 Ouro —— 积分加成(+10%)与卡面同一档,一套阶梯到底。
   const riderProfile = memory.riders.find((item) => item.id === riderId);
   const tier = resolveRiderTierStatus(memory.pointsLedgerEntries, riderId, config, undefined, riderProfile?.pool === "pro" ? "ouro" : undefined);
-  const points = Math.round(completedOrders * config.perOrderPoints * tier.pointsMultiplier);
+  // Boa Vista (leader mode, 业务方 2026-10-31): 1 point per completed order,
+  // flat — no tier multiplier. Same ledger id as the live-daily credit, so a
+  // T+1 import of that day replaces the live count (T+1 wins).
+  const leaderModeCity = !!riderProfile?.franchise && memory.franchises.some((f) => f.name === riderProfile.franchise && f.leaderMode === true);
+  const points = leaderModeCity ? Math.round(completedOrders) : Math.round(completedOrders * config.perOrderPoints * tier.pointsMultiplier);
   if (points <= 0) return;
 
   // Referral reward (anti-fraud): the inviter is only paid once, and only
@@ -351,7 +355,9 @@ function creditOrderPoints(riderId: string, rider99Id: string, date: string, com
   }
 
   const id = `pts-ord-${date}-${riderId}`;
-  const note = `T+1 ${date} 完单 ${completedOrders} × ${config.perOrderPoints}分${tier.pointsMultiplier > 1 ? ` × ${tier.pointsMultiplier}（${tier.label}）` : ""}`;
+  const note = leaderModeCity
+    ? `T+1 ${date} 完单 ${completedOrders} × 1分(Boa Vista)`
+    : `T+1 ${date} 完单 ${completedOrders} × ${config.perOrderPoints}分${tier.pointsMultiplier > 1 ? ` × ${tier.pointsMultiplier}（${tier.label}）` : ""}`;
   const index = memory.pointsLedgerEntries.findIndex((entry) => entry.id === id);
   if (index !== -1) {
     memory.pointsLedgerEntries[index] = { ...memory.pointsLedgerEntries[index], points, note };

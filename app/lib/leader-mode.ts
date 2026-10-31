@@ -177,6 +177,19 @@ export function leaderSegmentsForWeek(
 }
 
 /** The two (and only two) leader components — 业务方 2026-10-30:"不再增加". */
+/**
+ * Is this rider in a leader-mode city (Boa Vista)? Those riders have no
+ * scheduling and are not paid through PontoSys — only the leader's weekly
+ * commission is. Read-only check used by the rider-facing APIs.
+ */
+export function isLeaderModeRider(
+  rider: { franchise?: string | null } | null | undefined,
+  franchises: ReadonlyArray<{ name: string; leaderMode?: boolean }>,
+): boolean {
+  if (!rider?.franchise) return false;
+  return franchises.some((f) => f.name === rider.franchise && f.leaderMode === true);
+}
+
 export const LEADER_COMPONENT_KEYS = ["base", "bonus"] as const;
 
 /**

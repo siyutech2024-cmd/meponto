@@ -88,9 +88,14 @@ async function postImpl(request: Request) {
     if ((kind === "join_station" || kind === "transfer") && !targetStationId) {
       return jsonResponse({ error: "targetStationId is required" }, { status: 400 });
     }
-    const proposedStationName = body.proposedStationName ? String(body.proposedStationName).slice(0, 60) : undefined;
+    const proposedStationName = body.proposedStationName ? String(body.proposedStationName).trim().slice(0, 60) : undefined;
     if (kind === "open_station" && !proposedStationName) {
       return jsonResponse({ error: "proposedStationName is required" }, { status: 400 });
+    }
+    // Station names are the binding key (rider.ponto / import tagging match by
+    // name) — a duplicate would cross-wire two stations' data. Reject early.
+    if (proposedStationName && memory.pontos.some((p) => p.name.trim().toLowerCase() === proposedStationName.toLowerCase())) {
+      return jsonResponse({ error: "Já existe uma estação com esse nome — escolha outro." }, { status: 409 });
     }
 
     const application: LeaderApplication = {
@@ -137,6 +142,12 @@ async function postImpl(request: Request) {
     if (decision === "approved") {
       if (riderIndex === -1) return jsonResponse({ error: "applicant rider no longer exists" }, { status: 409 });
       if (application.kind === "open_station") {
+        // Re-check name uniqueness at approval time (another station may have
+        // been created between submit and review).
+        const proposed = application.proposedStationName ?? `Estação ${application.applicantName}`;
+        if (memory.pontos.some((p) => p.name.trim().toLowerCase() === proposed.trim().toLowerCase())) {
+          return jsonResponse({ error: `站名已存在：${proposed}。请让申请人换名重新提交。` }, { status: 409 });
+        }
         // Create the trial station and bind the applicant as its leader.
         const stationId = makeServerId("p", memory.pontos.length + 1);
         const today = new Date().toISOString().slice(0, 10);

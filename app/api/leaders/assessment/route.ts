@@ -97,9 +97,12 @@ export async function GET(request: Request) {
     const weekRows = weekRowsAll.filter((row) => row.stationFranchise === franchise.name);
     const stored = await listAssessments(franchise.name, week);
 
+    // A station that never had a leader (e.g. the SJBV pool station every
+    // unassigned rider sits in) is not a leader station: no assessment, no pay.
     let stations = pontos.filter(
       (p) =>
         p.franchise === franchise.name &&
+        (!!p.leaderRiderId || (p.leaderHistory?.length ?? 0) > 0) &&
         (p.stationStatus === undefined || p.stationStatus === "active" || p.stationStatus === "trial"),
     );
     if (scope.station) {

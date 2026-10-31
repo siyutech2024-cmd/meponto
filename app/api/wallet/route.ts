@@ -533,6 +533,29 @@ export async function GET(request: Request) {
     if (!rider || !rider.ninetyNineId) {
       return jsonResponse({ data: { me: null, withdrawals: [] } });
     }
+    // Boa Vista (leader mode): riders are NOT paid through PontoSys — only the
+    // leader's weekly commission is (业务方 2026-10-30). Imported T+1 money
+    // columns must never surface as wages in the app. Read-only mask: the
+    // stored rows are untouched; past withdrawals (if any) still show.
+    {
+      const { isLeaderModeRider } = await import("../../lib/leader-mode");
+      if (isLeaderModeRider(rider, memory.franchises)) {
+        const withdrawals = memory.riderWithdrawals
+          .filter((w) => w.rider99Id === rider.ninetyNineId)
+          .sort((a, b) => b.requestedAt.localeCompare(a.requestedAt));
+        return jsonResponse({
+          data: {
+            me: { riderId: rider.id, name: rider.name, cpf: rider.cpf ?? "", pix: rider.pix ?? "", phone: rider.phone ?? "", isComplete: !!rider.cpf && !!rider.pix && !!rider.phone, station: rider.ponto, franchise: rider.franchise, settled: 0, held: 0, paid: 0, available: 0 },
+            withdrawals,
+            daily: [],
+            withdrawalsEnabled: false,
+            settlementVersion: 2,
+            leaderMode: true,
+            notice: "Na sua cidade os ganhos das entregas são pagos pela 99. A MePonto paga apenas a comissão semanal do líder.",
+          },
+        });
+      }
+    }
     // Direct read: only THIS rider's earning rows (a few hundred at most).
     let riderEarnings: RiderDailyEarning[];
     if (dbDirectReadEnabled()) {
@@ -926,6 +949,17 @@ async function handlePost(request: Request) {
       if (target !== "franchise" && target !== "rider") return jsonResponse({ error: "target inválido" }, { status: 400 });
       if (!refName?.trim() || !Number.isFinite(amount) || amount <= 0) return jsonResponse({ error: "请填写有效的对象与金额" }, { status: 400 });
       if (!/^\d{4}-\d{2}-\d{2}$/.test(weekFrom ?? "") || !/^\d{4}-\d{2}-\d{2}$/.test(weekTo ?? "")) return jsonResponse({ error: "结算周期无效" }, { status: 400 });
+      // Boa Vista (leader mode): no rider wages through PontoSys — only leader
+      // weekly payments (generateLeaderSettlements / confirmLeaderPayment).
+      {
+        const { isLeaderModeRider } = await import("../../lib/leader-mode");
+        const rRef = (body as { rider99Id?: string }).rider99Id ? String((body as { rider99Id?: string }).rider99Id) : "";
+        const lmFranchise = memory.franchises.find((f) => f.name === (target === "franchise" ? refName.trim() : franchise) && f.leaderMode === true);
+        const lmRider = target === "rider" && isLeaderModeRider(memory.riders.find((r) => (rRef && r.ninetyNineId === rRef) || r.name === refName.trim()), memory.franchises);
+        if (lmFranchise || lmRider) {
+          return jsonResponse({ error: "Boa Vista(组长模式)骑手工资不经 PontoSys 发放 —— 只做组长周结(钱包 → 组长结算)。", code: "leader_mode_no_rider_pay" }, { status: 409 });
+        }
+      }
 
       // Over-payment guard: a payment may not exceed what is still owed for this
       // target in the window (应结 − 已付). Keeps 已付 ≤ 应结.

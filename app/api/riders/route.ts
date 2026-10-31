@@ -11,6 +11,7 @@ const COLLECTIONS = ["riders", "riderDailyKpis", "pointsLedgerEntries"];
 // per instance instead of on every list request.
 const KPI_REFRESH_TTL_MS = 60_000;
 let kpiRefreshedAt = 0;
+let leaderDailyCache: Array<{ date: string; rider99Id: string; riderName?: string; completedOrders?: number }> | null = null;
 
 /**
  * Lazy self-heal: merge duplicate rider profiles that share one 99 ID.
@@ -156,6 +157,34 @@ export async function GET(request: Request) {
       lastDate: isNewer ? row.date : current!.lastDate,
       ar: isNewer ? (row.ar ?? current?.ar ?? null) : current?.ar ?? null,
     });
+  }
+
+  // Boa Vista (leader mode): no T+1 tables yet — lifetime orders also count
+  // the frozen daily live ledger for days that have no T+1 row (T+1 wins per
+  // day). Read-only; cached on the same TTL as the KPI refresh.
+  if (refreshKpis || !leaderDailyCache) {
+    try {
+      const { fetchRows } = await import("../../lib/server/db-read");
+      leaderDailyCache = await fetchRows<{ date: string; rider99Id: string; riderName?: string; completedOrders?: number }>("leaderDailyOrders");
+    } catch (error) {
+      console.warn(`[riders] leader daily read failed. (${(error as Error).message})`);
+      leaderDailyCache = leaderDailyCache ?? [];
+    }
+  }
+  {
+    const t1Days = new Set(memory.riderDailyKpis.map((row) => `${row.rider99Id}|${row.date}`));
+    for (const row of leaderDailyCache ?? []) {
+      const id = String(row.rider99Id ?? "");
+      if (!id || t1Days.has(`${id}|${row.date}`)) continue;
+      const current = reportStats.get(id);
+      const isNewer = !current || row.date >= current.lastDate;
+      reportStats.set(id, {
+        name: current?.name || row.riderName || "",
+        orders: (current?.orders ?? 0) + (row.completedOrders ?? 0),
+        lastDate: isNewer ? row.date : current!.lastDate,
+        ar: current?.ar ?? null,
+      });
+    }
   }
 
   const base = reveal.allowed ? memory.riders : memory.riders.map(maskRiderSensitive);

@@ -3,6 +3,7 @@ import { appendServerAudit, jsonResponse, makeServerId, memory } from "../../lib
 import { flushPendingToDatabase, refreshCollectionsFromDatabase } from "../../lib/server/persistence";
 import { getSupabaseServerClient } from "../../lib/supabase/server";
 import { sessionFromRequest, type AuthSession } from "../../lib/auth-session";
+import { isLeaderModeRider } from "../../lib/leader-mode";
 
 type SlotState = {
   slots: RiderSlot[];
@@ -46,8 +47,20 @@ export async function GET(request: Request) {
   // from the app, so scheduling dispatch shifts are merged into the rider
   // slot feed (hotzone shown as the ponto column) and the rider's own
   // dispatch signups ride along as enrollments.
+  // Boa Vista (leader mode) has no scheduling — 业务方 2026-10-26. Its riders
+  // must not see (or join) São Paulo shifts: the feed is emptied for them and
+  // a notice explains why. Read-only; existing signups are untouched.
+  let noScheduleNotice = "";
   if (session.portal === "rider" || session.role === "Rider") {
-    await refreshCollectionsFromDatabase(["dispatchShifts", "shiftSignups", "riders"]);
+    await refreshCollectionsFromDatabase(["dispatchShifts", "shiftSignups", "riders", "franchises"]);
+    const viewer = memory.riders.find((r) => r.name === session.name || r.id === session.userId);
+    if (isLeaderModeRider(viewer, memory.franchises)) {
+      state.slots = [];
+      state.enrollments = [];
+      noScheduleNotice = "Sua cidade não usa escala — fique online quando quiser.";
+    }
+  }
+  if (!noScheduleNotice && (session.portal === "rider" || session.role === "Rider")) {
     const today = new Date(Date.now() - 864e5).toISOString().slice(0, 10);
     const WD_PT = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"];
     const DK = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"];
@@ -117,6 +130,7 @@ export async function GET(request: Request) {
       enrollments: state.enrollments,
       weeks: state.weeks,
       weekStatus: state.weekStatus,
+      ...(noScheduleNotice ? { noSchedule: true, notice: noScheduleNotice } : {}),
       workflow: slotWorkflowSteps,
       readModel: "slot_weekly_summary_read_model",
       source: state.source,
@@ -172,6 +186,12 @@ export async function POST(request: Request) {
 
   if (!body?.slotId) {
     return jsonResponse({ error: "slotId is required." }, { status: 400 });
+  }
+
+  // Boa Vista (leader mode): no scheduling, so no shift signups either.
+  await refreshCollectionsFromDatabase(["riders", "franchises"]);
+  if (isLeaderModeRider(memory.riders.find((r) => r.name === session.name || r.id === session.userId), memory.franchises)) {
+    return jsonResponse({ error: "Sua cidade não usa escala — não é preciso se inscrever em turnos.", code: "no_schedule" }, { status: 409 });
   }
 
   // BRIDGE — signup for a Central de Despacho shift (real 99 plan shifts).

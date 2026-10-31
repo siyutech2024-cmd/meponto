@@ -182,7 +182,7 @@ export async function POST(request: Request) {
         const { bindBoaVistaRiders } = await import("../../../lib/server/boavista-binding");
         const binding = await bindBoaVistaRiders(snapshots);
         result.boaVistaBinding = binding;
-        if (binding.created || binding.bound) {
+        if (binding.created || binding.bound || binding.stationed) {
           const { flushPendingToDatabase } = await import("../../../lib/server/persistence");
           await flushPendingToDatabase();
         }
