@@ -142,6 +142,10 @@ class AppStore {
     // A4 · 活动入口卡。受众与生效窗口由服务端判定,这里 null 就是"不展示".
     var activityCard by mutableStateOf<com.meponto.rider.data.remote.ActivityCardDto?>(null)
         private set
+    // 2.8 · 组长模式城市(Boa Vista):底部「班次」换成「团队」,首页固定入口。
+    var leaderMode by mutableStateOf<com.meponto.rider.data.remote.LeaderModeDto?>(null)
+        private set
+    val isLeaderModeCity: Boolean get() = leaderMode?.city == true
 
     /** 拉取今日实时单量(首页双口径卡下半部分). */
     suspend fun refreshLiveCount() {
@@ -401,6 +405,9 @@ class AppStore {
         // 注意:这里不能用 ?.let —— 活动结束时服务端下发 null,必须真的清掉,
         // 否则卡片会一直挂在首页(只增不减是典型的下架失灵)。
         activityCard = snapshot.activityCard
+        // 只在首页数据真的拉到时更新(pool 只来自 /rider/home),
+        // 断网时保持原样,底部导航不会在「团队/班次」之间来回跳。
+        if (snapshot.pool != null) leaderMode = snapshot.leaderMode
         snapshot.pointCashRateBRL?.let { pointCashRateBRL = it }
         snapshot.statusTotals?.let { statusTotals = it }
     }

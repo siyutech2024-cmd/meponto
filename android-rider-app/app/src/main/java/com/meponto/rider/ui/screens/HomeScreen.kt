@@ -24,6 +24,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AccountCircle
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.GroupAdd
+import androidx.compose.material.icons.filled.Groups
 import androidx.compose.material.icons.filled.QrCode2
 import androidx.compose.material.icons.filled.QrCodeScanner
 import androidx.compose.material3.Icon
@@ -284,9 +285,43 @@ fun HomeScreen(
                 }
             }
 
+            // 2.8 · Boa Vista(组长模式)固定入口:组长 → 我的团队;其他骑手 →
+            // 当组长 / 加入 / 转队。不再和营销活动抢同一张卡。
+            val lm = store.leaderMode
+            if (auth.isMember && lm != null && lm.city == true) {
+                val leaderUrl = lm.teamURL?.takeIf { lm.isLeader == true && it.isNotBlank() }
+                val applyUrl = lm.applyURL?.takeIf { it.isNotBlank() }
+                if (leaderUrl != null) {
+                    ActionRow(
+                        icon = Icons.Filled.Groups,
+                        title = loc.t("team.title"),
+                        detail = lm.stationName?.takeIf { it.isNotBlank() }?.let { "$it · ${loc.t("team.openHint")}" } ?: loc.t("team.openHint"),
+                        trailing = Icons.Filled.ChevronRight,
+                    ) {
+                        com.meponto.rider.data.Analytics.log("team_open")
+                        onOpenWeb(leaderUrl, loc.t("team.title"))
+                    }
+                } else if (applyUrl != null) {
+                    ActionRow(
+                        icon = Icons.Filled.GroupAdd,
+                        title = if (lm.inTeam == true) loc.t("team.switch") else loc.t("team.apply"),
+                        detail = loc.t("team.applyHint"),
+                        tone = Tone.NEUTRAL,
+                        trailing = Icons.Filled.ChevronRight,
+                    ) {
+                        com.meponto.rider.data.Analytics.log("leader_apply_open")
+                        onOpenWeb(applyUrl, loc.t("team.apply"))
+                    }
+                }
+            }
+
             // A4 · 活动入口卡。服务端已判定受众与生效窗口 —— 这里非 null 就渲染,
             // 客户端不再自己算日期(手机时钟不可信,时区也不一致)。
-            store.activityCard?.let { card ->
+            // 2.8:与上面固定入口同一链接的卡(老版本兜底用)不再重复显示。
+            store.activityCard?.takeIf { c ->
+                val l = c.linkURL.orEmpty()
+                l.isBlank() || (l != lm?.teamURL && l != lm?.applyURL)
+            }?.let { card ->
                 val link = card.linkURL.orEmpty()
                 val cardCtx = androidx.compose.ui.platform.LocalContext.current
                 Panel(
@@ -412,6 +447,10 @@ fun HomeScreen(
                     Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                         Text(loc.t("home.performance"), color = me.text, fontWeight = FontWeight.SemiBold, fontSize = 16.sp)
                         Spacer(Modifier.weight(1f))
+                        if (perf.source == "live") {
+                            com.meponto.rider.ui.components.Badge(loc.t("home.live"), Tone.WARNING)
+                            Spacer(Modifier.width(6.dp))
+                        }
                         if (perf.date.isNotBlank()) {
                             Text(perf.date, color = me.muted, fontSize = 11.sp, fontWeight = FontWeight.Bold)
                         }
@@ -438,13 +477,15 @@ fun HomeScreen(
                     Spacer(Modifier.size(12.dp))
                     Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                         KpiTile(loc.t("home.orders"), "${perf.orders}", me.accent, me.accentInk, Modifier.weight(1f))
-                        KpiTile(loc.t("home.hours"), String.format("%.1f", perf.tshHours), me.tertiary, androidx.compose.ui.graphics.Color.White, Modifier.weight(1f))
-                        KpiTile(loc.t("home.ar"), "${perf.acceptanceRate}%", me.secondary, me.secondaryInk, Modifier.weight(1f))
+                        // 实时冻结的天只有单量 —— 时长/接单率/取消率显示「—」而不是假的 0。
+                        val live = perf.source == "live"
+                        KpiTile(loc.t("home.hours"), if (live) loc.t("home.noData") else String.format("%.1f", perf.tshHours), me.tertiary, androidx.compose.ui.graphics.Color.White, Modifier.weight(1f))
+                        KpiTile(loc.t("home.ar"), if (live) loc.t("home.noData") else "${perf.acceptanceRate}%", me.secondary, me.secondaryInk, Modifier.weight(1f))
                     }
                     Spacer(Modifier.size(10.dp))
                     Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                         perf.tshPercent?.let { KpiTile(loc.t("home.tshPct"), String.format("%.0f%%", it), me.ok, androidx.compose.ui.graphics.Color.White, Modifier.weight(1f)) }
-                        KpiTile(loc.t("home.caa"), String.format("%.1f%%", perf.cancelledOrders.toDouble()), me.danger, androidx.compose.ui.graphics.Color.White, Modifier.weight(1f))
+                        KpiTile(loc.t("home.caa"), if (perf.source == "live") loc.t("home.noData") else String.format("%.1f%%", perf.cancelledOrders.toDouble()), me.danger, androidx.compose.ui.graphics.Color.White, Modifier.weight(1f))
                         perf.weekOrders?.let { KpiTile(loc.t("home.week"), "$it", me.warning, androidx.compose.ui.graphics.Color.White, Modifier.weight(1f)) }
                     }
                     // SECOND source — rider-status aggregate (lifetime), shown

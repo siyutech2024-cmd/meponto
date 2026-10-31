@@ -540,6 +540,29 @@ export async function GET(request: Request) {
       // 业务方 2026-10-30): a leader sees "Minha equipe" first, then any
       // marketing activity, and only then a leader-mode rider sees the
       // apply / join-a-team entry. Links open in the app's logged-in WebView.
+      // Leader Mode block for app 2.8+ / the web rider app: fixed entries
+      // (team / apply) and the Boa Vista notices, independent of the single
+      // activity-card slot. null outside leader-mode cities (old clients ignore it).
+      leaderMode: (() => {
+        if (!leaderModeCity) return null;
+        const origin = new URL(request.url).origin;
+        const riderPage = (page: string) => (/meponto\.com$/.test(new URL(request.url).hostname) ? `https://app.meponto.com/${page}` : `${origin}/rider-app/${page}`);
+        const myStation = memory.pontos.find(
+          (p) => p.leaderRiderId === rider.id && p.stationStatus !== "closed" && p.stationStatus !== "suspended",
+        );
+        const memberOf = memory.pontos.find((p) => p.name === rider.ponto && p.franchise === rider.franchise);
+        return {
+          city: true,
+          isLeader: !!myStation,
+          stationName: myStation?.name ?? rider.ponto ?? "",
+          inTeam: !!memberOf?.leaderRiderId && !myStation,
+          teamURL: myStation ? riderPage("team") : null,
+          applyURL: riderPage("leader-apply"),
+          scheduleNotice: "Sua cidade não usa escala — fique online quando quiser.",
+          walletNotice: "Na sua cidade os ganhos das entregas são pagos pela 99. A MePonto paga apenas a comissão semanal do líder.",
+          liveKpiNotice: "Ao vivo · a 99 confirma depois",
+        };
+      })(),
       activityCard: (() => {
         // Rider pages live on app.meponto.com (proxy.ts riderSections); local/dev keeps its own origin.
         const origin = new URL(request.url).origin;

@@ -51,11 +51,17 @@ export default function TeamPage() {
   const [data, setData] = useState<TeamData | null>(null);
   const [error, setError] = useState("");
   const [showOffline, setShowOffline] = useState(false);
+  // Opened in a browser (iPhone) without a session → log in, then come back here.
+  const [needLogin, setNeedLogin] = useState(false);
 
   const load = useCallback(async () => {
     setError("");
     const r = await fetch("/api/rider/team", { cache: "no-store" });
     const payload = await r.json().catch(() => ({}));
+    if (r.status === 401) {
+      setNeedLogin(true);
+      return;
+    }
     if (!r.ok) {
       setError(payload.error ?? "Não foi possível carregar.");
       return;
@@ -82,11 +88,19 @@ export default function TeamPage() {
           <button type="button" className="tag inline-flex items-center gap-1" onClick={() => void load()}><RefreshCcw size={13} /> Atualizar</button>
         </div>
 
+        {needLogin && (
+          <div className="rounded-[12px] border border-[#e4e1da] bg-white p-4">
+            <div className="text-sm font-black">Entre para ver sua equipe</div>
+            <p className="mt-1 text-[12px] font-bold text-[#77746f]">Use o mesmo celular cadastrado na MePonto. Depois do código você volta direto para esta página.</p>
+            <a className="mt-3 inline-flex rounded-full bg-[#ffd100] px-4 py-2 text-sm font-black text-[#111]" href="/register?next=/team">Entrar</a>
+          </div>
+        )}
         {error && <div className="rounded-[12px] border border-[#f1c6c6] bg-white p-4 text-sm font-bold text-[#b42318]">{error}</div>}
-        {!data && !error && <div className="text-sm font-bold text-[#77746f]">Carregando…</div>}
+        {!data && !error && !needLogin && <div className="text-sm font-bold text-[#77746f]">Carregando…</div>}
         {data && !data.isLeader && (
           <div className="rounded-[12px] border border-[#e4e1da] bg-white p-4 text-sm font-bold text-[#77746f]">
-            Esta página é para líderes de equipe. Se quer abrir sua estação ou entrar numa equipe, use “Seja líder ou entre numa equipe”.
+            Esta página é para líderes de equipe. Se quer abrir sua estação ou entrar numa equipe,{" "}
+            <a className="underline" href="/leader-apply">seja líder ou entre numa equipe</a>.
           </div>
         )}
 

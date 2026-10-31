@@ -43,9 +43,11 @@ export default function LeaderApplyPage() {
   const [proposedName, setProposedName] = useState("");
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState<{ tone: "ok" | "err"; text: string } | null>(null);
+  const [needLogin, setNeedLogin] = useState(false);
 
   const load = useCallback(async () => {
     const response = await fetch("/api/leaders?applyContext=1", { headers: HEADERS, cache: "no-store" });
+    if (response.status === 401) setNeedLogin(true); // browser (iPhone) without a session
     if (response.ok) setContext((await response.json()).data as ApplyContext);
     else setContext({ eligible: false });
   }, []);
@@ -87,7 +89,14 @@ export default function LeaderApplyPage() {
 
         {context === null && <div className="text-sm font-bold text-[#77746f]">Carregando…</div>}
 
-        {context?.eligible === false && (
+        {needLogin && (
+          <div className="rounded-[12px] border border-[#e4e1da] bg-white p-4">
+            <div className="text-sm font-black">Entre para continuar</div>
+            <p className="mt-1 text-[12px] font-bold text-[#77746f]">Use o mesmo celular cadastrado na MePonto. Depois do código você volta direto para esta página.</p>
+            <a className="mt-3 inline-flex rounded-full bg-[#ffd100] px-4 py-2 text-sm font-black text-[#111]" href="/register?next=/leader-apply">Entrar</a>
+          </div>
+        )}
+        {!needLogin && context?.eligible === false && (
           <div className="rounded-[12px] border border-[#e4e1da] bg-white p-4 text-sm font-bold text-[#77746f]">
             Este recurso ainda não está disponível na sua região.
           </div>

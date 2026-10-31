@@ -33,7 +33,7 @@ type RiderRow = {
   pool?: "standard" | "pro";
 };
 
-type Network = { franchises: Array<{ id: string; name: string }>; stations: Array<{ id: string; name: string; franchise?: string }> };
+type Network = { franchises: Array<{ id: string; name: string }>; stations: Array<{ id: string; name: string; franchise?: string; leaderRiderId?: string; leaderPixKey?: string }> };
 
 const HEADERS = { "Content-Type": "application/json", "x-vento-role": "Super Admin" };
 const isUnassigned = (value?: string) => !value || value === "Unassigned";
@@ -423,7 +423,12 @@ export default function RidersPage() {
       label: t("rdColRider"),
       className: "max-w-[220px]",
       render: (rider) => {
-        const noPix = rider.source === "profile" && String(rider.pix ?? "").trim() === "";
+        // Boa Vista (业务方 2026-10-31): riders there are paid by 99, so a missing
+        // Pix only matters for a LEADER (weekly commission) — flagged only when
+        // neither the station payee Pix nor the leader's own Pix is set.
+        const leaderStation = rg.isBoaVista ? network.stations.find((s) => s.leaderRiderId === rider.id) : undefined;
+        const noPix = rider.source === "profile" && String(rider.pix ?? "").trim() === "" &&
+          (!rg.isBoaVista || (!!leaderStation && String(leaderStation.leaderPixKey ?? "").trim() === ""));
         const isPro = rider.pool === "pro";
         return (
           <div>

@@ -19,6 +19,8 @@ data class Performance(
     val tshPercent: Double? = null,
     val weekOrders: Int? = null,
     val weekOnlineHours: Double? = null,
+    /** "live" = 实时冻结单量(无接单率/取消率/时长),否则 T+1 日报。 */
+    val source: String = "t1",
 )
 
 data class StatusTotals(

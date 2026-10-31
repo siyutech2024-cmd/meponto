@@ -87,6 +87,7 @@ data class RiderSnapshot(
     val activityCard: com.meponto.rider.data.remote.ActivityCardDto? = null,
     val pointCashRateBRL: Double? = null,
     val statusTotals: StatusTotals? = null,
+    val leaderMode: com.meponto.rider.data.remote.LeaderModeDto? = null,
 )
 
 /**
@@ -254,6 +255,7 @@ class RiderRepository(context: Context) {
             referrals = home?.referrals,
             pool = home?.pool,
             activityCard = home?.activityCard,
+            leaderMode = home?.leaderMode,
             pointCashRateBRL = home?.pointCashRateBRL,
             statusTotals = home?.statusTotals?.let { t ->
                 StatusTotals(t.totalOrders ?: 0, t.onlineHours ?: 0.0, t.ar ?: 0.0, t.lastReportDate ?: "")
@@ -423,6 +425,7 @@ class RiderRepository(context: Context) {
         tshPercent = tshPercent,
         weekOrders = weekOrders?.toInt(),
         weekOnlineHours = weekOnlineHours,
+        source = source ?: "t1",
     )
 
     private fun LedgerDto.toDomain() = LedgerEntry(

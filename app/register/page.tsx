@@ -34,6 +34,18 @@ function maskCpf(value: string): string {
  * "link by CPF" (phone changed — rebind, points preserved). One SMS either way,
  * no dead ends, no double login after signup.
  */
+/**
+ * Where to land after login. Default the mall storefront; `?next=` may send the
+ * rider back to a Leader Mode page they opened in a browser (iPhone has no app
+ * entry yet). Whitelist only — never an arbitrary URL (open-redirect).
+ */
+const NEXT_ALLOWED = new Set(["/team", "/leader-apply"]);
+function afterLoginPath(): string {
+  if (typeof window === "undefined") return "/store";
+  const next = new URLSearchParams(window.location.search).get("next") ?? "";
+  return NEXT_ALLOWED.has(next) ? next : "/store";
+}
+
 export default function RegisterPage() {
   const [mode, setMode] = useState<"register" | "login">("login");
   const [form, setForm] = useState<SignupForm>({ name: "", phone: "", cpf: "", inviterId: "", birthday: "" });
@@ -94,7 +106,7 @@ export default function RegisterPage() {
       }
       if (payload.data?.name) {
         writeSession({ name: payload.data.name, role: "Rider", portal: "rider", organization: "", identifier: payload.data.email ?? "" });
-        window.location.href = "/store";
+        window.location.href = afterLoginPath();
         return;
       }
       throw new Error("Resposta inesperada do servidor.");
@@ -171,7 +183,7 @@ export default function RegisterPage() {
       // logged in straight away (no SMS) — the server returns a full session.
       if (payload.data?.portal && payload.data?.name) {
         writeSession({ name: payload.data.name, role: payload.data.role || "Rider", portal: payload.data.portal, organization: payload.data.organization || "", identifier: phone });
-        window.location.href = "/store";
+        window.location.href = afterLoginPath();
         return;
       }
       if (payload.data?.needsCpf) {
@@ -228,7 +240,7 @@ export default function RegisterPage() {
       }
       // Land on a real page (the mall storefront) — NOT "/", which on
       // app.meponto.com redirects back to the deprecated rider web → /register loop.
-      window.location.href = "/store";
+      window.location.href = afterLoginPath();
     } catch (err) {
       setError((err as Error).message);
       setState("idle");

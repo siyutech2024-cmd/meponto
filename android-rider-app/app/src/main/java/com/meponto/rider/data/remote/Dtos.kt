@@ -210,6 +210,24 @@ data class RiderHomeDto(
     val activityCard: ActivityCardDto? = null,
     val pointCashRateBRL: Double? = null,
     val statusTotals: StatusTotalsDto? = null,
+    /** 2.8 · 组长模式城市(Boa Vista)。null = 不是组长模式城市。 */
+    val leaderMode: LeaderModeDto? = null,
+)
+
+/**
+ * 2.8 · 组长模式(Boa Vista)。服务端判定;文案由服务端下发(葡语),
+ * 客户端只负责摆放。全部可空。
+ */
+data class LeaderModeDto(
+    val city: Boolean? = null,
+    val isLeader: Boolean? = null,
+    val inTeam: Boolean? = null,
+    val stationName: String? = null,
+    val teamURL: String? = null,
+    val applyURL: String? = null,
+    val scheduleNotice: String? = null,
+    val walletNotice: String? = null,
+    val liveKpiNotice: String? = null,
 )
 
 /** A4 · 活动入口卡(全部字段可空 —— 老客户端忽略,新客户端容错). */
@@ -349,6 +367,8 @@ data class PerformanceDto(
     val date: String? = null,
     val weekOrders: Double? = null,
     val weekOnlineHours: Double? = null,
+    /** "t1" = 日报表格;"live" = 实时看板按天冻结(只有单量,无 AR/CAA/时长)。 */
+    val source: String? = null,
 )
 
 data class LedgerDto(

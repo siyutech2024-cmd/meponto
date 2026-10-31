@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CalendarMonth
+import androidx.compose.material.icons.filled.Groups
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Map
 import androidx.compose.material.icons.filled.ShoppingBag
@@ -79,7 +80,9 @@ fun RootScaffold() {
         TabSpec("tab.home", Icons.Filled.Home),
         // Wallet tab temporarily removed (product decision): payouts move
         // through the ops flow; WalletScreen stays for when it returns.
-        TabSpec("tab.shifts", Icons.Filled.CalendarMonth),
+        // 2.8 · Boa Vista(组长模式)没有排班:同一个位置换成「团队」。
+        if (store.isLeaderModeCity) TabSpec("tab.team", Icons.Filled.Groups)
+        else TabSpec("tab.shifts", Icons.Filled.CalendarMonth),
         TabSpec("tab.mall", Icons.Filled.ShoppingBag),
         TabSpec("tab.map", Icons.Filled.Map),
     )
@@ -157,7 +160,11 @@ fun RootScaffold() {
                         // 站外交给系统浏览器 —— 判定只有 WebLinks 一处。
                         onOpenWeb = { url, title -> webTarget = url to title },
                     )
-                    1 -> ShiftsScreen()
+                    1 -> if (store.isLeaderModeCity) {
+                        com.meponto.rider.ui.screens.TeamScreen(onOpenWeb = { url, title -> webTarget = url to title })
+                    } else {
+                        ShiftsScreen()
+                    }
                     2 -> MallScreen()
                     else -> MapScreen()
                 }
