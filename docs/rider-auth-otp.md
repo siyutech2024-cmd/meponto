@@ -60,6 +60,28 @@ TWILIO_FROM=+1xxxxxxxxxx        # 你的 Twilio 发送号(或 messaging service 
 > 巴西后续降本方向:WhatsApp 认证消息优先 + SMS 兜底。想换 Zenvia/Infobip 时,
 > 只在 `sendOtp` 加一个 provider 函数即可。
 
+## 短信通道健康与告警(2026-11 新增)
+
+**背景**:2026-10-31 阿里云套餐包用完(`AMOUNT_NOT_ENOUGH`),Twilio 兜底又早已 401
+(凭据失效),所有验证码连续失败数日,直到骑手登不上才被发现。`sendOtp` 现在把每次投递
+结果交给 `app/lib/server/sms-health.ts`:
+
+- **发送失败** → 总部通知中心立刻出现「短信发送失败 — 骑手收不到验证码」,正文直接写明
+  处理动作(套餐用完→去阿里云充值;401→更新 Twilio Token)。同一原因每小时最多提醒一次,
+  原因变化立即再报;连续 3 次起级别升为 Critical。
+- **恢复** → 一条「短信通道已恢复」。
+- **套餐用量预警**(可选,需配置):本套餐已发条数达 **80%** 与 **95%** 各提醒一次。
+  阿里云国际短信预付费套餐没有余量查询 API,所以由系统自己计数:
+
+```
+SMS_PACKAGE_SIZE=1000           # 本次购买的套餐条数
+SMS_PACKAGE_SINCE=2026-11-02    # 购买日期;改动这个值即重新计数
+```
+
+- 状态随时可查:`GET /api/health` 返回 `sms` 块(最近成功/失败时间、失败原因、连续失败
+  次数、本套餐已发/套餐大小/用量百分比、两家服务商是否配置)。
+- 存储:一条 `systemSettings` 记录(`id: sms-health`,系统自动维护),不新增集合。
+
 ## 验证码存储(Supabase 持久化)
 
 验证码挑战存 `otp_challenges` 表(migration `20260703090000_otp_challenges.sql`),

@@ -1,5 +1,6 @@
 import { jsonResponse, memory, makeServerId, appendServerAudit } from "../../lib/server/memory";
 import { refreshCollectionsFromDatabase, flushPendingToDatabase } from "../../lib/server/persistence";
+import { recordSmsOutcome, type SmsOutcome } from "../../lib/server/sms-health";
 import { createSessionToken, sessionCookie, sessionFromRequest } from "../../lib/auth-session";
 import { getOtpChallenge, setOtpChallenge, deleteOtpChallenge, type OtpSignupData } from "../../lib/server/otp-store";
 import { normalizeBrPhone, phoneDigits, samePhone } from "../../lib/phone";
@@ -155,10 +156,12 @@ function aliyunEncode(s: string): string {
  * SendMessageToGlobe — free-form message, no signature/template review needed.
  * Docs: https://help.aliyun.com/zh/sms/developer-reference/api-dysmsapi-2018-05-01-sendmessagetoglobe
  */
-async function sendViaAliyun(phone: string, code: string): Promise<boolean> {
+type ProviderResult = { ok: true } | { ok: false; reason: string; configured: boolean };
+
+async function sendViaAliyun(phone: string, code: string): Promise<ProviderResult> {
   const accessKeyId = process.env.ALIYUN_SMS_ACCESS_KEY_ID;
   const accessKeySecret = process.env.ALIYUN_SMS_ACCESS_KEY_SECRET;
-  if (!accessKeyId || !accessKeySecret) return false;
+  if (!accessKeyId || !accessKeySecret) return { ok: false, reason: "not configured", configured: false };
   try {
     const params: Record<string, string> = {
       AccessKeyId: accessKeyId,
@@ -191,21 +194,21 @@ async function sendViaAliyun(phone: string, code: string): Promise<boolean> {
     const data = (await resp.json().catch(() => ({}))) as { ResponseCode?: string; ResponseDescription?: string };
     if (data.ResponseCode !== "OK") {
       console.warn(`[member-login] Aliyun SMS failed: ${data.ResponseCode ?? resp.status} ${data.ResponseDescription ?? ""}`);
-      return false;
+      return { ok: false, reason: `${data.ResponseCode ?? resp.status}${data.ResponseDescription ? ` ${data.ResponseDescription}` : ""}`.slice(0, 160), configured: true };
     }
-    return true;
+    return { ok: true };
   } catch (err) {
     console.warn("[member-login] Aliyun SMS error", err);
-    return false;
+    return { ok: false, reason: `error ${(err as Error).message ?? ""}`.slice(0, 160), configured: true };
   }
 }
 
 /** Twilio SMS: free-text message, kept as fallback provider. */
-async function sendViaTwilio(phone: string, code: string): Promise<boolean> {
+async function sendViaTwilio(phone: string, code: string): Promise<ProviderResult> {
   const sid = process.env.TWILIO_ACCOUNT_SID;
   const token = process.env.TWILIO_AUTH_TOKEN;
   const from = process.env.TWILIO_FROM;
-  if (!sid || !token || !from) return false;
+  if (!sid || !token || !from) return { ok: false, reason: "not configured", configured: false };
   const text = `MePonto: seu código de acesso é ${code}. Válido por 5 minutos.`;
   try {
     const to = normalizeBrPhone(phone); // canonical E.164 with "+"
@@ -220,12 +223,12 @@ async function sendViaTwilio(phone: string, code: string): Promise<boolean> {
     });
     if (!resp.ok) {
       console.warn(`[member-login] Twilio SMS failed (${resp.status})`);
-      return false;
+      return { ok: false, reason: String(resp.status), configured: true };
     }
-    return true;
+    return { ok: true };
   } catch (err) {
     console.warn("[member-login] Twilio SMS error", err);
-    return false;
+    return { ok: false, reason: `error ${(err as Error).message ?? ""}`.slice(0, 160), configured: true };
   }
 }
 
@@ -245,11 +248,24 @@ async function sendOtp(phone: string, code: string): Promise<"sent" | "dev" | "f
     return "dev";
   }
   const forced = process.env.SMS_PROVIDER;
-  const order = forced === "twilio" ? [sendViaTwilio, sendViaAliyun] : [sendViaAliyun, sendViaTwilio];
-  for (const send of order) {
-    if (await send(phone, code)) return "sent";
+  const order: Array<[SmsOutcome["provider"], typeof sendViaAliyun]> =
+    forced === "twilio" ? [["twilio", sendViaTwilio], ["aliyun", sendViaAliyun]] : [["aliyun", sendViaAliyun], ["twilio", sendViaTwilio]];
+  // Every attempt is reported to the health monitor (HQ alert on failure,
+  // package-usage warning on success) — the loop that was missing when both
+  // providers silently failed for days in Oct 2026.
+  const attempts: SmsOutcome[] = [];
+  let delivered = false;
+  for (const [provider, send] of order) {
+    const result = await send(phone, code);
+    if (result.ok) {
+      attempts.push({ provider, ok: true });
+      delivered = true;
+      break;
+    }
+    if (result.configured) attempts.push({ provider, ok: false, reason: result.reason });
   }
-  return "failed";
+  await recordSmsOutcome(attempts);
+  return delivered ? "sent" : "failed";
 }
 
 // ---- Sign in with Google (rider identity, not a separate account) ----
