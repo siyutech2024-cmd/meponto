@@ -448,6 +448,19 @@ async function handlePost(request: Request) {
       if (station?.franchise && station.franchise !== nextFranchise) nextPonto = "Unassigned";
     }
 
+    // Leader teams hold at most TEAM_SIZE.max riders (业务方 2026-10-31, leader
+    // excluded). Only a move INTO a team is checked — nobody already in a
+    // team is ever pushed out, and São Paulo stations have no leader team.
+    if (nextPonto !== "Unassigned" && nextPonto !== memory.riders[index].ponto) {
+      const target = memory.pontos.find((p) => p.name === nextPonto);
+      if (target?.leaderRiderId && memory.riders[index].id !== target.leaderRiderId) {
+        const { TEAM_SIZE, teamMemberCount } = await import("../../lib/leader-mode");
+        if (teamMemberCount(target, memory.riders) >= TEAM_SIZE.max) {
+          return jsonResponse({ error: `团队「${target.name}」已满 ${TEAM_SIZE.max} 人(不含组长)`, code: "team_full" }, { status: 409 });
+        }
+      }
+    }
+
     // 模式二: pool changes are audited SEPARATELY (who moved whom in/out of
     // the PRO pool must always be answerable — plan doc §3-S0 / M1).
     const prevPool = memory.riders[index].pool ?? "standard";

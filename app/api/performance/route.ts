@@ -269,6 +269,97 @@ async function performanceDirect(url: URL, regionCtx: RegionCtx = null): Promise
   }
 }
 
+/**
+ * Boa Vista "T+1 数据" page while Boa Vista has no T+1 tables: one day at a
+ * time, T+1 rows win when imported; otherwise the frozen live ledger (past
+ * days, attributed to the station of that day) or the newest realtime batch
+ * (today). Orders + online hours only — TSH/AR/CAA stay N/A until T+1.
+ * No money: Boa Vista riders are paid by 99.
+ */
+async function boaVistaLivePerformance(url: URL, regionCtx: NonNullable<RegionCtx>): Promise<Response> {
+  const { brtToday, latestCityBatch, loadLeaderDaily } = await import("../../lib/server/leader-daily");
+  const FROM = "2026-10-26"; // first day of Boa Vista live data
+  const today = brtToday();
+  const riders = await fetchRows<Rider>("riders");
+  const inBv = (r: Rider) => regionCtx.inRegion(r.franchise) || !!r.seenInBoaVista;
+  const bvIds = new Set(riders.filter((r) => r.ninetyNineId && inBv(r)).map((r) => String(r.ninetyNineId)));
+  const [ldo, t1All, batch] = await Promise.all([
+    loadLeaderDaily(FROM, today),
+    fetchRows<RiderDailyKpi>("riderDailyKpis", [{ op: "gte", field: "date", value: FROM }]),
+    latestCityBatch().catch(() => null),
+  ]);
+  const t1 = t1All.filter((r) => bvIds.has(String(r.rider99Id)));
+  const t1Dates = new Set(t1.map((r) => r.date));
+  const dates = [...new Set([...ldo.map((r) => r.date), ...t1Dates, ...(batch ? [today] : [])])].sort().reverse();
+  const asked = url.searchParams.get("date");
+  const activeDate = asked && dates.includes(asked) ? asked : dates[0] ?? null;
+
+  const byNN = new Map(riders.filter((r) => r.ninetyNineId).map((r) => [String(r.ninetyNineId), r]));
+  const rowsFor = (date: string): { rows: Enriched[]; source: "t1" | "live" | "live-today" } => {
+    if (t1Dates.has(date)) return { rows: enrich(t1.filter((r) => r.date === date), riders), source: "t1" };
+    if (date === today && batch) {
+      const rows: Enriched[] = [];
+      for (const [ext, v] of batch.riders) {
+        const profile = byNN.get(ext);
+        rows.push({ date, rider99Id: ext, riderName: profile?.name || v.name, completedOrders: v.orders, onlineHours: Math.round((v.onlineMins / 60) * 10) / 10, ...locate(ext, riders) } as Enriched);
+      }
+      return { rows, source: "live-today" };
+    }
+    return {
+      rows: ldo
+        .filter((r) => r.date === date)
+        .map((r) => {
+          const loc = locate(String(r.rider99Id), riders);
+          return {
+            date,
+            rider99Id: String(r.rider99Id),
+            riderName: r.riderName,
+            completedOrders: r.completedOrders ?? 0,
+            onlineHours: r.onlineMins != null ? Math.round((r.onlineMins / 60) * 10) / 10 : 0,
+            ...loc,
+            // Attribution of that day (D4), not today's station.
+            station: r.stationName ?? loc.station,
+            franchise: r.stationFranchise || loc.franchise,
+          } as Enriched;
+        }),
+      source: "live",
+    };
+  };
+
+  const franchise = url.searchParams.get("franchise");
+  const station = url.searchParams.get("station");
+  const picked = activeDate ? rowsFor(activeDate) : { rows: [] as Enriched[], source: "live" as const };
+  let rows = picked.rows;
+  if (franchise) rows = rows.filter((row) => row.franchise === franchise);
+  if (station) rows = rows.filter((row) => row.station === station);
+
+  const groupBy = (field: "station" | "franchise") => {
+    const map = new Map<string, Enriched[]>();
+    for (const row of rows) map.set(row[field], [...(map.get(row[field]) ?? []), row]);
+    return [...map.entries()]
+      .map(([key, group]) => ({ ...aggregateKpis(group, key), franchise: group[0].franchise }))
+      .sort((a, b) => b.completedOrders - a.completedOrders);
+  };
+  const trend: TrendPoint[] = [...dates]
+    .sort()
+    .slice(-30)
+    .map((d) => ({ date: d, orders: rowsFor(d).rows.reduce((s, r) => s + (r.completedOrders ?? 0), 0), proOrders: 0, settle: 0 }));
+
+  return jsonResponse({
+    data: {
+      date: activeDate,
+      dates,
+      trend,
+      riders: rows.sort((a, b) => (b.completedOrders ?? 0) - (a.completedOrders ?? 0)),
+      stations: groupBy("station"),
+      franchises: groupBy("franchise"),
+      total: aggregateKpis(rows, "total"),
+      earnings: { riders: [], stations: [], franchises: [], total: aggregateEarnings([], "total") },
+      liveSource: { mode: picked.source, batchAt: picked.source === "live-today" ? batch?.batchAt ?? null : null },
+    },
+  });
+}
+
 const num = (value: unknown) => {
   const parsed = Number(String(value ?? "").replace(",", "."));
   return Number.isFinite(parsed) ? parsed : 0;
@@ -452,6 +543,17 @@ export async function GET(request: Request) {
   // portals, i.e. the response is exactly what it was before.
   const regionPredicate = await regionFilter(request);
   const regionCtx: RegionCtx = regionPredicate ? { sjbv: regionParam(new URL(request.url)) === "sjbv", inRegion: regionPredicate } : null;
+
+  // Boa Vista menu (业务方 2026-11-03: "暂时按照实时看板的数据进行统计"):
+  // per day, the T+1 import when one exists, else the realtime board (frozen
+  // daily ledger for past days, the newest batch for today). Read-only.
+  if (regionCtx?.sjbv && !new URL(request.url).searchParams.get("mine")) {
+    try {
+      return await boaVistaLivePerformance(new URL(request.url), regionCtx);
+    } catch (error) {
+      console.warn(`[performance] boa vista live view failed, T+1 path. (${(error as Error).message})`);
+    }
+  }
 
   {
     const direct = await performanceDirect(new URL(request.url), regionCtx);

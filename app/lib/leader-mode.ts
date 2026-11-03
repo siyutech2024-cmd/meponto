@@ -190,6 +190,21 @@ export function isLeaderModeRider(
   return franchises.some((f) => f.name === rider.franchise && f.leaderMode === true);
 }
 
+/**
+ * Team size (业务方 2026-10-31: "每个组长管理 5-8 个骑手"). Riders managed,
+ * NOT counting the leader. MAX is enforced on every way into a team (HQ
+ * assignment, leader invite, application approval); MIN is the target shown.
+ */
+export const TEAM_SIZE = { min: 5, max: 8 } as const;
+
+/** Riders in a team, excluding its leader. */
+export function teamMemberCount(
+  station: { name: string; leaderRiderId?: string },
+  riders: ReadonlyArray<{ id: string; ponto?: string | null }>,
+): number {
+  return riders.filter((r) => r.ponto === station.name && r.id !== station.leaderRiderId).length;
+}
+
 export const LEADER_COMPONENT_KEYS = ["base", "bonus"] as const;
 
 /**

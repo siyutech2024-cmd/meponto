@@ -16,7 +16,7 @@
 
 import { requirePermission, scopeFromRequest } from "../../../lib/server/authz";
 import { fetchRows } from "../../../lib/server/db-read";
-import { closeWeekAssessments, listAssessments, upsertAssessments } from "../../../lib/server/db/leader-repo";
+import { closeStationsWeek, listAssessments, upsertAssessments } from "../../../lib/server/db/leader-repo";
 import {
   computeStationWeek,
   computeTrialProgress,
@@ -27,7 +27,7 @@ import {
   weekIdToDates,
   type LeaderAssessment,
 } from "../../../lib/leader-mode";
-import { loadLeaderDaily } from "../../../lib/server/leader-daily";
+import { freezeLeaderDay, latestCityBatch, loadLeaderDaily, type LeaderDailyOrders } from "../../../lib/server/leader-daily";
 import type { RiderDailyKpi } from "../../../lib/performance";
 import type { Ponto, Rider } from "../../../lib/data";
 import type { Franchise } from "../../../lib/network";
@@ -38,6 +38,15 @@ function jsonResponse(payload: unknown, init?: ResponseInit): Response {
     headers: { "Content-Type": "application/json; charset=utf-8", ...(init?.headers ?? {}) },
   });
 }
+
+/** A leader station = has, or once had, a real leader (not the pool). */
+function isLeaderStation(p: Ponto): boolean {
+  return (!!p.leaderRiderId || (p.leaderHistory ?? []).some((h) => !!h.riderId)) &&
+    (p.stationStatus === undefined || p.stationStatus === "active" || p.stationStatus === "trial");
+}
+
+/** First day with live Boa Vista data — nothing to freeze before it. */
+const LIVE_DATA_FROM = "2026-10-26";
 
 function todayYmd(): string {
   // America/Sao_Paulo local date (design hard rule 13).
@@ -69,12 +78,58 @@ export async function GET(request: Request) {
   if (franchises.length === 0) return jsonResponse({ data: { week, today, franchises: [] } });
 
   const weekDays = weekIdToDates(week);
-  const [pontos, riders, t1RowsAll, liveRowsAll] = await Promise.all([
+  let [pontos, riders, t1RowsAll, liveRowsAll] = await Promise.all([
     fetchRows<Ponto>("pontos"),
     fetchRows<Rider>("riders"),
     loadWeekKpiRows(week),
-    weekDays.length ? loadLeaderDaily(weekDays[0], weekDays[6]) : Promise.resolve([]),
+    weekDays.length ? loadLeaderDaily(weekDays[0], weekDays[6]) : Promise.resolve([] as LeaderDailyOrders[]),
   ]);
+
+  // Self-heal (2026-11-03): a past day of this week with neither a T+1 import
+  // nor a frozen live day is frozen now — the nightly job may not have run.
+  // Insert-only; at most 3 days per view; managers only.
+  if (!requirePermission(request, "manage_leaders") && !scope.franchise && !scope.station) {
+    const leaderRider99 = new Set(riders.filter((r) => franchises.some((f) => f.name === r.franchise) && r.ninetyNineId).map((r) => String(r.ninetyNineId)));
+    const covered = new Set([
+      ...t1RowsAll.filter((r) => leaderRider99.has(String(r.rider99Id))).map((r) => r.date),
+      ...liveRowsAll.map((r) => r.date),
+    ]);
+    const missing = weekDays.filter((d) => d < today && d >= LIVE_DATA_FROM && !covered.has(d)).slice(0, 3);
+    if (missing.length) {
+      for (const d of missing) await freezeLeaderDay(d).catch(() => null);
+      [riders, liveRowsAll] = await Promise.all([fetchRows<Rider>("riders"), loadLeaderDaily(weekDays[0], weekDays[6])]);
+    }
+  }
+
+  // Today so far, from the realtime board (业务方 2026-11-03: "暂时都按照实时
+  // 看板的数据进行统计"). Shown only — never stored, never counted by the
+  // close-week gate, replaced by the frozen day after midnight.
+  let todayBatchAt: string | null = null;
+  if (weekDays.includes(today)) {
+    const batch = await latestCityBatch().catch(() => null);
+    if (batch) {
+      todayBatchAt = batch.batchAt;
+      const by99 = new Map(riders.filter((r) => r.ninetyNineId).map((r) => [String(r.ninetyNineId), r]));
+      for (const [ext, v] of batch.riders) {
+        const rider = by99.get(ext);
+        if (!rider?.franchise || !franchises.some((f) => f.name === rider.franchise)) continue;
+        const station = rider.ponto ? pontos.find((p) => p.name === rider.ponto && p.franchise === rider.franchise) : undefined;
+        liveRowsAll.push({
+          id: `ldo-${today}-${ext}`,
+          date: today,
+          rider99Id: ext,
+          riderName: rider.name || v.name,
+          completedOrders: v.orders,
+          ...(station ? { stationId: station.id, stationName: station.name } : {}),
+          stationFranchise: rider.franchise,
+          source: "live",
+          readings: 1,
+          onlineMins: v.onlineMins,
+          frozenAt: batch.batchAt,
+        });
+      }
+    }
+  }
 
   const result: Array<{
     franchise: string;
@@ -87,6 +142,8 @@ export async function GET(request: Request) {
     liveDates: string[];
     /** Trial stations: 14-day progress toward promotion (decision 9). */
     trialProgress: Record<string, TrialProgress>;
+    /** Today's numbers come from this realtime batch (not frozen yet). */
+    todayLiveAt?: string | null;
   }> = [];
 
   const toPersist: LeaderAssessment[] = [];
@@ -99,12 +156,7 @@ export async function GET(request: Request) {
 
     // A station that never had a leader (e.g. the SJBV pool station every
     // unassigned rider sits in) is not a leader station: no assessment, no pay.
-    let stations = pontos.filter(
-      (p) =>
-        p.franchise === franchise.name &&
-        (!!p.leaderRiderId || (p.leaderHistory?.length ?? 0) > 0) &&
-        (p.stationStatus === undefined || p.stationStatus === "active" || p.stationStatus === "trial"),
-    );
+    let stations = pontos.filter((p) => p.franchise === franchise.name && isLeaderStation(p));
     if (scope.station) {
       stations = stations.filter((p) => p.id === scope.station || p.name === scope.station);
     }
@@ -154,13 +206,13 @@ export async function GET(request: Request) {
       ]);
       const span: string[] = [];
       for (let d = new Date(`${from}T12:00:00Z`); d.toISOString().slice(0, 10) <= today; d = new Date(d.getTime() + 864e5)) span.push(d.toISOString().slice(0, 10));
-      const trialRows = mergeLeaderWeekRows({ franchise: franchise.name, dates: span, t1Rows: t1Trial, liveRows: liveTrial, franchiseRider99Ids }).rows;
+      const trialRows = mergeLeaderWeekRows({ franchise: franchise.name, dates: span, t1Rows: t1Trial, liveRows: [...liveTrial, ...liveRowsAll.filter((r) => r.date === today)], franchiseRider99Ids }).rows;
       for (const st of trialStations) {
         trialProgress[st.id] = computeTrialProgress({ stationId: st.id, startedAt: st.trialStartedAt!, today, rows: trialRows, minOrdersPerActiveRider: defaultLeaderTargets.minOrdersPerActiveRider });
       }
     }
 
-    result.push({ franchise: franchise.name, assessments, untaggedRider99Ids: Array.from(untagged), t1Dates: merged.t1Dates, liveDates: merged.liveDates, trialProgress });
+    result.push({ franchise: franchise.name, assessments, untaggedRider99Ids: Array.from(untagged), t1Dates: merged.t1Dates, liveDates: merged.liveDates.filter((d) => d !== today), todayLiveAt: todayBatchAt, trialProgress });
   }
 
   await upsertAssessments(toPersist);
@@ -207,7 +259,10 @@ export async function POST(request: Request) {
   }
 
   const closedAt = new Date().toISOString();
-  await closeWeekAssessments(franchiseName, week, closedAt);
+  // Close only CURRENT leader stations' rows (a stale pool row stays open).
+  const pontosNow = await fetchRows<Ponto>("pontos");
+  const eligible = new Set(pontosNow.filter((p) => p.franchise === franchiseName && isLeaderStation(p)).map((p) => p.id));
+  await closeStationsWeek(franchiseName, week, provisional.filter((row) => eligible.has(row.stationId)).map((row) => row.stationId), closedAt);
   // NOTE: audit-trail entry moves to the audit fact table with Wave 3
   // (auditEntries lives in memory today; this route must stay memory-free).
   return jsonResponse({ data: { week, franchise: franchiseName, closed: provisional.length } });

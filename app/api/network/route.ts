@@ -74,6 +74,7 @@ type Body =
   | { action: "deleteStation"; stationId: string; force?: boolean }
   | { action: "setLeaderRates"; franchiseId: string; baseBRL: number; bonusBRL: number }
   | { action: "updateLeaderStation"; stationId: string; leaderRiderId?: string; leaderPixKey?: string; leaderCpf?: string; leaderCnpj?: string; stationStatus?: string }
+  | { action: "setLeaderInviteReview"; franchiseId: string; enabled: boolean }
   | { action: "addLeaderTeam"; parentStationId: string; leaderRiderId: string; teamName?: string; leaderPixKey?: string; leaderCpf?: string; leaderCnpj?: string; stationStatus?: string };
 
 async function handlePost(request: Request) {
@@ -202,6 +203,7 @@ async function handlePost(request: Request) {
           }
         } else {
           patch.leaderRiderId = undefined;
+          patch.leader = ""; // the displayed leader name goes with the leader
         }
       }
       if (body.leaderPixKey !== undefined) patch.leaderPixKey = str(body.leaderPixKey, 120);
@@ -232,6 +234,18 @@ async function handlePost(request: Request) {
         risk: "Medium",
       });
       return jsonResponse({ data: memory.pontos[index] });
+    }
+
+    case "setLeaderInviteReview": {
+      // HQ switch: leader invites join at once (default) or wait for review.
+      const scope = await scopeFromRequest(request);
+      if (scope.franchise || scope.station) return jsonResponse({ error: "HQ only" }, { status: 403 });
+      const { franchiseId, enabled } = body as { franchiseId?: string; enabled?: boolean };
+      const index = memory.franchises.findIndex((f) => f.id === franchiseId && f.leaderMode === true);
+      if (index === -1) return jsonResponse({ error: "franchise not found or leaderMode off" }, { status: 404 });
+      memory.franchises[index] = { ...memory.franchises[index], leaderInviteReview: enabled === true };
+      appendServerAudit({ actor, action: "LEADER_INVITE_MODE", entity: "Franchise", entityId: franchiseId ?? "", detail: `${memory.franchises[index].name}: 组长邀请${enabled === true ? "需后台审核" : "直接入组(后台收通知)"}`, risk: "Low" });
+      return jsonResponse({ data: memory.franchises[index] });
     }
 
     case "addLeaderTeam": {
@@ -273,7 +287,7 @@ async function handlePost(request: Request) {
         ridersCount: 0,
         nightShiftLevel: "—",
         leader: rider.name,
-        safetyScore: 0,
+        safetyScore: parent.safetyScore ?? 90,
         lat: parent.lat ?? 0,
         lng: parent.lng ?? 0,
         franchise: parent.franchise,

@@ -83,6 +83,21 @@ export async function closeWeekAssessments(franchise: string, week: string, clos
 }
 
 /**
+ * provisional → closed for the given stations only (2026-11-03). A stale
+ * provisional row of a station that is no longer a leader station (e.g. the
+ * pool, briefly given a leader by mistake) must never be closed and paid.
+ */
+export async function closeStationsWeek(franchise: string, week: string, stationIds: string[], closedAt: string): Promise<void> {
+  for (const stationId of stationIds) {
+    await updateRows(
+      "leader_assessments",
+      { franchise, week, station_id: stationId, state: "provisional" },
+      { state: "closed", closed_at: closedAt, updated_at: closedAt },
+    );
+  }
+}
+
+/**
  * closed → settled for the stations whose payment order now exists (design
  * §2.4). Per station (2026-10-30 fix): the old week-wide update also settled
  * stations SKIPPED for missing payee info, so they could never be paid for

@@ -10,6 +10,7 @@ import { useDialog } from "../components/dialog";
 import { useVentoStore } from "../lib/store";
 import { translate, type TranslationKey } from "../lib/i18n";
 import { useRegion } from "../lib/useRegion";
+import { TEAM_SIZE } from "../lib/leader-mode";
 import { REGION_CITY_ID } from "../lib/regions";
 
 type RiderRow = {
@@ -20,6 +21,7 @@ type RiderRow = {
   pix: string;
   ponto: string;
   franchise?: string;
+  seenInBoaVista?: string;
   status: string;
   ar: number;
   joinDate: string;
@@ -57,8 +59,11 @@ export default function RidersPage() {
   const [riders, setRiders] = useState<RiderRow[]>([]);
   const [network, setNetwork] = useState<Network>({ franchises: [], stations: [] });
   // Leader teams read "↳ Team · líder X" so ops can tell the pool from a team.
-  const stationLabel = (s: Network["stations"][number]) =>
-    s.parentStationId ? `↳ ${s.name}${s.leader ? ` · ${s.leader}` : ""}` : s.leaderRiderId && s.leader ? `${s.name} · ${s.leader}` : s.name;
+  // Teams also show their size against the cap (leader not counted).
+  const stationLabel = (s: Network["stations"][number]) => {
+    const size = s.leaderRiderId ? ` (${riders.filter((r) => r.ponto === s.name && r.id !== s.leaderRiderId).length}/${TEAM_SIZE.max})` : "";
+    return s.parentStationId ? `↳ ${s.name}${s.leader ? ` · ${s.leader}` : ""}${size}` : s.leaderRiderId && s.leader ? `${s.name} · ${s.leader}${size}` : s.name;
+  };
   const [query, setQuery] = useState("");
   const [stationFilter, setStationFilter] = useState("");
   const [franchiseFilter, setFranchiseFilter] = useState("");
@@ -278,17 +283,22 @@ export default function RidersPage() {
     if (!(await dialog.confirm(t("rdConfirmSaveQ", { n: entries.length }), { message: entries.map(([, e]) => `· ${e.name} → ${e.franchise ?? t("rdUnchanged")} / ${e.ponto || t("rdPendingVal")}`).join("\n"), confirmText: t("rdConfirmSave") }))) return;
     setSaving(true);
     let failed = 0;
+    let firstError = "";
     for (const [riderId, entry] of entries) {
       const response = await fetch("/api/riders", {
         method: "POST",
         headers: HEADERS,
         body: JSON.stringify({ action: "assign", riderId, ...(entry.ponto !== undefined ? { ponto: entry.ponto } : {}), ...(entry.franchise !== undefined ? { franchise: entry.franchise } : {}) }),
       });
-      if (!response.ok) failed += 1;
+      if (!response.ok) {
+        failed += 1;
+        // Keep the first reason (e.g. a leader team already full) for the banner.
+        if (!firstError) firstError = ((await response.json().catch(() => ({}))) as { error?: string }).error ?? "";
+      }
     }
     setSaving(false);
     setPending({});
-    setMessage(failed ? { tone: "err", text: t("rdSavePartial", { ok: entries.length - failed, fail: failed }) } : { tone: "ok", text: t("rdSaveOk", { n: entries.length }) });
+    setMessage(failed ? { tone: "err", text: `${t("rdSavePartial", { ok: entries.length - failed, fail: failed })}${firstError ? ` — ${firstError}` : ""}` } : { tone: "ok", text: t("rdSaveOk", { n: entries.length }) });
     void load();
   }
 
@@ -296,6 +306,9 @@ export default function RidersPage() {
     (rider: RiderRow) => {
       if (rg.scoped) return true; // tenant portals: already scoped server-side
       if (isUnassigned(rider.franchise) && boaVistaSeen.has(String(rider.ninetyNineId ?? ""))) return rg.isBoaVista;
+      // Seen in the Boa Vista online records with a profile elsewhere (业务方
+      // 2026-11-03): listed in Boa Vista too; still listed in their own region.
+      if (rg.isBoaVista && rider.seenInBoaVista) return true;
       return rg.inRegion(rider.franchise);
     },
     [rg, boaVistaSeen],
@@ -464,6 +477,11 @@ export default function RidersPage() {
                 </button>
               )}
               {rider.source === "report" && <span className="text-[10px] font-black uppercase text-[var(--warning-ink)]">{t("rdReportNoProfile")}</span>}
+              {rg.isBoaVista && rider.seenInBoaVista && !rg.inRegion(rider.franchise) && (
+                <span className="rounded-full border border-[var(--line)] px-1.5 py-px text-[10px] font-black text-[var(--muted-strong)]" title={t("rdSeenBvTip", { d: rider.seenInBoaVista })}>
+                  {t("rdSeenBv", { x: rider.franchise ?? "" })}
+                </span>
+              )}
               {pending[rider.id] && <span className="text-[10px] font-black uppercase text-[var(--warning-ink)]">{t("rdToSave")}</span>}
             </div>
           </div>

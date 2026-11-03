@@ -33,7 +33,7 @@ type FeedRider = { rider_ext_id: string | null; rider_name: string | null; phone
 const digits = (value: unknown) => String(value ?? "").replace(/\D/g, "");
 const unbound = (value: unknown) => !value || value === "Unassigned";
 
-export async function bindBoaVistaRiders(feed: FeedRider[]): Promise<{ franchise: string | null; created: number; bound: number; stationed?: number; skipped?: string }> {
+export async function bindBoaVistaRiders(feed: FeedRider[], seenDate?: string): Promise<{ franchise: string | null; created: number; bound: number; stationed?: number; marked?: number; skipped?: string }> {
   if (process.env.SJBV_AUTOBIND === "off") return { franchise: null, created: 0, bound: 0, skipped: "disabled" };
   const names = [...(await boaVistaFranchiseNames())];
   if (names.length !== 1) return { franchise: null, created: 0, bound: 0, skipped: names.length ? "several Boa Vista franchises" : "no Boa Vista franchise" };
@@ -52,8 +52,14 @@ export async function bindBoaVistaRiders(feed: FeedRider[]): Promise<{ franchise
   }
   const toCreate: Rider[] = [];
 
-  let created = 0, bound = 0;
+  let created = 0, bound = 0, marked = 0;
   const today = new Date().toISOString().slice(0, 10);
+  // 业务方 2026-11-03: every rider in the Boa Vista online records must show in
+  // the Boa Vista riders list. A rider whose profile is on ANOTHER franchise
+  // (e.g. a São Paulo rider riding here) keeps that franchise — São Paulo is
+  // untouched — and gets a "seen in Boa Vista" date so the list shows them.
+  const seenOn = seenDate ?? new Intl.DateTimeFormat("en-CA", { timeZone: "America/Sao_Paulo" }).format(new Date());
+  const bvNames = new Set(names);
   const seen = new Set<string>();
   for (const f of feed) {
     const ext = digits(f.rider_ext_id);
@@ -104,7 +110,13 @@ export async function bindBoaVistaRiders(feed: FeedRider[]): Promise<{ franchise
     if (index < 0) continue;
     const current = riders[index];
     // Only riders with NO binding at all get the default; never re-assign.
-    if (!unbound(current.franchise) || !unbound(current.ponto)) continue;
+    if (!unbound(current.franchise) || !unbound(current.ponto)) {
+      if (!unbound(current.franchise) && !bvNames.has(String(current.franchise)) && (current.seenInBoaVista ?? "") < seenOn) {
+        riders[index] = { ...current, seenInBoaVista: seenOn };
+        marked += 1;
+      }
+      continue;
+    }
     riders[index] = { ...current, franchise: target, ponto: defaultPonto };
     bound += 1;
     appendServerAudit({ actor: "eastwind-sjbv", action: "RIDER_ASSIGNED", entity: "Rider", entityId: current.id, detail: `${current.name} → franchise ${target}${poolStation ? ` / station ${defaultPonto}` : ""}(Boa Vista 区域默认绑定,原未归属)`, risk: "Low" });
@@ -128,5 +140,5 @@ export async function bindBoaVistaRiders(feed: FeedRider[]): Promise<{ franchise
       appendServerAudit({ actor: "eastwind-sjbv", action: "RIDER_ASSIGNED", entity: "Rider", entityId: poolStation.id, detail: `${stationed} 名 ${target} 骑手(原无站点)→ 站点 ${poolStation.name}(默认池):${names.join("、")}${stationed > names.length ? " …" : ""}`, risk: "Low" });
     }
   }
-  return { franchise: target, created, bound, stationed };
+  return { franchise: target, created, bound, stationed, marked };
 }

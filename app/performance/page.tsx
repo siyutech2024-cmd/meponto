@@ -41,6 +41,8 @@ type Payload = {
     franchises: EarningGroupRow[];
     total: EarningAggregate;
   };
+  /** Boa Vista: where this day's numbers come from (T+1 import or live board). */
+  liveSource?: { mode: "t1" | "live" | "live-today"; batchAt: string | null };
 };
 
 const tabs = [
@@ -454,6 +456,14 @@ export default function PerformancePage() {
           )}
         </Toolbar>
       </div>
+
+      {tab !== "import" && isBoaVista && data?.liveSource && data.liveSource.mode !== "t1" && (
+        <div className="panel mb-3 border-[var(--accent)] p-3 text-xs font-bold text-[var(--muted-strong)]">
+          {data.liveSource.mode === "live-today"
+            ? t("pfLiveToday", { h: data.liveSource.batchAt ? new Date(data.liveSource.batchAt).toLocaleTimeString("pt-BR", { timeZone: "America/Sao_Paulo", hour: "2-digit", minute: "2-digit" }) : "—" })
+            : t("pfLiveFrozen")}
+        </div>
+      )}
 
       {tab !== "import" && (!data || data.riders.length === 0) && (
         <div className="panel p-6 text-sm font-bold text-[var(--muted)]">

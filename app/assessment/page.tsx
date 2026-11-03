@@ -10,7 +10,7 @@ import { readSession } from "../lib/session";
 import { useVentoStore } from "../lib/store";
 import { translate, type TranslationKey } from "../lib/i18n";
 import { COMMISSION_EFFECTIVE_FROM_DEFAULT, type AssessmentMetric, type AssessmentRule } from "../lib/assessment";
-import { defaultLeaderTargets, isoWeekOf, nextMonday, rulesForWeek, weekDates, type LeaderAssessment, type LeaderSettlementComponent } from "../lib/leader-mode";
+import { TEAM_SIZE, defaultLeaderTargets, isoWeekOf, nextMonday, rulesForWeek, weekDates, type LeaderAssessment, type LeaderSettlementComponent } from "../lib/leader-mode";
 
 /**
  * 考核规则 — HQ edits the quality thresholds / commission adjustments;
@@ -164,6 +164,7 @@ type LmPayload = {
     untaggedRider99Ids: string[];
     t1Dates?: string[];
     liveDates?: string[];
+    todayLiveAt?: string | null;
     trialProgress?: Record<string, { startedAt: string; day: number; days: number; orders: number; activeRiders: number; eligible: boolean }>;
   }>;
 };
@@ -175,7 +176,7 @@ type LmPendingPayment = {
 
 type LmApplication = {
   id: string; kind: "open_station" | "join_station" | "transfer"; franchise: string;
-  applicantName: string; targetStationId?: string; proposedStationName?: string;
+  applicantName: string; targetStationId?: string; proposedStationName?: string; channel?: string;
   eligibility: { orders28d: number; activeDays28d: number }; createdAt: string;
 };
 
@@ -184,7 +185,7 @@ type LmApplication = {
 // Edits append a new version effective next Monday; the running week, closed
 // weeks and paid weeks never change. Targets are fixed (shown read-only).
 function LeaderKpiSettings({ t }: { t: T }) {
-  type Fr = { id: string; name: string; leaderMode?: boolean; leaderSettlementRules?: LeaderSettlementComponent[] };
+  type Fr = { id: string; name: string; leaderMode?: boolean; leaderSettlementRules?: LeaderSettlementComponent[]; leaderInviteReview?: boolean };
   const [franchises, setFranchises] = useState<Fr[]>([]);
   const [draft, setDraft] = useState<Record<string, { base: string; bonus: string }>>({});
   const [note, setNote] = useState<{ tone: "ok" | "err"; text: string } | null>(null);
@@ -206,6 +207,8 @@ function LeaderKpiSettings({ t }: { t: T }) {
     <SectionCard title={<span className="text-sm font-black uppercase">{t("lmKpiTitle")}</span>} className="!p-4 mb-4">
       <div className="mb-3 text-xs font-bold text-[var(--muted-strong)]">
         {t("lmTargetsLine", { a: tg.minActiveRiders, n: tg.minOrdersPerActiveRider, o: tg.minWeeklyOrders, s: tg.selfOrdersCapPct })}
+        {" · "}
+        {t("lmTeamSizeLine", { min: TEAM_SIZE.min, max: TEAM_SIZE.max })}
       </div>
       {note && <div className={`mb-2 text-xs font-black ${note.tone === "ok" ? "text-[var(--ok-ink)]" : "text-[var(--danger-ink)]"}`}>{note.text}</div>}
       {franchises.map((f) => {
@@ -253,6 +256,26 @@ function LeaderKpiSettings({ t }: { t: T }) {
             >
               {t("lmSaveRates")}
             </button>
+            <label className="flex items-center gap-2 text-[11px] font-bold text-[var(--muted-strong)]">
+              <input
+                type="checkbox"
+                checked={f.leaderInviteReview === true}
+                onChange={async (e) => {
+                  const r = await fetch("/api/network", {
+                    method: "POST",
+                    headers: HEADERS,
+                    body: JSON.stringify({ action: "setLeaderInviteReview", franchiseId: f.id, enabled: e.target.checked }),
+                  });
+                  if (!r.ok) {
+                    setNote({ tone: "err", text: `HTTP ${r.status}` });
+                    return;
+                  }
+                  setNote({ tone: "ok", text: e.target.checked ? t("lmInviteReviewOn") : t("lmInviteReviewOff") });
+                  void load();
+                }}
+              />
+              {t("lmInviteReview")}
+            </label>
           </div>
         );
       })}
@@ -416,6 +439,9 @@ function LeaderModeSection({ t, canManage }: { t: T; canManage: boolean }) {
           {((group.t1Dates?.length ?? 0) > 0 || (group.liveDates?.length ?? 0) > 0) && (
             <div className="mb-2 text-[11px] font-bold text-[var(--muted)]">
               {t("lmSourceLine", { t1: group.t1Dates?.length ?? 0, live: group.liveDates?.length ?? 0 })}
+              {group.todayLiveAt
+                ? ` · ${t("lmTodayLive", { h: new Date(group.todayLiveAt).toLocaleTimeString("pt-BR", { timeZone: "America/Sao_Paulo", hour: "2-digit", minute: "2-digit" }) })}`
+                : ""}
             </div>
           )}
           {group.untaggedRider99Ids.length > 0 && (
@@ -504,8 +530,14 @@ function LeaderModeSection({ t, canManage }: { t: T; canManage: boolean }) {
             {applications.map((app) => (
               <div key={app.id} className="flex flex-wrap items-center gap-2 rounded-[8px] border border-[var(--line)] bg-[var(--surface-raised)] px-3 py-2 text-[12px] font-bold">
                 <span className="tag text-[10px]">{appKindLabel(app.kind)}</span>
+                {app.channel === "leader_referral" && <span className="tag border-[var(--accent)] text-[10px] text-[var(--accent)]">{t("lmInviteTag")}</span>}
                 <span className="font-black">{app.applicantName}</span>
                 {app.proposedStationName && <span className="text-[var(--muted)]">→ {app.proposedStationName}</span>}
+                {app.targetStationId && (
+                  <span className="text-[var(--muted)]">
+                    → {payload.franchises.flatMap((f) => f.assessments).find((a) => a.stationId === app.targetStationId)?.stationName ?? app.targetStationId}
+                  </span>
+                )}
                 <span className="text-[var(--muted)]">{t("lmApp28d", { o: app.eligibility.orders28d, d: app.eligibility.activeDays28d })}</span>
                 <span className="flex-1" />
                 <button type="button" disabled={busy} className="tag" onClick={() => void review(app.id, "approved")}>

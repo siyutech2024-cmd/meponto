@@ -47,6 +47,100 @@ function Bar({ value, target, label }: { value: number; target: number; label: s
   );
 }
 
+type InviteCandidate = { id: string; name: string; id4: string; team: string | null; inMyTeam: boolean; isLeader: boolean };
+type InviteInfo = { results: InviteCandidate[]; members: number; max: number; min: number; reviewRequired: boolean };
+
+/**
+ * Leader invites a rider (业务方 2026-10-31). Search by name or the last
+ * digits of the 99 ID / phone; a rider with no team joins at once (or waits
+ * for the central when it reviews invites), a rider in another team becomes
+ * a transfer request. Team holds at most `max` riders (leader not counted).
+ */
+function InvitePanel({ onJoined }: { onJoined: () => void }) {
+  const [q, setQ] = useState("");
+  const [info, setInfo] = useState<InviteInfo | null>(null);
+  const [note, setNote] = useState<{ ok: boolean; text: string } | null>(null);
+  const [busyId, setBusyId] = useState("");
+
+  const search = useCallback(async (query: string) => {
+    const r = await fetch(`/api/leaders?inviteSearch=${encodeURIComponent(query)}`, { cache: "no-store" });
+    if (r.ok) setInfo(((await r.json()).data ?? null) as InviteInfo | null);
+  }, []);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => void search(q), 350);
+    return () => window.clearTimeout(timer);
+  }, [q, search]);
+
+  async function invite(c: InviteCandidate) {
+    setBusyId(c.id);
+    setNote(null);
+    const r = await fetch("/api/leaders", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "inviteToTeam", riderId: c.id }) });
+    const payload = await r.json().catch(() => ({}));
+    setBusyId("");
+    if (!r.ok) {
+      setNote({ ok: false, text: payload.error ?? "Não foi possível convidar." });
+      return;
+    }
+    setNote({
+      ok: true,
+      text: payload.data?.status === "approved" ? `${c.name} entrou na sua equipe.` : `Convite enviado. ${c.name} entra na equipe quando a central aprovar.`,
+    });
+    if (payload.data?.status === "approved") onJoined();
+    void search(q);
+  }
+
+  const full = !!info && info.members >= info.max;
+  return (
+    <div className="rounded-[12px] border border-[#e4e1da] bg-white p-4">
+      <div className="flex items-center gap-2">
+        <div className="flex-1 text-sm font-black">Convidar entregador</div>
+        {info && (
+          <span className={`rounded-full px-2 py-0.5 text-[11px] font-black ${full ? "bg-[#fde8e8] text-[#b42318]" : info.members < info.min ? "bg-[#fff4d6] text-[#8a5a00]" : "bg-[#e7f6ec] text-[#1f7a3d]"}`}>
+            {info.members}/{info.max}
+          </span>
+        )}
+      </div>
+      <div className="mt-1 text-[12px] font-bold text-[#77746f]">
+        {info ? `Sua equipe: de ${info.min} a ${info.max} entregadores (você não conta).` : "Sua equipe: de 5 a 8 entregadores."}
+        {info?.reviewRequired ? " Os convites passam pela aprovação da central." : " Quem ainda não tem equipe entra na hora."}
+      </div>
+      <input
+        className="mt-3 h-11 w-full rounded-[10px] border border-[#e4e1da] bg-[#f9f8f5] px-3 text-sm font-bold outline-none focus:border-[#f2b705]"
+        placeholder="Nome ou últimos dígitos do ID 99 / celular"
+        value={q}
+        onChange={(e) => setQ(e.target.value)}
+        disabled={full}
+      />
+      {full && <div className="mt-2 text-[12px] font-bold text-[#b42318]">Equipe completa ({info?.max}). Para trocar alguém, fale com a central.</div>}
+      {note && <div className={`mt-2 text-[12px] font-black ${note.ok ? "text-[#1f7a3d]" : "text-[#b42318]"}`}>{note.text}</div>}
+      <div className="mt-2">
+        {(info?.results ?? []).map((c) => (
+          <div key={c.id} className="flex items-center gap-3 border-t border-[#efeeea] py-2 first:border-t-0">
+            <div className="min-w-0 flex-1">
+              <div className="truncate text-sm font-black">{c.name}</div>
+              <div className="text-[11px] font-bold text-[#77746f]">
+                99ID …{c.id4} · {c.inMyTeam ? "já na sua equipe" : c.isLeader ? "líder de equipe" : c.team ? `na equipe ${c.team}` : "sem equipe"}
+              </div>
+            </div>
+            {!c.inMyTeam && !c.isLeader && (
+              <button
+                type="button"
+                disabled={!!busyId || full}
+                className="rounded-full bg-[#ffd100] px-3 py-1.5 text-[12px] font-black text-[#111] disabled:opacity-50"
+                onClick={() => void invite(c)}
+              >
+                {busyId === c.id ? "…" : c.team ? "Pedir transferência" : "Convidar"}
+              </button>
+            )}
+          </div>
+        ))}
+        {q.trim().length >= 3 && info && info.results.length === 0 && <div className="text-[12px] font-bold text-[#77746f]">Ninguém encontrado na sua cidade.</div>}
+      </div>
+    </div>
+  );
+}
+
 export default function TeamPage() {
   const [data, setData] = useState<TeamData | null>(null);
   const [error, setError] = useState("");
@@ -159,6 +253,8 @@ export default function TeamPage() {
               )}
               {members.length === 0 && <div className="text-[12px] font-bold text-[#77746f]">Nenhum motoboy na equipe ainda.</div>}
             </div>
+
+            <InvitePanel onJoined={() => void load()} />
           </>
         )}
       </div>

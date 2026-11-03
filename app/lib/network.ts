@@ -24,6 +24,10 @@ export type Franchise = {
   leaderMode?: boolean;
   /** Leader settlement components (design §2.5); undefined = HQ defaults. */
   leaderSettlementRules?: import("./leader-mode").LeaderSettlementComponent[];
+  /** Leader invites (业务方 2026-10-31): false/undefined = an invited rider
+   *  with no team joins at once (HQ is notified); true = every invite waits
+   *  for HQ review. An invite of a rider already in another team always waits. */
+  leaderInviteReview?: boolean;
 };
 
 export const franchises: Franchise[] = [];

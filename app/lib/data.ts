@@ -2,6 +2,10 @@ export type RiderStatus = "Active" | "Inactive" | "Risk" | "Night Shift";
 export type Severity = "Low" | "Medium" | "High" | "Critical";
 export type IncidentStatus = "Open" | "Processing" | "Closed";
 export type Rider = {
+  /** Last day (São Paulo) this rider showed in the Boa Vista online records
+   *  while their profile belongs to another franchise — the Boa Vista riders
+   *  list shows them too (业务方 2026-11-03). Their franchise is not changed. */
+  seenInBoaVista?: string;
   id: string;
   name: string;
   cpf: string;
