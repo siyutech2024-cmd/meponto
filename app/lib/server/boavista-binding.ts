@@ -28,7 +28,9 @@ import { appendServerAudit, memory } from "./memory";
 import { refreshCollectionsFromDatabase } from "./persistence";
 import { boaVistaFranchiseNames } from "./regions";
 
-type FeedRider = { rider_ext_id: string | null; rider_name: string | null; phone: string | null; id_no: string | null };
+type FeedRider = { rider_ext_id: string | null; rider_name: string | null; phone: string | null; id_no: string | null; raw?: unknown };
+const groupOf = (f: FeedRider): "fl" | "pioneer" | null =>
+  f.raw === undefined ? null : (f.raw as { riderGroup?: string } | null)?.riderGroup === "pioneer" ? "pioneer" : "fl";
 
 const digits = (value: unknown) => String(value ?? "").replace(/\D/g, "");
 const unbound = (value: unknown) => !value || value === "Unassigned";
@@ -73,6 +75,7 @@ export async function bindBoaVistaRiders(feed: FeedRider[], seenDate?: string): 
       const id = `r-sjbv-${ext}`;
       if (riders.some((r) => r.id === id)) continue; // another round already made it
       const rider: Rider = {
+        ...(groupOf(f) ? { riderGroup: groupOf(f)! } : {}),
         id,
         name: String(f.rider_name ?? "").trim() || ext,
         cpf: cpf.length === 11 ? cpf : "",
@@ -108,6 +111,13 @@ export async function bindBoaVistaRiders(feed: FeedRider[], seenDate?: string): 
     if (matchId.startsWith("r-sjbv-") && toCreate.some((r) => r.id === matchId)) continue; // created this round
     const index = riders.findIndex((r) => r.id === matchId);
     if (index < 0) continue;
+    // FL / 先锋 tag follows the board (live feed only — the daily roster pass
+    // carries no tab info and leaves the tag alone).
+    const group = groupOf(f);
+    if (group && riders[index].riderGroup !== group && bvNames.has(String(riders[index].franchise))) {
+      riders[index] = { ...riders[index], riderGroup: group };
+      marked += 1;
+    }
     const current = riders[index];
     // Only riders with NO binding at all get the default; never re-assign.
     if (!unbound(current.franchise) || !unbound(current.ponto)) {

@@ -121,6 +121,8 @@ export async function POST(request: Request) {
     riderList?: unknown; // vendor.rider.monitor.riderList payload
     kpi?: unknown;       // vendor.rider.monitor.vendorFeatureInShift payload
     riderFeatures?: Record<string, unknown>; // per-rider detail responses keyed by riderID
+    pioneerList?: unknown; // 先锋骑手 tab of the same board (2026-11-04), same payload shape
+    kpiPioneer?: unknown;  // that tab's KPI header (not stored yet)
     delivery?: unknown;  // optional (waybill board, currently disabled)
   };
   try {
@@ -147,6 +149,20 @@ export async function POST(request: Request) {
     const parsed = parseRiders(body.riderList, body.kpi, capturedAt, cityId, body.riderFeatures ?? null);
     const { kpi } = parsed;
     let snapshots = parsed.snapshots;
+    // 先锋骑手 (业务方 2026-11-04: "先锋骑手也有数据,也需要记录在 PontoSys"):
+    // the board's second tab, uploaded alongside the FL list. Same parser, same
+    // batch; each row tagged raw.riderGroup = "pioneer". A rider on both tabs
+    // keeps the FL row (first wins).
+    if (body.pioneerList != null) {
+      const pioneer = parseRiders(body.pioneerList, null, capturedAt, cityId, null).snapshots;
+      const have = new Set(snapshots.map((s) => s.rider_ext_id).filter(Boolean));
+      const extra = pioneer
+        .filter((s) => !s.rider_ext_id || !have.has(s.rider_ext_id))
+        .map((s) => ({ ...s, raw: { ...((s.raw as Record<string, unknown>) ?? {}), riderGroup: "pioneer" } }));
+      snapshots = [...snapshots, ...extra];
+      result.pioneerRiders = pioneer.length;
+      result.pioneerAdded = extra.length;
+    }
     if (source === "sjbv") {
       const { kept, dropped } = await keepInsideBoaVista(client, snapshots);
       snapshots = kept;

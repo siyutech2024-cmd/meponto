@@ -6,6 +6,9 @@ export type Rider = {
    *  while their profile belongs to another franchise — the Boa Vista riders
    *  list shows them too (业务方 2026-11-03). Their franchise is not changed. */
   seenInBoaVista?: string;
+  /** Which tab of the 99 board the rider was last seen on: "pioneer" =
+   *  先锋骑手, "fl" = FL骑手 (Boa Vista board, 2026-11-04). Display only. */
+  riderGroup?: "fl" | "pioneer";
   id: string;
   name: string;
   cpf: string;

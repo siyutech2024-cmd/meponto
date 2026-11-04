@@ -22,6 +22,7 @@ type RiderRow = {
   ponto: string;
   franchise?: string;
   seenInBoaVista?: string;
+  riderGroup?: "fl" | "pioneer";
   status: string;
   ar: number;
   joinDate: string;
@@ -477,6 +478,9 @@ export default function RidersPage() {
                 </button>
               )}
               {rider.source === "report" && <span className="text-[10px] font-black uppercase text-[var(--warning-ink)]">{t("rdReportNoProfile")}</span>}
+              {rg.isBoaVista && rider.riderGroup === "pioneer" && (
+                <span className="rounded-full bg-[#e8f0fe] px-1.5 py-px text-[10px] font-black text-[#1d4ed8]">{t("rdPioneer")}</span>
+              )}
               {rg.isBoaVista && rider.seenInBoaVista && !rg.inRegion(rider.franchise) && (
                 <span className="rounded-full border border-[var(--line)] px-1.5 py-px text-[10px] font-black text-[var(--muted-strong)]" title={t("rdSeenBvTip", { d: rider.seenInBoaVista })}>
                   {t("rdSeenBv", { x: rider.franchise ?? "" })}

@@ -45,6 +45,7 @@ const KPI_APIS = [KPI_API, "vendor.rider.monitor.stationFeatureInShift"];
 const isRiderListUrl = (u) => RIDER_LIST_APIS.some((api) => u.includes(api));
 const isDetailApi = (api) => api === RIDER_TARGET_API || /^vendor\.rider\.monitor\.station.*RiderTarget$/i.test(api);
 let loggedShape = false;
+let loggedNoPioneerTab = false;
 // The board's own hot-area polygon (vendor.rider.monitor.hotArea). Saved to a
 // local file per city so the platform's zone outline can be traced from the
 // real Eastwind geometry instead of a screenshot. Local file only — never sent.
@@ -85,6 +86,11 @@ const cfg = {
    * land in their own feed. Unset (old OL) = lane decided by the token alone.
    */
   sourceAccount: (process.env.SOURCE_ACCOUNT || "").trim(),
+  // 先锋骑手 tab (业务方 2026-11-04): the board splits riders into "FL骑手" and
+  // "先锋骑手"; the default view is FL only. When on, each round also opens the
+  // pioneer tab and uploads that list too. Default: on for the Boa Vista feed
+  // only (São Paulo untouched); PIONEER_TAB=on|off overrides.
+  pioneerTab: process.env.PIONEER_TAB ? process.env.PIONEER_TAB === "on" : (process.env.SOURCE_ACCOUNT || "").trim() === "sjbv",
   intervalMin: Number(process.env.INTERVAL_MIN || 5),
   shiftStartMin: hmToMin(process.env.SHIFT_START, 0),     // e.g. "10:30"
   shiftEndMin: hmToMin(process.env.SHIFT_END, 24 * 60),   // e.g. "22:30"
@@ -296,12 +302,30 @@ async function pull(ctx, city = null, roundCapturedAt = null) {
   // api name seen this round so we can tell "page didn't load" from "auth issue".
   const caps = {};
   const seenApis = new Set();
+  // "default" = FL tab as the board opens; "pioneer" = after clicking 先锋骑手.
+  // Pioneer-phase responses go to their own slots and never overwrite the FL
+  // list / KPI captured first.
+  let phase = "default";
+  const pioneerApis = new Set();
   page.on("response", async (r) => {
     const u = r.url();
     if (!u.includes("/gateway")) return;
     const m = u.match(/[?&]api=([^&]+)/);
     const api = m ? decodeURIComponent(m[1]) : "";
     if (api) seenApis.add(api);
+    if (phase === "pioneer") {
+      // Diagnostic: api + query KEYS only (no values, no personal data).
+      const keys = [...new URL(u).searchParams.keys()].filter((k) => k !== "api").join("&");
+      if (api) pioneerApis.add(`${api}?${keys}`);
+      try {
+        if (KPI_APIS.includes(api)) { caps.kpiPioneer = await r.json(); return; }
+        const body = await r.json();
+        // Any gateway answer carrying a rider list (same API with a tab param,
+        // or a dedicated one) is the pioneer list.
+        if (RIDER_LIST_APIS.includes(api) || riderPairsRaw(body).length > 0) { caps.pioneerList = body; caps.pioneerApi = api; }
+      } catch { /* non-json */ }
+      return;
+    }
     if (RIDER_LIST_APIS.includes(api)) {
       try {
         caps.riderList = await r.json(); caps.riderListApi = api;
@@ -427,10 +451,34 @@ async function pull(ctx, city = null, roundCapturedAt = null) {
       }
     }
 
+    // 先锋骑手 tab — best-effort, after everything on the FL tab is captured.
+    // A missing tab or a failed click never blocks the FL upload.
+    let pioneerList = null;
+    let kpiPioneer = null;
+    if (cfg.pioneerTab) {
+      try {
+        const tab = page.getByText(/先锋骑手|Pioneir|Pioneer/i).first();
+        if (await tab.count()) {
+          phase = "pioneer";
+          await tab.click({ timeout: 5000 });
+          await page.waitForResponse((r) => r.url().includes("/gateway"), { timeout: 15000 }).catch(() => {});
+          await page.waitForTimeout(3000);
+          pioneerList = caps.pioneerList ?? null;
+          kpiPioneer = caps.kpiPioneer ?? null;
+          log(`pioneer tab: ${pioneerList ? riderPairs(pioneerList).length : 0} riders via ${caps.pioneerApi ?? "—"}; apis after click=[${[...pioneerApis].join(", ")}]`);
+        } else if (!loggedNoPioneerTab) {
+          loggedNoPioneerTab = true;
+          log("pioneer tab: not on this board (no 先锋骑手 tab found)");
+        }
+      } catch (e) {
+        log(`pioneer tab: failed (${String(e?.message ?? e).slice(0, 120)}) — FL upload continues`);
+      }
+    }
+
     const res = await fetch(cfg.ingestUrl, {
       method: "POST",
       headers: { "Content-Type": "application/json", "x-ingest-token": cfg.ingestToken },
-      body: JSON.stringify({ capturedAt, cityId, riderList, kpi, riderFeatures, ...(cfg.sourceAccount ? { sourceAccount: cfg.sourceAccount } : {}) }),
+      body: JSON.stringify({ capturedAt, cityId, riderList, kpi, riderFeatures, ...(pioneerList ? { pioneerList } : {}), ...(kpiPioneer ? { kpiPioneer } : {}), ...(cfg.sourceAccount ? { sourceAccount: cfg.sourceAccount } : {}) }),
       // A hanging ingest request must not wedge the round forever.
       signal: AbortSignal.timeout(60_000),
     });
