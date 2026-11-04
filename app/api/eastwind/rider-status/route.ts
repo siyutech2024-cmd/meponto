@@ -79,7 +79,7 @@ function laneOf(authenticated: Source, declared: unknown): Source {
  * beyond this batch's own idempotent replace. Kill switch: SJBV_ZONE_FILTER=off.
  */
 const SJBV_ZONE_MARGIN_KM = 0.5;
-async function keepInsideBoaVista<T extends { rider_ext_id: string | null; lat: number | null; lng: number | null }>(
+async function keepInsideBoaVista<T extends { rider_ext_id: string | null; lat: number | null; lng: number | null; status?: string | null }>(
   client: ReturnType<typeof getSupabaseServerClient>,
   snapshots: T[],
 ): Promise<{ kept: T[]; dropped: number }> {
@@ -89,7 +89,10 @@ async function keepInsideBoaVista<T extends { rider_ext_id: string | null; lat: 
   // kept — only riders the board PLACES outside the area are dropped. (A new
   // account whose payload carried no GPS would otherwise lose the whole board.)
   const noGps = (s: T) => s.lat == null || s.lng == null;
-  const inside = (s: T) => noGps(s) || withinZone(s.lat, s.lng, zone.points, SJBV_ZONE_MARGIN_KM);
+  // Not-online riders (业务方 2026-11-04: "未上线也给我记录") carry a stale last
+  // position, so the area test says nothing about them — they are kept.
+  const notOnline = (s: T) => /não está online|nao esta online|não conectado|nao conectado|offline|desconect|未履约|未上线|未在线/i.test(String(s.status ?? ""));
+  const inside = (s: T) => noGps(s) || notOnline(s) || withinZone(s.lat, s.lng, zone.points, SJBV_ZONE_MARGIN_KM);
   const outsideIds = [...new Set(snapshots.filter((s) => !inside(s)).map((s) => s.rider_ext_id).filter((id): id is string => Boolean(id)))];
   const seenToday = new Set<string>();
   if (outsideIds.length) {
@@ -163,6 +166,9 @@ export async function POST(request: Request) {
       result.pioneerRiders = pioneer.length;
       result.pioneerAdded = extra.length;
     }
+    // Every rider on the Boa Vista board (FL + 先锋, online or not) is put on
+    // the riders list, even one the area filter keeps off the live map.
+    const boardRiders = snapshots;
     if (source === "sjbv") {
       const { kept, dropped } = await keepInsideBoaVista(client, snapshots);
       snapshots = kept;
@@ -193,10 +199,10 @@ export async function POST(request: Request) {
     // kept by the in-area filter above are bound to the Boa Vista franchise
     // when they have no binding yet. Best-effort — the snapshot is the primary
     // product and is already stored; a binding failure only shows in the reply.
-    if (source === "sjbv" && snapshots.length) {
+    if (source === "sjbv" && boardRiders.length) {
       try {
         const { bindBoaVistaRiders } = await import("../../../lib/server/boavista-binding");
-        const binding = await bindBoaVistaRiders(snapshots);
+        const binding = await bindBoaVistaRiders(boardRiders);
         result.boaVistaBinding = binding;
         if (binding.created || binding.bound || binding.stationed || binding.marked) {
           const { flushPendingToDatabase } = await import("../../../lib/server/persistence");
