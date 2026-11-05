@@ -44,10 +44,11 @@ function chunk<T>(items: T[], size: number): T[][] {
   return out;
 }
 
-/** Latest RIDER_ASSIGNED audit per rider id, straight from the database. */
-async function latestAssignmentAudits(riderIds: string[]): Promise<Map<string, AuditRow>> {
+/** RIDER_ASSIGNED audit history per rider id (newest first), straight from
+ *  the database. `keep` caps how many entries are retained per rider. */
+async function assignmentAuditHistory(riderIds: string[], keep = 3): Promise<Map<string, AuditRow[]>> {
   const client = getSupabaseServerClient();
-  const latest = new Map<string, AuditRow>();
+  const history = new Map<string, AuditRow[]>();
   for (const ids of chunk(riderIds, 150)) {
     const { data, error } = await client
       .from("app_state_records")
@@ -61,10 +62,23 @@ async function latestAssignmentAudits(riderIds: string[]): Promise<Map<string, A
     for (const row of (data ?? []) as Array<{ data: AuditRow }>) {
       const entry = row.data;
       if (!entry?.entityId) continue;
-      const current = latest.get(entry.entityId);
-      if (!current || entry.createdAt > current.createdAt) latest.set(entry.entityId, entry);
+      const list = history.get(entry.entityId) ?? [];
+      list.push(entry);
+      history.set(entry.entityId, list);
     }
   }
+  for (const [id, list] of history) {
+    list.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+    history.set(id, list.slice(0, keep));
+  }
+  return history;
+}
+
+/** Latest RIDER_ASSIGNED audit per rider id. */
+async function latestAssignmentAudits(riderIds: string[]): Promise<Map<string, AuditRow>> {
+  const history = await assignmentAuditHistory(riderIds, 1);
+  const latest = new Map<string, AuditRow>();
+  for (const [id, list] of history) if (list[0]) latest.set(id, list[0]);
   return latest;
 }
 
@@ -96,6 +110,10 @@ export type ForensicRow = {
   lastAssignedAt: string | null;
   lastAssignedBy: string | null;
   lastAssignedTo: { franchise: string | null; station: string | null } | null;
+  /** Up to 3 most recent RIDER_ASSIGNED audits, newest first — tells a
+   *  deliberate two-step offboarding (停用 → 清空归属) apart from a status
+   *  toggle that wiped the assignment as collateral. */
+  history: Array<{ at: string; by: string; to: { franchise: string | null; station: string | null }; status: string | null }>;
   restorable: boolean;
 };
 
@@ -103,9 +121,10 @@ export async function forensics(): Promise<{ rows: ForensicRow[]; updatedAtByHou
   await refreshCollectionsFromDatabase(["riders"]);
   const unassigned = (memory.riders as Rider[]).filter((rider) => isUnassigned(rider.franchise));
   const ids = unassigned.map((rider) => rider.id);
-  const [updatedAt, audits] = await Promise.all([riderRowUpdatedAt(ids), latestAssignmentAudits(ids)]);
+  const [updatedAt, histories] = await Promise.all([riderRowUpdatedAt(ids), assignmentAuditHistory(ids, 3)]);
   const rows: ForensicRow[] = unassigned.map((rider) => {
-    const audit = audits.get(rider.id) ?? null;
+    const list = histories.get(rider.id) ?? [];
+    const audit = list[0] ?? null;
     const parsed = audit ? parseAssignment(audit.detail) : null;
     const restorable = !!parsed?.franchise && !isUnassigned(parsed.franchise);
     return {
@@ -119,6 +138,7 @@ export async function forensics(): Promise<{ rows: ForensicRow[]; updatedAtByHou
       lastAssignedAt: audit?.createdAt ?? null,
       lastAssignedBy: audit?.actor ?? null,
       lastAssignedTo: parsed,
+      history: list.map((entry) => ({ at: entry.createdAt, by: entry.actor, to: parseAssignment(entry.detail), status: entry.detail.match(/\/\s*([A-Za-z ]+)\.$/)?.[1]?.trim() ?? null })),
       restorable,
     };
   });
