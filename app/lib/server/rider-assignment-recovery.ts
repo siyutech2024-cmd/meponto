@@ -159,15 +159,32 @@ export type RestorePlanItem = { id: string; name: string; ninetyNineId: string; 
  * dropped (franchise only), never guessed.
  */
 export async function restore(options: { apply: boolean; actor: string }): Promise<{ applied: boolean; plan: RestorePlanItem[]; skipped: number }> {
-  await refreshCollectionsFromDatabase(["riders", "pontos"]);
+  await refreshCollectionsFromDatabase(["riders", "pontos", "franchises"]);
   const unassigned = (memory.riders as Rider[]).filter((rider) => isUnassigned(rider.franchise));
-  const audits = await latestAssignmentAudits(unassigned.map((rider) => rider.id));
+  // The LATEST audit of a wiped rider is the wipe itself ("→ Unassigned"), so
+  // the value to put back is the most recent audit that names a real
+  // franchise — the last assignment the system actually held.
+  const histories = await assignmentAuditHistory(unassigned.map((rider) => rider.id), 12);
+  const knownFranchises = new Set<string>([
+    ...memory.franchises.map((franchise) => franchise.name),
+    ...memory.pontos.map((ponto) => ponto.franchise ?? "").filter(Boolean),
+  ]);
   const plan: RestorePlanItem[] = [];
   let skipped = 0;
   for (const rider of unassigned) {
-    const audit = audits.get(rider.id);
-    const parsed = audit ? parseAssignment(audit.detail) : null;
-    if (!audit || !parsed?.franchise || isUnassigned(parsed.franchise)) {
+    const history = histories.get(rider.id) ?? [];
+    let audit: AuditRow | null = null;
+    let parsed: { franchise: string | null; station: string | null } | null = null;
+    for (const entry of history) {
+      const candidate = parseAssignment(entry.detail);
+      if (candidate.franchise && !isUnassigned(candidate.franchise)) {
+        audit = entry;
+        parsed = candidate;
+        break;
+      }
+    }
+    // Never resurrect a franchise that no longer exists in the registry.
+    if (!audit || !parsed?.franchise || !knownFranchises.has(parsed.franchise)) {
       skipped += 1;
       continue;
     }
