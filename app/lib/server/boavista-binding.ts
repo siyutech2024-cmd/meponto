@@ -26,6 +26,7 @@
 import type { Rider } from "../data";
 import { appendServerAudit, memory } from "./memory";
 import { refreshCollectionsFromDatabase } from "./persistence";
+import { syncRidersFromDatabase } from "./rider-write";
 import { boaVistaFranchiseNames } from "./regions";
 
 type FeedRider = { rider_ext_id: string | null; rider_name: string | null; phone: string | null; id_no: string | null; raw?: unknown };
@@ -42,6 +43,15 @@ export async function bindBoaVistaRiders(feed: FeedRider[], seenDate?: string): 
   const target = names[0];
 
   await refreshCollectionsFromDatabase(["riders", "pontos"]);
+  // This runs every scraper round and rewrites whole rider records (group tag,
+  // seen-date, default binding). Re-read exactly the riders on this feed from
+  // the database first; if that read fails, skip the round rather than write
+  // from a cache that may be stale (see rider-write.ts).
+  {
+    const feedIds = new Set(feed.map((f) => String(f.rider_ext_id ?? "").trim()).filter(Boolean));
+    const ids = (memory.riders as Rider[]).filter((r) => r.ninetyNineId && feedIds.has(String(r.ninetyNineId))).map((r) => r.id);
+    if (!(await syncRidersFromDatabase(ids))) return { franchise: target, created: 0, bound: 0, skipped: "fresh read failed — round skipped" };
+  }
   const riders = memory.riders as Rider[];
   const poolStation = memory.pontos.find((p) => p.franchise === target && p.name === target && p.stationStatus !== "closed");
   const defaultPonto = poolStation?.name ?? "Unassigned";

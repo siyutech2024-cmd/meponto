@@ -1,5 +1,6 @@
 import { appendServerAudit, jsonResponse, makeServerId, memory } from "../../lib/server/memory";
 import { flushPendingToDatabase, persistDeleteRecord, refreshCollectionsFromDatabase } from "../../lib/server/persistence";
+import { syncRidersFromDatabase } from "../../lib/server/rider-write";
 import { requirePermission, roleFromRequest, scopeFromRequest } from "../../lib/server/authz";
 import { regionFilter, regionParam } from "../../lib/server/regions";
 import {
@@ -754,6 +755,19 @@ type Body =
   | { action: "settleDeduction"; earningIds: string[] }
   | { action: "recreditPoints" };
 
+/**
+ * Daily imports rewrite hundreds of rider records (profile AR / contact
+ * backfill). Re-read exactly those riders from the database first so a stale
+ * cache can never be written back over them. Returns false (and the callers
+ * then SKIP the profile writes — they're cosmetic, the KPI/earnings rows are
+ * the data) when the database can't be read.
+ */
+async function freshBaseFor(rider99Ids: Iterable<unknown>): Promise<boolean> {
+  const wanted = new Set([...rider99Ids].map((value) => String(value ?? "").trim()).filter(Boolean));
+  const ids = memory.riders.filter((rider) => rider.ninetyNineId && wanted.has(rider.ninetyNineId)).map((rider) => rider.id);
+  return syncRidersFromDatabase(ids);
+}
+
 async function handlePost(request: Request) {
   const forbidden = requirePermission(request, "view_analytics");
   if (forbidden) return forbidden;
@@ -796,6 +810,7 @@ async function handlePost(request: Request) {
 
     let created = 0;
     let updated = 0;
+    const freshParsed = await freshBaseFor(parsed.map((record) => record.rider99Id));
     for (const record of parsed) {
       // Leader Mode D4: stamp today's station attribution BEFORE insertion.
       // No-op unless the rider's franchise runs leaderMode (São Paulo unchanged).
@@ -811,7 +826,7 @@ async function handlePost(request: Request) {
       // Backfill rider profile KPI snapshot when the rider is linked.
       const riderIndex = memory.riders.findIndex((rider) => rider.ninetyNineId === record.rider99Id);
       if (riderIndex !== -1) {
-        if (record.ar !== null) {
+        if (freshParsed && record.ar !== null) {
           memory.riders[riderIndex] = { ...memory.riders[riderIndex], ar: Math.round(record.ar) };
         }
         creditOrderPoints(memory.riders[riderIndex].id, record.rider99Id, date, record.completedOrders);
@@ -853,6 +868,7 @@ async function handlePost(request: Request) {
       // 模式二 T2: same dual-source rule as earnings — the account is part of
       // the idempotency key so 旧 OL / 新 OL sheets never overwrite each other.
       const kpiAccount: "main" | "pro" = body.account === "pro" ? "pro" : "main";
+      const freshKpi = await freshBaseFor(records.map((raw) => raw.rider99Id));
       for (const raw of records) {
         const rider99Id = String(raw.rider99Id ?? "").trim();
         if (!/^\d{6,}$/.test(rider99Id)) continue;
@@ -906,7 +922,7 @@ async function handlePost(request: Request) {
         }
         const riderIndex = memory.riders.findIndex((rider) => rider.ninetyNineId === rider99Id);
         if (riderIndex !== -1) {
-          if (record.ar !== null) {
+          if (freshKpi && record.ar !== null) {
             memory.riders[riderIndex] = { ...memory.riders[riderIndex], ar: Math.round(record.ar) };
           }
           creditOrderPoints(memory.riders[riderIndex].id, rider99Id, date, record.completedOrders);
@@ -928,6 +944,7 @@ async function handlePost(request: Request) {
       // the two feeds can never overwrite each other.
       const account: "main" | "pro" = body.account === "pro" ? "pro" : "main";
       const isPro = account === "pro";
+      const freshEarn = await freshBaseFor(records.map((raw) => raw.rider99Id));
       for (const raw of records) {
         const rider99Id = String(raw.rider99Id ?? "").trim();
         if (!/^\d{6,}$/.test(rider99Id)) continue;
@@ -1000,7 +1017,7 @@ async function handlePost(request: Request) {
           updated += 1;
         }
         // Backfill empty profile contact fields from the Ganhos sheet (PIX 等).
-        const riderIndex = memory.riders.findIndex((rider) => rider.ninetyNineId === rider99Id);
+        const riderIndex = freshEarn ? memory.riders.findIndex((rider) => rider.ninetyNineId === rider99Id) : -1;
         if (riderIndex !== -1) {
           const rider = memory.riders[riderIndex];
           const patch: Partial<typeof rider> = {};
@@ -1136,6 +1153,9 @@ async function handlePost(request: Request) {
       if (row.pix || row.cpf || row.phone) latestByNinetyNine.set(row.rider99Id, row);
     }
     let filled = 0;
+    if (!(await syncRidersFromDatabase(memory.riders.filter((rider) => rider.ninetyNineId).map((rider) => rider.id)))) {
+      return jsonResponse({ error: "数据库暂时不可读,为避免覆盖最新数据本次未执行,请稍后重试。", code: "stale_write_refused" }, { status: 503 });
+    }
     for (let i = 0; i < memory.riders.length; i += 1) {
       const rider = memory.riders[i];
       if (!rider.ninetyNineId) continue;

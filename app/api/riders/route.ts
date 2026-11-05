@@ -2,6 +2,8 @@ import { acceptClientId, appendServerAudit, makeServerId, memory, jsonResponse }
 import { flushPendingToDatabase, persistDeleteRecord, refreshCollectionsFromDatabase } from "../../lib/server/persistence";
 import { getAvailablePoints } from "../../lib/points";
 import { requirePermission, roleFromRequest, scopeFromRequest } from "../../lib/server/authz";
+import { forensics as assignmentForensics, restore as restoreAssignments } from "../../lib/server/rider-assignment-recovery";
+import { STALE_WRITE_REFUSED, syncRidersFromDatabase } from "../../lib/server/rider-write";
 import { parseProRoster, type Rider, type RiderStatus } from "../../lib/data";
 import { getRiderSensitiveRevealDecision, maskRiderSensitive } from "../../lib/masking";
 
@@ -122,6 +124,20 @@ export async function GET(request: Request) {
         : "Sensitive rider reveal denied for rider collection API response.",
       risk: reveal.allowed ? "Medium" : "High",
     });
+  }
+
+  // HQ forensics: when was each unassigned rider's row last written, and what
+  // does its latest RIDER_ASSIGNED audit say (see rider-assignment-recovery).
+  if (new URL(request.url).searchParams.get("forensics") === "assignments") {
+    const forbiddenHq = requirePermission(request, "manage_riders");
+    if (forbiddenHq) return forbiddenHq;
+    const hqScope = await scopeFromRequest(request);
+    if (hqScope.franchise || hqScope.station) return jsonResponse({ error: "仅总部可执行此操作" }, { status: 403 });
+    try {
+      return jsonResponse({ data: await assignmentForensics() });
+    } catch (error) {
+      return jsonResponse({ error: (error as Error).message }, { status: 500 });
+    }
   }
 
   const refreshKpis = Date.now() - kpiRefreshedAt > KPI_REFRESH_TTL_MS;
@@ -285,9 +301,27 @@ async function handlePost(request: Request) {
   const body = (await request.json()) as Partial<Rider> & Partial<AssignBody> & Partial<ProImportBody> & { action?: string };
   const actor = roleFromRequest(request);
 
+  // HQ repair: put back franchise/station from the audit trail for riders that
+  // were silently reverted to 未分配. Dry-run unless { apply: true }.
+  if (body.action === "restoreAssignments") {
+    const hqScope = await scopeFromRequest(request);
+    if (hqScope.franchise || hqScope.station) return jsonResponse({ error: "仅总部可执行此操作" }, { status: 403 });
+    try {
+      const apply = (body as { apply?: boolean }).apply === true;
+      const result = await restoreAssignments({ apply, actor });
+      if (apply) {
+        appendServerAudit({ actor, action: "RIDER_ASSIGNMENTS_RESTORE_RUN", entity: "Rider", entityId: "all", detail: `${result.plan.length} assignments restored from audit, ${result.skipped} unassigned riders had no restorable audit.`, risk: "Medium" });
+      }
+      return jsonResponse({ data: result });
+    } catch (error) {
+      return jsonResponse({ error: (error as Error).message }, { status: 500 });
+    }
+  }
+
   // Update editable profile fields (detail page form).
   if (body.action === "updateProfile") {
     const riderId = String((body as { riderId?: string }).riderId ?? "");
+    if (!(await syncRidersFromDatabase([riderId]))) return jsonResponse(STALE_WRITE_REFUSED, { status: 503 });
     const index = memory.riders.findIndex((item) => item.id === riderId);
     if (index === -1) return jsonResponse({ error: "Rider not found" }, { status: 404 });
     const fields = ["name", "cpf", "phone", "pix", "bairro", "vehicleType", "brand", "model"] as const;
@@ -424,6 +458,10 @@ async function handlePost(request: Request) {
       }
     }
 
+    // Fresh base: the fields this call does NOT set (franchise/station when
+    // only the status is toggled, and vice versa) must come from the row the
+    // database holds now, never from this instance's cache.
+    if (!(await syncRidersFromDatabase([riderId]))) return jsonResponse(STALE_WRITE_REFUSED, { status: 503 });
     const index = memory.riders.findIndex((item) => item.id === riderId);
     if (index === -1) return jsonResponse({ error: "rider not found" }, { status: 404 });
 

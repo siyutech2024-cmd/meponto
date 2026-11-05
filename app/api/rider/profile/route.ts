@@ -1,6 +1,7 @@
 import { appendServerAudit, jsonResponse, memory } from "../../../lib/server/memory";
 import { flushPendingToDatabase, refreshCollectionsFromDatabase } from "../../../lib/server/persistence";
 import { sessionFromRequest } from "../../../lib/auth-session";
+import { STALE_WRITE_REFUSED, syncRidersFromDatabase } from "../../../lib/server/rider-write";
 
 /**
  * Rider self-service profile (个人信息): name / CPF / phone / PIX.
@@ -57,7 +58,13 @@ async function handlePost(request: Request) {
   const session = await sessionFromRequest(request);
   if (!session) return jsonResponse({ error: "Faça login para atualizar seu perfil.", code: "unauthenticated" }, { status: 401 });
   await refreshCollectionsFromDatabase(COLLECTIONS);
-  const index = memory.riders.findIndex((r) => r.id === session.userId || r.name === session.name);
+  let index = memory.riders.findIndex((r) => r.id === session.userId || r.name === session.name);
+  // Fresh base before the whole-record write (see rider-write.ts).
+  if (index !== -1) {
+    const targetId = memory.riders[index].id;
+    if (!(await syncRidersFromDatabase([targetId]))) return jsonResponse(STALE_WRITE_REFUSED, { status: 503 });
+    index = memory.riders.findIndex((r) => r.id === targetId);
+  }
   if (index === -1) return jsonResponse({ error: "Cadastro não encontrado.", code: "not_found" }, { status: 404 });
   const body = (await request.json().catch(() => ({}))) as Body;
   const prev = memory.riders[index];

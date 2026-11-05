@@ -3,6 +3,7 @@ import { flushPendingToDatabase, persistDeleteRecord } from "../../../lib/server
 import { requirePermission, roleFromRequest } from "../../../lib/server/authz";
 import type { Rider } from "../../../lib/data";
 import { getRiderSensitiveRevealDecision, maskRiderSensitive } from "../../../lib/masking";
+import { STALE_WRITE_REFUSED, syncRidersFromDatabase } from "../../../lib/server/rider-write";
 
 export async function GET(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -34,10 +35,17 @@ async function putImpl(request: Request, { params }: { params: Promise<{ id: str
 
   const { id } = await params;
   const body = (await request.json()) as Partial<Rider>;
+  // This route never refreshed before writing — a PUT from a warm instance
+  // wrote back whatever it had hydrated hours earlier. Fresh base, always.
+  if (!(await syncRidersFromDatabase([id]))) return jsonResponse(STALE_WRITE_REFUSED, { status: 503 });
   const index = memory.riders.findIndex((rider) => rider.id === id);
   if (index === -1) return jsonResponse({ error: "Rider not found" }, { status: 404 });
 
-  memory.riders[index] = { ...memory.riders[index], ...body };
+  // Identity and ownership are not patchable here (assign action owns them).
+  const { id: _ignoredId, franchise: _ignoredFranchise, ponto: _ignoredPonto, ...patch } = body;
+  void _ignoredId; void _ignoredFranchise; void _ignoredPonto;
+  memory.riders[index] = { ...memory.riders[index], ...patch };
+  appendServerAudit({ actor: roleFromRequest(request), action: "RIDER_PROFILE_UPDATED", entity: "Rider", entityId: id, detail: `${memory.riders[index].name}: ${Object.keys(patch).join(", ")} updated (PUT).`, risk: "Low" });
   return jsonResponse({ data: memory.riders[index] });
 }
 
